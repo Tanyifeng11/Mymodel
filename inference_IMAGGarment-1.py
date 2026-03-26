@@ -162,7 +162,7 @@ def prepare(args):
     
     
     #LEM prepare
-    base_model_path = "ruwnayml/stable-diffusion-inpainting"
+    base_model_path = "stable-diffusion-v1-5/stable-diffusion-inpainting"
     attn_ckpt = args.LEM_model_ckpt
     LEM_unet = UNet2DConditionModel.from_pretrained(base_model_path, subfolder="unet").to(device=args.device,dtype=torch.float16)
     LEM_noise_scheduler = DDIMScheduler.from_pretrained(base_model_path, subfolder="scheduler")

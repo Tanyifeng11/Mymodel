@@ -116,7 +116,7 @@ class IMAGGarment(StableDiffusionPipeline):
             state_dict = torch.load(self.color_ckpt, map_location="cpu")
         self.image_proj_model.load_state_dict(state_dict["image_proj"])
         ip_layers = torch.nn.ModuleList(self.unet.attn_processors.values())
-        ip_layers.load_state_dict(state_dict["color_adapter"], strict=False)
+        ip_layers.load_state_dict(state_dict["ip_adapter"], strict=False)
     @property
     def cross_attention_kwargs(self):
         return self._cross_attention_kwargs
