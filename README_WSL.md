@@ -23,7 +23,7 @@
 - 用 conda 创建 `python=3.8.8` 环境
 - 执行 `pip install -r requirements.txt`
 - 下载主模型与额外组件模型
-- 训练时运行 `train_color_adapter.sh`、`train_GAM.sh`、`train_LEM.sh`
+- 训练时运行 `train_texture_adapter.sh`、`train_GAM.sh`、`train_LEM.sh`
 - 测试时运行 `inference_IMAGGarment-1.py`
 
 这份重写版保留这些核心流程，但把安装顺序和依赖拆分得更稳。
@@ -288,10 +288,10 @@ python inference_IMAGGarment-1.py \
   --sketch_path [your sketch path] \
   --logo_path [your logo path] \
   --mask_path [your mask path] \
-  --color_path [your color path] \
+  --texture_path [your texture path] \
   --prompt [your prompt] \
   --output_path [your save path] \
-  --color_ckpt [color adapter checkpoint] \
+  --texture_ckpt [texture adapter checkpoint] \
   --device [your device]
 ```
 
@@ -306,8 +306,8 @@ python inference_IMAGGarment-1.py \
 ```bash
 # 请先下载 GarmentBench，并修改脚本中的路径
 
-# train color adapter
-sh train_color_adapter.sh
+# train texture adapter
+sh train_texture_adapter.sh
 python change.py
 
 # train GAM model
@@ -320,7 +320,7 @@ sh train_LEM.sh
 开始训练前，请至少确认：
 
 - GarmentBench 数据集已下载完成
-- `train_color_adapter.sh` 中的数据路径已修改
+- `train_texture_adapter.sh` 中的数据路径已修改
 - `train_GAM.sh` 中的路径已修改
 - `train_LEM.sh` 中的路径已修改
 - 权重输出目录具有写权限

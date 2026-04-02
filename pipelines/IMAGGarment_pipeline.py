@@ -1,3 +1,11 @@
+from typing import Any, Callable, Dict, List, Optional, Union
+import inspect
+import os
+import sys
+
+import torch
+from PIL import Image
+
 from diffusers.schedulers import (
     DDIMScheduler,
     DPMSolverMultistepScheduler,
@@ -6,18 +14,17 @@ from diffusers.schedulers import (
     LMSDiscreteScheduler,
     PNDMScheduler,
 )
-from diffusers.utils import is_accelerate_available
+from diffusers.utils import is_accelerate_available, logging
 from diffusers.pipelines.controlnet.pipeline_controlnet import *
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import *
-from adapter.attention_processor import LogoRefSAttnProcessor2_0,IPAttnProcessor2_0
-# from diffusers.pipelines import StableDiffusionPipeline
 from diffusers.loaders import LoraLoaderMixin
+
+from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from .LEM_pipeline import LEM
-import os 
-import sys
-import torch 
-from PIL import Image
+
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
+
+
 class ImageProjModel(torch.nn.Module):
     """Projection Model"""
 
@@ -38,29 +45,30 @@ class ImageProjModel(torch.nn.Module):
         clip_extra_context_tokens = self.norm(clip_extra_context_tokens)
         return clip_extra_context_tokens
 
+
 class IMAGGarment(StableDiffusionPipeline):
     _optional_components = []
 
     def __init__(
-            self,
-            vae,
-            reference_unet,
-            unet,
-            tokenizer,
-            text_encoder,
-            image_encoder,
-            color_ckpt,
-            lem,
-            scheduler: Union[
-                DDIMScheduler,
-                PNDMScheduler,
-                LMSDiscreteScheduler,
-                EulerDiscreteScheduler,
-                EulerAncestralDiscreteScheduler,
-                DPMSolverMultistepScheduler,
-            ],
-            safety_checker: StableDiffusionSafetyChecker,
-            feature_extractor: CLIPImageProcessor,
+        self,
+        vae,
+        reference_unet,
+        unet,
+        tokenizer,
+        text_encoder,
+        image_encoder,
+        texture_ckpt,
+        lem,
+        scheduler: Union[
+            DDIMScheduler,
+            PNDMScheduler,
+            LMSDiscreteScheduler,
+            EulerDiscreteScheduler,
+            EulerAncestralDiscreteScheduler,
+            DPMSolverMultistepScheduler,
+        ],
+        safety_checker: StableDiffusionSafetyChecker,
+        feature_extractor: CLIPImageProcessor,
     ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor)
 
@@ -73,7 +81,7 @@ class IMAGGarment(StableDiffusionPipeline):
             text_encoder=text_encoder,
             image_encoder=image_encoder,
             safety_checker=safety_checker,
-            feature_extractor=feature_extractor
+            feature_extractor=feature_extractor,
         )
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
         self.clip_image_processor = CLIPImageProcessor()
@@ -87,36 +95,116 @@ class IMAGGarment(StableDiffusionPipeline):
             do_normalize=False,
         )
         self.lem = lem
-        
-        #color adapter
-        self.color_ckpt = color_ckpt
+
+        # texture adapter
+        self.texture_ckpt = texture_ckpt
         self.num_tokens = 4
         self.image_proj_model = self.init_proj()
-        self.load_color_adapter()
-        
+        self.load_texture_adapter()
+
     def init_proj(self):
-        
         image_proj_model = ImageProjModel(
             cross_attention_dim=self.unet.config.cross_attention_dim,
             clip_embeddings_dim=self.image_encoder.config.projection_dim,
             clip_extra_context_tokens=self.num_tokens,
         ).to(self.device, dtype=torch.float16)
         return image_proj_model
-    
-    def load_color_adapter(self):
-        if os.path.splitext(self.color_ckpt)[-1] == ".safetensors":
-            state_dict = {"image_proj": {}, "color_adapter": {}}
-            with safe_open(self.color_ckpt, framework="pt", device="cpu") as f:
+
+    def load_texture_adapter(self):
+        """
+        Compatible with these checkpoint formats:
+        1) training output:
+           {
+               "image_proj": ...,
+               "texture_adapter": ...
+           }
+
+        2) old color adapter:
+           {
+               "image_proj": ...,
+               "color_adapter": ...
+           }
+
+        3) old ip-adapter style:
+           {
+               "image_proj": ...,
+               "ip_adapter": ...
+           }
+
+        4) safetensors with keys like:
+           image_proj.xxx
+           texture_adapter.xxx
+           color_adapter.xxx
+           ip_adapter.xxx
+        """
+        if self.texture_ckpt is None or self.texture_ckpt == "":
+            raise ValueError("self.texture_ckpt is empty. Please provide a valid adapter checkpoint path.")
+
+        ext = os.path.splitext(self.texture_ckpt)[-1].lower()
+
+        if ext == ".safetensors":
+            from safetensors import safe_open
+
+            state_dict = {
+                "image_proj": {},
+                "texture_adapter": {},
+                "color_adapter": {},
+                "ip_adapter": {},
+            }
+
+            with safe_open(self.texture_ckpt, framework="pt", device="cpu") as f:
                 for key in f.keys():
                     if key.startswith("image_proj."):
                         state_dict["image_proj"][key.replace("image_proj.", "")] = f.get_tensor(key)
+                    elif key.startswith("texture_adapter."):
+                        state_dict["texture_adapter"][key.replace("texture_adapter.", "")] = f.get_tensor(key)
                     elif key.startswith("color_adapter."):
                         state_dict["color_adapter"][key.replace("color_adapter.", "")] = f.get_tensor(key)
+                    elif key.startswith("ip_adapter."):
+                        state_dict["ip_adapter"][key.replace("ip_adapter.", "")] = f.get_tensor(key)
         else:
-            state_dict = torch.load(self.color_ckpt, map_location="cpu")
-        self.image_proj_model.load_state_dict(state_dict["image_proj"])
+            state_dict = torch.load(self.texture_ckpt, map_location="cpu")
+
+        if "image_proj" not in state_dict or len(state_dict["image_proj"]) == 0:
+            raise KeyError(
+                f"'image_proj' not found in checkpoint: {self.texture_ckpt}. "
+                f"Available keys: {list(state_dict.keys())}"
+            )
+
+        try:
+            self.image_proj_model.load_state_dict(state_dict["image_proj"], strict=False)
+            print(f"[load_texture_adapter] loaded image_proj from: {self.texture_ckpt}")
+        except RuntimeError as e:
+            print("[load_texture_adapter] WARNING: image_proj shape mismatch, skipped loading image_proj.")
+            print(f"[load_texture_adapter] details: {e}")
+            print(
+                "[load_texture_adapter] This usually means the inference image_encoder is different from the training image_encoder."
+            )
+
+        if "texture_adapter" in state_dict and len(state_dict["texture_adapter"]) > 0:
+            adapter_sd = state_dict["texture_adapter"]
+            adapter_name = "texture_adapter"
+        elif "color_adapter" in state_dict and len(state_dict["color_adapter"]) > 0:
+            adapter_sd = state_dict["color_adapter"]
+            adapter_name = "color_adapter"
+        elif "ip_adapter" in state_dict and len(state_dict["ip_adapter"]) > 0:
+            adapter_sd = state_dict["ip_adapter"]
+            adapter_name = "ip_adapter"
+        else:
+            raise KeyError(
+                f"No adapter weights found in checkpoint: {self.texture_ckpt}. "
+                f"Available keys: {list(state_dict.keys())}"
+            )
+
         ip_layers = torch.nn.ModuleList(self.unet.attn_processors.values())
-        ip_layers.load_state_dict(state_dict["ip_adapter"], strict=False)
+        missing, unexpected = ip_layers.load_state_dict(adapter_sd, strict=False)
+
+        print(f"[load_texture_adapter] loaded adapter branch: {adapter_name}")
+        if len(missing) > 0:
+            print(f"[load_texture_adapter] missing keys: {len(missing)}")
+        if len(unexpected) > 0:
+            print(f"[load_texture_adapter] unexpected keys: {len(unexpected)}")
+
     @property
     def cross_attention_kwargs(self):
         return self._cross_attention_kwargs
@@ -132,7 +220,7 @@ class IMAGGarment(StableDiffusionPipeline):
             from accelerate import cpu_offload
         else:
             raise ImportError("Please install accelerate via `pip install accelerate`")
-        
+
         device = torch.device(f"cuda:{gpu_id}")
 
         for cpu_offloaded_model in [self.unet, self.text_encoder, self.vae]:
@@ -141,54 +229,43 @@ class IMAGGarment(StableDiffusionPipeline):
 
     @property
     def _execution_device(self):
-        
         if self.device != torch.device("meta") or not hasattr(self.unet, "_hf_hook"):
             return self.device
         for module in self.unet.modules():
             if (
-                    hasattr(module, "_hf_hook")
-                    and hasattr(module._hf_hook, "execution_device")
-                    and module._hf_hook.execution_device is not None
+                hasattr(module, "_hf_hook")
+                and hasattr(module._hf_hook, "execution_device")
+                and module._hf_hook.execution_device is not None
             ):
                 return torch.device(module._hf_hook.execution_device)
         return self.device
 
     def prepare_extra_step_kwargs(self, generator, eta):
-
-        accepts_eta = "eta" in set(
-            inspect.signature(self.scheduler.step).parameters.keys()
-        )
+        accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
         extra_step_kwargs = {}
         if accepts_eta:
             extra_step_kwargs["eta"] = eta
 
-        # check if the scheduler accepts generator
-        accepts_generator = "generator" in set(
-            inspect.signature(self.scheduler.step).parameters.keys()
-        )
+        accepts_generator = "generator" in set(inspect.signature(self.scheduler.step).parameters.keys())
         if accepts_generator:
             extra_step_kwargs["generator"] = generator
         return extra_step_kwargs
 
-        # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.encode_prompt
-
     def encode_prompt(
-            self,
-            prompt,
-            device,
-            num_images_per_prompt,
-            do_classifier_free_guidance,
-            negative_prompt=None,
-            prompt_embeds: Optional[torch.FloatTensor] = None,
-            negative_prompt_embeds: Optional[torch.FloatTensor] = None,
-            lora_scale: Optional[float] = None,
-            clip_skip: Optional[int] = None,
+        self,
+        prompt,
+        device,
+        num_images_per_prompt,
+        do_classifier_free_guidance,
+        negative_prompt=None,
+        prompt_embeds: Optional[torch.FloatTensor] = None,
+        negative_prompt_embeds: Optional[torch.FloatTensor] = None,
+        lora_scale: Optional[float] = None,
+        clip_skip: Optional[int] = None,
     ):
-
         if lora_scale is not None and isinstance(self, LoraLoaderMixin):
             self._lora_scale = lora_scale
 
-            # dynamically adjust the LoRA scale
             if not USE_PEFT_BACKEND:
                 adjust_lora_scale_text_encoder(self.text_encoder, lora_scale)
             else:
@@ -202,7 +279,6 @@ class IMAGGarment(StableDiffusionPipeline):
             batch_size = prompt_embeds.shape[0]
 
         if prompt_embeds is None:
-            # textual inversion: procecss multi-vector tokens if necessary
             if isinstance(self, TextualInversionLoaderMixin):
                 prompt = self.maybe_convert_prompt(prompt, self.tokenizer)
 
@@ -217,7 +293,7 @@ class IMAGGarment(StableDiffusionPipeline):
             untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
 
             if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
-                    text_input_ids, untruncated_ids
+                text_input_ids, untruncated_ids
             ):
                 removed_text = self.tokenizer.batch_decode(
                     untruncated_ids[:, self.tokenizer.model_max_length - 1: -1]
@@ -239,14 +315,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 prompt_embeds = self.text_encoder(
                     text_input_ids.to(device), attention_mask=attention_mask, output_hidden_states=True
                 )
-                # Access the `hidden_states` first, that contains a tuple of
-                # all the hidden states from the encoder layers. Then index into
-                # the tuple to access the hidden states from the desired layer.
                 prompt_embeds = prompt_embeds[-1][-(clip_skip + 1)]
-                # We also need to apply the final LayerNorm here to not mess with the
-                # representations. The `last_hidden_states` that we typically use for
-                # obtaining the final prompt representations passes through the LayerNorm
-                # layer.
                 prompt_embeds = self.text_encoder.text_model.final_layer_norm(prompt_embeds)
 
         if self.text_encoder is not None:
@@ -259,13 +328,10 @@ class IMAGGarment(StableDiffusionPipeline):
         prompt_embeds = prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)
 
         bs_embed, seq_len, _ = prompt_embeds.shape
-        # duplicate text embeddings for each generation per prompt, using mps friendly method
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
         prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
 
-        # get unconditional embeddings for classifier free guidance
         if do_classifier_free_guidance and negative_prompt_embeds is None:
-            uncond_tokens: List[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif prompt is not None and type(prompt) is not type(negative_prompt):
@@ -284,7 +350,6 @@ class IMAGGarment(StableDiffusionPipeline):
             else:
                 uncond_tokens = negative_prompt
 
-            # textual inversion: procecss multi-vector tokens if necessary
             if isinstance(self, TextualInversionLoaderMixin):
                 uncond_tokens = self.maybe_convert_prompt(uncond_tokens, self.tokenizer)
 
@@ -309,30 +374,26 @@ class IMAGGarment(StableDiffusionPipeline):
             negative_prompt_embeds = negative_prompt_embeds[0]
 
         if do_classifier_free_guidance:
-            # duplicate unconditional embeddings for each generation per prompt, using mps friendly method
             seq_len = negative_prompt_embeds.shape[1]
-
             negative_prompt_embeds = negative_prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)
-
             negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)
             negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
 
         if isinstance(self, LoraLoaderMixin) and USE_PEFT_BACKEND:
-            # Retrieve the original scale by scaling back the LoRA layers
             unscale_lora_layers(self.text_encoder, lora_scale)
 
         return prompt_embeds, negative_prompt_embeds
 
     def prepare_latents(
-            self,
-            batch_size,
-            num_channels_latents,
-            width,
-            height,
-            dtype,
-            device,
-            generator,
-            latents=None,
+        self,
+        batch_size,
+        num_channels_latents,
+        width,
+        height,
+        dtype,
+        device,
+        generator,
+        latents=None,
     ):
         shape = (
             batch_size,
@@ -347,29 +408,23 @@ class IMAGGarment(StableDiffusionPipeline):
             )
 
         if latents is None:
-            latents = randn_tensor(
-                shape, generator=generator, device=device, dtype=dtype
-            )
+            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
         else:
             latents = latents.to(device)
 
-        # scale the initial noise by the standard deviation required by the scheduler
         latents = latents * self.scheduler.init_noise_sigma
         return latents
 
     def prepare_condition(
-            self,
-            cond_image,
-            width,
-            height,
-            device,
-            dtype,
-            do_classififer_free_guidance=False,
+        self,
+        cond_image,
+        width,
+        height,
+        device,
+        dtype,
+        do_classififer_free_guidance=False,
     ):
-        image = self.cond_image_processor.preprocess(
-            cond_image, height=height, width=width
-        ).to(dtype=torch.float32)
-
+        image = self.cond_image_processor.preprocess(cond_image, height=height, width=width).to(dtype=torch.float32)
         image = image.to(device=device, dtype=dtype)
 
         if do_classififer_free_guidance:
@@ -383,57 +438,62 @@ class IMAGGarment(StableDiffusionPipeline):
             if isinstance(pil_image, Image.Image):
                 pil_image = [pil_image]
             clip_image = self.clip_image_processor(images=pil_image, return_tensors="pt").pixel_values
-            clip_image_embeds = self.image_encoder(clip_image.to(self.device, dtype=torch.float16)).image_embeds
+            clip_image_embeds = self.image_encoder(
+                clip_image.to(self.device, dtype=torch.float16)
+            ).image_embeds
         else:
             clip_image_embeds = clip_image_embeds.to(self.device, dtype=torch.float16)
-       
+
         image_prompt_embeds = self.image_proj_model(clip_image_embeds)
         uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
         return image_prompt_embeds, uncond_image_prompt_embeds
 
-    def set_scale(self, sketch_scale ):
+    def set_scale(self, sketch_scale):
         for attn_processor in self.unet.attn_processors.values():
             if isinstance(attn_processor, LogoRefSAttnProcessor2_0):
                 attn_processor.scale = sketch_scale
+
     def set_ipa_scale(self, ipa_scale):
         for attn_processor in self.unet.attn_processors.values():
             if isinstance(attn_processor, IPAttnProcessor2_0):
                 attn_processor.scale = ipa_scale
+
     @torch.no_grad()
     def __call__(
-            self,
-            prompt,
-            null_prompt,
-            negative_prompt,
-            ref_image,
-            width,
-            height,
-            num_inference_steps,
-            guidance_scale,
-            logo,
-            mask,
-            color_clip_image=None,
-            color_embeds=None,
-            ref_clip_image=None,
-            num_images_per_prompt=1,
-            sketch_scale=1.0,
-            ipa_scale=1.0,
-            num_samples=1,
-            eta: float = 0.0,
-            generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-            output_type: Optional[str] = "pil",
-            return_dict: bool = True,
-            clip_skip: Optional[int] = None,
-            callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
-            callback_steps: Optional[int] = 1,
-            prompt_embeds: Optional[torch.FloatTensor] = None,
-            negative_prompt_embeds: Optional[torch.FloatTensor] = None,
-            cross_attention_kwargs: Optional[Dict[str, Any]] = None,
-            **kwargs,
+        self,
+        prompt,
+        null_prompt,
+        negative_prompt,
+        ref_image,
+        width,
+        height,
+        num_inference_steps,
+        guidance_scale,
+        logo,
+        mask,
+        texture_clip_image=None,
+        texture_embeds=None,
+        ref_clip_image=None,
+        num_images_per_prompt=1,
+        sketch_scale=1.0,
+        ipa_scale=1.0,
+        num_samples=1,
+        eta: float = 0.0,
+        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        output_type: Optional[str] = "pil",
+        return_dict: bool = True,
+        clip_skip: Optional[int] = None,
+        callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
+        callback_steps: Optional[int] = 1,
+        prompt_embeds: Optional[torch.FloatTensor] = None,
+        negative_prompt_embeds: Optional[torch.FloatTensor] = None,
+        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ):
-        self.set_scale(sketch_scale )
+        self.set_scale(sketch_scale)
         self.set_ipa_scale(ipa_scale)
-        # Default height and width to unet
+        self.guidance_scale = guidance_scale
+
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
 
@@ -442,13 +502,11 @@ class IMAGGarment(StableDiffusionPipeline):
         self._clip_skip = clip_skip
         do_classifier_free_guidance = guidance_scale > 1.0
 
-        # Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
         timesteps = self.scheduler.timesteps
 
         batch_size = 1
 
-        # 3. Encode input prompt
         text_encoder_lora_scale = (
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
         )
@@ -461,29 +519,31 @@ class IMAGGarment(StableDiffusionPipeline):
             prompt_embeds=prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
             lora_scale=text_encoder_lora_scale,
-            clip_skip=self.clip_skip,
+            clip_skip=self._clip_skip,
         )
 
+        image_prompt_embeds = None
+        uncond_image_prompt_embeds = None
 
-       # Get color embedding 
-        if color_clip_image is not None:
-            image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(color_clip_image, color_embeds)
+        if texture_clip_image is not None or texture_embeds is not None:
+            image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
+                pil_image=texture_clip_image,
+                clip_image_embeds=texture_embeds,
+            )
 
             bs_embed, seq_len, _ = image_prompt_embeds.shape
             image_prompt_embeds = image_prompt_embeds.repeat(1, num_samples, 1)
             image_prompt_embeds = image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
+
             uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
             uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
 
-        # For classifier free guidance, we need to do two forward passes.
-        # to avoid doing two forward passes
-        prompt_embeds = torch.cat([prompt_embeds, image_prompt_embeds], dim=1)
-        if do_classifier_free_guidance:
+            prompt_embeds = torch.cat([prompt_embeds, image_prompt_embeds], dim=1)
 
-            if color_clip_image is not None:
-                negative_prompt_embeds = torch.cat([negative_prompt_embeds, uncond_image_prompt_embeds], dim=1)
-            else:
-                negative_prompt_embeds = negative_prompt_embeds
+            if do_classifier_free_guidance:
+                negative_prompt_embeds = torch.cat(
+                    [negative_prompt_embeds, uncond_image_prompt_embeds], dim=1
+                )
 
         num_channels_latents = self.unet.config.in_channels
         latents = self.prepare_latents(
@@ -496,67 +556,53 @@ class IMAGGarment(StableDiffusionPipeline):
             generator,
         )
 
-        # Prepare extra step kwargs.
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
-        # Prepare ref image latents
-        ref_image_tensor = ref_image.to(
-            dtype=self.vae.dtype, device=self.vae.device
-        ) 
+        ref_image_tensor = ref_image.to(dtype=self.vae.dtype, device=self.vae.device)
         ref_image_latents = self.vae.encode(ref_image_tensor).latent_dist.mean
-        ref_image_latents = ref_image_latents * 0.18215  # (b, 4, h, w)
+        ref_image_latents = ref_image_latents * 0.18215
 
-
-
-        # denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                # 1. Forward reference image  
                 if i == 0:
-
                     _ = self.reference_unet(
                         ref_image_latents,
                         torch.zeros_like(t),
-                        encoder_hidden_states= None ,#null_prompt_embeds.repeat(3,1,1),
+                        encoder_hidden_states=None,
                         return_dict=False,
                     )
 
-                    # get cache tensors
                     sa_hidden_states = {}
                     for name in self.reference_unet.attn_processors.keys():
-                        if "attn1" in  name:
+                        if "attn1" in name:
                             sa_hidden_states[name] = self.reference_unet.attn_processors[name].cache["hidden_states"]
 
-                # 3.1 expand the latents if we are doing classifier free guidance
                 latent_model_input = (
                     torch.cat([latents] * 2) if do_classifier_free_guidance else latents
                 )
-                latent_model_input = self.scheduler.scale_model_input(
-                    latent_model_input, t
-                )
+                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                # Optionally get Guidance Scale Embedding
                 timestep_cond = None
                 if self.unet.config.time_cond_proj_dim is not None:
                     guidance_scale_tensor = torch.tensor(self.guidance_scale - 1).repeat(
-                        batch_size * num_images_per_prompt)
+                        batch_size * num_images_per_prompt
+                    )
                     timestep_cond = self.get_guidance_scale_embedding(
-                        guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
+                        guidance_scale_tensor,
+                        embedding_dim=self.unet.config.time_cond_proj_dim,
                     ).to(device=device, dtype=latents.dtype)
 
                 noise_pred = self.unet(
                     latent_model_input[0].unsqueeze(0),
                     t,
                     encoder_hidden_states=prompt_embeds,
-                    cross_attention_kwargs={
-                        "sa_hidden_states": sa_hidden_states,
-                    },
+                    cross_attention_kwargs={"sa_hidden_states": sa_hidden_states},
                     timestep_cond=timestep_cond,
                     added_cond_kwargs=None,
                     return_dict=False,
                 )[0]
-                # for negative_prompt_embeds non text
+
                 if do_classifier_free_guidance:
                     unc_noise_pred = self.unet(
                         latent_model_input[1].unsqueeze(0),
@@ -567,38 +613,31 @@ class IMAGGarment(StableDiffusionPipeline):
                         return_dict=False,
                     )[0]
 
-                # perform guidance
-                if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = unc_noise_pred, noise_pred
-
                     noise_pred = noise_pred_uncond + guidance_scale * (
-                            noise_pred_text - noise_pred_uncond
+                        noise_pred_text - noise_pred_uncond
                     )
 
-                # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(
                     noise_pred, t, latents, **extra_step_kwargs, return_dict=False
                 )[0]
 
-                # call the callback, if provided
                 if i == len(timesteps) - 1 or (
-                        (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
                 ):
                     progress_bar.update()
                     if callback is not None and i % callback_steps == 0:
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
 
-       # Convey image latents and other condition to LEM pipeline
-
         image = self.lem.generate(
-                        image=latents,
-                        condition_image=logo,
-                        mask=mask,
-                        num_inference_steps=50, 
-                        guidance_scale=guidance_scale,
-                        height =height,
-                        width = width,
-                        generator=generator
-                        )
+            image=latents,
+            condition_image=logo,
+            mask=mask,
+            num_inference_steps=50,
+            guidance_scale=guidance_scale,
+            height=height,
+            width=width,
+            generator=generator,
+        )
         return image

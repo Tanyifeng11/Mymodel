@@ -72,7 +72,7 @@ def image_grid(imgs, rows, cols):
 def prepare(args):
     generator = torch.Generator(device=args.device).manual_seed(42)
     
-    #GAM prepare
+    #GAM data
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(dtype=torch.float16, device=args.device)
     tokenizer = CLIPTokenizer.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="tokenizer")
     text_encoder = CLIPTextModel.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="text_encoder").to(
@@ -161,7 +161,7 @@ def prepare(args):
     )
     
     
-    #LEM prepare
+    #LEM data
     base_model_path = "stable-diffusion-v1-5/stable-diffusion-inpainting"
     attn_ckpt = args.LEM_model_ckpt
     LEM_unet = UNet2DConditionModel.from_pretrained(base_model_path, subfolder="unet").to(device=args.device,dtype=torch.float16)
@@ -170,7 +170,7 @@ def prepare(args):
     
     pipe = IMAGGarment(unet=unet, reference_unet=ref_unet, vae=vae, tokenizer=tokenizer,
                          text_encoder=text_encoder, image_encoder=image_encoder,
-                         color_ckpt=args.color_ckpt,
+                         texture_ckpt=args.texture_ckpt,
                          scheduler=noise_scheduler,
                          lem=LEM_pipeline,
                          safety_checker=StableDiffusionSafetyChecker,
@@ -186,9 +186,9 @@ if __name__ == "__main__":
     parser.add_argument('--sketch_path', type=str, required=True)
     parser.add_argument('--logo_path', type=str, required=True)
     parser.add_argument('--mask_path', type=str, required=True)
-    parser.add_argument('--color_path',type=str,required=True)
+    parser.add_argument('--texture_path',type=str,required=True)
     parser.add_argument('--output_path', type=str, default="./output_sd_base")
-    parser.add_argument('--color_ckpt', type=str, required=True)
+    parser.add_argument('--texture_ckpt', type=str, required=True)
 
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument(
@@ -241,19 +241,19 @@ if __name__ == "__main__":
     logo ,mask = preprocess(Image.open(args.logo_path),Image.open(args.mask_path),args.height,args.width)
     logo,mask = back_to_pic(logo,mask)
     
-    if args.color_path is not None:
-        color_image = Image.open(args.color_path)
+    if args.texture_path is not None:
+        texture_image = Image.open(args.texture_path)
     else:
-        color_embeds = None
-        color_clip_image = None
+        texture_embeds = None
+        texture_clip_image = None
     
     output = pipe(
         ref_image=vae_sketch,
         logo=logo,
         mask=mask,
         prompt=prompt,
-        color_clip_image=color_image,
-        color_embeds=None,
+        texture_clip_image=texture_image,
+        texture_embeds=None,
         null_prompt=null_prompt,
         negative_prompt=negative_prompt,
         width=512,
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 
     save_output = []
     save_output.append(output[0])
-    save_output.insert(0,color_image.resize((512, 640), Image.BICUBIC))
+    save_output.insert(0,texture_image.resize((512, 640), Image.BICUBIC))
     save_output.insert(0, sketch_img.resize((512, 640), Image.BICUBIC))
     
     

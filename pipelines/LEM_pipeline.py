@@ -302,7 +302,7 @@ class LEM:
                 
                 non_inpainting_latent_model_input = (torch.cat([latents] * 2) if do_classifier_free_guidance else latents)
                 non_inpainting_latent_model_input = self.noise_scheduler.scale_model_input(non_inpainting_latent_model_input, t)
-                # prepare the input for the inpainting model
+                # data the input for the inpainting model
                 # concat in channel
                 inpainting_latent_model_input = torch.cat([non_inpainting_latent_model_input, mask_latent_concat, masked_latent_concat], dim=1)
                 # predict the noise residual

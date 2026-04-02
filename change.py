@@ -13,4 +13,4 @@ for k in sd:
     elif k.startswith("adapter_modules"):
         ip_sd[k.replace("adapter_modules.", "")] = sd[k]
 
-torch.save({"image_proj": image_proj_sd, "color_adapter": ip_sd}, os.path.join(save_folder,"color_adapter.bin"))
+torch.save({"image_proj": image_proj_sd, "texture_adapter": ip_sd}, os.path.join(save_folder,"texture_adapter.bin"))
