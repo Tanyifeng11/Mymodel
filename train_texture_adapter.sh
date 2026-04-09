@@ -52,6 +52,9 @@ DATALOADER_NUM_WORKERS=2
 SAVE_STEPS=50
 MIXED_PRECISION="fp16"
 REPORT_TO="tensorboard"
+WANDB_PROJECT="IMAGGarment-1"
+WANDB_RUN_NAME="texture-adapter-exp1"
+WANDB_MODE="online" # online/offline/disabled
 
 # =========================
 # Build command
@@ -75,6 +78,9 @@ CMD=(
   --save_steps "${SAVE_STEPS}"
   --mixed_precision "${MIXED_PRECISION}"
   --report_to "${REPORT_TO}"
+  --wandb_project "${WANDB_PROJECT}"
+  --wandb_run_name "${WANDB_RUN_NAME}"
+  --wandb_mode "${WANDB_MODE}"
 )
 
 if [ -n "${PRETRAINED_TEXTURE_ADAPTER_PATH}" ]; then
