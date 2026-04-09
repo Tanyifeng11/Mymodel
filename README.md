@@ -91,18 +91,28 @@ sh train_GAM.sh
 # train LEM model
 sh train_LEM.sh
 ```
+
+### 📊 Use Weights & Biases (wandb) for training monitoring
+All three training scripts now support wandb directly:
+
+```bash
+--report_to wandb \
+--wandb_project IMAGGarment-1 \
+--wandb_run_name exp_name \
+--wandb_mode online
+```
+
+The training loop logs dataset and step metrics such as `train/loss`, `train/lr`, `train/data_time`, and `train/step_time`.
+
 ## 🚀 How to test
 ```
 python inference_IMAGGarment-1.py \
 --GAM_model_ckpt [GAM checkpoint] \
---LEM_model_ckpt [LEM chekcpoint] \
 --sketch_path [your sketch path] \
---logo_path [your logo path] \
---mask_path [your mask path] \
---color_path [your color path] \
+--texture_path [your texture path] \
 --prompt [your prompt] \
 --output_path [your save path] \
---color_ckpt [color adapter checkpoint] \
+--texture_ckpt [texture adapter checkpoint] \
 --device [your device]
 ```
 ## Acknowledgement
