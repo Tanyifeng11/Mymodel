@@ -299,6 +299,31 @@ def parse_args():
         default="tensorboard",
         help='Reporting backend: "tensorboard", "wandb", "comet_ml", or "all".',
     )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="IMAGGarment-1",
+        help="Weights & Biases project name.",
+    )
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases run name.",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases team/user entity.",
+    )
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="online",
+        choices=["online", "offline", "disabled"],
+        help="Weights & Biases mode.",
+    )
     parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training.")
 
     args = parser.parse_args()
@@ -426,6 +451,26 @@ def main():
     texture_adapter, optimizer, train_dataloader = accelerator.prepare(
         texture_adapter, optimizer, train_dataloader
     )
+    if accelerator.is_main_process:
+        init_kwargs = None
+        if args.report_to in ("wandb", "all"):
+            init_kwargs = {
+                "wandb": {
+                    "project": args.wandb_project,
+                    "name": args.wandb_run_name,
+                    "entity": args.wandb_entity,
+                    "mode": args.wandb_mode,
+                }
+            }
+        accelerator.init_trackers("texture_adapter_training", config=vars(args), init_kwargs=init_kwargs)
+        accelerator.log(
+            {
+                "dataset/num_samples": len(train_dataset),
+                "dataset/num_batches_per_epoch": len(train_dataloader),
+                "dataset/total_batch_size": args.train_batch_size * accelerator.num_processes,
+            },
+            step=0,
+        )
 
     global_step = 0
     for epoch in range(args.num_train_epochs):
@@ -488,6 +533,18 @@ def main():
                         f"Epoch {epoch}, step {step}, data_time: {load_data_time:.4f}, "
                         f"time: {time.perf_counter() - begin:.4f}, step_loss: {avg_loss:.6f}"
                     )
+                if accelerator.sync_gradients:
+                    accelerator.log(
+                        {
+                            "train/loss": avg_loss,
+                            "train/step_loss": loss.detach().item(),
+                            "train/lr": optimizer.param_groups[0]["lr"],
+                            "train/data_time": load_data_time,
+                            "train/step_time": time.perf_counter() - begin,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
 
             global_step += 1
 
@@ -503,6 +560,8 @@ def main():
                     )
 
             begin = time.perf_counter()
+
+    accelerator.end_training()
 
 
 if __name__ == "__main__":
