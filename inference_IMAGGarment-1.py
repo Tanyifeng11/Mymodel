@@ -1,5 +1,4 @@
 from pipelines.IMAGGarment_pipeline import IMAGGarment
-from pipelines.LEM_pipeline import LEM
 import os
 import torch
 
@@ -8,35 +7,9 @@ from diffusers import UNet2DConditionModel, AutoencoderKL, DDIMScheduler
 from torchvision import transforms
 from transformers import CLIPImageProcessor
 from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
-from diffusers.image_processor import VaeImageProcessor
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 from adapter.attention_processor import LogoCacheSAttnProcessor2_0, LogoRefSAttnProcessor2_0, LogoCacheCAttnProcessor2_0 , CAttnProcessor2_0,IPAttnProcessor2_0
 import argparse
-from adapter.resampler import Resampler
-
-
-def preprocess( logo ,mask ,height ,width):
-    vae_processor = VaeImageProcessor(vae_scale_factor=8) 
-    mask_processor = VaeImageProcessor(vae_scale_factor=8, do_normalize=False, do_binarize=True, do_convert_grayscale=True)
-    
-    logo = vae_processor.preprocess(logo, height, width)[0]
-    mask = mask_processor.preprocess(mask, height, width)[0]
-    
-    
-    return logo,mask
-def back_to_pic(logo,mask):
-
-    if logo.min() < 0:
-        logo = (logo + 1) / 2  
-    logo = logo.permute(1, 2, 0).numpy()
-
-    logo = (logo * 255).astype("uint8")
-    logo = Image.fromarray(logo)
-
-    mask = mask.squeeze(0).numpy()
-    mask = (mask * 255).astype("uint8")
-    mask = Image.fromarray(mask, mode="L")
-    return logo,mask
 
 
 def resize_img(input_image, max_side=640, min_side=512, size=None,
@@ -159,20 +132,10 @@ def prepare(args):
         set_alpha_to_one=False,
         steps_offset=1,
     )
-    
-    
-    #LEM data
-    base_model_path = "stable-diffusion-v1-5/stable-diffusion-inpainting"
-    attn_ckpt = args.LEM_model_ckpt
-    LEM_unet = UNet2DConditionModel.from_pretrained(base_model_path, subfolder="unet").to(device=args.device,dtype=torch.float16)
-    LEM_noise_scheduler = DDIMScheduler.from_pretrained(base_model_path, subfolder="scheduler")
-    LEM_pipeline = LEM(LEM_unet,vae,attn_ckpt,LEM_noise_scheduler,args.device)
-    
     pipe = IMAGGarment(unet=unet, reference_unet=ref_unet, vae=vae, tokenizer=tokenizer,
                          text_encoder=text_encoder, image_encoder=image_encoder,
                          texture_ckpt=args.texture_ckpt,
                          scheduler=noise_scheduler,
-                         lem=LEM_pipeline,
                          safety_checker=StableDiffusionSafetyChecker,
                          feature_extractor=CLIPImageProcessor)
     return pipe, generator
@@ -181,14 +144,15 @@ def prepare(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='IMAGGarment')
     parser.add_argument('--GAM_model_ckpt',type=str)
-    parser.add_argument('--LEM_model_ckpt',type=str)
     parser.add_argument('--prompt',type=str,default="A cloth")
     parser.add_argument('--sketch_path', type=str, required=True)
-    parser.add_argument('--logo_path', type=str, required=True)
-    parser.add_argument('--mask_path', type=str, required=True)
     parser.add_argument('--texture_path',type=str,required=True)
     parser.add_argument('--output_path', type=str, default="./output_sd_base")
     parser.add_argument('--texture_ckpt', type=str, required=True)
+    parser.add_argument('--guidance_scale', type=float, default=7.0)
+    parser.add_argument('--sketch_scale', type=float, default=0.6)
+    parser.add_argument('--ipa_scale', type=float, default=1.0)
+    parser.add_argument('--num_inference_steps', type=int, default=50)
 
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument(
@@ -238,8 +202,6 @@ if __name__ == "__main__":
     sketch_img = Image.open(args.sketch_path).convert("RGB")
     sketch_img = resize_img(sketch_img)
     vae_sketch = img_transform(sketch_img).unsqueeze(0)
-    logo ,mask = preprocess(Image.open(args.logo_path),Image.open(args.mask_path),args.height,args.width)
-    logo,mask = back_to_pic(logo,mask)
     
     if args.texture_path is not None:
         texture_image = Image.open(args.texture_path)
@@ -249,21 +211,19 @@ if __name__ == "__main__":
     
     output = pipe(
         ref_image=vae_sketch,
-        logo=logo,
-        mask=mask,
         prompt=prompt,
         texture_clip_image=texture_image,
         texture_embeds=None,
         null_prompt=null_prompt,
         negative_prompt=negative_prompt,
-        width=512,
-        height=640,
+        width=args.width,
+        height=args.height,
         num_images_per_prompt=num_samples,
-        guidance_scale=7.0,
-        sketch_scale=0.6,
-        ipa_scale=1.0,
+        guidance_scale=args.guidance_scale,
+        sketch_scale=args.sketch_scale,
+        ipa_scale=args.ipa_scale,
         generator=generator,
-        num_inference_steps=50,
+        num_inference_steps=args.num_inference_steps,
 
     )
 
@@ -271,11 +231,7 @@ if __name__ == "__main__":
     save_output.append(output[0])
     save_output.insert(0,texture_image.resize((512, 640), Image.BICUBIC))
     save_output.insert(0, sketch_img.resize((512, 640), Image.BICUBIC))
-    
-    
-    save_output.insert(1, Image.open(args.logo_path).convert('RGB').resize((512,640),Image.BICUBIC))
-    save_output.insert(1, Image.open(args.mask_path).resize((512,640),Image.BICUBIC))
-    grid = image_grid(save_output, 1, 5)
+    grid = image_grid(save_output, 1, 3)
     grid.save(
         output_path + '/' + args.sketch_path.split("/")[-1])
     
