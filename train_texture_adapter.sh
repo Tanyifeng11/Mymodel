@@ -40,30 +40,23 @@ PRETRAINED_TEXTURE_ADAPTER_PATH=""
 # =========================
 # Training hyperparameters
 # =========================
-#RESOLUTION=512
-#LEARNING_RATE=1e-4
-#WEIGHT_DECAY=1e-2
-#NUM_TRAIN_EPOCHS=25
-#TRAIN_BATCH_SIZE=8
-#DATALOADER_NUM_WORKERS=2
-#SAVE_STEPS=4380
-#MIXED_PRECISION="fp16"
-
 RESOLUTION=512
-LEARNING_RATE=3e-5
-WEIGHT_DECAY=1e-4
-NUM_TRAIN_EPOCHS=15
-TRAIN_BATCH_SIZE=16
-GRADIENT_ACCUMULATION_STEPS=2
-LR_SCHEDULER=cosine
-LR_WARMUP_STEPS=500
-SAVE_STEPS=1000
-MAX_GRAD_NORM=1.0
-
-REPORT_TO="wandb"
-WANDB_PROJECT="Mymodel"
-WANDB_RUN_NAME="texture-adapter-exp2"
-WANDB_MODE="online"   # online/offline/disabled
+WIDTH=512
+HEIGHT=640
+LEARNING_RATE=1e-4
+WEIGHT_DECAY=1e-2
+NUM_TRAIN_EPOCHS=25
+TRAIN_BATCH_SIZE=8
+DATALOADER_NUM_WORKERS=2
+SAVE_STEPS=50
+I_DROP_RATE=0.05
+T_DROP_RATE=0.05
+TI_DROP_RATE=0.05
+MIXED_PRECISION="fp16"
+REPORT_TO="tensorboard"
+WANDB_PROJECT="IMAGGarment-1"
+WANDB_RUN_NAME="texture-adapter-exp1"
+WANDB_MODE="online" # online/offline/disabled
 
 # =========================
 # Build command
@@ -79,12 +72,17 @@ CMD=(
   --output_dir "${OUTPUT_DIR}"
   --logging_dir "${LOGGING_DIR}"
   --resolution "${RESOLUTION}"
+  --width "${WIDTH}"
+  --height "${HEIGHT}"
   --learning_rate "${LEARNING_RATE}"
   --weight_decay "${WEIGHT_DECAY}"
   --num_train_epochs "${NUM_TRAIN_EPOCHS}"
   --train_batch_size "${TRAIN_BATCH_SIZE}"
   --dataloader_num_workers "${DATALOADER_NUM_WORKERS}"
   --save_steps "${SAVE_STEPS}"
+  --i_drop_rate "${I_DROP_RATE}"
+  --t_drop_rate "${T_DROP_RATE}"
+  --ti_drop_rate "${TI_DROP_RATE}"
   --mixed_precision "${MIXED_PRECISION}"
   --report_to "${REPORT_TO}"
   --wandb_project "${WANDB_PROJECT}"

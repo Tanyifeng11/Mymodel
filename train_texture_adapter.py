@@ -49,6 +49,8 @@ class MyDataset(torch.utils.data.Dataset):
         json_file,
         tokenizer,
         size=512,
+        height=640,
+        width=512,
         t_drop_rate=0.05,
         i_drop_rate=0.05,
         ti_drop_rate=0.05,
@@ -58,6 +60,8 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.tokenizer = tokenizer
         self.size = size
+        self.height = height
+        self.width = width
         self.i_drop_rate = i_drop_rate
         self.t_drop_rate = t_drop_rate
         self.ti_drop_rate = ti_drop_rate
@@ -68,8 +72,8 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.transform = transforms.Compose(
             [
-                transforms.Resize([640, 512], interpolation=transforms.InterpolationMode.BILINEAR),
-                transforms.CenterCrop([640, 512]),
+                transforms.Resize([self.height, self.width], interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.CenterCrop([self.height, self.width]),
                 transforms.ToTensor(),
                 transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
             ]
@@ -266,6 +270,18 @@ def parse_args():
         help="Resolution for input images.",
     )
     parser.add_argument(
+        "--width",
+        type=int,
+        default=512,
+        help="Training image width.",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=640,
+        help="Training image height.",
+    )
+    parser.add_argument(
         "--learning_rate",
         type=float,
         default=1e-4,
@@ -279,6 +295,24 @@ def parse_args():
         type=int,
         default=0,
         help="Number of workers for dataloader.",
+    )
+    parser.add_argument(
+        "--i_drop_rate",
+        type=float,
+        default=0.05,
+        help="Probability to drop texture image condition for CFG-style training.",
+    )
+    parser.add_argument(
+        "--t_drop_rate",
+        type=float,
+        default=0.05,
+        help="Probability to drop text condition for CFG-style training.",
+    )
+    parser.add_argument(
+        "--ti_drop_rate",
+        type=float,
+        default=0.05,
+        help="Probability to drop both text and texture image condition for CFG-style training.",
     )
     parser.add_argument(
         "--save_steps",
@@ -437,6 +471,11 @@ def main():
         args.data_json_file,
         tokenizer=tokenizer,
         size=args.resolution,
+        height=args.height,
+        width=args.width,
+        i_drop_rate=args.i_drop_rate,
+        t_drop_rate=args.t_drop_rate,
+        ti_drop_rate=args.ti_drop_rate,
         image_root_path=args.data_root_path,
     )
 
@@ -463,40 +502,6 @@ def main():
                 }
             }
         accelerator.init_trackers("texture_adapter_training", config=vars(args), init_kwargs=init_kwargs)
-        accelerator.log(
-            {
-                "dataset/num_samples": len(train_dataset),
-                "dataset/num_batches_per_epoch": len(train_dataloader),
-                "dataset/total_batch_size": args.train_batch_size * accelerator.num_processes,
-            },
-            step=0,
-        )
-
-    if accelerator.is_main_process:
-        init_kwargs = None
-        tracker_project_name = "texture_adapter_training"
-
-        if args.report_to in ("wandb", "all"):
-            tracker_project_name = args.wandb_project
-
-            wandb_kwargs = {
-                "mode": args.wandb_mode,
-            }
-            if args.wandb_run_name:
-                wandb_kwargs["name"] = args.wandb_run_name
-            if args.wandb_entity:
-                wandb_kwargs["entity"] = args.wandb_entity
-
-            init_kwargs = {
-                "wandb": wandb_kwargs
-            }
-
-        accelerator.init_trackers(
-            tracker_project_name,
-            config=vars(args),
-            init_kwargs=init_kwargs,
-        )
-
         accelerator.log(
             {
                 "dataset/num_samples": len(train_dataset),
