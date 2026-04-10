@@ -1,0 +1,8 @@
+.idea/
+__pycache__/
+*.pyc
+output/
+output_sd_base/
+outputs/
+*.zip
+timed

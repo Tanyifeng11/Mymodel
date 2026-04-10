@@ -302,7 +302,7 @@ def parse_args():
     parser.add_argument(
         "--wandb_project",
         type=str,
-        default="IMAGGarment-1",
+        default="Mymodel",
         help="Weights & Biases project name.",
     )
     parser.add_argument(
@@ -451,18 +451,32 @@ def main():
     texture_adapter, optimizer, train_dataloader = accelerator.prepare(
         texture_adapter, optimizer, train_dataloader
     )
+
     if accelerator.is_main_process:
         init_kwargs = None
+        tracker_project_name = "texture_adapter_training"
+
         if args.report_to in ("wandb", "all"):
-            init_kwargs = {
-                "wandb": {
-                    "project": args.wandb_project,
-                    "name": args.wandb_run_name,
-                    "entity": args.wandb_entity,
-                    "mode": args.wandb_mode,
-                }
+            tracker_project_name = args.wandb_project
+
+            wandb_kwargs = {
+                "mode": args.wandb_mode,
             }
-        accelerator.init_trackers("texture_adapter_training", config=vars(args), init_kwargs=init_kwargs)
+            if args.wandb_run_name:
+                wandb_kwargs["name"] = args.wandb_run_name
+            if args.wandb_entity:
+                wandb_kwargs["entity"] = args.wandb_entity
+
+            init_kwargs = {
+                "wandb": wandb_kwargs
+            }
+
+        accelerator.init_trackers(
+            tracker_project_name,
+            config=vars(args),
+            init_kwargs=init_kwargs,
+        )
+
         accelerator.log(
             {
                 "dataset/num_samples": len(train_dataset),

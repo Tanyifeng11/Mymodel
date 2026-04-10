@@ -492,7 +492,7 @@ class IMAGGarment(StableDiffusionPipeline):
     ):
         self.set_scale(sketch_scale)
         self.set_ipa_scale(ipa_scale)
-        self.guidance_scale = guidance_scale
+        self._guidance_scale = guidance_scale
 
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
