@@ -104,6 +104,16 @@ All three training scripts now support wandb directly:
 
 The training loop logs dataset and step metrics such as `train/loss`, `train/lr`, `train/data_time`, and `train/step_time`.
 
+### 🎛️ Texture control tuning knobs
+- `train_texture_adapter.py` now supports condition drop rates:
+  - `--i_drop_rate` (drop texture image condition)
+  - `--t_drop_rate` (drop text condition)
+  - `--ti_drop_rate` (drop both)
+- training shape controls:
+  - `--width`, `--height` (used by resize/crop pipeline)
+- inference controls:
+  - `--guidance_scale`, `--sketch_scale`, `--ipa_scale`, `--num_inference_steps`
+
 ## 🚀 How to test
 ```
 python inference_IMAGGarment-1.py \
@@ -113,6 +123,8 @@ python inference_IMAGGarment-1.py \
 --prompt [your prompt] \
 --output_path [your save path] \
 --texture_ckpt [texture adapter checkpoint] \
+--ipa_scale 1.4 \
+--guidance_scale 5.5 \
 --device [your device]
 ```
 python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --LEM_model_ckpt ./weight/LEM.bin --sketch_path ./assets/sketch.png --logo_path ./assets/logo.png --mask_path ./assets/shirt_mask.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask.png --texture_ckpt ./output/texture_adapter_MMG/checkpoint-21900/texture_adapter.bin --device cuda

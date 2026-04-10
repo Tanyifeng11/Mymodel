@@ -149,6 +149,10 @@ if __name__ == "__main__":
     parser.add_argument('--texture_path',type=str,required=True)
     parser.add_argument('--output_path', type=str, default="./output_sd_base")
     parser.add_argument('--texture_ckpt', type=str, required=True)
+    parser.add_argument('--guidance_scale', type=float, default=7.0)
+    parser.add_argument('--sketch_scale', type=float, default=0.6)
+    parser.add_argument('--ipa_scale', type=float, default=1.0)
+    parser.add_argument('--num_inference_steps', type=int, default=50)
 
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument(
@@ -212,14 +216,14 @@ if __name__ == "__main__":
         texture_embeds=None,
         null_prompt=null_prompt,
         negative_prompt=negative_prompt,
-        width=512,
-        height=640,
+        width=args.width,
+        height=args.height,
         num_images_per_prompt=num_samples,
-        guidance_scale=7.0,
-        sketch_scale=0.6,
-        ipa_scale=1.0,
+        guidance_scale=args.guidance_scale,
+        sketch_scale=args.sketch_scale,
+        ipa_scale=args.ipa_scale,
         generator=generator,
-        num_inference_steps=50,
+        num_inference_steps=args.num_inference_steps,
 
     )
 
