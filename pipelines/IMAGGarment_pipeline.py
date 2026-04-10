@@ -20,8 +20,6 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import *
 from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
-from .LEM_pipeline import LEM
-
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
@@ -58,7 +56,6 @@ class IMAGGarment(StableDiffusionPipeline):
         text_encoder,
         image_encoder,
         texture_ckpt,
-        lem,
         scheduler: Union[
             DDIMScheduler,
             PNDMScheduler,
@@ -94,7 +91,6 @@ class IMAGGarment(StableDiffusionPipeline):
             do_convert_rgb=True,
             do_normalize=False,
         )
-        self.lem = lem
 
         # texture adapter
         self.texture_ckpt = texture_ckpt
@@ -469,8 +465,6 @@ class IMAGGarment(StableDiffusionPipeline):
         height,
         num_inference_steps,
         guidance_scale,
-        logo,
-        mask,
         texture_clip_image=None,
         texture_embeds=None,
         ref_clip_image=None,
@@ -630,14 +624,9 @@ class IMAGGarment(StableDiffusionPipeline):
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
 
-        image = self.lem.generate(
-            image=latents,
-            condition_image=logo,
-            mask=mask,
-            num_inference_steps=50,
-            guidance_scale=guidance_scale,
-            height=height,
-            width=width,
-            generator=generator,
-        )
+        latents = latents / self.vae.config.scaling_factor
+        image = self.vae.decode(latents, return_dict=False)[0]
+        image = (image / 2 + 0.5).clamp(0, 1)
+        image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+        image = self.numpy_to_pil(image)
         return image
