@@ -8,38 +8,35 @@ export CUDA_VISIBLE_DEVICES=0
 export HF_HUB_DISABLE_XET=1
 export TOKENIZERS_PARALLELISM=false
 
-# WSL -> Windows proxy
-HOST_IP=$(ip route | awk '/default/ {print $3}')
-export HTTP_PROXY=http://$HOST_IP:7892
-export HTTPS_PROXY=http://$HOST_IP:7892
-export NO_PROXY=localhost,127.0.0.1
+# 不走代理，避免 HF 下载超时
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+export NO_PROXY=localhost,127.0.0.1,huggingface.co,cdn-lfs.huggingface.co,hf.co
 
 # =========================
 # Paths
 # =========================
 
-# IMPORTANT:
-# for training use the normal SD1.5 base model, NOT the inpainting model
+# SD1.5 base model
 PRETRAINED_MODEL_NAME_OR_PATH="stable-diffusion-v1-5/stable-diffusion-v1-5"
 
 # CLIP image encoder
 IMAGE_ENCODER_PATH="openai/clip-vit-large-patch14"
 
 # Training json
-DATA_JSON_FILE="/mnt/d/fuxian/IMAGGarment-1/data/train_texture.json"
+DATA_JSON_FILE="/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json"
 
 # Root folder for images referenced in json
-DATA_ROOT_PATH="/mnt/f/fuxian/datasets/vitonhd/train"
+DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/MMDGarment"
 
 # Output directory
-OUTPUT_DIR="/mnt/d/fuxian/IMAGGarment-1/output/texture_adapter"
+OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG"
 
 # Logging subdir
 LOGGING_DIR="logs"
 
-# Optional: resume from old adapter checkpoint
+# Resume from old adapter checkpoint
+#PRETRAINED_TEXTURE_ADAPTER_PATH="./output/texture_adapter_bf_fashion/checkpoint-90000/texture_adapter.bin"
 PRETRAINED_TEXTURE_ADAPTER_PATH=""
-
 # =========================
 # Training hyperparameters
 # =========================
@@ -48,8 +45,8 @@ WIDTH=512
 HEIGHT=640
 LEARNING_RATE=1e-4
 WEIGHT_DECAY=1e-2
-NUM_TRAIN_EPOCHS=1
-TRAIN_BATCH_SIZE=1
+NUM_TRAIN_EPOCHS=25
+TRAIN_BATCH_SIZE=8
 DATALOADER_NUM_WORKERS=2
 SAVE_STEPS=50
 I_DROP_RATE=0.05
@@ -97,9 +94,6 @@ if [ -n "${PRETRAINED_TEXTURE_ADAPTER_PATH}" ]; then
   CMD+=(--pretrained_texture_adapter_path "${PRETRAINED_TEXTURE_ADAPTER_PATH}")
 fi
 
-echo "HOST_IP=$HOST_IP"
-echo "HTTP_PROXY=$HTTP_PROXY"
-echo "HTTPS_PROXY=$HTTPS_PROXY"
 echo "Running command:"
 printf '%q ' "${CMD[@]}"
 echo

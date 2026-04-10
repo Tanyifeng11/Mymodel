@@ -336,7 +336,7 @@ def parse_args():
     parser.add_argument(
         "--wandb_project",
         type=str,
-        default="IMAGGarment-1",
+        default="Mymodel",
         help="Weights & Biases project name.",
     )
     parser.add_argument(

@@ -127,6 +127,8 @@ python inference_IMAGGarment-1.py \
 --guidance_scale 5.5 \
 --device [your device]
 ```
+python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --LEM_model_ckpt ./weight/LEM.bin --sketch_path ./assets/sketch.png --logo_path ./assets/logo.png --mask_path ./assets/shirt_mask.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask.png --texture_ckpt ./output/texture_adapter_MMG/checkpoint-21900/texture_adapter.bin --device cuda
+
 ## Acknowledgement
 We would like to thank the contributors to the [IMAGDressing](https://github.com/muzishen/IMAGDressing) and [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter) repositories, for their open research and exploration.
 
