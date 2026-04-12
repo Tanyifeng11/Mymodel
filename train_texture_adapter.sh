@@ -52,6 +52,8 @@ SAVE_STEPS=50
 I_DROP_RATE=0.05
 T_DROP_RATE=0.05
 TI_DROP_RATE=0.05
+BF_NUM_TOKENS=4
+BF_BASE_CHANNELS=32
 MIXED_PRECISION="fp16"
 REPORT_TO="tensorboard"
 WANDB_PROJECT="IMAGGarment-1"
@@ -83,6 +85,8 @@ CMD=(
   --i_drop_rate "${I_DROP_RATE}"
   --t_drop_rate "${T_DROP_RATE}"
   --ti_drop_rate "${TI_DROP_RATE}"
+  --bf_num_tokens "${BF_NUM_TOKENS}"
+  --bf_base_channels "${BF_BASE_CHANNELS}"
   --mixed_precision "${MIXED_PRECISION}"
   --report_to "${REPORT_TO}"
   --wandb_project "${WANDB_PROJECT}"
