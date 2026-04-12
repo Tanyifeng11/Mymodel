@@ -113,6 +113,9 @@ The training loop logs dataset and step metrics such as `train/loss`, `train/lr`
   - `--width`, `--height` (used by resize/crop pipeline)
 - inference controls:
   - `--guidance_scale`, `--sketch_scale`, `--ipa_scale`, `--num_inference_steps`
+- BF texture-only training module:
+  - `--bf_num_tokens`
+  - `--bf_base_channels`
 
 ## 🚀 How to test
 ```
