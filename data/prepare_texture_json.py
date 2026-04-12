@@ -21,9 +21,9 @@ def read_caption(txt_path: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_root", type=str, required=True,
-                        help="e.g. /mnt/f/fuxian/datasets/vitonhd/train")
+                        help="e.g. /mnt/d/tyf/fuxian/datasets/MMDGarment")
     parser.add_argument("--output_json", type=str, required=True,
-                        help="e.g. /mnt/d/fuxian/IMAGGarment-1/data/train_texture.json")
+                        help="e.g. /mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json")
     parser.add_argument("--require_sketch", action="store_true",
                         help="skip samples if sketch is missing")
     args = parser.parse_args()
@@ -31,7 +31,7 @@ def main():
     root = Path(args.dataset_root)
 
     # 固定目录，不递归乱找
-    caption_dir = root / "caption" / "raw_caption"
+    caption_dir = root / "text"
     cloth_dir = root / "cloth"
     texture_dir = root / "texture"
     sketch_dir = root / "sketch"
