@@ -17,8 +17,8 @@ from accelerate.utils import ProjectConfiguration
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 
-from adapter.texture_adapter import ImageProjModel
 from adapter.utils import is_torch2_available
+from models.bf_texture_module import BFTextureConditioner
 
 if is_torch2_available():
     from adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
@@ -49,6 +49,8 @@ class MyDataset(torch.utils.data.Dataset):
         json_file,
         tokenizer,
         size=512,
+        height=640,
+        width=512,
         t_drop_rate=0.05,
         i_drop_rate=0.05,
         ti_drop_rate=0.05,
@@ -58,6 +60,8 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.tokenizer = tokenizer
         self.size = size
+        self.height = height
+        self.width = width
         self.i_drop_rate = i_drop_rate
         self.t_drop_rate = t_drop_rate
         self.ti_drop_rate = ti_drop_rate
@@ -68,8 +72,8 @@ class MyDataset(torch.utils.data.Dataset):
 
         self.transform = transforms.Compose(
             [
-                transforms.Resize([640, 512], interpolation=transforms.InterpolationMode.BILINEAR),
-                transforms.CenterCrop([640, 512]),
+                transforms.Resize([self.height, self.width], interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.CenterCrop([self.height, self.width]),
                 transforms.ToTensor(),
                 transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
             ]
@@ -116,6 +120,7 @@ class MyDataset(torch.utils.data.Dataset):
 
         return {
             "image": cloth_image,
+            "texture_image": self.transform(texture_image),
             "text_input_ids": text_input_ids,
             "clip_texture_image": clip_texture_image,
             "drop_image_embed": drop_image_embed,
@@ -127,12 +132,14 @@ class MyDataset(torch.utils.data.Dataset):
 
 def collate_fn(data):
     images = torch.stack([example["image"] for example in data])
+    texture_images = torch.stack([example["texture_image"] for example in data])
     text_input_ids = torch.cat([example["text_input_ids"] for example in data], dim=0)
     clip_texture_images = torch.cat([example["clip_texture_image"] for example in data], dim=0)
     drop_image_embeds = [example["drop_image_embed"] for example in data]
 
     return {
         "images": images,
+        "texture_images": texture_images,
         "text_input_ids": text_input_ids,
         "clip_texture_images": clip_texture_images,
         "drop_image_embeds": drop_image_embeds,
@@ -140,31 +147,39 @@ def collate_fn(data):
 
 
 class TextureAdapter(torch.nn.Module):
-    def __init__(self, unet, image_proj_model, adapter_modules, ckpt_path=None):
+    def __init__(
+        self,
+        unet,
+        adapter_modules,
+        bf_texture_conditioner,
+        ckpt_path=None,
+    ):
         super().__init__()
         self.unet = unet
-        self.image_proj_model = image_proj_model
         self.adapter_modules = adapter_modules
+        self.bf_texture_conditioner = bf_texture_conditioner
 
         if ckpt_path is not None:
             self.load_from_checkpoint(ckpt_path)
 
-    def forward(self, noisy_latents, timesteps, encoder_hidden_states, image_embeds):
-        texture_tokens = self.image_proj_model(image_embeds)
+    def forward(self, noisy_latents, timesteps, encoder_hidden_states, image_embeds, texture_images):
+        if texture_images is None:
+            raise ValueError("texture_images must be provided for BF texture conditioning.")
+        texture_tokens, _ = self.bf_texture_conditioner(image_embeds, texture_images)
         encoder_hidden_states = torch.cat([encoder_hidden_states, texture_tokens], dim=1)
         noise_pred = self.unet(noisy_latents, timesteps, encoder_hidden_states).sample
         return noise_pred
 
     def load_from_checkpoint(self, ckpt_path: str):
-        orig_proj_sum = torch.sum(torch.stack([torch.sum(p) for p in self.image_proj_model.parameters()]))
         orig_adapter_sum = torch.sum(torch.stack([torch.sum(p) for p in self.adapter_modules.parameters()]))
+        orig_bf_sum = torch.sum(torch.stack([torch.sum(p) for p in self.bf_texture_conditioner.parameters()]))
 
         state_dict = torch.load(ckpt_path, map_location="cpu")
-
-        if "image_proj" not in state_dict:
-            raise KeyError(f"'image_proj' not found in checkpoint {ckpt_path}. Keys: {list(state_dict.keys())}")
-
-        self.image_proj_model.load_state_dict(state_dict["image_proj"], strict=True)
+        if "bf_texture_conditioner" in state_dict:
+            self.bf_texture_conditioner.load_state_dict(state_dict["bf_texture_conditioner"], strict=False)
+            print("Loaded bf_texture_conditioner weights.")
+        else:
+            print("No bf_texture_conditioner key found in checkpoint, using random init for BF conditioner.")
 
         if "texture_adapter" in state_dict:
             adapter_sd = state_dict["texture_adapter"]
@@ -180,10 +195,11 @@ class TextureAdapter(torch.nn.Module):
 
         self.adapter_modules.load_state_dict(adapter_sd, strict=False)
 
-        new_proj_sum = torch.sum(torch.stack([torch.sum(p) for p in self.image_proj_model.parameters()]))
         new_adapter_sum = torch.sum(torch.stack([torch.sum(p) for p in self.adapter_modules.parameters()]))
+        new_bf_sum = torch.sum(torch.stack([torch.sum(p) for p in self.bf_texture_conditioner.parameters()]))
 
-        assert orig_proj_sum != new_proj_sum, "Weights of image_proj_model did not change!"
+        if "bf_texture_conditioner" in state_dict:
+            assert orig_bf_sum != new_bf_sum, "Weights of bf_texture_conditioner did not change!"
         assert orig_adapter_sum != new_adapter_sum, "Weights of adapter_modules did not change!"
 
         print(f"Successfully loaded weights from checkpoint {ckpt_path}")
@@ -193,13 +209,12 @@ def save_texture_adapter_checkpoint(accelerator, model, save_path):
     unwrapped = accelerator.unwrap_model(model)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    torch.save(
-        {
-            "image_proj": unwrapped.image_proj_model.state_dict(),
-            "texture_adapter": unwrapped.adapter_modules.state_dict(),
-        },
-        save_path,
-    )
+    state = {
+        "texture_adapter": unwrapped.adapter_modules.state_dict(),
+        "bf_texture_conditioner": unwrapped.bf_texture_conditioner.state_dict(),
+    }
+
+    torch.save(state, save_path)
 
     print(f"Saved texture adapter checkpoint to {save_path}")
 
@@ -266,6 +281,18 @@ def parse_args():
         help="Resolution for input images.",
     )
     parser.add_argument(
+        "--width",
+        type=int,
+        default=512,
+        help="Training image width.",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=640,
+        help="Training image height.",
+    )
+    parser.add_argument(
         "--learning_rate",
         type=float,
         default=1e-4,
@@ -279,6 +306,24 @@ def parse_args():
         type=int,
         default=0,
         help="Number of workers for dataloader.",
+    )
+    parser.add_argument(
+        "--i_drop_rate",
+        type=float,
+        default=0.05,
+        help="Probability to drop texture image condition for CFG-style training.",
+    )
+    parser.add_argument(
+        "--t_drop_rate",
+        type=float,
+        default=0.05,
+        help="Probability to drop text condition for CFG-style training.",
+    )
+    parser.add_argument(
+        "--ti_drop_rate",
+        type=float,
+        default=0.05,
+        help="Probability to drop both text and texture image condition for CFG-style training.",
     )
     parser.add_argument(
         "--save_steps",
@@ -298,6 +343,43 @@ def parse_args():
         type=str,
         default="tensorboard",
         help='Reporting backend: "tensorboard", "wandb", "comet_ml", or "all".',
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="IMAGGarment-1",
+        help="Weights & Biases project name.",
+    )
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases run name.",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases team/user entity.",
+    )
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="online",
+        choices=["online", "offline", "disabled"],
+        help="Weights & Biases mode.",
+    )
+    parser.add_argument(
+        "--bf_num_tokens",
+        type=int,
+        default=4,
+        help="Number of BF texture conditioning tokens.",
+    )
+    parser.add_argument(
+        "--bf_base_channels",
+        type=int,
+        default=32,
+        help="Base channel width for BF texture conditioner.",
     )
     parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training.")
 
@@ -344,10 +426,11 @@ def main():
     text_encoder.requires_grad_(False)
     image_encoder.requires_grad_(False)
 
-    image_proj_model = ImageProjModel(
-        cross_attention_dim=unet.config.cross_attention_dim,
+    bf_texture_conditioner = BFTextureConditioner(
         clip_embeddings_dim=image_encoder.config.projection_dim,
-        clip_extra_context_tokens=4,
+        cross_attention_dim=unet.config.cross_attention_dim,
+        num_tokens=args.bf_num_tokens,
+        base_channels=args.bf_base_channels,
     )
 
     # init adapter modules on UNet attention processors
@@ -387,8 +470,8 @@ def main():
 
     texture_adapter = TextureAdapter(
         unet=unet,
-        image_proj_model=image_proj_model,
         adapter_modules=adapter_modules,
+        bf_texture_conditioner=bf_texture_conditioner,
         ckpt_path=pretrained_adapter_path,
     )
 
@@ -403,8 +486,8 @@ def main():
     image_encoder.to(accelerator.device, dtype=weight_dtype)
 
     params_to_opt = itertools.chain(
-        texture_adapter.image_proj_model.parameters(),
         texture_adapter.adapter_modules.parameters(),
+        texture_adapter.bf_texture_conditioner.parameters(),
     )
     optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay)
 
@@ -412,6 +495,11 @@ def main():
         args.data_json_file,
         tokenizer=tokenizer,
         size=args.resolution,
+        height=args.height,
+        width=args.width,
+        i_drop_rate=args.i_drop_rate,
+        t_drop_rate=args.t_drop_rate,
+        ti_drop_rate=args.ti_drop_rate,
         image_root_path=args.data_root_path,
     )
 
@@ -426,10 +514,32 @@ def main():
     texture_adapter, optimizer, train_dataloader = accelerator.prepare(
         texture_adapter, optimizer, train_dataloader
     )
+    if accelerator.is_main_process:
+        init_kwargs = None
+        if args.report_to in ("wandb", "all"):
+            init_kwargs = {
+                "wandb": {
+                    "project": args.wandb_project,
+                    "name": args.wandb_run_name,
+                    "entity": args.wandb_entity,
+                    "mode": args.wandb_mode,
+                }
+            }
+        accelerator.init_trackers("texture_adapter_training", config=vars(args), init_kwargs=init_kwargs)
+        accelerator.log(
+            {
+                "dataset/num_samples": len(train_dataset),
+                "dataset/num_batches_per_epoch": len(train_dataloader),
+                "dataset/total_batch_size": args.train_batch_size * accelerator.num_processes,
+            },
+            step=0,
+        )
 
     global_step = 0
     for epoch in range(args.num_train_epochs):
         begin = time.perf_counter()
+        epoch_loss_sum = 0.0
+        epoch_loss_count = 0
 
         for step, batch in enumerate(train_dataloader):
             load_data_time = time.perf_counter() - begin
@@ -474,10 +584,13 @@ def main():
                     timesteps=timesteps,
                     encoder_hidden_states=encoder_hidden_states,
                     image_embeds=image_embeds,
+                    texture_images=batch["texture_images"].to(accelerator.device, dtype=weight_dtype),
                 )
 
                 loss = F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean().item()
+                epoch_loss_sum += avg_loss
+                epoch_loss_count += 1
 
                 accelerator.backward(loss)
                 optimizer.step()
@@ -487,6 +600,18 @@ def main():
                     print(
                         f"Epoch {epoch}, step {step}, data_time: {load_data_time:.4f}, "
                         f"time: {time.perf_counter() - begin:.4f}, step_loss: {avg_loss:.6f}"
+                    )
+                if accelerator.sync_gradients:
+                    accelerator.log(
+                        {
+                            "train/loss": avg_loss,
+                            "train/step_loss": loss.detach().item(),
+                            "train/lr": optimizer.param_groups[0]["lr"],
+                            "train/data_time": load_data_time,
+                            "train/step_time": time.perf_counter() - begin,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
                     )
 
             global_step += 1
@@ -503,6 +628,19 @@ def main():
                     )
 
             begin = time.perf_counter()
+
+        if accelerator.is_main_process and epoch_loss_count > 0:
+            epoch_loss = epoch_loss_sum / epoch_loss_count
+            accelerator.log(
+                {
+                    "train/epoch_loss": epoch_loss,
+                    "train/epoch": epoch,
+                },
+                step=global_step,
+            )
+            print(f"Epoch {epoch} finished, epoch_loss: {epoch_loss:.6f}")
+
+    accelerator.end_training()
 
 
 if __name__ == "__main__":

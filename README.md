@@ -91,18 +91,43 @@ sh train_GAM.sh
 # train LEM model
 sh train_LEM.sh
 ```
+
+### 📊 Use Weights & Biases (wandb) for training monitoring
+All three training scripts now support wandb directly:
+
+```bash
+--report_to wandb \
+--wandb_project IMAGGarment-1 \
+--wandb_run_name exp_name \
+--wandb_mode online
+```
+
+The training loop logs dataset and step metrics such as `train/loss`, `train/lr`, `train/data_time`, and `train/step_time`.
+
+### 🎛️ Texture control tuning knobs
+- `train_texture_adapter.py` now supports condition drop rates:
+  - `--i_drop_rate` (drop texture image condition)
+  - `--t_drop_rate` (drop text condition)
+  - `--ti_drop_rate` (drop both)
+- training shape controls:
+  - `--width`, `--height` (used by resize/crop pipeline)
+- inference controls:
+  - `--guidance_scale`, `--sketch_scale`, `--ipa_scale`, `--num_inference_steps`
+- BF texture-only training module:
+  - `--bf_num_tokens`
+  - `--bf_base_channels`
+
 ## 🚀 How to test
 ```
 python inference_IMAGGarment-1.py \
 --GAM_model_ckpt [GAM checkpoint] \
---LEM_model_ckpt [LEM chekcpoint] \
 --sketch_path [your sketch path] \
---logo_path [your logo path] \
---mask_path [your mask path] \
---color_path [your color path] \
+--texture_path [your texture path] \
 --prompt [your prompt] \
 --output_path [your save path] \
---color_ckpt [color adapter checkpoint] \
+--texture_ckpt [texture adapter checkpoint] \
+--ipa_scale 1.4 \
+--guidance_scale 5.5 \
 --device [your device]
 ```
 ## Acknowledgement
