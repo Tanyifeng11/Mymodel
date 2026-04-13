@@ -17,15 +17,19 @@ class BFTextureConditioner(nn.Module):
         cross_attention_dim: int,
         num_tokens: int = 4,
         base_channels: int = 32,
+        stage_channels=None,
     ):
         super().__init__()
         self.num_tokens = num_tokens
         self.cross_attention_dim = cross_attention_dim
 
-        c1 = base_channels
-        c2 = base_channels * 2
-        c3 = base_channels * 4
-        c4 = base_channels * 8
+        if stage_channels is not None:
+            c1, c2, c3, c4 = stage_channels
+        else:
+            c1 = base_channels
+            c2 = base_channels * 2
+            c3 = base_channels * 4
+            c4 = base_channels * 8
 
         self.stage1 = nn.Sequential(
             nn.Conv2d(3, c1, kernel_size=3, stride=1, padding=1),
