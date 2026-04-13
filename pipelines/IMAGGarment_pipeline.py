@@ -20,6 +20,7 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import *
 from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
+from models.bf_texture_module import BFTextureConditioner
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
@@ -95,6 +96,8 @@ class IMAGGarment(StableDiffusionPipeline):
         # texture adapter
         self.texture_ckpt = texture_ckpt
         self.num_tokens = 4
+        self.texture_condition_mode = "clip_token"
+        self.bf_texture_conditioner = None
         self.image_proj_model = self.init_proj()
         self.load_texture_adapter()
 
@@ -159,22 +162,40 @@ class IMAGGarment(StableDiffusionPipeline):
                     elif key.startswith("ip_adapter."):
                         state_dict["ip_adapter"][key.replace("ip_adapter.", "")] = f.get_tensor(key)
         else:
-            state_dict = torch.load(self.texture_ckpt, map_location="cpu")
+            state_dict = torch.load(self.texture_ckpt, map_location="cpu", weights_only=True)
 
-        if "image_proj" not in state_dict or len(state_dict["image_proj"]) == 0:
-            raise KeyError(
-                f"'image_proj' not found in checkpoint: {self.texture_ckpt}. "
-                f"Available keys: {list(state_dict.keys())}"
-            )
-
-        try:
-            self.image_proj_model.load_state_dict(state_dict["image_proj"], strict=False)
-            print(f"[load_texture_adapter] loaded image_proj from: {self.texture_ckpt}")
-        except RuntimeError as e:
-            print("[load_texture_adapter] WARNING: image_proj shape mismatch, skipped loading image_proj.")
-            print(f"[load_texture_adapter] details: {e}")
+        if "image_proj" in state_dict and len(state_dict["image_proj"]) > 0:
+            self.texture_condition_mode = "clip_token"
+            try:
+                self.image_proj_model.load_state_dict(state_dict["image_proj"], strict=False)
+                print(f"[load_texture_adapter] loaded image_proj from: {self.texture_ckpt}")
+            except RuntimeError as e:
+                print("[load_texture_adapter] WARNING: image_proj shape mismatch, skipped loading image_proj.")
+                print(f"[load_texture_adapter] details: {e}")
+                print(
+                    "[load_texture_adapter] This usually means the inference image_encoder is different from the training image_encoder."
+                )
+        elif "bf_texture_conditioner" in state_dict and len(state_dict["bf_texture_conditioner"]) > 0:
+            self.texture_condition_mode = "bf_texture"
+            bf_sd = state_dict["bf_texture_conditioner"]
+            token_mlp_out = bf_sd["token_mlp.2.weight"].shape[0]
+            num_tokens = token_mlp_out // self.unet.config.cross_attention_dim
+            base_channels = bf_sd["stage1.0.weight"].shape[0]
+            self.bf_texture_conditioner = BFTextureConditioner(
+                clip_embeddings_dim=self.image_encoder.config.projection_dim,
+                cross_attention_dim=self.unet.config.cross_attention_dim,
+                num_tokens=num_tokens,
+                base_channels=base_channels,
+            ).to(self.device, dtype=torch.float16)
+            self.bf_texture_conditioner.load_state_dict(bf_sd, strict=False)
             print(
-                "[load_texture_adapter] This usually means the inference image_encoder is different from the training image_encoder."
+                f"[load_texture_adapter] loaded bf_texture_conditioner from: {self.texture_ckpt} "
+                f"(num_tokens={num_tokens}, base_channels={base_channels})"
+            )
+        else:
+            raise KeyError(
+                f"No supported texture conditioner found in checkpoint: {self.texture_ckpt}. "
+                f"Available keys: {list(state_dict.keys())}"
             )
 
         if "texture_adapter" in state_dict and len(state_dict["texture_adapter"]) > 0:
@@ -429,7 +450,7 @@ class IMAGGarment(StableDiffusionPipeline):
         return image
 
     @torch.inference_mode()
-    def get_image_embeds(self, pil_image=None, clip_image_embeds=None):
+    def get_image_embeds(self, pil_image=None, clip_image_embeds=None, width=None, height=None):
         if pil_image is not None:
             if isinstance(pil_image, Image.Image):
                 pil_image = [pil_image]
@@ -440,8 +461,23 @@ class IMAGGarment(StableDiffusionPipeline):
         else:
             clip_image_embeds = clip_image_embeds.to(self.device, dtype=torch.float16)
 
-        image_prompt_embeds = self.image_proj_model(clip_image_embeds)
-        uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
+        if self.texture_condition_mode == "bf_texture":
+            if pil_image is None:
+                raise ValueError("BF texture conditioning requires PIL texture image input.")
+            if width is None or height is None:
+                raise ValueError("width/height must be provided for BF texture conditioning.")
+            texture_tensor = self.cond_image_processor.preprocess(
+                pil_image, height=height, width=width
+            ).to(self.device, dtype=torch.float16)
+            texture_tensor = texture_tensor * 2.0 - 1.0
+            image_prompt_embeds, _ = self.bf_texture_conditioner(clip_image_embeds, texture_tensor)
+
+            zero_clip = torch.zeros_like(clip_image_embeds)
+            zero_texture = torch.zeros_like(texture_tensor)
+            uncond_image_prompt_embeds, _ = self.bf_texture_conditioner(zero_clip, zero_texture)
+        else:
+            image_prompt_embeds = self.image_proj_model(clip_image_embeds)
+            uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
         return image_prompt_embeds, uncond_image_prompt_embeds
 
     def set_scale(self, sketch_scale):
@@ -523,6 +559,8 @@ class IMAGGarment(StableDiffusionPipeline):
             image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
                 pil_image=texture_clip_image,
                 clip_image_embeds=texture_embeds,
+                width=width,
+                height=height,
             )
 
             bs_embed, seq_len, _ = image_prompt_embeds.shape
