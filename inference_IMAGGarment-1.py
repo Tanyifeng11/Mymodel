@@ -105,7 +105,7 @@ def prepare(args):
     del st
     ref_unet.to(dtype=torch.float16,device=args.device)
     # weights load
-    model_sd = torch.load(args.GAM_model_ckpt, map_location="cpu")["module"]
+    model_sd = torch.load(args.GAM_model_ckpt, map_location="cpu", weights_only=True)["module"]
 
     ref_unet_dict = {}
     unet_dict = {}
