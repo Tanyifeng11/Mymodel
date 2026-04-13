@@ -180,17 +180,20 @@ class IMAGGarment(StableDiffusionPipeline):
             bf_sd = state_dict["bf_texture_conditioner"]
             token_mlp_out = bf_sd["token_mlp.2.weight"].shape[0]
             num_tokens = token_mlp_out // self.unet.config.cross_attention_dim
-            base_channels = bf_sd["stage1.0.weight"].shape[0]
+            c1 = bf_sd["stage1.0.weight"].shape[0]
+            c2 = bf_sd["stage2.0.weight"].shape[0]
+            c3 = bf_sd["stage3.0.weight"].shape[0]
+            c4 = bf_sd["stage4.0.weight"].shape[0]
             self.bf_texture_conditioner = BFTextureConditioner(
                 clip_embeddings_dim=self.image_encoder.config.projection_dim,
                 cross_attention_dim=self.unet.config.cross_attention_dim,
                 num_tokens=num_tokens,
-                base_channels=base_channels,
+                stage_channels=(c1, c2, c3, c4),
             ).to(self.device, dtype=torch.float16)
-            self.bf_texture_conditioner.load_state_dict(bf_sd, strict=False)
+            self.bf_texture_conditioner.load_state_dict(bf_sd, strict=True)
             print(
                 f"[load_texture_adapter] loaded bf_texture_conditioner from: {self.texture_ckpt} "
-                f"(num_tokens={num_tokens}, base_channels={base_channels})"
+                f"(num_tokens={num_tokens}, stage_channels={(c1, c2, c3, c4)})"
             )
         else:
             raise KeyError(
