@@ -29,7 +29,7 @@ DATA_JSON_FILE="/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json"
 DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/MMDGarment"
 
 # Output directory
-OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG"
+OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture"
 
 # Logging subdir
 LOGGING_DIR="logs"
@@ -46,18 +46,18 @@ HEIGHT=640
 LEARNING_RATE=1e-4
 WEIGHT_DECAY=1e-2
 NUM_TRAIN_EPOCHS=25
-TRAIN_BATCH_SIZE=8
+TRAIN_BATCH_SIZE=4
 DATALOADER_NUM_WORKERS=2
-SAVE_STEPS=50
+SAVE_STEPS=8760
 I_DROP_RATE=0.05
 T_DROP_RATE=0.05
 TI_DROP_RATE=0.05
 BF_NUM_TOKENS=4
 BF_BASE_CHANNELS=32
 MIXED_PRECISION="fp16"
-REPORT_TO="tensorboard"
-WANDB_PROJECT="IMAGGarment-1"
-WANDB_RUN_NAME="texture-adapter-exp1"
+REPORT_TO="wandb"
+WANDB_PROJECT="Mymodel"
+WANDB_RUN_NAME="texture-adapter-exp3"
 WANDB_MODE="online" # online/offline/disabled
 
 # =========================

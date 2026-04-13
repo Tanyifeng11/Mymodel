@@ -515,17 +515,17 @@ def main():
         texture_adapter, optimizer, train_dataloader
     )
     if accelerator.is_main_process:
-        init_kwargs = None
+        init_kwargs = {}
         if args.report_to in ("wandb", "all"):
             init_kwargs = {
                 "wandb": {
-                    "project": args.wandb_project,
+                    # "project": args.wandb_project,
                     "name": args.wandb_run_name,
                     "entity": args.wandb_entity,
                     "mode": args.wandb_mode,
                 }
             }
-        accelerator.init_trackers("texture_adapter_training", config=vars(args), init_kwargs=init_kwargs)
+        accelerator.init_trackers(args.wandb_project, config=vars(args), init_kwargs=init_kwargs)
         accelerator.log(
             {
                 "dataset/num_samples": len(train_dataset),
