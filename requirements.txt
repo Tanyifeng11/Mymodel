@@ -231,6 +231,7 @@ watchfiles==0.24.0
 wcwidth==0.2.13
 websockets==12.0
 Werkzeug==3.0.4
+wandb==0.19.11
 xformers==0.0.27.post2
 xxhash==3.5.0
 yacs==0.1.8

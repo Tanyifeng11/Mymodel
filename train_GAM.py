@@ -147,6 +147,31 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="IMAGGarment-1",
+        help="Weights & Biases project name.",
+    )
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases run name.",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases team/user entity.",
+    )
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="online",
+        choices=["online", "offline", "disabled"],
+        help="Weights & Biases mode.",
+    )
+    parser.add_argument(
         "--checkpointing_steps",
         type=str,
         default=None,
@@ -480,7 +505,17 @@ def main():
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
-        accelerator.init_trackers("text2image", config=vars(args))
+        init_kwargs = None
+        if args.report_to in ("wandb", "all"):
+            init_kwargs = {
+                "wandb": {
+                    "project": args.wandb_project,
+                    "name": args.wandb_run_name,
+                    "entity": args.wandb_entity,
+                    "mode": args.wandb_mode,
+                }
+            }
+        accelerator.init_trackers("text2image", config=vars(args), init_kwargs=init_kwargs)
 
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
@@ -491,6 +526,15 @@ def main():
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    if accelerator.is_main_process:
+        accelerator.log(
+            {
+                "dataset/num_samples": len(dataset),
+                "dataset/num_batches_per_epoch": len(train_dataloader),
+                "dataset/total_batch_size": total_batch_size,
+            },
+            step=0,
+        )
 
     global_steps = 0
     starting_epoch = 0
@@ -595,7 +639,17 @@ def main():
                 optimizer.zero_grad()  # do nothing
 
                 if accelerator.sync_gradients:
-                    accelerator.log({"train_loss": train_loss / args.gradient_accumulation_steps}, step=global_steps)
+                    accelerator.log(
+                        {
+                            "train_loss": train_loss / args.gradient_accumulation_steps,
+                            "train/step_loss": loss.detach().item(),
+                            "train/lr": lr_scheduler.get_lr()[0],
+                            "train/data_time": load_data_time,
+                            "train/step_time": time.perf_counter() - begin,
+                            "train/epoch": epoch,
+                        },
+                        step=global_steps,
+                    )
                     train_loss = 0.0
 
             if accelerator.is_main_process:

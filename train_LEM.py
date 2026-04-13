@@ -235,6 +235,31 @@ def parse_args():
             ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
         ),
     )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="IMAGGarment-1",
+        help="Weights & Biases project name.",
+    )
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases run name.",
+    )
+    parser.add_argument(
+        "--wandb_entity",
+        type=str,
+        default=None,
+        help="Optional Weights & Biases team/user entity.",
+    )
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="online",
+        choices=["online", "offline", "disabled"],
+        help="Weights & Biases mode.",
+    )
     
     parser.add_argument(
         "--width",
@@ -360,6 +385,27 @@ def main():
     
     # Prepare everything with our `accelerator`.
     lem, optimizer, train_dataloader = accelerator.prepare(lem, optimizer, train_dataloader)
+
+    if accelerator.is_main_process:
+        init_kwargs = None
+        if args.report_to in ("wandb", "all"):
+            init_kwargs = {
+                "wandb": {
+                    "project": args.wandb_project,
+                    "name": args.wandb_run_name,
+                    "entity": args.wandb_entity,
+                    "mode": args.wandb_mode,
+                }
+            }
+        accelerator.init_trackers("lem_training", config=vars(args), init_kwargs=init_kwargs)
+        accelerator.log(
+            {
+                "dataset/num_samples": len(train_dataset),
+                "dataset/num_batches_per_epoch": len(train_dataloader),
+                "dataset/total_batch_size": args.train_batch_size * accelerator.num_processes,
+            },
+            step=0,
+        )
     
     global_step = 0
     for epoch in range(0, args.num_train_epochs):
@@ -432,6 +478,18 @@ def main():
                 if accelerator.is_main_process:
                     print("Epoch {}, step {}, data_time: {}, time: {}, step_loss: {}".format(
                         epoch, step, load_data_time, time.perf_counter() - begin, avg_loss))
+                if accelerator.sync_gradients:
+                    accelerator.log(
+                        {
+                            "train/loss": avg_loss,
+                            "train/step_loss": loss.detach().item(),
+                            "train/lr": optimizer.param_groups[0]["lr"],
+                            "train/data_time": load_data_time,
+                            "train/step_time": time.perf_counter() - begin,
+                            "train/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
             
             global_step += 1
             
@@ -440,6 +498,8 @@ def main():
                 accelerator.save_state(save_path,safe_serialization=False)
                 print(f"Success save checkpoint-{global_step}")
             begin = time.perf_counter()
+
+    accelerator.end_training()
                 
 if __name__ == "__main__":
     main()    
