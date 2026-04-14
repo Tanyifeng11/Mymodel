@@ -28,6 +28,8 @@ class AttnProcessor2_0(torch.nn.Module):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
+        cond_hidden_states=None,
+        sa_hidden_states=None,
         *args,
         **kwargs,
     ):
@@ -327,6 +329,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
+        cond_hidden_states=None,
+        sa_hidden_states=None,
         *args,
         **kwargs,
     ):
@@ -356,11 +360,24 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
         query = attn.to_q(hidden_states)
 
+        if cond_hidden_states is not None:
+            encoder_hidden_states = cond_hidden_states
+
         if encoder_hidden_states is None:
-            encoder_hidden_states = hidden_states
+            raise ValueError("IPAttnProcessor2_0 expects encoder_hidden_states with appended texture tokens.")
         else:
-            # get encoder_hidden_states, ip_hidden_states
+            if encoder_hidden_states.shape[1] < self.num_tokens:
+                raise ValueError(
+                    f"encoder_hidden_states has {encoder_hidden_states.shape[1]} tokens, expected at least {self.num_tokens}."
+                )
             end_pos = encoder_hidden_states.shape[1] - self.num_tokens
+            text_token_count = end_pos
+            texture_token_count = encoder_hidden_states.shape[1] - end_pos
+            if kwargs.get("debug_texture_tokens", False):
+                print(
+                    f"[IPAttnProcessor2_0] encoder_hidden_states={tuple(encoder_hidden_states.shape)}, "
+                    f"text_tokens={text_token_count}, texture_tokens={texture_token_count}, expected_texture_tokens={self.num_tokens}"
+                )
             encoder_hidden_states, ip_hidden_states = (
                 encoder_hidden_states[:, :end_pos, :],
                 encoder_hidden_states[:, end_pos:, :],
