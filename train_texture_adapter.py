@@ -1,4 +1,6 @@
 import os
+import re
+import math
 import random
 import argparse
 from pathlib import Path
@@ -15,6 +17,7 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
+from diffusers.optimization import get_scheduler
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 
 from adapter.utils import is_torch2_available
@@ -175,6 +178,7 @@ class TextureAdapter(torch.nn.Module):
         orig_bf_sum = torch.sum(torch.stack([torch.sum(p) for p in self.bf_texture_conditioner.parameters()]))
 
         state_dict = torch.load(ckpt_path, map_location="cpu")
+
         if "bf_texture_conditioner" in state_dict:
             self.bf_texture_conditioner.load_state_dict(state_dict["bf_texture_conditioner"], strict=False)
             print("Loaded bf_texture_conditioner weights.")
@@ -215,8 +219,36 @@ def save_texture_adapter_checkpoint(accelerator, model, save_path):
     }
 
     torch.save(state, save_path)
-
     print(f"Saved texture adapter checkpoint to {save_path}")
+
+
+def parse_step_from_ckpt_path(ckpt_path: str) -> int:
+    """
+    从路径中解析 step:
+    /path/to/checkpoint-43800/texture_adapter.bin -> 43800
+    /path/to/checkpoint-12000 -> 12000
+    """
+    if ckpt_path is None or ckpt_path == "":
+        return 0
+
+    m = re.search(r"checkpoint-(\d+)", ckpt_path)
+    if m:
+        return int(m.group(1))
+    return 0
+
+
+def compute_loss(noise_pred, noise, loss_type="mse", huber_c=0.1):
+    if loss_type == "mse":
+        return F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
+    elif loss_type == "huber":
+        return F.huber_loss(
+            noise_pred.float(),
+            noise.float(),
+            reduction="mean",
+            delta=huber_c,
+        )
+    else:
+        raise ValueError(f"Unsupported loss_type: {loss_type}")
 
 
 def parse_args():
@@ -381,6 +413,49 @@ def parse_args():
         default=32,
         help="Base channel width for BF texture conditioner.",
     )
+
+    # optimizer / scheduler
+    parser.add_argument("--adam_beta1", type=float, default=0.9, help="AdamW beta1.")
+    parser.add_argument("--adam_beta2", type=float, default=0.999, help="AdamW beta2.")
+    parser.add_argument("--adam_epsilon", type=float, default=1e-8, help="AdamW epsilon.")
+    parser.add_argument("--max_grad_norm", type=float, default=1.0, help="Gradient clipping max norm.")
+    parser.add_argument(
+        "--lr_scheduler",
+        type=str,
+        default="cosine",
+        choices=["constant", "constant_with_warmup", "cosine", "cosine_with_restarts", "linear"],
+        help="LR scheduler type.",
+    )
+    parser.add_argument(
+        "--lr_warmup_steps",
+        type=int,
+        default=300,
+        help="Warmup steps for LR scheduler.",
+    )
+
+    # loss
+    parser.add_argument(
+        "--loss_type",
+        type=str,
+        default="huber",
+        choices=["mse", "huber"],
+        help="Training loss type.",
+    )
+    parser.add_argument(
+        "--huber_c",
+        type=float,
+        default=0.1,
+        help="Delta for huber loss.",
+    )
+
+    # accumulation
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=int,
+        default=1,
+        help="Gradient accumulation steps.",
+    )
+
     parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training.")
 
     args = parser.parse_args()
@@ -401,6 +476,7 @@ def main():
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
     )
 
     if accelerator.is_main_process:
@@ -489,7 +565,14 @@ def main():
         texture_adapter.adapter_modules.parameters(),
         texture_adapter.bf_texture_conditioner.parameters(),
     )
-    optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay)
+
+    optimizer = torch.optim.AdamW(
+        params_to_opt,
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+        betas=(args.adam_beta1, args.adam_beta2),
+        eps=args.adam_epsilon,
+    )
 
     train_dataset = MyDataset(
         args.data_json_file,
@@ -511,15 +594,25 @@ def main():
         num_workers=args.dataloader_num_workers,
     )
 
-    texture_adapter, optimizer, train_dataloader = accelerator.prepare(
-        texture_adapter, optimizer, train_dataloader
+    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+
+    lr_scheduler = get_scheduler(
+        args.lr_scheduler,
+        optimizer=optimizer,
+        num_warmup_steps=args.lr_warmup_steps,
+        num_training_steps=max_train_steps,
     )
+
+    texture_adapter, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+        texture_adapter, optimizer, train_dataloader, lr_scheduler
+    )
+
     if accelerator.is_main_process:
         init_kwargs = {}
         if args.report_to in ("wandb", "all"):
             init_kwargs = {
                 "wandb": {
-                    # "project": args.wandb_project,
                     "name": args.wandb_run_name,
                     "entity": args.wandb_entity,
                     "mode": args.wandb_mode,
@@ -530,12 +623,20 @@ def main():
             {
                 "dataset/num_samples": len(train_dataset),
                 "dataset/num_batches_per_epoch": len(train_dataloader),
-                "dataset/total_batch_size": args.train_batch_size * accelerator.num_processes,
+                "dataset/total_batch_size": args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
             },
             step=0,
         )
 
-    global_step = 0
+    resume_step = parse_step_from_ckpt_path(pretrained_adapter_path)
+    global_step = resume_step
+
+    if accelerator.is_main_process:
+        if pretrained_adapter_path is not None:
+            print(f"Resume checkpoint numbering from step {global_step} (parsed from: {pretrained_adapter_path})")
+        else:
+            print("No pretrained adapter checkpoint provided, checkpoint numbering starts from 0.")
+
     for epoch in range(args.num_train_epochs):
         begin = time.perf_counter()
         epoch_loss_sum = 0.0
@@ -546,7 +647,9 @@ def main():
 
             with accelerator.accumulate(texture_adapter):
                 with torch.no_grad():
-                    latents = vae.encode(batch["images"].to(accelerator.device, dtype=weight_dtype)).latent_dist.sample()
+                    latents = vae.encode(
+                        batch["images"].to(accelerator.device, dtype=weight_dtype)
+                    ).latent_dist.sample()
                     latents = latents * vae.config.scaling_factor
 
                 noise = torch.randn_like(latents)
@@ -587,21 +690,36 @@ def main():
                     texture_images=batch["texture_images"].to(accelerator.device, dtype=weight_dtype),
                 )
 
-                loss = F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
-                avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean().item()
+                loss = compute_loss(
+                    noise_pred,
+                    noise,
+                    loss_type=args.loss_type,
+                    huber_c=args.huber_c,
+                )
+
+                avg_loss = accelerator.gather(loss.repeat(bsz)).mean().item()
                 epoch_loss_sum += avg_loss
                 epoch_loss_count += 1
 
                 accelerator.backward(loss)
+
+                if accelerator.sync_gradients:
+                    accelerator.clip_grad_norm_(texture_adapter.parameters(), args.max_grad_norm)
+
                 optimizer.step()
+                lr_scheduler.step()
                 optimizer.zero_grad()
 
                 if accelerator.is_main_process:
                     print(
                         f"Epoch {epoch}, step {step}, data_time: {load_data_time:.4f}, "
-                        f"time: {time.perf_counter() - begin:.4f}, step_loss: {avg_loss:.6f}"
+                        f"time: {time.perf_counter() - begin:.4f}, "
+                        f"step_loss: {avg_loss:.6f}, "
+                        f"lr: {optimizer.param_groups[0]['lr']:.8f}"
                     )
+
                 if accelerator.sync_gradients:
+                    global_step += 1
                     accelerator.log(
                         {
                             "train/loss": avg_loss,
@@ -614,18 +732,16 @@ def main():
                         step=global_step,
                     )
 
-            global_step += 1
+                    if global_step % args.save_steps == 0:
+                        save_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+                        accelerator.save_state(save_dir, safe_serialization=False)
 
-            if global_step % args.save_steps == 0:
-                save_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-                accelerator.save_state(save_dir, safe_serialization=False)
-
-                if accelerator.is_main_process:
-                    save_texture_adapter_checkpoint(
-                        accelerator,
-                        texture_adapter,
-                        os.path.join(save_dir, "texture_adapter.bin"),
-                    )
+                        if accelerator.is_main_process:
+                            save_texture_adapter_checkpoint(
+                                accelerator,
+                                texture_adapter,
+                                os.path.join(save_dir, "texture_adapter.bin"),
+                            )
 
             begin = time.perf_counter()
 
@@ -639,6 +755,17 @@ def main():
                 step=global_step,
             )
             print(f"Epoch {epoch} finished, epoch_loss: {epoch_loss:.6f}")
+
+    # final save
+    final_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+    accelerator.save_state(final_dir, safe_serialization=False)
+
+    if accelerator.is_main_process:
+        save_texture_adapter_checkpoint(
+            accelerator,
+            texture_adapter,
+            os.path.join(final_dir, "texture_adapter.bin"),
+        )
 
     accelerator.end_training()
 

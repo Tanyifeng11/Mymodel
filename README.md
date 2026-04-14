@@ -135,7 +135,17 @@ python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --sketch_path
 python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --LEM_model_ckpt ./weight/LEM.bin --sketch_path ./assets/sketch.png --logo_path ./assets/logo.png --mask_path ./assets/shirt_mask.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask.png --texture_ckpt ./output/texture_adapter_MMG/checkpoint-21900/texture_adapter.bin --device cuda
 
 现模型
+python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --sketch_path ./assets/sketch.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask_MMG_Bf_TexTure_final.png --texture_ckpt ./output/texture_adapter_MMG_Bf_Texture/final_checkpoint/texture_adapter.bin --ipa_scale 1.4 --guidance_scale 5.5 --device cuda
 
+--adam_beta1 0.9
+  --adam_beta2 0.999
+  --adam_epsilon 1e-8
+  --max_grad_norm 1.0
+  --lr_scheduler cosine
+  --lr_warmup_steps 300
+  --loss_type huber
+  --huber_c 0.1
+  --gradient_accumulation_steps 1
 
 ## Acknowledgement
 We would like to thank the contributors to the [IMAGDressing](https://github.com/muzishen/IMAGDressing) and [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter) repositories, for their open research and exploration.

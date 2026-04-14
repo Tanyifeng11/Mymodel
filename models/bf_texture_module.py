@@ -3,18 +3,10 @@ import torch.nn as nn
 
 
 class BFTextureConditioner(nn.Module):
-    """
-    BF-style texture-only conditioner (engineering approximation).
-
-    This module extracts 4-scale texture features from the texture image,
-    pools them into a compact representation, and fuses them with CLIP texture
-    embeddings to generate context tokens for UNet cross-attention.
-    """
-
     def __init__(
         self,
-        clip_embeddings_dim: int,
-        cross_attention_dim: int,
+        clip_embeddings_dim: int = 768,
+        cross_attention_dim: int = 768,
         num_tokens: int = 4,
         base_channels: int = 32,
         stage_channels=None,
@@ -30,6 +22,11 @@ class BFTextureConditioner(nn.Module):
             c2 = base_channels * 2
             c3 = base_channels * 4
             c4 = base_channels * 8
+
+        print("BFTextureConditioner init:",
+              "clip_embeddings_dim =", clip_embeddings_dim,
+              "cross_attention_dim =", cross_attention_dim,
+              "stage_channels =", (c1, c2, c3, c4))
 
         self.stage1 = nn.Sequential(
             nn.Conv2d(3, c1, kernel_size=3, stride=1, padding=1),
@@ -56,6 +53,8 @@ class BFTextureConditioner(nn.Module):
         )
 
         fused_dim = clip_embeddings_dim + c1 + c2 + c3 + c4
+        print("BFTextureConditioner fused_dim =", fused_dim)
+
         self.token_mlp = nn.Sequential(
             nn.Linear(fused_dim, fused_dim),
             nn.SiLU(),
@@ -64,6 +63,8 @@ class BFTextureConditioner(nn.Module):
         self.token_norm = nn.LayerNorm(cross_attention_dim)
 
     def forward(self, clip_image_embeds: torch.Tensor, texture_images: torch.Tensor):
+        print("clip_image_embeds shape:", clip_image_embeds.shape)
+
         f1 = self.stage1(texture_images)
         f2 = self.stage2(f1)
         f3 = self.stage3(f2)
@@ -78,6 +79,8 @@ class BFTextureConditioner(nn.Module):
         texture_multi_scale_embed = torch.cat(pooled, dim=1)
 
         fused = torch.cat([clip_image_embeds, texture_multi_scale_embed], dim=1)
+        print("fused shape:", fused.shape)
+
         tokens = self.token_mlp(fused).view(-1, self.num_tokens, self.cross_attention_dim)
         tokens = self.token_norm(tokens)
 

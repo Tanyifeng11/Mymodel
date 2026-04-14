@@ -4,6 +4,8 @@ import os
 import sys
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from PIL import Image
 
 from diffusers.schedulers import (
@@ -21,6 +23,7 @@ from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
+
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
@@ -98,6 +101,7 @@ class IMAGGarment(StableDiffusionPipeline):
         self.num_tokens = 4
         self.texture_condition_mode = "clip_token"
         self.bf_texture_conditioner = None
+        self.bf_clip_embeddings_dim = None
         self.image_proj_model = self.init_proj()
         self.load_texture_adapter()
 
@@ -109,6 +113,30 @@ class IMAGGarment(StableDiffusionPipeline):
         ).to(self.device, dtype=torch.float16)
         return image_proj_model
 
+    def _align_clip_embeds_dim(self, clip_image_embeds: torch.Tensor, expected_dim: int) -> torch.Tensor:
+        """
+        Align clip_image_embeds last dimension to expected_dim.
+        - If actual > expected: truncate
+        - If actual < expected: zero-pad
+        """
+        actual_dim = clip_image_embeds.shape[-1]
+
+        if actual_dim == expected_dim:
+            return clip_image_embeds
+
+        print(
+            f"[align_clip_embeds_dim] WARNING: clip_image_embeds dim mismatch: "
+            f"actual={actual_dim}, expected={expected_dim}"
+        )
+
+        if actual_dim > expected_dim:
+            print(f"[align_clip_embeds_dim] Truncating embedding dim from {actual_dim} -> {expected_dim}")
+            return clip_image_embeds[..., :expected_dim]
+
+        pad = expected_dim - actual_dim
+        print(f"[align_clip_embeds_dim] Padding embedding dim from {actual_dim} -> {expected_dim}")
+        return F.pad(clip_image_embeds, (0, pad))
+
     def load_texture_adapter(self):
         """
         Compatible with these checkpoint formats:
@@ -118,20 +146,27 @@ class IMAGGarment(StableDiffusionPipeline):
                "texture_adapter": ...
            }
 
-        2) old color adapter:
+        2) BF texture output:
+           {
+               "bf_texture_conditioner": ...,
+               "texture_adapter": ...
+           }
+
+        3) old color adapter:
            {
                "image_proj": ...,
                "color_adapter": ...
            }
 
-        3) old ip-adapter style:
+        4) old ip-adapter style:
            {
                "image_proj": ...,
                "ip_adapter": ...
            }
 
-        4) safetensors with keys like:
+        5) safetensors with keys like:
            image_proj.xxx
+           bf_texture_conditioner.xxx
            texture_adapter.xxx
            color_adapter.xxx
            ip_adapter.xxx
@@ -146,6 +181,7 @@ class IMAGGarment(StableDiffusionPipeline):
 
             state_dict = {
                 "image_proj": {},
+                "bf_texture_conditioner": {},
                 "texture_adapter": {},
                 "color_adapter": {},
                 "ip_adapter": {},
@@ -155,6 +191,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 for key in f.keys():
                     if key.startswith("image_proj."):
                         state_dict["image_proj"][key.replace("image_proj.", "")] = f.get_tensor(key)
+                    elif key.startswith("bf_texture_conditioner."):
+                        state_dict["bf_texture_conditioner"][key.replace("bf_texture_conditioner.", "")] = f.get_tensor(key)
                     elif key.startswith("texture_adapter."):
                         state_dict["texture_adapter"][key.replace("texture_adapter.", "")] = f.get_tensor(key)
                     elif key.startswith("color_adapter."):
@@ -162,7 +200,9 @@ class IMAGGarment(StableDiffusionPipeline):
                     elif key.startswith("ip_adapter."):
                         state_dict["ip_adapter"][key.replace("ip_adapter.", "")] = f.get_tensor(key)
         else:
-            state_dict = torch.load(self.texture_ckpt, map_location="cpu", weights_only=True)
+            # GAM.pt 之前已经验证过不适合 weights_only=True
+            # 这里 texture adapter 也先保持 False，避免再遇到反序列化限制问题
+            state_dict = torch.load(self.texture_ckpt, map_location="cpu")
 
         if "image_proj" in state_dict and len(state_dict["image_proj"]) > 0:
             self.texture_condition_mode = "clip_token"
@@ -175,26 +215,47 @@ class IMAGGarment(StableDiffusionPipeline):
                 print(
                     "[load_texture_adapter] This usually means the inference image_encoder is different from the training image_encoder."
                 )
+
         elif "bf_texture_conditioner" in state_dict and len(state_dict["bf_texture_conditioner"]) > 0:
             self.texture_condition_mode = "bf_texture"
             bf_sd = state_dict["bf_texture_conditioner"]
+
+            # 从 checkpoint 反推出 BF 模块结构
+            token_mlp_in = bf_sd["token_mlp.0.weight"].shape[1]
             token_mlp_out = bf_sd["token_mlp.2.weight"].shape[0]
-            num_tokens = token_mlp_out // self.unet.config.cross_attention_dim
+
             c1 = bf_sd["stage1.0.weight"].shape[0]
             c2 = bf_sd["stage2.0.weight"].shape[0]
             c3 = bf_sd["stage3.0.weight"].shape[0]
             c4 = bf_sd["stage4.0.weight"].shape[0]
+
+            pooled_dim = c1 + c2 + c3 + c4
+            clip_embeddings_dim = token_mlp_in - pooled_dim
+            if clip_embeddings_dim <= 0:
+                raise ValueError(
+                    f"Invalid bf checkpoint shape: token_mlp_in={token_mlp_in}, pooled_dim={pooled_dim}"
+                )
+
+            num_tokens = token_mlp_out // self.unet.config.cross_attention_dim
+
+            self.bf_clip_embeddings_dim = clip_embeddings_dim
+
             self.bf_texture_conditioner = BFTextureConditioner(
-                clip_embeddings_dim=self.image_encoder.config.projection_dim,
+                clip_embeddings_dim=clip_embeddings_dim,
                 cross_attention_dim=self.unet.config.cross_attention_dim,
                 num_tokens=num_tokens,
                 stage_channels=(c1, c2, c3, c4),
             ).to(self.device, dtype=torch.float16)
+
             self.bf_texture_conditioner.load_state_dict(bf_sd, strict=True)
+
             print(
                 f"[load_texture_adapter] loaded bf_texture_conditioner from: {self.texture_ckpt} "
-                f"(num_tokens={num_tokens}, stage_channels={(c1, c2, c3, c4)})"
+                f"(num_tokens={num_tokens}, stage_channels={(c1, c2, c3, c4)}, "
+                f"bf_clip_embeddings_dim={clip_embeddings_dim}, "
+                f"image_encoder_dim={self.image_encoder.config.projection_dim})"
             )
+
         else:
             raise KeyError(
                 f"No supported texture conditioner found in checkpoint: {self.texture_ckpt}. "
@@ -469,10 +530,18 @@ class IMAGGarment(StableDiffusionPipeline):
                 raise ValueError("BF texture conditioning requires PIL texture image input.")
             if width is None or height is None:
                 raise ValueError("width/height must be provided for BF texture conditioning.")
+            if self.bf_clip_embeddings_dim is None:
+                raise ValueError("self.bf_clip_embeddings_dim is not initialized.")
+
             texture_tensor = self.cond_image_processor.preprocess(
                 pil_image, height=height, width=width
             ).to(self.device, dtype=torch.float16)
             texture_tensor = texture_tensor * 2.0 - 1.0
+
+            clip_image_embeds = self._align_clip_embeds_dim(
+                clip_image_embeds, self.bf_clip_embeddings_dim
+            )
+
             image_prompt_embeds, _ = self.bf_texture_conditioner(clip_image_embeds, texture_tensor)
 
             zero_clip = torch.zeros_like(clip_image_embeds)

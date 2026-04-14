@@ -8,57 +8,61 @@ export CUDA_VISIBLE_DEVICES=0
 export HF_HUB_DISABLE_XET=1
 export TOKENIZERS_PARALLELISM=false
 
-# 不走代理，避免 HF 下载超时
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 export NO_PROXY=localhost,127.0.0.1,huggingface.co,cdn-lfs.huggingface.co,hf.co
 
 # =========================
 # Paths
 # =========================
-
-# SD1.5 base model
 PRETRAINED_MODEL_NAME_OR_PATH="stable-diffusion-v1-5/stable-diffusion-v1-5"
-
-# CLIP image encoder
 IMAGE_ENCODER_PATH="openai/clip-vit-large-patch14"
 
-# Training json
 DATA_JSON_FILE="/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json"
-
-# Root folder for images referenced in json
 DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/MMDGarment"
 
-# Output directory
+# 建议新目录，避免和旧实验混在一起
 OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture"
-
-# Logging subdir
 LOGGING_DIR="logs"
 
-# Resume from old adapter checkpoint
-#PRETRAINED_TEXTURE_ADAPTER_PATH="./output/texture_adapter_bf_fashion/checkpoint-90000/texture_adapter.bin"
-PRETRAINED_TEXTURE_ADAPTER_PATH=""
+PRETRAINED_TEXTURE_ADAPTER_PATH="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture/checkpoint-43800/texture_adapter.bin"
+
 # =========================
 # Training hyperparameters
 # =========================
 RESOLUTION=512
 WIDTH=512
 HEIGHT=640
-LEARNING_RATE=1e-4
+
+LEARNING_RATE=1e-5
 WEIGHT_DECAY=1e-2
-NUM_TRAIN_EPOCHS=25
+NUM_TRAIN_EPOCHS=15
 TRAIN_BATCH_SIZE=4
 DATALOADER_NUM_WORKERS=2
 SAVE_STEPS=8760
-I_DROP_RATE=0.05
-T_DROP_RATE=0.05
-TI_DROP_RATE=0.05
+
+I_DROP_RATE=0.02
+T_DROP_RATE=0.02
+TI_DROP_RATE=0.02
+
 BF_NUM_TOKENS=4
 BF_BASE_CHANNELS=32
+
 MIXED_PRECISION="fp16"
+
 REPORT_TO="wandb"
 WANDB_PROJECT="Mymodel"
-WANDB_RUN_NAME="texture-adapter-exp3"
-WANDB_MODE="online" # online/offline/disabled
+WANDB_RUN_NAME="texture-adapter-exp5"
+WANDB_MODE="online"
+
+ADAM_BETA1=0.9
+ADAM_BETA2=0.999
+ADAM_EPSILON=1e-8
+LR_SCHEDULER="cosine"
+LR_WARMUP_STEPS=300
+LOSS_TYPE="huber"
+HUBER_C=0.1
+MAX_GRAD_NORM=1.0
+GRADIENT_ACCUMULATION_STEPS=1
 
 # =========================
 # Build command
@@ -92,6 +96,15 @@ CMD=(
   --wandb_project "${WANDB_PROJECT}"
   --wandb_run_name "${WANDB_RUN_NAME}"
   --wandb_mode "${WANDB_MODE}"
+  --adam_beta1 "${ADAM_BETA1}"
+  --adam_beta2 "${ADAM_BETA2}"
+  --adam_epsilon "${ADAM_EPSILON}"
+  --lr_scheduler "${LR_SCHEDULER}"
+  --lr_warmup_steps "${LR_WARMUP_STEPS}"
+  --loss_type "${LOSS_TYPE}"
+  --huber_c "${HUBER_C}"
+  --max_grad_norm "${MAX_GRAD_NORM}"
+  --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}"
 )
 
 if [ -n "${PRETRAINED_TEXTURE_ADAPTER_PATH}" ]; then
