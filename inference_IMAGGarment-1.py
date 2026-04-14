@@ -153,6 +153,9 @@ if __name__ == "__main__":
     parser.add_argument('--sketch_scale', type=float, default=0.6)
     parser.add_argument('--ipa_scale', type=float, default=1.0)
     parser.add_argument('--num_inference_steps', type=int, default=50)
+    parser.add_argument('--texture_mode', type=str, default='patch_resampled', choices=['patch_resampled', 'legacy_pooled'])
+    parser.add_argument('--texture_num_tokens', type=int, default=16)
+    parser.add_argument('--texture_scale', type=float, default=1.0)
 
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument(
@@ -209,6 +212,10 @@ if __name__ == "__main__":
         texture_embeds = None
         texture_clip_image = None
     
+    print(f"texture mode: {args.texture_mode}")
+    print(f"texture token count: {args.texture_num_tokens}")
+    print(f"texture ckpt path: {args.texture_ckpt}")
+
     output = pipe(
         ref_image=vae_sketch,
         prompt=prompt,
@@ -224,7 +231,9 @@ if __name__ == "__main__":
         ipa_scale=args.ipa_scale,
         generator=generator,
         num_inference_steps=args.num_inference_steps,
-
+        texture_mode=args.texture_mode,
+        texture_num_tokens=args.texture_num_tokens,
+        texture_scale=args.texture_scale,
     )
 
     save_output = []
