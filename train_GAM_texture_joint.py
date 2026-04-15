@@ -16,6 +16,7 @@ from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjec
 
 from adapter.attention_processor import LogoCacheSAttnProcessor2_0, CAttnProcessor2_0, LogoRefSAttnProcessor2_0, LogoCacheCAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
+from utils.checkpoint_utils import extract_texture_metadata
 
 
 class JointTextureDataset(Dataset):
@@ -86,6 +87,8 @@ def main():
     ap.add_argument("--learning_rate", type=float, default=1e-4)
     ap.add_argument("--num_warmup_steps", type=int, default=500)
     ap.add_argument("--bf_num_tokens", type=int, default=16)
+    ap.add_argument("--texture_mode", type=str, default="patch_resampled", choices=["patch_resampled", "legacy_pooled"])
+    ap.add_argument("--clip_hidden_layer", type=int, default=-1)
     args = ap.parse_args()
 
     accelerator = Accelerator()
@@ -126,6 +129,9 @@ def main():
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
 
     ckpt = torch.load(args.texture_adapter_ckpt, map_location="cpu")
+    tex_meta = extract_texture_metadata(ckpt)
+    if tex_meta:
+        print(f"[train_GAM_texture_joint] texture checkpoint meta: {tex_meta}")
     adapter_modules.load_state_dict(ckpt["texture_adapter"], strict=False)
     bf.load_state_dict(ckpt["bf_texture_conditioner"], strict=False)
 
@@ -158,7 +164,7 @@ def main():
                 text_h = text_encoder(batch["input_ids"])[0]
                 clip_out = image_encoder(batch["clip_texture"], output_hidden_states=True)
 
-            tex_tokens, _ = bf(clip_image_embeds=clip_out.image_embeds, texture_images=batch["texture_image"], clip_vision_tokens=clip_out.hidden_states[-1][:, 1:, :], texture_mode="patch_resampled")
+            tex_tokens, _ = bf(clip_image_embeds=clip_out.image_embeds, texture_images=batch["texture_image"], clip_vision_tokens=clip_out.hidden_states[args.clip_hidden_layer][:, 1:, :], texture_mode=args.texture_mode)
             enc_h = torch.cat([text_h, tex_tokens], dim=1)
 
             noise = torch.randn_like(latents)
@@ -179,10 +185,17 @@ def main():
                 print(f"step={step}, loss={loss.item():.6f}, encoder_hidden_states={tuple(enc_h.shape)}")
             if accelerator.is_main_process and step % 2000 == 0 and step > 0:
                 torch.save({
+                    "checkpoint_format": "gam_texture_joint_v1",
                     "unet": accelerator.unwrap_model(unet).state_dict(),
                     "ref_unet": accelerator.unwrap_model(ref_unet).state_dict(),
                     "texture_adapter": accelerator.unwrap_model(torch.nn.ModuleList(unet.attn_processors.values())).state_dict(),
                     "bf_texture_conditioner": accelerator.unwrap_model(bf).state_dict(),
+                    "meta": {
+                        "texture_num_tokens": args.bf_num_tokens,
+                        "texture_mode": args.texture_mode,
+                        "image_encoder_path": args.image_encoder_path,
+                        "clip_hidden_layer": args.clip_hidden_layer,
+                    },
                 }, os.path.join(args.output_dir, f"checkpoint-{step}.pt"))
             step += 1
             if step >= args.max_train_steps:

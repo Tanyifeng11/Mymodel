@@ -23,6 +23,7 @@ from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
+from utils.checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -103,6 +104,8 @@ class IMAGGarment(StableDiffusionPipeline):
         self.bf_texture_conditioner = None
         self.bf_clip_embeddings_dim = None
         self.image_proj_model = self.init_proj()
+        self.texture_meta = {}
+        self.effective_texture_num_tokens = self.num_tokens
         self.load_texture_adapter()
 
     def init_proj(self):
@@ -204,10 +207,15 @@ class IMAGGarment(StableDiffusionPipeline):
             # 这里 texture adapter 也先保持 False，避免再遇到反序列化限制问题
             state_dict = torch.load(self.texture_ckpt, map_location="cpu")
 
+        self.texture_meta = extract_texture_metadata(state_dict)
+        if self.texture_meta:
+            print(f"[load_texture_adapter] metadata: {self.texture_meta}")
+
         if "image_proj" in state_dict and len(state_dict["image_proj"]) > 0:
             self.texture_condition_mode = "patch_resampled"
             try:
                 self.image_proj_model.load_state_dict(state_dict["image_proj"], strict=False)
+                self.effective_texture_num_tokens = int(self.texture_meta.get("texture_num_tokens", self.num_tokens))
                 print(f"[load_texture_adapter] loaded image_proj from: {self.texture_ckpt}")
             except RuntimeError as e:
                 print("[load_texture_adapter] WARNING: image_proj shape mismatch, skipped loading image_proj.")
@@ -223,13 +231,11 @@ class IMAGGarment(StableDiffusionPipeline):
             c2 = bf_sd["stage2.0.weight"].shape[0]
             c3 = bf_sd["stage3.0.weight"].shape[0]
             c4 = bf_sd["stage4.0.weight"].shape[0]
-            if "resampler_queries" in bf_sd:
-                num_tokens = bf_sd["resampler_queries"].shape[1]
-            else:
-                num_tokens = self.num_tokens
+            num_tokens = infer_texture_num_tokens(state_dict, default=self.num_tokens)
+            clip_embed_dim = infer_clip_embed_dim(state_dict, fallback=self.image_encoder.config.hidden_size)
 
             self.bf_texture_conditioner = BFTextureConditioner(
-                clip_embeddings_dim=self.image_encoder.config.hidden_size,
+                clip_embeddings_dim=clip_embed_dim,
                 cross_attention_dim=self.unet.config.cross_attention_dim,
                 num_tokens=num_tokens,
                 stage_channels=(c1, c2, c3, c4),
@@ -237,9 +243,10 @@ class IMAGGarment(StableDiffusionPipeline):
             ).to(self.device, dtype=torch.float16)
 
             missing, unexpected = self.bf_texture_conditioner.load_state_dict(bf_sd, strict=False)
+            self.effective_texture_num_tokens = num_tokens
             print(
                 f"[load_texture_adapter] loaded bf_texture_conditioner from: {self.texture_ckpt} "
-                f"(num_tokens={num_tokens}, stage_channels={(c1, c2, c3, c4)}, missing={len(missing)}, unexpected={len(unexpected)})"
+                f"(num_tokens={num_tokens}, clip_embed_dim={clip_embed_dim}, stage_channels={(c1, c2, c3, c4)}, missing={len(missing)}, unexpected={len(unexpected)})"
             )
 
         else:
@@ -627,8 +634,19 @@ class IMAGGarment(StableDiffusionPipeline):
         uncond_image_prompt_embeds = None
 
         if texture_clip_image is not None or texture_embeds is not None:
-            if self.bf_texture_conditioner is not None and self.bf_texture_conditioner.num_tokens != texture_num_tokens:
-                print(f"[IMAGGarment] requested texture_num_tokens={texture_num_tokens}, checkpoint uses {self.bf_texture_conditioner.num_tokens}. using checkpoint setting.")
+            force_override = kwargs.get("force_texture_num_tokens_override", False)
+            ckpt_tokens = self.effective_texture_num_tokens
+            if texture_num_tokens != ckpt_tokens:
+                if force_override:
+                    print(f"[IMAGGarment][WARNING] forcing texture_num_tokens from checkpoint {ckpt_tokens} to CLI {texture_num_tokens}.")
+                    ckpt_tokens = texture_num_tokens
+                else:
+                    print(f"[IMAGGarment][WARNING] CLI texture_num_tokens={texture_num_tokens} but checkpoint uses {ckpt_tokens}. using checkpoint value.")
+            texture_num_tokens = ckpt_tokens
+            for attn_processor in self.unet.attn_processors.values():
+                if isinstance(attn_processor, IPAttnProcessor2_0):
+                    attn_processor.num_tokens = texture_num_tokens
+            print(f"[IMAGGarment] checkpoint format: {self.texture_meta.get('checkpoint_format', 'texture_adapter')}")
             print(f"[IMAGGarment] texture mode: {texture_mode}")
             print(f"[IMAGGarment] texture token count: {texture_num_tokens}")
             print(f"[IMAGGarment] texture ckpt path: {self.texture_ckpt}")

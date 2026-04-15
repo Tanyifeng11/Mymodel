@@ -25,6 +25,7 @@ from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjec
 
 from adapter.utils import is_torch2_available
 from models.bf_texture_module import BFTextureConditioner
+from utils.checkpoint_utils import extract_texture_metadata
 
 if is_torch2_available():
     from adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
@@ -208,9 +209,9 @@ class TextureAdapter(torch.nn.Module):
         if ckpt_path is not None:
             self.load_from_checkpoint(ckpt_path)
 
-    def get_texture_condition_tokens(self, clip_outputs, texture_images, texture_mode="patch_resampled"):
+    def get_texture_condition_tokens(self, clip_outputs, texture_images, texture_mode="patch_resampled", clip_hidden_layer=-1):
         clip_image_embeds = clip_outputs.image_embeds
-        clip_patch_tokens = clip_outputs.hidden_states[-1][:, 1:, :]
+        clip_patch_tokens = clip_outputs.hidden_states[clip_hidden_layer][:, 1:, :]
         return self.bf_texture_conditioner(
             clip_image_embeds=clip_image_embeds,
             texture_images=texture_images,
@@ -218,16 +219,19 @@ class TextureAdapter(torch.nn.Module):
             texture_mode=texture_mode,
         )[0]
 
-    def forward(self, noisy_latents, timesteps, encoder_hidden_states, clip_outputs, texture_images, texture_mode="patch_resampled"):
+    def forward(self, noisy_latents, timesteps, encoder_hidden_states, clip_outputs, texture_images, texture_mode="patch_resampled", **kwargs):
         if texture_images is None:
             raise ValueError("texture_images must be provided for BF texture conditioning.")
-        texture_tokens = self.get_texture_condition_tokens(clip_outputs, texture_images, texture_mode=texture_mode)
+        texture_tokens = self.get_texture_condition_tokens(clip_outputs, texture_images, texture_mode=texture_mode, clip_hidden_layer=kwargs.get("clip_hidden_layer", -1))
         encoder_hidden_states = torch.cat([encoder_hidden_states, texture_tokens], dim=1)
         noise_pred = self.unet(noisy_latents, timesteps, encoder_hidden_states).sample
         return noise_pred, texture_tokens
 
     def load_from_checkpoint(self, ckpt_path: str):
         state_dict = torch.load(ckpt_path, map_location="cpu")
+        meta = extract_texture_metadata(state_dict)
+        if meta:
+            print(f"[TextureAdapter] checkpoint meta: {meta}")
         if "bf_texture_conditioner" in state_dict:
             self.bf_texture_conditioner.load_state_dict(state_dict["bf_texture_conditioner"], strict=False)
         adapter_sd = state_dict.get("texture_adapter", state_dict.get("color_adapter", state_dict.get("ip_adapter", None)))
@@ -237,12 +241,13 @@ class TextureAdapter(torch.nn.Module):
         print(f"Successfully loaded weights from checkpoint {ckpt_path}")
 
 
-def save_texture_adapter_checkpoint(accelerator, model, save_path):
+def save_texture_adapter_checkpoint(accelerator, model, save_path, meta=None):
     unwrapped = accelerator.unwrap_model(model)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     state = {
         "texture_adapter": unwrapped.adapter_modules.state_dict(),
         "bf_texture_conditioner": unwrapped.bf_texture_conditioner.state_dict(),
+        "meta": meta or {},
     }
     torch.save(state, save_path)
 
@@ -338,6 +343,9 @@ def parse_args():
     parser.add_argument("--texture_crop_scale_max", type=float, default=0.9)
     parser.add_argument("--lambda_texture_style", type=float, default=0.1)
     parser.add_argument("--lambda_texture_global", type=float, default=0.0)
+    parser.add_argument("--texture_loss_target_mode", type=str, default="conditioned_texture", choices=["conditioned_texture", "raw_texture"])
+    parser.add_argument("--fixed_seed", type=int, default=1234)
+    parser.add_argument("--clip_hidden_layer", type=int, default=-1)
     parser.add_argument("--unfreeze_mid_block", action="store_true", default=True)
     parser.add_argument("--no_unfreeze_mid_block", action="store_false", dest="unfreeze_mid_block")
     parser.add_argument("--unfreeze_up_blocks", type=int, default=2)
@@ -370,7 +378,7 @@ def run_texture_validation(accelerator, args, texture_adapter, tokenizer, text_e
     model = accelerator.unwrap_model(texture_adapter)
     images = []
 
-    g = torch.Generator(device=accelerator.device).manual_seed(1234)
+    fixed_latent = torch.randn((1, vae.config.latent_channels, args.height // 8, args.width // 8), device=accelerator.device, dtype=weight_dtype, generator=torch.Generator(device=accelerator.device).manual_seed(args.fixed_seed))
     for item in val_items:
         text_ids = tokenizer(item["caption"], padding="max_length", truncation=True, max_length=tokenizer.model_max_length, return_tensors="pt").input_ids.to(accelerator.device)
         with torch.no_grad():
@@ -385,9 +393,9 @@ def run_texture_validation(accelerator, args, texture_adapter, tokenizer, text_e
 
         with torch.no_grad():
             clip_out = image_encoder(clip_tex, output_hidden_states=True)
-            latents = torch.randn((1, vae.config.latent_channels, args.height // 8, args.width // 8), generator=g, device=accelerator.device, dtype=weight_dtype)
+            latents = fixed_latent.clone()
             t = torch.tensor([noise_scheduler.num_train_timesteps - 1], device=accelerator.device, dtype=torch.long)
-            noise_pred, _ = model(latents, t, text_h, clip_out, texture_tensor, texture_mode=args.texture_mode)
+            noise_pred, _ = model(latents, t, text_h, clip_out, texture_tensor, texture_mode=args.texture_mode, clip_hidden_layer=args.clip_hidden_layer)
             x0_hat = reconstruct_x0(latents, noise_pred, t, noise_scheduler)
             decoded = vae.decode(x0_hat / vae.config.scaling_factor).sample
             decoded = (decoded / 2 + 0.5).clamp(0, 1)
@@ -509,6 +517,18 @@ def main():
             init_kwargs = {"wandb": {"name": args.wandb_run_name, "entity": args.wandb_entity, "mode": args.wandb_mode}}
         accelerator.init_trackers(args.wandb_project, config=vars(args), init_kwargs=init_kwargs)
 
+    checkpoint_meta = {
+        "texture_num_tokens": args.bf_num_tokens,
+        "texture_mode": args.texture_mode,
+        "image_encoder_path": args.image_encoder_path,
+        "clip_hidden_layer": args.clip_hidden_layer,
+        "stage_token_hw": list(texture_adapter.bf_texture_conditioner.stage_token_hw),
+        "texture_preprocess_mode": args.texture_preprocess_mode,
+        "bf_base_channels": args.bf_base_channels,
+        "clip_embeddings_dim": image_encoder.config.hidden_size,
+        "texture_loss_target_mode": args.texture_loss_target_mode,
+    }
+
     resume_step = parse_step_from_ckpt_path(pretrained_adapter_path)
     global_step = resume_step
 
@@ -553,6 +573,7 @@ def main():
                     clip_outputs=clip_outputs,
                     texture_images=batch["texture_images"].to(accelerator.device, dtype=weight_dtype),
                     texture_mode=args.texture_mode,
+                    clip_hidden_layer=args.clip_hidden_layer,
                 )
 
                 loss_eps = compute_loss(noise_pred, noise, loss_type=args.loss_type, huber_c=args.huber_c)
@@ -560,7 +581,10 @@ def main():
                 x0_hat = reconstruct_x0(noisy_latents, noise_pred, timesteps, noise_scheduler)
                 decoded_pred = vae.decode(x0_hat / vae.config.scaling_factor).sample
                 decoded_pred = decoded_pred.float()
-                texture_ref = batch["texture_refs"].to(accelerator.device, dtype=torch.float32)
+                if args.texture_loss_target_mode == "conditioned_texture":
+                    texture_ref = batch["texture_images"].to(accelerator.device, dtype=torch.float32)
+                else:
+                    texture_ref = batch["texture_refs"].to(accelerator.device, dtype=torch.float32)
                 loss_style = style_loss_fn(decoded_pred, texture_ref)
 
                 if args.lambda_texture_global > 0:
@@ -606,14 +630,14 @@ def main():
                         save_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         accelerator.save_state(save_dir, safe_serialization=False)
                         if accelerator.is_main_process:
-                            save_texture_adapter_checkpoint(accelerator, texture_adapter, os.path.join(save_dir, "texture_adapter.bin"))
+                            save_texture_adapter_checkpoint(accelerator, texture_adapter, os.path.join(save_dir, "texture_adapter.bin"), meta=checkpoint_meta)
 
             begin = time.perf_counter()
 
     final_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
     accelerator.save_state(final_dir, safe_serialization=False)
     if accelerator.is_main_process:
-        save_texture_adapter_checkpoint(accelerator, texture_adapter, os.path.join(final_dir, "texture_adapter.bin"))
+        save_texture_adapter_checkpoint(accelerator, texture_adapter, os.path.join(final_dir, "texture_adapter.bin"), meta=checkpoint_meta)
 
 
 if __name__ == "__main__":

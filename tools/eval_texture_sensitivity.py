@@ -30,6 +30,7 @@ def main():
     ap.add_argument("--texture_mode", default="patch_resampled", choices=["patch_resampled", "legacy_pooled"])
     ap.add_argument("--texture_num_tokens", type=int, default=16)
     ap.add_argument("--texture_scale", type=float, default=1.0)
+    ap.add_argument("--fixed_seed", type=int, default=1234)
     args = ap.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -42,6 +43,7 @@ def main():
     outputs = []
     for tp in args.texture_paths:
         tex = Image.open(tp).convert("RGB")
+        local_gen = torch.Generator(device=args.device).manual_seed(args.fixed_seed)
         out = pipe(
             ref_image=transforms.Compose([
                 transforms.Resize([640, 512]),
@@ -59,7 +61,7 @@ def main():
             guidance_scale=7.0,
             sketch_scale=0.6,
             ipa_scale=1.0,
-            generator=generator,
+            generator=local_gen,
             num_inference_steps=50,
             texture_mode=args.texture_mode,
             texture_num_tokens=args.texture_num_tokens,

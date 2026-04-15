@@ -9,6 +9,7 @@ from transformers import CLIPImageProcessor
 from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 from adapter.attention_processor import LogoCacheSAttnProcessor2_0, LogoRefSAttnProcessor2_0, LogoCacheCAttnProcessor2_0 , CAttnProcessor2_0,IPAttnProcessor2_0
+from utils.checkpoint_utils import load_checkpoint_file, detect_gam_checkpoint_format, infer_texture_num_tokens, extract_texture_metadata
 import argparse
 
 
@@ -42,6 +43,58 @@ def image_grid(imgs, rows, cols):
     return grid
 
 
+def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules):
+    state = load_checkpoint_file(ckpt_path)
+    ckpt_format = detect_gam_checkpoint_format(state)
+    print(f"[load_gam_checkpoint] detected format: {ckpt_format}")
+
+    unet_loaded = ref_loaded = adapter_loaded = bf_loaded = False
+    bf_state = None
+    if ckpt_format == "legacy_module":
+        model_sd = state["module"]
+        ref_unet_dict = {}
+        unet_dict = {}
+        adapter_modules_dict = {}
+        for k, v in model_sd.items():
+            if k.startswith("ref_unet"):
+                ref_unet_dict[k.replace("ref_unet.", "")] = v
+            elif k.startswith("unet"):
+                unet_dict[k.replace("unet.", "")] = v
+            elif k.startswith("adapter_modules"):
+                adapter_modules_dict[k.replace("adapter_modules.", "")] = v
+        if unet_dict:
+            unet.load_state_dict(unet_dict, strict=False)
+            unet_loaded = True
+        if ref_unet_dict:
+            ref_unet.load_state_dict(ref_unet_dict, strict=False)
+            ref_loaded = True
+        if adapter_modules_dict:
+            adapter_modules.load_state_dict(adapter_modules_dict, strict=False)
+            adapter_loaded = True
+        meta = {}
+    elif ckpt_format == "gam_texture_joint_v1":
+        if "unet" in state:
+            unet.load_state_dict(state["unet"], strict=False)
+            unet_loaded = True
+        if "ref_unet" in state:
+            ref_unet.load_state_dict(state["ref_unet"], strict=False)
+            ref_loaded = True
+        if "texture_adapter" in state:
+            adapter_modules.load_state_dict(state["texture_adapter"], strict=False)
+            adapter_loaded = True
+        if "bf_texture_conditioner" in state:
+            bf_state = state["bf_texture_conditioner"]
+            bf_loaded = True
+        meta = extract_texture_metadata(state)
+    else:
+        raise ValueError(f"Unsupported GAM checkpoint format: {ckpt_format}")
+
+    print(f"[load_gam_checkpoint] unet_loaded={unet_loaded}, ref_unet_loaded={ref_loaded}, adapter_loaded={adapter_loaded}, bf_in_ckpt={bf_loaded}")
+    if meta:
+        print(f"[load_gam_checkpoint] metadata: {meta}")
+    return {"format": ckpt_format, "meta": meta, "bf_state": bf_state}
+
+
 def prepare(args):
     generator = torch.Generator(device=args.device).manual_seed(42)
     
@@ -52,7 +105,7 @@ def prepare(args):
         dtype=torch.float16, device=args.device)
     unet = UNet2DConditionModel.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="unet").to(
         dtype=torch.float16,device=args.device)
-    image_encoder  = CLIPVisionModelWithProjection.from_pretrained("h94/IP-Adapter",subfolder ="models/image_encoder").to(
+    image_encoder  = CLIPVisionModelWithProjection.from_pretrained(args.image_encoder_path,subfolder ="models/image_encoder").to(
         dtype=torch.float16, device=args.device)
 
     # set attention processor
@@ -71,7 +124,7 @@ def prepare(args):
         if cross_attention_dim is None:
             attn_procs[name] = LogoRefSAttnProcessor2_0(name, hidden_size)
         else:
-            attn_procs[name] = IPAttnProcessor2_0( hidden_size=hidden_size, cross_attention_dim=cross_attention_dim)
+            attn_procs[name] = IPAttnProcessor2_0( hidden_size=hidden_size, cross_attention_dim=cross_attention_dim, num_tokens=args.texture_num_tokens)
 
     unet.set_attn_processor(attn_procs)
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
@@ -105,23 +158,20 @@ def prepare(args):
     del st
     ref_unet.to(dtype=torch.float16,device=args.device)
     # weights load
-    model_sd = torch.load(args.GAM_model_ckpt, map_location="cpu", weights_only=False)["module"]
-
-    ref_unet_dict = {}
-    unet_dict = {}
-    adapter_modules_dict = {}
-    for k in model_sd.keys():
-        if k.startswith("ref_unet"):
-            ref_unet_dict[k.replace("ref_unet.", "")] = model_sd[k]
-        elif k.startswith("unet"):
-            unet_dict[k.replace("unet.", "")] = model_sd[k]
-        elif k.startswith("adapter_modules"):
-            adapter_modules_dict[k.replace("adapter_modules.", "")] = model_sd[k]
+    gam_info = load_gam_checkpoint(args.GAM_model_ckpt, unet, ref_unet, adapter_modules)
+    gam_meta = gam_info.get("meta", {})
+    ckpt_tokens = int(gam_meta.get("texture_num_tokens", args.texture_num_tokens))
+    if ckpt_tokens != args.texture_num_tokens:
+        if args.force_texture_num_tokens_override:
+            print(f"[WARNING] force override texture_num_tokens: ckpt={ckpt_tokens}, cli={args.texture_num_tokens}")
         else:
-            print(k)
+            print(f"[WARNING] texture_num_tokens mismatch: ckpt={ckpt_tokens}, cli={args.texture_num_tokens}. using checkpoint value.")
+            args.texture_num_tokens = ckpt_tokens
 
-    ref_unet.load_state_dict(ref_unet_dict)
-    adapter_modules.load_state_dict(adapter_modules_dict,strict=False)
+    for proc in unet.attn_processors.values():
+        if isinstance(proc, IPAttnProcessor2_0):
+            proc.num_tokens = args.texture_num_tokens
+    print(f"[prepare] effective texture_num_tokens for IPAttnProcessor2_0: {args.texture_num_tokens}")
 
     noise_scheduler = DDIMScheduler(
         num_train_timesteps=1000,
@@ -157,6 +207,8 @@ if __name__ == "__main__":
     parser.add_argument('--texture_num_tokens', type=int, default=16)
     parser.add_argument('--texture_scale', type=float, default=1.0)
 
+    parser.add_argument('--image_encoder_path', type=str, default='h94/IP-Adapter')
+    parser.add_argument('--force_texture_num_tokens_override', action='store_true')
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument(
         "--width",
@@ -234,6 +286,7 @@ if __name__ == "__main__":
         texture_mode=args.texture_mode,
         texture_num_tokens=args.texture_num_tokens,
         texture_scale=args.texture_scale,
+        force_texture_num_tokens_override=args.force_texture_num_tokens_override,
     )
 
     save_output = []
