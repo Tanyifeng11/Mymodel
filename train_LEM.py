@@ -38,7 +38,7 @@ class MyDataset(torch.utils.data.Dataset):
         self.i_drop_rate = i_drop_rate
         self.image_root_path = image_root_path
         self.args = args
-        self.data = json.load(open(json_file)) # list of dict: [{"image_file": "sketch.png", "text": "A dog"}]
+        self.data = json.load(open(json_file)) # list of dict: [{"image_file": "sketch2.png", "text": "A dog"}]
 
         self.transform = transforms.Compose([
             transforms.Resize(self.size, interpolation=transforms.InterpolationMode.BILINEAR),

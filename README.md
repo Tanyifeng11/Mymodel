@@ -212,7 +212,7 @@ accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatia
 python tools/texture_diagnostics.py \
   --gam_ckpt /path/to/GAM.pt \
   --texture_ckpt /path/to/texture_adapter.bin \
-  --sketch_path /path/to/sketch.png \
+  --sketch_path /path/to/sketch2.png \
   --prompt "a blue jacket" \
   --conflict_prompt "a bright red jacket" \
   --texture_condition_mode spatial \
@@ -242,7 +242,7 @@ python tools/run_fixed_benchmark.py \
 python tools/analyze_texture_reliance.py \
   --gam_ckpt /path/to/GAM.pt \
   --texture_ckpt /path/to/texture_adapter.bin \
-  --sketch_path /path/to/sketch.png \
+  --sketch_path /path/to/sketch2.png \
   --real_texture_path /path/to/texture.png \
   --prompt "a blue jacket" \
   --output_dir eval_outputs/texture_reliance

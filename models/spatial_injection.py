@@ -19,7 +19,7 @@ class SpatialInjectionAdapter(nn.Module):
         alphas: Sequence[float] = (1.0, 1.0, 0.7, 0.5),
     ):
         super().__init__()
-        self.unet = unet
+        object.__setattr__(self, "unet", unet)
         self.proj = nn.ModuleList(
             [nn.Conv2d(cin, cout, kernel_size=1) for cin, cout in zip(fusion_channels, target_channels)]
         )
@@ -27,6 +27,10 @@ class SpatialInjectionAdapter(nn.Module):
         self._fused_features: Optional[List[torch.Tensor]] = None
         self._enabled = False
         self._hooks = []
+
+
+    def trainable_parameters(self):
+        return self.proj.parameters()
 
     def set_alphas(self, alphas: Sequence[float]):
         self.alphas = list(alphas)
