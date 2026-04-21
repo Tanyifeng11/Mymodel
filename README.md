@@ -92,6 +92,28 @@ sh train_GAM.sh
 sh train_LEM.sh
 ```
 
+### 🧩 Spatial texture mode (recommended)
+
+`IMAGGarment-1` now supports a minimal BF-Fashion-style **spatial texture injection** branch:
+- `token`: old texture-token conditioning only
+- `spatial`: new multi-scale spatial injection only (**recommended**)
+- `hybrid`: token + spatial together
+
+Joint training example:
+```bash
+accelerate launch train_GAM_texture_joint.py \
+  --pretrained_model_name_or_path stable-diffusion-v1-5/stable-diffusion-v1-5 \
+  --pretrained_vae_model_path stabilityai/sd-vae-ft-mse \
+  --dataset_json_path /path/to/train_joint_texture.json \
+  --data_root_path /path/to/GarmentBench \
+  --texture_adapter_ckpt /path/to/texture_adapter_checkpoint.pt \
+  --texture_condition_mode spatial \
+  --texture_preprocess_mode crop_tile \
+  --lambda_style 0.5 \
+  --alpha1 1.0 --alpha2 1.0 --alpha3 0.7 --alpha4 0.5 \
+  --output_dir /path/to/output
+```
+
 ### 📊 Use Weights & Biases (wandb) for training monitoring
 All three training scripts now support wandb directly:
 
@@ -126,10 +148,142 @@ python inference_IMAGGarment-1.py \
 --prompt [your prompt] \
 --output_path [your save path] \
 --texture_ckpt [texture adapter checkpoint] \
+--texture_condition_mode spatial \
+--texture_preprocess_mode crop_tile \
+--alpha1 1.0 --alpha2 1.0 --alpha3 0.7 --alpha4 0.5 \
 --ipa_scale 1.4 \
 --guidance_scale 5.5 \
 --device [your device]
 ```
+
+### Migration note
+- Old token path remains available with `--texture_condition_mode token`.
+- New experiments should default to `--texture_condition_mode spatial`.
+- Keep `--texture_preprocess_mode` consistent across texture training, joint training, and inference.
+
+## 🧪 Round-2 / research mode
+
+### New flags (joint training)
+- `--fusion_type {minimal,bfm_like}` (`bfm_like` is experimental)
+- `--joint_t_drop_rate`, `--joint_i_drop_rate`, `--joint_ti_drop_rate`
+- `--style_loss_type {gram,gram+patch}`
+- `--lambda_patch_style`
+- `--val_vis_steps` (save token/spatial/hybrid validation grids to `val_outputs/step_xxxxxx/<mode>/`)
+
+### Fusion type note
+- `minimal`: safe default concat fusion
+- `bfm_like`: lightweight bidirectional modulation approximation (NOT full BF-Fashion)
+
+### Recommended first experiment
+- `--texture_condition_mode spatial`
+- `--fusion_type minimal`
+- `--lambda_style 0.5`
+- `--joint_t_drop_rate 0.2 --joint_i_drop_rate 0.05 --joint_ti_drop_rate 0.05`
+- `--texture_preprocess_mode crop_tile`
+
+### Ablation commands (examples)
+1. **baseline token**
+```bash
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode token --fusion_type minimal --lambda_style 0.0
+```
+2. **spatial minimal**
+```bash
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type minimal --lambda_style 0.5
+```
+3. **hybrid minimal**
+```bash
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode hybrid --fusion_type minimal --lambda_style 0.5
+```
+4. **spatial bfm_like**
+```bash
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type bfm_like --lambda_style 0.5
+```
+5. **spatial minimal + style loss**
+```bash
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type minimal --lambda_style 0.5 --style_loss_type gram
+```
+6. **spatial minimal + style loss + joint dropout**
+```bash
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type minimal --lambda_style 0.5 --joint_t_drop_rate 0.2 --joint_i_drop_rate 0.05 --joint_ti_drop_rate 0.05
+```
+
+### Diagnostics tool
+```bash
+python tools/texture_diagnostics.py \
+  --gam_ckpt /path/to/GAM.pt \
+  --texture_ckpt /path/to/texture_adapter.bin \
+  --sketch_path /path/to/sketch.png \
+  --prompt "a blue jacket" \
+  --conflict_prompt "a bright red jacket" \
+  --texture_condition_mode spatial \
+  --fusion_type minimal \
+  --texture_preprocess_mode crop_tile \
+  --output_dir diagnostics_output
+```
+
+## 📊 Round-3 / Evaluation and Ablation
+
+### 1) Fixed benchmark split
+Create or reuse a reproducible fixed split:
+```bash
+python tools/run_fixed_benchmark.py \
+  --dataset_json /path/to/train_joint_texture.json \
+  --data_root /path/to/GarmentBench \
+  --split_path eval/benchmarks/fixed_val_split.json \
+  --num_samples 16 \
+  --seed 42 \
+  --gam_ckpt /path/to/GAM.pt \
+  --texture_ckpt /path/to/texture_adapter.bin \
+  --run_name step_000500
+```
+
+### 2) Texture reliance analysis
+```bash
+python tools/analyze_texture_reliance.py \
+  --gam_ckpt /path/to/GAM.pt \
+  --texture_ckpt /path/to/texture_adapter.bin \
+  --sketch_path /path/to/sketch.png \
+  --real_texture_path /path/to/texture.png \
+  --prompt "a blue jacket" \
+  --output_dir eval_outputs/texture_reliance
+```
+
+### 3) Ablation suite
+Prepare a json map from experiment name/mode to checkpoint path:
+```json
+{
+  "token": "/path/to/token_gam.pt",
+  "spatial": "/path/to/spatial_gam.pt",
+  "hybrid": "/path/to/hybrid_gam.pt",
+  "spatial_bfm_like": "/path/to/spatial_bfm_gam.pt"
+}
+```
+
+Run:
+```bash
+python tools/run_ablation_suite.py \
+  --dataset_json /path/to/train_joint_texture.json \
+  --data_root /path/to/GarmentBench \
+  --split_path eval/benchmarks/fixed_val_split.json \
+  --texture_ckpt /path/to/texture_adapter.bin \
+  --mode_ckpt_map_json /path/to/mode_ckpt_map.json \
+  --output_dir eval_outputs/ablation_suite
+```
+
+### Output structure
+- `eval/benchmarks/fixed_val_split.json`
+- `eval_outputs/<run_name>/per_image_metrics.csv|json`
+- `eval_outputs/<run_name>/summary_metrics.csv|json|md`
+- `eval_outputs/texture_reliance/texture_reliance.csv|json|md`
+- `eval_outputs/ablation_suite/ablation_results.csv|json|md`
+- `experiment_manifest.json` next to each run output
+
+### Recommended workflow
+1. Train checkpoint  
+2. Run fixed benchmark  
+3. Run texture reliance analysis  
+4. Run ablation suite  
+5. Compare token/spatial/hybrid/spatial_bfm_like in markdown/csv reports
 原模型
 python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --sketch_path ./assets/sketch.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask.png --texture_ckpt ./output/texture_adapter_MMG/checkpoint-21900/texture_adapter.bin --device cuda
 python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --LEM_model_ckpt ./weight/LEM.bin --sketch_path ./assets/sketch.png --logo_path ./assets/logo.png --mask_path ./assets/shirt_mask.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask.png --texture_ckpt ./output/texture_adapter_MMG/checkpoint-21900/texture_adapter.bin --device cuda

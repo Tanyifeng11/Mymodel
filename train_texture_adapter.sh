@@ -24,6 +24,7 @@ DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/MMDGarment"
 OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture"
 LOGGING_DIR="logs"
 
+# 置空("")表示从头训练；填写checkpoint路径表示继续训练（resume/finetune）
 PRETRAINED_TEXTURE_ADAPTER_PATH="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture/checkpoint-43800/texture_adapter.bin"
 
 # =========================
