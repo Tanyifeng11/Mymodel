@@ -25,7 +25,7 @@ from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjec
 
 from adapter.utils import is_torch2_available
 from models.bf_texture_module import BFTextureConditioner
-from utils.texture_preprocess import preprocess_texture_image
+from texture_preprocess import preprocess_texture_image
 if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None:
     from repo_utils.checkpoint_utils import extract_texture_metadata
 else:

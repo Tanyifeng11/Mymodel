@@ -30,7 +30,7 @@ from models.bf_texture_module import BFTextureConditioner
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder, MultiScaleSketchEncoder
 from models.spatial_fusion import MultiScaleFusion
 from models.spatial_injection import SpatialInjectionAdapter
-from utils.texture_preprocess import preprocess_texture_image
+from texture_preprocess import preprocess_texture_image
 
 if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None:
     from repo_utils.checkpoint_utils import extract_texture_metadata
@@ -316,44 +316,6 @@ def main():
     if (args.joint_t_drop_rate + args.joint_i_drop_rate + args.joint_ti_drop_rate) > 1.0:
         raise ValueError("joint dropout probabilities sum must be <= 1.0")
 
-    ap.add_argument("--height", type=int, default=448)
-    ap.add_argument("--width", type=int, default=320)
-
-    ap.add_argument("--dataloader_num_workers", type=int, default=0)
-    ap.add_argument("--save_steps", type=int, default=2000)
-    ap.add_argument("--max_grad_norm", type=float, default=1.0)
-
-    # tracking / wandb
-    ap.add_argument("--report_to", type=str, default="none", choices=["none", "wandb", "tensorboard", "all"])
-    ap.add_argument("--wandb_project", type=str, default="Mymodel")
-    ap.add_argument("--wandb_run_name", type=str, default=None)
-    ap.add_argument("--wandb_entity", type=str, default=None)
-    ap.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"])
-
-    return ap.parse_args()
-
-
-def main():
-    args = parse_args()
-
-    if torch.cuda.is_available():
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-
-    # 先解析 resume step，给 scheduler 和日志用
-    resume_step_for_scheduler = 0
-    if args.resume_from_checkpoint:
-        resume_step_for_scheduler = get_resume_step(args.resume_from_checkpoint)
-
-    logging_dir = os.path.join(args.output_dir, "logs")
-    project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
-
-    accelerator = Accelerator(
-        log_with=None if args.report_to == "none" else args.report_to,
-        project_config=project_config,
-    )
-    weight_dtype = get_weight_dtype(accelerator)
-
     os.makedirs(args.output_dir, exist_ok=True)
 
     texture_state = load_checkpoint_file(args.texture_adapter_ckpt)
@@ -375,24 +337,29 @@ def main():
     ref_unet = UNet2DConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet")
     vae = AutoencoderKL.from_pretrained(args.pretrained_vae_model_path)
 
-    unet.set_attn_processor(build_unet_attn_processors(unet, args.bf_num_tokens))
-    ref_unet.set_attn_processor(build_ref_unet_attn_processors(ref_unet))
+    attn_procs = {}
+    for name in unet.attn_processors.keys():
+        cad = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
+        if name.startswith("mid_block"):
+            hs = unet.config.block_out_channels[-1]
+        elif name.startswith("up_blocks"):
+            hs = list(reversed(unet.config.block_out_channels))[int(name[len("up_blocks.")])]
+        else:
+            hs = unet.config.block_out_channels[int(name[len("down_blocks.")])]
+        attn_procs[name] = LogoRefSAttnProcessor2_0(name, hs) if cad is None else IPAttnProcessor2_0(hs, cad, num_tokens=args.bf_num_tokens)
+    unet.set_attn_processor(attn_procs)
 
-    bf = build_bf_texture_conditioner(
-        args=args,
-        clip_embeddings_dim=image_encoder.config.hidden_size,
-        cross_attention_dim=unet.config.cross_attention_dim,
-    )
-
-    is_resuming = bool(args.resume_from_checkpoint)
-
-    if accelerator.is_main_process and is_resuming:
-        print(f"[resume] resume mode enabled, checkpoint dir: {args.resume_from_checkpoint}")
-        if args.gam_init_ckpt:
-            print("[resume] ignore --gam_init_ckpt because --resume_from_checkpoint is set.")
-
-    if not is_resuming and args.gam_init_ckpt:
-        load_gam_init_checkpoint(args.gam_init_ckpt, unet, ref_unet, accelerator)
+    attn_procs2 = {}
+    for name in ref_unet.attn_processors.keys():
+        cad = None if name.endswith("attn1.processor") else ref_unet.config.cross_attention_dim
+        if name.startswith("mid_block"):
+            hs = ref_unet.config.block_out_channels[-1]
+        elif name.startswith("up_blocks"):
+            hs = list(reversed(ref_unet.config.block_out_channels))[int(name[len("up_blocks.")])]
+        else:
+            hs = ref_unet.config.block_out_channels[int(name[len("down_blocks.")])]
+        attn_procs2[name] = LogoCacheSAttnProcessor2_0(name, hs) if cad is None else LogoCacheCAttnProcessor2_0(name, hs, hs)
+    ref_unet.set_attn_processor(attn_procs2)
 
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
     if not is_resuming:
@@ -493,124 +460,9 @@ def main():
     warned_no_mask_once = False
     drop_counts = {"t": 0, "i": 0, "ti": 0, "total": 0}
 
-    unet.enable_gradient_checkpointing()
-    ref_unet.enable_gradient_checkpointing()
-    maybe_enable_xformers(unet, ref_unet, accelerator)
-
-    if accelerator.is_main_process:
-        print(f"[info] trainable params in unet: {count_trainable_params(unet) / 1e6:.2f}M")
-        print(f"[info] trainable params in ref_unet: {count_trainable_params(ref_unet) / 1e6:.2f}M")
-        print(f"[info] trainable params in bf: {count_trainable_params(bf) / 1e6:.2f}M")
-        print(f"[info] mixed precision = {accelerator.mixed_precision}")
-
-    trainable_params = [
-        p for p in itertools.chain(unet.parameters(), ref_unet.parameters(), bf.parameters())
-        if p.requires_grad
-    ]
-
-    optimizer = torch.optim.AdamW(
-        trainable_params,
-        lr=args.learning_rate,
-        foreach=False,
-    )
-
-    # resume 时让 scheduler 的 total steps 接着走
-    scheduler_total_steps = resume_step_for_scheduler + args.max_train_steps
-    scheduler = get_scheduler(
-        "cosine",
-        optimizer=optimizer,
-        num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=scheduler_total_steps,
-    )
-
-    ds = JointTextureDataset(
-        args.dataset_json_path,
-        tokenizer,
-        args.data_root_path,
-        height=args.height,
-        width=args.width,
-    )
-
-    dl = DataLoader(
-        ds,
-        batch_size=args.train_batch_size,
-        shuffle=True,
-        collate_fn=collate_fn,
-        num_workers=args.dataloader_num_workers,
-        pin_memory=torch.cuda.is_available(),
-        persistent_workers=(args.dataloader_num_workers > 0),
-    )
-
-    unet, ref_unet, bf, optimizer, dl, scheduler = accelerator.prepare(
-        unet, ref_unet, bf, optimizer, dl, scheduler
-    )
-
-    text_encoder.to(accelerator.device, dtype=weight_dtype)
-    vae.to(accelerator.device, dtype=weight_dtype)
-    image_encoder.to(accelerator.device, dtype=weight_dtype)
-
-    resume_step = 0
-    if is_resuming:
-        accelerator.load_state(args.resume_from_checkpoint)
-        resume_step = get_resume_step(args.resume_from_checkpoint)
-        if accelerator.is_main_process:
-            print(f"[resume] loaded full training state from: {args.resume_from_checkpoint}")
-            print(f"[resume] resume_step = {resume_step}")
-
-    if accelerator.is_main_process and args.report_to != "none":
-        init_kwargs = {}
-        if args.report_to in ["wandb", "all"]:
-            wandb_kwargs = {"mode": args.wandb_mode}
-            if args.wandb_run_name:
-                wandb_kwargs["name"] = args.wandb_run_name
-            if args.wandb_entity:
-                wandb_kwargs["entity"] = args.wandb_entity
-            init_kwargs["wandb"] = wandb_kwargs
-
-        tracker_name = args.wandb_project if args.report_to in ["wandb", "all"] else "train_GAM_texture_joint"
-        accelerator.init_trackers(
-            tracker_name,
-            config=vars(args),
-            init_kwargs=init_kwargs,
-        )
-
-        accelerator.log(
-            {
-                "dataset/num_samples": len(ds),
-                "dataset/batch_size": args.train_batch_size,
-                "dataset/height": args.height,
-                "dataset/width": args.width,
-                "model/trainable_unet_M": count_trainable_params(accelerator.unwrap_model(unet)) / 1e6,
-                "model/trainable_ref_unet_M": count_trainable_params(accelerator.unwrap_model(ref_unet)) / 1e6,
-                "model/trainable_bf_M": count_trainable_params(accelerator.unwrap_model(bf)) / 1e6,
-            },
-            step=resume_step,
-        )
-
-    # prepare/load_state 后重新拿一遍 trainable_params，供 clip_grad_norm_ 使用
-    trainable_params = [
-        p for p in itertools.chain(unet.parameters(), ref_unet.parameters(), bf.parameters())
-        if p.requires_grad
-    ]
-
-    noise_scheduler = DDIMScheduler(
-        beta_start=0.00085,
-        beta_end=0.012,
-        beta_schedule="scaled_linear",
-        num_train_timesteps=1000,
-        prediction_type="epsilon",
-    )
-
-    global_step = resume_step
-    target_step = resume_step + args.max_train_steps
-
-    unet.train()
-    ref_unet.train()
-    bf.train()
-
-    begin = time.perf_counter()
-
-    while global_step < target_step:
+    ns = DDIMScheduler(beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000, prediction_type="epsilon")
+    step = 0
+    while step < args.max_train_steps:
         for batch in dl:
             with torch.no_grad():
                 latents = vae.encode(batch["vae_cloth"]).latent_dist.sample() * 0.18215
