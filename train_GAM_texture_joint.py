@@ -221,9 +221,13 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "lambda_style": args.lambda_style,
         "style_loss_type": args.style_loss_type,
         "lambda_patch_style": args.lambda_patch_style,
+        "lambda_edge": args.lambda_edge,
         "joint_t_drop_rate": args.joint_t_drop_rate,
         "joint_i_drop_rate": args.joint_i_drop_rate,
         "joint_ti_drop_rate": args.joint_ti_drop_rate,
+        "hybrid_drop_token_rate": args.hybrid_drop_token_rate,
+        "hybrid_drop_spatial_rate": args.hybrid_drop_spatial_rate,
+        "train_spatial_only": args.train_spatial_only,
         "vis_every_n_steps": args.vis_every_n_steps,
         "num_vis_samples": args.num_vis_samples,
         "fixed_vis_json": args.fixed_vis_json,
@@ -422,6 +426,42 @@ def reconstruct_x0(noisy_latents, noise_pred, timesteps, noise_scheduler):
     return x0_hat
 
 
+def rgb_to_gray(x):
+    return (
+        0.2989 * x[:, 0:1, :, :]
+        + 0.5870 * x[:, 1:2, :, :]
+        + 0.1140 * x[:, 2:3, :, :]
+    )
+
+
+def sobel_edges(x):
+    x01 = (x + 1.0) * 0.5
+    gray = rgb_to_gray(x01)
+    kx = torch.tensor(
+        [[[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]]],
+        device=gray.device,
+        dtype=gray.dtype,
+    ).unsqueeze(0)
+    ky = torch.tensor(
+        [[[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]]],
+        device=gray.device,
+        dtype=gray.dtype,
+    ).unsqueeze(0)
+    gx = F.conv2d(gray, kx, padding=1)
+    gy = F.conv2d(gray, ky, padding=1)
+    return torch.sqrt(gx * gx + gy * gy + 1e-6)
+
+
+def masked_edge_l1(pred, target, mask=None):
+    pred_edge = sobel_edges(pred)
+    target_edge = sobel_edges(target)
+    if mask is not None:
+        mask = F.interpolate(mask, size=pred_edge.shape[-2:], mode="nearest")
+        pred_edge = pred_edge * mask
+        target_edge = target_edge * mask
+    return F.l1_loss(pred_edge, target_edge)
+
+
 # =========================
 # Validation vis
 # =========================
@@ -582,11 +622,15 @@ def main():
         choices=["gram", "gram+patch"],
     )
     ap.add_argument("--lambda_patch_style", type=float, default=0.0)
+    ap.add_argument("--lambda_edge", type=float, default=0.05)
 
     # dropout
     ap.add_argument("--joint_t_drop_rate", type=float, default=0.3)
     ap.add_argument("--joint_i_drop_rate", type=float, default=0.05)
     ap.add_argument("--joint_ti_drop_rate", type=float, default=0.05)
+    ap.add_argument("--hybrid_drop_token_rate", type=float, default=0.25)
+    ap.add_argument("--hybrid_drop_spatial_rate", type=float, default=0.25)
+    ap.add_argument("--train_spatial_only", action="store_true")
 
     # vis
     ap.add_argument("--val_vis_steps", type=int, default=0)
@@ -604,6 +648,8 @@ def main():
         args.joint_t_drop_rate + args.joint_i_drop_rate + args.joint_ti_drop_rate
     ) > 1.0:
         raise ValueError("joint dropout probabilities sum must be <= 1.0")
+    if (args.hybrid_drop_token_rate + args.hybrid_drop_spatial_rate) > 1.0:
+        raise ValueError("hybrid branch dropout probabilities sum must be <= 1.0")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -789,20 +835,25 @@ def main():
             spatial_injection,
         )
 
-    # bf/token branch 是否训练
-    for p in bf.parameters():
-        p.requires_grad = args.texture_condition_mode in ("token", "hybrid")
+    # bf/token + spatial branch 是否训练
+    if args.train_spatial_only:
+        for p in unet.parameters():
+            p.requires_grad = False
+        for p in ref_unet.parameters():
+            p.requires_grad = False
+        for p in bf.parameters():
+            p.requires_grad = False
+        use_spatial_train = True
+    else:
+        for p in bf.parameters():
+            p.requires_grad = args.texture_condition_mode in ("token", "hybrid")
+        use_spatial_train = args.texture_condition_mode in ("spatial", "hybrid")
 
-    # spatial branch 是否训练
-    use_spatial_train = args.texture_condition_mode in ("spatial", "hybrid")
-    for module in [
-        spatial_texture_encoder,
-        spatial_sketch_encoder,
-        spatial_fusion,
-        spatial_injection,
-    ]:
+    for module in [spatial_texture_encoder, spatial_sketch_encoder, spatial_fusion]:
         for p in module.parameters():
             p.requires_grad = use_spatial_train
+    for p in spatial_injection.trainable_parameters():
+        p.requires_grad = use_spatial_train
 
     # 显式构造 trainable params
     trainable_param_groups = []
@@ -822,8 +873,9 @@ def main():
             })
             trainable_params.extend(unique)
 
-    # 1. 只训练 UNet 的 attention processors
-    add_params(nn.ModuleList(unet.attn_processors.values()).parameters())
+    # 1. 只训练 UNet 的 attention processors（spatial-only 时不训练）
+    if not args.train_spatial_only:
+        add_params(nn.ModuleList(unet.attn_processors.values()).parameters())
 
     # 2. BF token conditioner
     add_params(bf.parameters())
@@ -834,9 +886,6 @@ def main():
         add_params(spatial_sketch_encoder.parameters())
         add_params(spatial_fusion.parameters())
         add_params(spatial_injection.trainable_parameters())  # 只加 proj，不加整个 unet
-
-    if len(trainable_params) == 0:
-        raise RuntimeError("No trainable parameters found. Check requires_grad settings.")
 
     if len(trainable_params) == 0:
         raise RuntimeError("No trainable parameters found. Check requires_grad settings.")
@@ -916,6 +965,7 @@ def main():
 
     warned_no_mask_once = False
     drop_counts = {"t": 0, "i": 0, "ti": 0, "total": 0}
+    branch_drop_counts = {"token": 0, "spatial": 0, "total": 0}
     global_step = 0
 
     null_input_ids = tokenizer(
@@ -968,8 +1018,28 @@ def main():
                     text_h = text_encoder(input_ids)[0]
                     clip_out = image_encoder(clip_texture, output_hidden_states=True)
 
-                use_token = args.texture_condition_mode in ("token", "hybrid")
-                use_spatial = args.texture_condition_mode in ("spatial", "hybrid")
+                drop_token_branch = False
+                drop_spatial_branch = False
+                if args.texture_condition_mode == "hybrid":
+                    r_branch = random.random()
+                    if r_branch < args.hybrid_drop_token_rate:
+                        drop_token_branch = True
+                    elif r_branch < (
+                        args.hybrid_drop_token_rate + args.hybrid_drop_spatial_rate
+                    ):
+                        drop_spatial_branch = True
+                    branch_drop_counts["total"] += 1
+                    if drop_token_branch:
+                        branch_drop_counts["token"] += 1
+                    if drop_spatial_branch:
+                        branch_drop_counts["spatial"] += 1
+
+                use_token = args.texture_condition_mode in ("token", "hybrid") and (
+                    not drop_token_branch
+                )
+                use_spatial = args.texture_condition_mode in ("spatial", "hybrid") and (
+                    not drop_spatial_branch
+                )
 
                 enc_h = text_h
                 if use_token:
@@ -1052,6 +1122,11 @@ def main():
                     loss_patch = style_loss_fn.patch_cosine_loss(
                         decoded.float(), target.float(), mask=mask.float()
                     )
+                loss_edge = masked_edge_l1(
+                    decoded.float(),
+                    batch["vae_sketch"].float(),
+                    mask=batch["garment_mask"].float(),
+                )
 
                 loss = loss_denoise + args.lambda_style * loss_style
                 if (
@@ -1059,6 +1134,7 @@ def main():
                     and args.lambda_patch_style > 0
                 ):
                     loss = loss + args.lambda_patch_style * loss_patch
+                loss = loss + args.lambda_edge * loss_edge
 
                 accelerator.backward(loss)
 
@@ -1085,10 +1161,13 @@ def main():
                         f"loss_denoise={loss_denoise.item():.6f}, "
                         f"loss_style={loss_style.item():.6f}, "
                         f"loss_patch={loss_patch.item():.6f}, "
+                        f"loss_edge={loss_edge.item():.6f}, "
                         f"grad_norm={grad_norm_val}, "
                         f"drop_t={drop_counts['t'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_i={drop_counts['i'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_ti={drop_counts['ti'] / max(1, drop_counts['total']):.3f}, "
+                        f"drop_token_branch={branch_drop_counts['token'] / max(1, branch_drop_counts['total']):.3f}, "
+                        f"drop_spatial_branch={branch_drop_counts['spatial'] / max(1, branch_drop_counts['total']):.3f}, "
                         f"encoder_hidden_states={tuple(enc_h.shape)}"
                     )
 
