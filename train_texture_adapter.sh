@@ -11,17 +11,18 @@ export TOKENIZERS_PARALLELISM=false
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 export NO_PROXY=localhost,127.0.0.1,huggingface.co,cdn-lfs.huggingface.co,hf.co
 
+export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
+
 # =========================
 # Paths
 # =========================
 PRETRAINED_MODEL_NAME_OR_PATH="stable-diffusion-v1-5/stable-diffusion-v1-5"
 IMAGE_ENCODER_PATH="openai/clip-vit-large-patch14"
 
-DATA_JSON_FILE="/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json"
-DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/MMDGarment"
+DATA_JSON_FILE="/mnt/d/tyf/fuxian/Mymodel/data/train_BF_texture.json"
+DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/BF/training"
 
-# 建议新目录，避免和旧实验混在一起
-OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture"
+OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_BF"
 LOGGING_DIR="logs"
 
 # 置空("")表示从头训练；填写checkpoint路径表示继续训练（resume/finetune）
@@ -34,25 +35,40 @@ RESOLUTION=512
 WIDTH=512
 HEIGHT=640
 
-LEARNING_RATE=1e-5
+LEARNING_RATE=2e-5
 WEIGHT_DECAY=1e-2
-NUM_TRAIN_EPOCHS=15
-TRAIN_BATCH_SIZE=4
+NUM_TRAIN_EPOCHS=10
+TRAIN_BATCH_SIZE=2
 DATALOADER_NUM_WORKERS=2
-SAVE_STEPS=8760
+SAVE_STEPS=20000
 
 I_DROP_RATE=0.02
 T_DROP_RATE=0.02
 TI_DROP_RATE=0.02
 
-BF_NUM_TOKENS=4
+BF_NUM_TOKENS=16
 BF_BASE_CHANNELS=32
+
+TEXTURE_MODE="patch_resampled"
+TEXTURE_PREPROCESS_MODE="crop_tile"
+TEXTURE_CROP_SCALE_MIN=0.4
+TEXTURE_CROP_SCALE_MAX=0.9
+TEXTURE_LOSS_TARGET_MODE="conditioned_texture"
+LAMBDA_TEXTURE_STYLE=0.1
+LAMBDA_TEXTURE_GLOBAL=0.0
+CLIP_HIDDEN_LAYER=-1
+FIXED_SEED=1234
+
+VALIDATION_STEPS=500
+VALIDATION_NUM_TEXTURES=4
+
+UNFREEZE_UP_BLOCKS=2
 
 MIXED_PRECISION="fp16"
 
 REPORT_TO="wandb"
 WANDB_PROJECT="Mymodel"
-WANDB_RUN_NAME="texture-adapter-exp5"
+WANDB_RUN_NAME="texture-adapter_BF"
 WANDB_MODE="online"
 
 ADAM_BETA1=0.9
@@ -63,7 +79,7 @@ LR_WARMUP_STEPS=300
 LOSS_TYPE="huber"
 HUBER_C=0.1
 MAX_GRAD_NORM=1.0
-GRADIENT_ACCUMULATION_STEPS=1
+GRADIENT_ACCUMULATION_STEPS=2
 
 # =========================
 # Build command
@@ -78,6 +94,7 @@ CMD=(
   --image_encoder_path "${IMAGE_ENCODER_PATH}"
   --output_dir "${OUTPUT_DIR}"
   --logging_dir "${LOGGING_DIR}"
+  --resume_from_checkpoint "${RESUME_FROM_CHECKPOINT}"
   --resolution "${RESOLUTION}"
   --width "${WIDTH}"
   --height "${HEIGHT}"
@@ -92,6 +109,20 @@ CMD=(
   --ti_drop_rate "${TI_DROP_RATE}"
   --bf_num_tokens "${BF_NUM_TOKENS}"
   --bf_base_channels "${BF_BASE_CHANNELS}"
+  --texture_mode "${TEXTURE_MODE}"
+  --texture_preprocess_mode "${TEXTURE_PREPROCESS_MODE}"
+  --texture_crop_scale_min "${TEXTURE_CROP_SCALE_MIN}"
+  --texture_crop_scale_max "${TEXTURE_CROP_SCALE_MAX}"
+  --texture_loss_target_mode "${TEXTURE_LOSS_TARGET_MODE}"
+  --lambda_texture_style "${LAMBDA_TEXTURE_STYLE}"
+  --lambda_texture_global "${LAMBDA_TEXTURE_GLOBAL}"
+  --clip_hidden_layer "${CLIP_HIDDEN_LAYER}"
+  --fixed_seed "${FIXED_SEED}"
+  --validation_steps "${VALIDATION_STEPS}"
+  --validation_num_textures "${VALIDATION_NUM_TEXTURES}"
+  --unfreeze_mid_block
+  --unfreeze_up_blocks "${UNFREEZE_UP_BLOCKS}"
+  --unfreeze_attention_only
   --mixed_precision "${MIXED_PRECISION}"
   --report_to "${REPORT_TO}"
   --wandb_project "${WANDB_PROJECT}"
@@ -107,10 +138,6 @@ CMD=(
   --max_grad_norm "${MAX_GRAD_NORM}"
   --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}"
 )
-
-if [ -n "${PRETRAINED_TEXTURE_ADAPTER_PATH}" ]; then
-  CMD+=(--pretrained_texture_adapter_path "${PRETRAINED_TEXTURE_ADAPTER_PATH}")
-fi
 
 echo "Running command:"
 printf '%q ' "${CMD[@]}"
