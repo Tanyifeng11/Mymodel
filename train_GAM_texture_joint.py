@@ -605,7 +605,7 @@ def main():
     ap.add_argument(
         "--texture_preprocess_mode",
         type=str,
-        default="crop_tile",
+        default="plain_resize",
         choices=["plain_resize", "crop_tile", "plain"],
     )
     ap.add_argument("--alpha1", type=float, default=1.0)
@@ -674,6 +674,7 @@ def main():
         print(f"[info] effective bf_base_channels = {args.bf_base_channels}")
         print(f"[info] effective clip_hidden_layer = {args.clip_hidden_layer}")
         print(f"[info] effective texture_mode = {args.texture_mode}")
+        print(f"[info] effective texture_preprocess_mode = {args.texture_preprocess_mode}")
         print(f"[info] effective resolution = {args.height} x {args.width}")
 
     # ---- models ----
@@ -852,7 +853,7 @@ def main():
     for module in [spatial_texture_encoder, spatial_sketch_encoder, spatial_fusion]:
         for p in module.parameters():
             p.requires_grad = use_spatial_train
-    for p in spatial_injection.trainable_parameters():
+    for p in spatial_injection.parameters():
         p.requires_grad = use_spatial_train
 
     # 显式构造 trainable params
@@ -885,10 +886,7 @@ def main():
         add_params(spatial_texture_encoder.parameters())
         add_params(spatial_sketch_encoder.parameters())
         add_params(spatial_fusion.parameters())
-        add_params(spatial_injection.trainable_parameters())  # 只加 proj，不加整个 unet
-
-    if len(trainable_params) == 0:
-        raise RuntimeError("No trainable parameters found. Check requires_grad settings.")
+        add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
 
     optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
     lr_scheduler = get_scheduler(
@@ -979,25 +977,54 @@ def main():
     while global_step < args.max_train_steps:
         for batch in dl:
             with accelerator.accumulate(unet):
+                drop_token_branch = False
+                drop_spatial_branch = False
+                if args.texture_condition_mode == "hybrid":
+                    r_branch = random.random()
+                    if r_branch < args.hybrid_drop_token_rate:
+                        drop_token_branch = True
+                    elif r_branch < (
+                        args.hybrid_drop_token_rate + args.hybrid_drop_spatial_rate
+                    ):
+                        drop_spatial_branch = True
+                    branch_drop_counts["total"] += 1
+                    if drop_token_branch:
+                        branch_drop_counts["token"] += 1
+                    if drop_spatial_branch:
+                        branch_drop_counts["spatial"] += 1
+
                 # ---- 先复制，再做 dropout ----
                 input_ids = batch["input_ids"].clone()
                 texture_image = batch["texture_image"].clone()
                 clip_texture = batch["clip_texture"].clone()
 
+                joint_i_rate = args.joint_i_drop_rate
+                joint_t_rate = args.joint_t_drop_rate
+                joint_ti_rate = args.joint_ti_drop_rate
+                if args.train_spatial_only:
+                    joint_i_rate = 0.0
+                    joint_ti_rate = 0.0
+                if args.texture_condition_mode == "hybrid" and (
+                    drop_token_branch or drop_spatial_branch
+                ):
+                    # branch dropout step should stay pure: do not apply image-related joint drop
+                    joint_i_rate = 0.0
+                    joint_ti_rate = 0.0
+
                 bsz = input_ids.shape[0]
                 for bi in range(bsz):
                     r = random.random()
-                    if r < args.joint_i_drop_rate:
+                    if r < joint_i_rate:
                         texture_image[bi] = 0.0
                         clip_texture[bi] = 0.0
                         drop_counts["i"] += 1
-                    elif r < (args.joint_i_drop_rate + args.joint_t_drop_rate):
+                    elif r < (joint_i_rate + joint_t_rate):
                         input_ids[bi] = null_input_ids.to(input_ids.device)
                         drop_counts["t"] += 1
                     elif r < (
-                        args.joint_i_drop_rate
-                        + args.joint_t_drop_rate
-                        + args.joint_ti_drop_rate
+                        joint_i_rate
+                        + joint_t_rate
+                        + joint_ti_rate
                     ):
                         input_ids[bi] = null_input_ids.to(input_ids.device)
                         texture_image[bi] = 0.0
@@ -1017,22 +1044,6 @@ def main():
                     )
                     text_h = text_encoder(input_ids)[0]
                     clip_out = image_encoder(clip_texture, output_hidden_states=True)
-
-                drop_token_branch = False
-                drop_spatial_branch = False
-                if args.texture_condition_mode == "hybrid":
-                    r_branch = random.random()
-                    if r_branch < args.hybrid_drop_token_rate:
-                        drop_token_branch = True
-                    elif r_branch < (
-                        args.hybrid_drop_token_rate + args.hybrid_drop_spatial_rate
-                    ):
-                        drop_spatial_branch = True
-                    branch_drop_counts["total"] += 1
-                    if drop_token_branch:
-                        branch_drop_counts["token"] += 1
-                    if drop_spatial_branch:
-                        branch_drop_counts["spatial"] += 1
 
                 use_token = args.texture_condition_mode in ("token", "hybrid") and (
                     not drop_token_branch
