@@ -888,9 +888,6 @@ def main():
         add_params(spatial_fusion.parameters())
         add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
 
-    if len(trainable_params) == 0:
-        raise RuntimeError("No trainable parameters found. Check requires_grad settings.")
-
     optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
     lr_scheduler = get_scheduler(
         "cosine",
