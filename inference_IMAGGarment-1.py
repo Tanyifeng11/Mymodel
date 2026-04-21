@@ -1,5 +1,7 @@
 from pipelines.IMAGGarment_pipeline import IMAGGarment
 import os
+import importlib
+import importlib.util
 import torch
 
 from PIL import Image
@@ -9,8 +11,38 @@ from transformers import CLIPImageProcessor
 from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 from adapter.attention_processor import LogoCacheSAttnProcessor2_0, LogoRefSAttnProcessor2_0, LogoCacheCAttnProcessor2_0 , CAttnProcessor2_0,IPAttnProcessor2_0
-from utils.checkpoint_utils import load_checkpoint_file, detect_gam_checkpoint_format, infer_texture_num_tokens, extract_texture_metadata
+from models.multiscale_texture_encoder import MultiScaleTextureEncoder, MultiScaleSketchEncoder
+from models.spatial_fusion import MultiScaleFusion
+from models.spatial_injection import SpatialInjectionAdapter
 import argparse
+
+_checkpoint_utils = importlib.import_module("repo_utils.checkpoint_utils") if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None else importlib.import_module("utils.checkpoint_utils")
+load_checkpoint_file = _checkpoint_utils.load_checkpoint_file
+detect_gam_checkpoint_format = _checkpoint_utils.detect_gam_checkpoint_format
+infer_texture_num_tokens = _checkpoint_utils.infer_texture_num_tokens
+extract_texture_metadata = _checkpoint_utils.extract_texture_metadata
+
+
+def load_image_encoder_flexible(image_encoder_path, device=None, dtype=None):
+    try:
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(image_encoder_path)
+    except Exception:
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(image_encoder_path, subfolder="models/image_encoder")
+    if device is not None or dtype is not None:
+        image_encoder = image_encoder.to(device=device, dtype=dtype)
+    return image_encoder
+
+
+def resolve_image_encoder_path(args):
+    if args.image_encoder_path and args.image_encoder_path != "auto":
+        return args.image_encoder_path
+    if args.texture_ckpt:
+        texture_state = load_checkpoint_file(args.texture_ckpt)
+        texture_meta = extract_texture_metadata(texture_state)
+        ckpt_path = texture_meta.get("image_encoder_path")
+        if ckpt_path:
+            return ckpt_path
+    return "openai/clip-vit-large-patch14"
 
 
 def resize_img(input_image, max_side=640, min_side=512, size=None,
@@ -92,11 +124,13 @@ def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules):
     print(f"[load_gam_checkpoint] unet_loaded={unet_loaded}, ref_unet_loaded={ref_loaded}, adapter_loaded={adapter_loaded}, bf_in_ckpt={bf_loaded}")
     if meta:
         print(f"[load_gam_checkpoint] metadata: {meta}")
-    return {"format": ckpt_format, "meta": meta, "bf_state": bf_state}
+    return {"format": ckpt_format, "meta": meta, "bf_state": bf_state, "state": state}
 
 
 def prepare(args):
     generator = torch.Generator(device=args.device).manual_seed(42)
+    resolved_image_encoder_path = resolve_image_encoder_path(args)
+    print(f"[prepare] resolved image encoder path: {resolved_image_encoder_path}")
     
     #GAM data
     vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(dtype=torch.float16, device=args.device)
@@ -105,8 +139,11 @@ def prepare(args):
         dtype=torch.float16, device=args.device)
     unet = UNet2DConditionModel.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="unet").to(
         dtype=torch.float16,device=args.device)
-    image_encoder  = CLIPVisionModelWithProjection.from_pretrained(args.image_encoder_path,subfolder ="models/image_encoder").to(
-        dtype=torch.float16, device=args.device)
+    image_encoder = load_image_encoder_flexible(
+        resolved_image_encoder_path,
+        device=args.device,
+        dtype=torch.float16,
+    )
 
     # set attention processor
     attn_procs = {}
@@ -173,6 +210,30 @@ def prepare(args):
             proc.num_tokens = args.texture_num_tokens
     print(f"[prepare] effective texture_num_tokens for IPAttnProcessor2_0: {args.texture_num_tokens}")
 
+    spatial_texture_encoder = None
+    spatial_sketch_encoder = None
+    spatial_fusion = None
+    spatial_injection = None
+    if args.texture_condition_mode in ("spatial", "hybrid"):
+        spatial_texture_encoder = MultiScaleTextureEncoder(stage_channels=(64, 128, 256, 256)).to(dtype=torch.float16, device=args.device)
+        spatial_sketch_encoder = MultiScaleSketchEncoder(stage_channels=(64, 128, 256, 256)).to(dtype=torch.float16, device=args.device)
+        spatial_fusion = MultiScaleFusion((64, 128, 256, 256), (64, 128, 256, 256), (64, 128, 256, 256), fusion_type=args.fusion_type).to(dtype=torch.float16, device=args.device)
+        spatial_injection = SpatialInjectionAdapter(
+            unet=unet,
+            fusion_channels=(64, 128, 256, 256),
+            target_channels=(unet.config.block_out_channels[0], unet.config.block_out_channels[1], unet.config.block_out_channels[2], unet.config.block_out_channels[-1]),
+            alphas=(args.alpha1, args.alpha2, args.alpha3, args.alpha4),
+        ).to(dtype=torch.float16, device=args.device)
+        st = gam_info.get("state", {})
+        if "spatial_texture_encoder" in st:
+            spatial_texture_encoder.load_state_dict(st["spatial_texture_encoder"], strict=False)
+        if "spatial_sketch_encoder" in st:
+            spatial_sketch_encoder.load_state_dict(st["spatial_sketch_encoder"], strict=False)
+        if "spatial_fusion" in st:
+            spatial_fusion.load_state_dict(st["spatial_fusion"], strict=False)
+        if "spatial_injection" in st:
+            spatial_injection.load_state_dict(st["spatial_injection"], strict=False)
+
     noise_scheduler = DDIMScheduler(
         num_train_timesteps=1000,
         beta_start=0.00085,
@@ -185,6 +246,10 @@ def prepare(args):
     pipe = IMAGGarment(unet=unet, reference_unet=ref_unet, vae=vae, tokenizer=tokenizer,
                          text_encoder=text_encoder, image_encoder=image_encoder,
                          texture_ckpt=args.texture_ckpt,
+                         spatial_texture_encoder=spatial_texture_encoder,
+                         spatial_sketch_encoder=spatial_sketch_encoder,
+                         spatial_fusion=spatial_fusion,
+                         spatial_injection=spatial_injection,
                          scheduler=noise_scheduler,
                          safety_checker=StableDiffusionSafetyChecker,
                          feature_extractor=CLIPImageProcessor)
@@ -206,8 +271,15 @@ if __name__ == "__main__":
     parser.add_argument('--texture_mode', type=str, default='patch_resampled', choices=['patch_resampled', 'legacy_pooled'])
     parser.add_argument('--texture_num_tokens', type=int, default=16)
     parser.add_argument('--texture_scale', type=float, default=1.0)
+    parser.add_argument('--texture_condition_mode', type=str, default='spatial', choices=['token', 'spatial', 'hybrid'])
+    parser.add_argument('--fusion_type', type=str, default='minimal', choices=['minimal', 'bfm_like'])
+    parser.add_argument('--texture_preprocess_mode', type=str, default='crop_tile', choices=['plain_resize', 'crop_tile', 'plain'])
+    parser.add_argument('--alpha1', type=float, default=1.0)
+    parser.add_argument('--alpha2', type=float, default=1.0)
+    parser.add_argument('--alpha3', type=float, default=0.7)
+    parser.add_argument('--alpha4', type=float, default=0.5)
 
-    parser.add_argument('--image_encoder_path', type=str, default='h94/IP-Adapter')
+    parser.add_argument('--image_encoder_path', type=str, default='auto')
     parser.add_argument('--force_texture_num_tokens_override', action='store_true')
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument(
@@ -265,6 +337,7 @@ if __name__ == "__main__":
         texture_clip_image = None
     
     print(f"texture mode: {args.texture_mode}")
+    print(f"fusion type: {args.fusion_type}")
     print(f"texture token count: {args.texture_num_tokens}")
     print(f"texture ckpt path: {args.texture_ckpt}")
 
@@ -286,6 +359,13 @@ if __name__ == "__main__":
         texture_mode=args.texture_mode,
         texture_num_tokens=args.texture_num_tokens,
         texture_scale=args.texture_scale,
+        texture_condition_mode=args.texture_condition_mode,
+        fusion_type=args.fusion_type,
+        texture_preprocess_mode=args.texture_preprocess_mode,
+        alpha1=args.alpha1,
+        alpha2=args.alpha2,
+        alpha3=args.alpha3,
+        alpha4=args.alpha4,
         force_texture_num_tokens_override=args.force_texture_num_tokens_override,
     )
 

@@ -3,6 +3,7 @@ import re
 import math
 import random
 import argparse
+import importlib.util
 from pathlib import Path
 import json
 import itertools
@@ -25,7 +26,11 @@ from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjec
 
 from adapter.utils import is_torch2_available
 from models.bf_texture_module import BFTextureConditioner
-from utils.checkpoint_utils import extract_texture_metadata
+from texture_preprocess import preprocess_texture_image
+if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None:
+    from repo_utils.checkpoint_utils import extract_texture_metadata
+else:
+    from utils.checkpoint_utils import extract_texture_metadata
 
 if is_torch2_available():
     from adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
@@ -34,6 +39,16 @@ else:
 
 
 logger = get_logger(__name__)
+
+
+def load_image_encoder_flexible(image_encoder_path, device=None, dtype=None):
+    try:
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(image_encoder_path)
+    except Exception:
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(image_encoder_path, subfolder="models/image_encoder")
+    if device is not None or dtype is not None:
+        image_encoder = image_encoder.to(device=device, dtype=dtype)
+    return image_encoder
 
 
 class MyDataset(torch.utils.data.Dataset):
@@ -76,31 +91,10 @@ class MyDataset(torch.utils.data.Dataset):
                 transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
             ]
         )
-        self.texture_jitter = transforms.ColorJitter(brightness=0.08, contrast=0.08, saturation=0.08, hue=0.02)
         self.clip_image_processor = CLIPImageProcessor()
 
     def _resolve_path(self, rel_path: str) -> str:
         return os.path.join(self.image_root_path, rel_path)
-
-    def _crop_tile_texture(self, texture_image: Image.Image) -> Image.Image:
-        w, h = texture_image.size
-        min_side = min(w, h)
-        scale = random.uniform(self.texture_crop_scale_min, self.texture_crop_scale_max)
-        crop_size = max(32, int(min_side * scale))
-        crop_size = min(crop_size, w, h)
-
-        left = random.randint(0, max(0, w - crop_size))
-        top = random.randint(0, max(0, h - crop_size))
-        crop = texture_image.crop((left, top, left + crop_size, top + crop_size))
-        crop = self.texture_jitter(crop)
-
-        tile_size = max(self.width, self.height)
-        tile = crop.resize((tile_size // 2, tile_size // 2), Image.BICUBIC)
-        canvas = Image.new("RGB", (tile_size, tile_size))
-        for yy in range(0, tile_size, tile.size[1]):
-            for xx in range(0, tile_size, tile.size[0]):
-                canvas.paste(tile, (xx, yy))
-        return canvas.resize((self.width, self.height), Image.BICUBIC)
 
     def __getitem__(self, idx):
         item = self.data[idx]
@@ -113,12 +107,15 @@ class MyDataset(torch.utils.data.Dataset):
             raise KeyError(f"Sample {idx} has neither 'texture' nor 'color' field: {item}")
 
         texture_image = Image.open(self._resolve_path(texture)).convert("RGB")
-        if self.texture_preprocess_mode == "crop_tile":
-            texture_image_for_cond = self._crop_tile_texture(texture_image)
-        elif self.texture_preprocess_mode == "plain":
-            texture_image_for_cond = texture_image
-        else:
-            raise ValueError(f"Unsupported texture_preprocess_mode: {self.texture_preprocess_mode}")
+        texture_tensor_for_cond = preprocess_texture_image(
+            texture_image,
+            width=self.width,
+            height=self.height,
+            mode=self.texture_preprocess_mode,
+            crop_scale_min=self.texture_crop_scale_min,
+            crop_scale_max=self.texture_crop_scale_max,
+        )
+        texture_image_for_cond = transforms.ToPILImage()((texture_tensor_for_cond * 0.5 + 0.5).clamp(0, 1))
 
         clip_texture_image = self.clip_image_processor(images=texture_image_for_cond, return_tensors="pt").pixel_values
 
@@ -145,7 +142,7 @@ class MyDataset(torch.utils.data.Dataset):
 
         return {
             "image": cloth_image,
-            "texture_image": self.transform(texture_image_for_cond),
+            "texture_image": texture_tensor_for_cond,
             "texture_ref": self.transform(texture_image),
             "text_input_ids": text_input_ids,
             "clip_texture_image": clip_texture_image,
@@ -314,7 +311,7 @@ def parse_args():
     parser.add_argument("--pretrained_color_adapter_path", type=str, default=None)
     parser.add_argument("--data_json_file", type=str, required=True)
     parser.add_argument("--data_root_path", type=str, default="", required=True)
-    parser.add_argument("--image_encoder_path", type=str, required=True)
+    parser.add_argument("--image_encoder_path", type=str, default="openai/clip-vit-large-patch14")
     parser.add_argument("--output_dir", type=str, default="output")
     parser.add_argument("--logging_dir", type=str, default="logs")
     parser.add_argument("--resolution", type=int, default=512)
@@ -338,7 +335,7 @@ def parse_args():
     parser.add_argument("--bf_num_tokens", type=int, default=16)
     parser.add_argument("--bf_base_channels", type=int, default=32)
     parser.add_argument("--texture_mode", type=str, default="patch_resampled", choices=["patch_resampled", "legacy_pooled"])
-    parser.add_argument("--texture_preprocess_mode", type=str, default="crop_tile", choices=["plain", "crop_tile"])
+    parser.add_argument("--texture_preprocess_mode", type=str, default="crop_tile", choices=["plain_resize", "crop_tile", "plain"])
     parser.add_argument("--texture_crop_scale_min", type=float, default=0.4)
     parser.add_argument("--texture_crop_scale_max", type=float, default=0.9)
     parser.add_argument("--lambda_texture_style", type=float, default=0.1)
@@ -427,7 +424,7 @@ def main():
     text_encoder = CLIPTextModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="text_encoder")
     vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae")
     unet = UNet2DConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet")
-    image_encoder = CLIPVisionModelWithProjection.from_pretrained(args.image_encoder_path)
+    image_encoder = load_image_encoder_flexible(args.image_encoder_path)
 
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
