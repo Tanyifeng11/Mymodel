@@ -1,4 +1,5 @@
 import argparse
+import gc
 import itertools
 import json
 import os
@@ -15,8 +16,11 @@ from torchvision import transforms
 from torchvision.utils import make_grid, save_image
 from torchvision.models import vgg19, VGG19_Weights
 from PIL import Image
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
 
 from accelerate import Accelerator
+from accelerate.utils import ProjectConfiguration
 from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPImageProcessor
@@ -38,6 +42,7 @@ class JointTextureDataset(Dataset):
     def __init__(self, json_path, tokenizer, image_root, texture_preprocess_mode="crop_tile"):
         with open(json_path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
+
         self.tokenizer = tokenizer
         self.image_root = image_root
         self.texture_preprocess_mode = texture_preprocess_mode
@@ -57,8 +62,10 @@ class JointTextureDataset(Dataset):
 
     def __getitem__(self, i):
         it = self.data[i]
+
         cloth = self._load(it["cloth"])
         sketch = self._load(it["sketch"]).resize(cloth.size)
+
         texture_path = it.get("texture", it.get("color", it["cloth"]))
         texture = self._load(texture_path)
 
@@ -122,13 +129,8 @@ def resolve_image_encoder_path(cli_image_encoder_path, texture_meta):
 def set_unet_trainable(unet):
     for p in unet.parameters():
         p.requires_grad = False
-    for n, p in unet.named_parameters():
-        if "mid_block" in n and ("attn" in n or "transformer" in n):
-            p.requires_grad = True
-        if "up_blocks.2" in n or "up_blocks.3" in n:
-            if "attn" in n or "transformer" in n:
-                p.requires_grad = True
-    for proc in unet.attn_processors.values():
+
+    for proc in model.attn_processors.values():
         for p in proc.parameters():
             p.requires_grad = True
 
@@ -271,18 +273,26 @@ def run_mode_validation_vis(
 
 def main():
     ap = argparse.ArgumentParser()
+
     ap.add_argument("--pretrained_model_name_or_path", required=True)
     ap.add_argument("--pretrained_vae_model_path", required=True)
     ap.add_argument("--image_encoder_path", default="auto")
     ap.add_argument("--dataset_json_path", required=True)
     ap.add_argument("--data_root_path", required=True)
+
+    ap.add_argument("--gam_init_ckpt", type=str, default="")
     ap.add_argument("--texture_adapter_ckpt", required=True)
+    ap.add_argument("--resume_from_checkpoint", type=str, default="")
+
     ap.add_argument("--output_dir", default="joint_texture_output")
-    ap.add_argument("--train_batch_size", type=int, default=4)
+
+    ap.add_argument("--train_batch_size", type=int, default=1)
     ap.add_argument("--max_train_steps", type=int, default=20000)
     ap.add_argument("--learning_rate", type=float, default=1e-4)
     ap.add_argument("--num_warmup_steps", type=int, default=500)
+
     ap.add_argument("--bf_num_tokens", type=int, default=16)
+    ap.add_argument("--bf_base_channels", type=int, default=32)
     ap.add_argument("--texture_mode", type=str, default="patch_resampled", choices=["patch_resampled", "legacy_pooled"])
     ap.add_argument("--clip_hidden_layer", type=int, default=-1)
     ap.add_argument("--texture_condition_mode", type=str, default="spatial", choices=["token", "spatial", "hybrid"])
@@ -306,8 +316,20 @@ def main():
     if (args.joint_t_drop_rate + args.joint_i_drop_rate + args.joint_ti_drop_rate) > 1.0:
         raise ValueError("joint dropout probabilities sum must be <= 1.0")
 
-    accelerator = Accelerator()
     os.makedirs(args.output_dir, exist_ok=True)
+
+    texture_state = load_checkpoint_file(args.texture_adapter_ckpt)
+    texture_meta = extract_texture_metadata(texture_state)
+    if accelerator.is_main_process and texture_meta:
+        print(f"[train_GAM_texture_joint] texture checkpoint meta: {texture_meta}")
+    override_args_from_texture_meta(args, texture_meta, accelerator)
+
+    if accelerator.is_main_process:
+        print(f"[info] effective bf_num_tokens = {args.bf_num_tokens}")
+        print(f"[info] effective bf_base_channels = {args.bf_base_channels}")
+        print(f"[info] effective clip_hidden_layer = {args.clip_hidden_layer}")
+        print(f"[info] effective texture_mode = {args.texture_mode}")
+        print(f"[info] effective resolution = {args.height} x {args.width}")
 
     tokenizer = CLIPTokenizer.from_pretrained(args.pretrained_model_name_or_path, subfolder="tokenizer")
     text_encoder = CLIPTextModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="text_encoder")
@@ -340,6 +362,8 @@ def main():
     ref_unet.set_attn_processor(attn_procs2)
 
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
+    if not is_resuming:
+        load_texture_checkpoint_into_models(texture_state, adapter_modules, bf, accelerator)
 
     ckpt = torch.load(args.texture_adapter_ckpt, map_location="cpu")
     tex_meta = extract_texture_metadata(ckpt)
@@ -393,9 +417,6 @@ def main():
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
     image_encoder.requires_grad_(False)
-    set_unet_trainable(unet)
-    bf.requires_grad_(True)
-    ref_unet.requires_grad_(True)
 
     for p in spatial_texture_encoder.parameters():
         p.requires_grad = args.texture_condition_mode in ("spatial", "hybrid")
@@ -504,9 +525,12 @@ def main():
             else:
                 spatial_injection.clear_features()
 
-            noise = torch.randn_like(latents)
-            t = torch.randint(0, ns.num_train_timesteps, (latents.shape[0],), device=latents.device).long()
-            noisy_latents = ns.add_noise(latents, noise, t)
+            with torch.no_grad():
+                with accelerator.autocast():
+                    latents = vae.encode(batch["vae_cloth"]).latent_dist.sample() * 0.18215
+                    ref_latents = vae.encode(batch["vae_sketch"]).latent_dist.sample() * 0.18215
+                    text_h = text_encoder(batch["input_ids"])[0]
+                    clip_out = image_encoder(batch["clip_texture"], output_hidden_states=True)
 
             _ = ref_unet(ref_latents, torch.zeros_like(t), None, return_dict=False)
             sa = {n: ref_unet.attn_processors[n].cache["hidden_states"] for n in ref_unet.attn_processors.keys() if "attn1" in n}
@@ -530,6 +554,8 @@ def main():
                 loss = loss + args.lambda_patch_style * loss_patch
 
             accelerator.backward(loss)
+            grad_norm = accelerator.clip_grad_norm_(trainable_params, args.max_grad_norm)
+
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
@@ -617,6 +643,15 @@ def main():
             step += 1
             if step >= args.max_train_steps:
                 break
+
+            begin = time.perf_counter()
+
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        save_dir = save_training_checkpoint(accelerator, unet, ref_unet, bf, args.output_dir, global_step, args)
+        print(f"[info] final full checkpoint saved to {save_dir}")
+
+    accelerator.end_training()
 
 
 if __name__ == "__main__":
