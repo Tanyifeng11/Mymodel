@@ -16,7 +16,7 @@ from models.spatial_fusion import MultiScaleFusion
 from models.spatial_injection import SpatialInjectionAdapter
 import argparse
 
-_checkpoint_utils = importlib.import_module("repo_utils.checkpoint_utils") if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None else importlib.import_module("utils.checkpoint_utils")
+_checkpoint_utils = importlib.import_module("repo_utils.checkpoint_utils") if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None else importlib.import_module("checkpoint_utils")
 load_checkpoint_file = _checkpoint_utils.load_checkpoint_file
 detect_gam_checkpoint_format = _checkpoint_utils.detect_gam_checkpoint_format
 infer_texture_num_tokens = _checkpoint_utils.infer_texture_num_tokens
