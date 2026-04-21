@@ -23,7 +23,7 @@ from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
-from utils.checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
+from repo_utils.checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 

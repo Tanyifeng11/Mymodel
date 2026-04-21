@@ -5,7 +5,6 @@ import random
 import argparse
 from pathlib import Path
 import json
-import itertools
 import time
 
 import torch
@@ -25,7 +24,7 @@ from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjec
 
 from adapter.utils import is_torch2_available
 from models.bf_texture_module import BFTextureConditioner
-from utils.checkpoint_utils import extract_texture_metadata
+from repo_utils.checkpoint_utils import extract_texture_metadata
 
 if is_torch2_available():
     from adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
@@ -222,7 +221,12 @@ class TextureAdapter(torch.nn.Module):
     def forward(self, noisy_latents, timesteps, encoder_hidden_states, clip_outputs, texture_images, texture_mode="patch_resampled", **kwargs):
         if texture_images is None:
             raise ValueError("texture_images must be provided for BF texture conditioning.")
-        texture_tokens = self.get_texture_condition_tokens(clip_outputs, texture_images, texture_mode=texture_mode, clip_hidden_layer=kwargs.get("clip_hidden_layer", -1))
+        texture_tokens = self.get_texture_condition_tokens(
+            clip_outputs,
+            texture_images,
+            texture_mode=texture_mode,
+            clip_hidden_layer=kwargs.get("clip_hidden_layer", -1),
+        )
         encoder_hidden_states = torch.cat([encoder_hidden_states, texture_tokens], dim=1)
         noise_pred = self.unet(noisy_latents, timesteps, encoder_hidden_states).sample
         return noise_pred, texture_tokens
@@ -257,6 +261,34 @@ def parse_step_from_ckpt_path(ckpt_path: str) -> int:
         return 0
     m = re.search(r"checkpoint-(\d+)", ckpt_path)
     return int(m.group(1)) if m else 0
+
+
+def resolve_resume_checkpoint(resume_from_checkpoint: str, output_dir: str) -> str:
+    if resume_from_checkpoint is None:
+        return None
+
+    if resume_from_checkpoint == "latest":
+        if not os.path.isdir(output_dir):
+            raise ValueError(f"output_dir does not exist: {output_dir}")
+
+        checkpoint_dirs = []
+        for name in os.listdir(output_dir):
+            full_path = os.path.join(output_dir, name)
+            if os.path.isdir(full_path):
+                m = re.match(r"checkpoint-(\d+)$", name)
+                if m:
+                    checkpoint_dirs.append((int(m.group(1)), full_path))
+
+        if len(checkpoint_dirs) == 0:
+            raise ValueError(f"No checkpoint-* directories found under {output_dir}")
+
+        checkpoint_dirs.sort(key=lambda x: x[0])
+        return checkpoint_dirs[-1][1]
+
+    if not os.path.isdir(resume_from_checkpoint):
+        raise ValueError(f"resume checkpoint directory does not exist: {resume_from_checkpoint}")
+
+    return resume_from_checkpoint
 
 
 def compute_loss(noise_pred, noise, loss_type="mse", huber_c=0.1):
@@ -312,6 +344,7 @@ def parse_args():
     parser.add_argument("--pretrained_model_name_or_path", type=str, required=True)
     parser.add_argument("--pretrained_texture_adapter_path", type=str, default=None)
     parser.add_argument("--pretrained_color_adapter_path", type=str, default=None)
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None)
     parser.add_argument("--data_json_file", type=str, required=True)
     parser.add_argument("--data_root_path", type=str, default="", required=True)
     parser.add_argument("--image_encoder_path", type=str, required=True)
@@ -378,27 +411,55 @@ def run_texture_validation(accelerator, args, texture_adapter, tokenizer, text_e
     model = accelerator.unwrap_model(texture_adapter)
     images = []
 
-    fixed_latent = torch.randn((1, vae.config.latent_channels, args.height // 8, args.width // 8), device=accelerator.device, dtype=weight_dtype, generator=torch.Generator(device=accelerator.device).manual_seed(args.fixed_seed))
+    fixed_latent = torch.randn(
+        (1, vae.config.latent_channels, args.height // 8, args.width // 8),
+        device=accelerator.device,
+        dtype=weight_dtype,
+        generator=torch.Generator(device=accelerator.device).manual_seed(args.fixed_seed),
+    )
+
     for item in val_items:
-        text_ids = tokenizer(item["caption"], padding="max_length", truncation=True, max_length=tokenizer.model_max_length, return_tensors="pt").input_ids.to(accelerator.device)
+        text_ids = tokenizer(
+            item["caption"],
+            padding="max_length",
+            truncation=True,
+            max_length=tokenizer.model_max_length,
+            return_tensors="pt",
+        ).input_ids.to(accelerator.device)
+
         with torch.no_grad():
             text_h = text_encoder(text_ids)[0]
+
         texture_img = Image.open(item["texture_path"]).convert("RGB")
-        clip_tex = CLIPImageProcessor()(images=texture_img, return_tensors="pt").pixel_values.to(accelerator.device, dtype=weight_dtype)
-        texture_tensor = transforms.Compose([
-            transforms.Resize([args.height, args.width]),
-            transforms.ToTensor(),
-            transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        ])(texture_img).unsqueeze(0).to(accelerator.device, dtype=weight_dtype)
+        clip_tex = CLIPImageProcessor()(images=texture_img, return_tensors="pt").pixel_values.to(
+            accelerator.device, dtype=weight_dtype
+        )
+        texture_tensor = transforms.Compose(
+            [
+                transforms.Resize([args.height, args.width]),
+                transforms.ToTensor(),
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+            ]
+        )(texture_img).unsqueeze(0).to(accelerator.device, dtype=weight_dtype)
 
         with torch.no_grad():
             clip_out = image_encoder(clip_tex, output_hidden_states=True)
             latents = fixed_latent.clone()
             t = torch.tensor([noise_scheduler.num_train_timesteps - 1], device=accelerator.device, dtype=torch.long)
-            noise_pred, _ = model(latents, t, text_h, clip_out, texture_tensor, texture_mode=args.texture_mode, clip_hidden_layer=args.clip_hidden_layer)
+            noise_pred, _ = model(
+                latents,
+                t,
+                text_h,
+                clip_out,
+                texture_tensor,
+                texture_mode=args.texture_mode,
+                clip_hidden_layer=args.clip_hidden_layer,
+            )
             x0_hat = reconstruct_x0(latents, noise_pred, t, noise_scheduler)
-            decoded = vae.decode(x0_hat / vae.config.scaling_factor).sample
+            x0_hat_vae = (x0_hat / vae.config.scaling_factor).to(dtype=vae.dtype)
+            decoded = vae.decode(x0_hat_vae).sample
             decoded = (decoded / 2 + 0.5).clamp(0, 1)
+
         images.append(decoded[0].cpu())
 
     grid = make_grid(images, nrow=len(images))
@@ -408,6 +469,7 @@ def run_texture_validation(accelerator, args, texture_adapter, tokenizer, text_e
 
 def main():
     args = parse_args()
+
     logging_dir = Path(args.output_dir, args.logging_dir)
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
     accelerator = Accelerator(
@@ -420,7 +482,20 @@ def main():
     if accelerator.is_main_process and args.output_dir is not None:
         os.makedirs(args.output_dir, exist_ok=True)
 
-    pretrained_adapter_path = args.pretrained_texture_adapter_path if args.pretrained_texture_adapter_path is not None else args.pretrained_color_adapter_path
+    if args.resume_from_checkpoint is not None:
+        args.resume_from_checkpoint = resolve_resume_checkpoint(args.resume_from_checkpoint, args.output_dir)
+
+    pretrained_adapter_path = (
+        args.pretrained_texture_adapter_path
+        if args.pretrained_texture_adapter_path is not None
+        else args.pretrained_color_adapter_path
+    )
+
+    if args.resume_from_checkpoint is not None and pretrained_adapter_path is not None:
+        accelerator.print(
+            "[Warning] Both --resume_from_checkpoint and --pretrained_texture_adapter_path/--pretrained_color_adapter_path were provided. "
+            "Strict resume will ignore pretrained adapter loading."
+        )
 
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
     tokenizer = CLIPTokenizer.from_pretrained(args.pretrained_model_name_or_path, subfolder="tokenizer")
@@ -464,14 +539,24 @@ def main():
                 "to_k_ip.weight": unet_sd[layer_name + ".to_k.weight"],
                 "to_v_ip.weight": unet_sd[layer_name + ".to_v.weight"],
             }
-            attn_procs[name] = IPAttnProcessor(hidden_size=hidden_size, cross_attention_dim=cross_attention_dim, num_tokens=args.bf_num_tokens)
+            attn_procs[name] = IPAttnProcessor(
+                hidden_size=hidden_size,
+                cross_attention_dim=cross_attention_dim,
+                num_tokens=args.bf_num_tokens,
+            )
             attn_procs[name].load_state_dict(weights, strict=False)
 
     unet.set_attn_processor(attn_procs)
     set_trainable_texture_blocks(unet, args.unfreeze_mid_block, args.unfreeze_up_blocks, args.unfreeze_attention_only)
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
 
-    texture_adapter = TextureAdapter(unet=unet, adapter_modules=adapter_modules, bf_texture_conditioner=bf_texture_conditioner, ckpt_path=pretrained_adapter_path)
+    load_adapter_ckpt_path = None if args.resume_from_checkpoint is not None else pretrained_adapter_path
+    texture_adapter = TextureAdapter(
+        unet=unet,
+        adapter_modules=adapter_modules,
+        bf_texture_conditioner=bf_texture_conditioner,
+        ckpt_path=load_adapter_ckpt_path,
+    )
 
     weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
@@ -486,7 +571,13 @@ def main():
     style_loss_fn = VGGStyleLoss().to(accelerator.device)
 
     params_to_opt = [p for p in texture_adapter.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay, betas=(args.adam_beta1, args.adam_beta2), eps=args.adam_epsilon)
+    optimizer = torch.optim.AdamW(
+        params_to_opt,
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+        betas=(args.adam_beta1, args.adam_beta2),
+        eps=args.adam_epsilon,
+    )
 
     train_dataset = MyDataset(
         args.data_json_file,
@@ -503,48 +594,101 @@ def main():
         texture_crop_scale_max=args.texture_crop_scale_max,
     )
 
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=args.train_batch_size, num_workers=args.dataloader_num_workers)
+    train_dataloader = torch.utils.data.DataLoader(
+        train_dataset,
+        shuffle=True,
+        collate_fn=collate_fn,
+        batch_size=args.train_batch_size,
+        num_workers=args.dataloader_num_workers,
+    )
 
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-    lr_scheduler = get_scheduler(args.lr_scheduler, optimizer=optimizer, num_warmup_steps=args.lr_warmup_steps, num_training_steps=max_train_steps)
+    lr_scheduler = get_scheduler(
+        args.lr_scheduler,
+        optimizer=optimizer,
+        num_warmup_steps=args.lr_warmup_steps,
+        num_training_steps=max_train_steps,
+    )
 
-    texture_adapter, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(texture_adapter, optimizer, train_dataloader, lr_scheduler)
+    texture_adapter, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+        texture_adapter, optimizer, train_dataloader, lr_scheduler
+    )
 
     if accelerator.is_main_process:
         init_kwargs = {}
         if args.report_to in ("wandb", "all"):
-            init_kwargs = {"wandb": {"name": args.wandb_run_name, "entity": args.wandb_entity, "mode": args.wandb_mode}}
+            init_kwargs = {
+                "wandb": {
+                    "name": args.wandb_run_name,
+                    "entity": args.wandb_entity,
+                    "mode": args.wandb_mode,
+                }
+            }
         accelerator.init_trackers(args.wandb_project, config=vars(args), init_kwargs=init_kwargs)
 
+    unwrapped_texture_adapter = accelerator.unwrap_model(texture_adapter)
     checkpoint_meta = {
         "texture_num_tokens": args.bf_num_tokens,
         "texture_mode": args.texture_mode,
         "image_encoder_path": args.image_encoder_path,
         "clip_hidden_layer": args.clip_hidden_layer,
-        "stage_token_hw": list(texture_adapter.bf_texture_conditioner.stage_token_hw),
+        "stage_token_hw": list(unwrapped_texture_adapter.bf_texture_conditioner.stage_token_hw),
         "texture_preprocess_mode": args.texture_preprocess_mode,
         "bf_base_channels": args.bf_base_channels,
         "clip_embeddings_dim": image_encoder.config.hidden_size,
         "texture_loss_target_mode": args.texture_loss_target_mode,
     }
 
-    resume_step = parse_step_from_ckpt_path(pretrained_adapter_path)
-    global_step = resume_step
+    global_step = 0
+    first_epoch = 0
+    resume_step_in_epoch = 0
+
+    if args.resume_from_checkpoint is not None:
+        accelerator.print(f"Resuming full training state from: {args.resume_from_checkpoint}")
+        accelerator.load_state(args.resume_from_checkpoint)
+
+        global_step = parse_step_from_ckpt_path(args.resume_from_checkpoint)
+        resume_global_step = global_step * args.gradient_accumulation_steps
+        first_epoch = global_step // num_update_steps_per_epoch
+        resume_step_in_epoch = resume_global_step % (num_update_steps_per_epoch * args.gradient_accumulation_steps)
+
+        accelerator.print(
+            f"[resume] raw resume_step_in_epoch={resume_step_in_epoch}, but force set to 0 for immediate training"
+        )
+
+        # 关键修改：恢复完整状态，但不跳过当前 epoch 已处理过的 batch
+        resume_step_in_epoch = 0
+
+        accelerator.print(
+            f"Resume success: global_step={global_step}, first_epoch={first_epoch}, "
+            f"resume_step_in_epoch={resume_step_in_epoch}"
+        )
+    elif pretrained_adapter_path is not None:
+        global_step = parse_step_from_ckpt_path(pretrained_adapter_path)
 
     with open(args.data_json_file, "r", encoding="utf-8") as f:
         raw_items = json.load(f)
+
     val_items = []
     for item in raw_items[: args.validation_num_textures]:
         texture = item.get("texture", item.get("color"))
         if texture is None:
             continue
-        val_items.append({"caption": item["caption"], "texture_path": os.path.join(args.data_root_path, texture)})
+        val_items.append(
+            {
+                "caption": item["caption"],
+                "texture_path": os.path.join(args.data_root_path, texture),
+            }
+        )
 
-    for epoch in range(args.num_train_epochs):
+    for epoch in range(first_epoch, args.num_train_epochs):
         begin = time.perf_counter()
+
         for step, batch in enumerate(train_dataloader):
+            # 关键修改：不再跳过 resume_step_in_epoch 之前的 batch
             load_data_time = time.perf_counter() - begin
+
             with accelerator.accumulate(texture_adapter):
                 with torch.no_grad():
                     latents = vae.encode(batch["images"].to(accelerator.device, dtype=weight_dtype)).latent_dist.sample()
@@ -552,10 +696,19 @@ def main():
 
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
-                timesteps = torch.randint(0, noise_scheduler.num_train_timesteps, (bsz,), device=latents.device).long()
+                timesteps = torch.randint(
+                    0,
+                    noise_scheduler.num_train_timesteps,
+                    (bsz,),
+                    device=latents.device,
+                ).long()
                 noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
-                clip_outputs = image_encoder(batch["clip_texture_images"].to(accelerator.device, dtype=weight_dtype), output_hidden_states=True)
+                clip_outputs = image_encoder(
+                    batch["clip_texture_images"].to(accelerator.device, dtype=weight_dtype),
+                    output_hidden_states=True,
+                )
+
                 image_embeds = clip_outputs.image_embeds
                 image_embeds_ = []
                 for image_embed, drop_image_embed in zip(image_embeds, batch["drop_image_embeds"]):
@@ -579,12 +732,15 @@ def main():
                 loss_eps = compute_loss(noise_pred, noise, loss_type=args.loss_type, huber_c=args.huber_c)
 
                 x0_hat = reconstruct_x0(noisy_latents, noise_pred, timesteps, noise_scheduler)
-                decoded_pred = vae.decode(x0_hat / vae.config.scaling_factor).sample
+                x0_hat_vae = (x0_hat / vae.config.scaling_factor).to(dtype=vae.dtype)
+                decoded_pred = vae.decode(x0_hat_vae).sample
                 decoded_pred = decoded_pred.float()
+
                 if args.texture_loss_target_mode == "conditioned_texture":
                     texture_ref = batch["texture_images"].to(accelerator.device, dtype=torch.float32)
                 else:
                     texture_ref = batch["texture_refs"].to(accelerator.device, dtype=torch.float32)
+
                 loss_style = style_loss_fn(decoded_pred, texture_ref)
 
                 if args.lambda_texture_global > 0:
@@ -624,20 +780,44 @@ def main():
                     )
 
                     if accelerator.is_main_process and global_step % args.validation_steps == 0:
-                        run_texture_validation(accelerator, args, texture_adapter, tokenizer, text_encoder, image_encoder, vae, noise_scheduler, val_items, global_step, weight_dtype)
+                        run_texture_validation(
+                            accelerator,
+                            args,
+                            texture_adapter,
+                            tokenizer,
+                            text_encoder,
+                            image_encoder,
+                            vae,
+                            noise_scheduler,
+                            val_items,
+                            global_step,
+                            weight_dtype,
+                        )
 
                     if global_step % args.save_steps == 0:
                         save_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         accelerator.save_state(save_dir, safe_serialization=False)
+                        accelerator.wait_for_everyone()
                         if accelerator.is_main_process:
-                            save_texture_adapter_checkpoint(accelerator, texture_adapter, os.path.join(save_dir, "texture_adapter.bin"), meta=checkpoint_meta)
+                            save_texture_adapter_checkpoint(
+                                accelerator,
+                                texture_adapter,
+                                os.path.join(save_dir, "texture_adapter.bin"),
+                                meta=checkpoint_meta,
+                            )
 
             begin = time.perf_counter()
 
     final_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
     accelerator.save_state(final_dir, safe_serialization=False)
+    accelerator.wait_for_everyone()
     if accelerator.is_main_process:
-        save_texture_adapter_checkpoint(accelerator, texture_adapter, os.path.join(final_dir, "texture_adapter.bin"), meta=checkpoint_meta)
+        save_texture_adapter_checkpoint(
+            accelerator,
+            texture_adapter,
+            os.path.join(final_dir, "texture_adapter.bin"),
+            meta=checkpoint_meta,
+        )
 
 
 if __name__ == "__main__":

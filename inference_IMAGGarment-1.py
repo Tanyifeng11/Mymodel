@@ -9,7 +9,7 @@ from transformers import CLIPImageProcessor
 from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 from adapter.attention_processor import LogoCacheSAttnProcessor2_0, LogoRefSAttnProcessor2_0, LogoCacheCAttnProcessor2_0 , CAttnProcessor2_0,IPAttnProcessor2_0
-from utils.checkpoint_utils import load_checkpoint_file, detect_gam_checkpoint_format, infer_texture_num_tokens, extract_texture_metadata
+from repo_utils.checkpoint_utils import load_checkpoint_file, detect_gam_checkpoint_format, infer_texture_num_tokens, extract_texture_metadata
 import argparse
 
 
@@ -105,8 +105,15 @@ def prepare(args):
         dtype=torch.float16, device=args.device)
     unet = UNet2DConditionModel.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="unet").to(
         dtype=torch.float16,device=args.device)
-    image_encoder  = CLIPVisionModelWithProjection.from_pretrained(args.image_encoder_path,subfolder ="models/image_encoder").to(
-        dtype=torch.float16, device=args.device)
+    try:
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+            args.image_encoder_path,
+            subfolder="models/image_encoder"
+        ).to(dtype=torch.float16, device=args.device)
+    except Exception:
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+            args.image_encoder_path
+        ).to(dtype=torch.float16, device=args.device)
 
     # set attention processor
     attn_procs = {}

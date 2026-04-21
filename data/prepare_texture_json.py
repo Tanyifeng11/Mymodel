@@ -21,9 +21,9 @@ def read_caption(txt_path: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_root", type=str, required=True,
-                        help="e.g. /mnt/d/tyf/fuxian/datasets/MMDGarment")
+                        help="e.g. /mnt/d/tyf/fuxian/datasets/BF/training")
     parser.add_argument("--output_json", type=str, required=True,
-                        help="e.g. /mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json")
+                        help="e.g. /mnt/d/tyf/fuxian/Mymodel/data/train_BF_texture.json")
     parser.add_argument("--require_sketch", action="store_true",
                         help="skip samples if sketch is missing")
     args = parser.parse_args()

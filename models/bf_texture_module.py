@@ -113,6 +113,7 @@ class BFTextureConditioner(nn.Module):
             torch.mean(f3, dim=(2, 3), keepdim=False),
             torch.mean(f4, dim=(2, 3), keepdim=False),
         ]
+
         pooled_clip = clip_image_embeds.unsqueeze(1)
         pooled_cnn = [p.unsqueeze(1) for p in pooled]
         legacy_tokens = [pooled_clip] + pooled_cnn
@@ -134,18 +135,23 @@ class BFTextureConditioner(nn.Module):
             raise ValueError("texture_images is required.")
 
         mode = texture_mode or self.texture_mode
+
         if mode == "patch_resampled":
             if clip_vision_tokens is None:
                 if clip_image_embeds is None:
                     raise ValueError("patch_resampled mode requires clip_vision_tokens or clip_image_embeds.")
                 clip_vision_tokens = clip_image_embeds.unsqueeze(1)
+
             fused_tokens, feature_shapes = self._build_patch_tokens(clip_vision_tokens, texture_images)
+
         elif mode == "legacy_pooled":
             if clip_image_embeds is None:
                 if clip_vision_tokens is None:
                     raise ValueError("legacy_pooled mode requires clip_image_embeds or clip_vision_tokens.")
                 clip_image_embeds = clip_vision_tokens.mean(dim=1)
+
             fused_tokens, feature_shapes = self._build_legacy_tokens(clip_image_embeds, texture_images)
+
         else:
             raise ValueError(f"Unsupported texture_mode: {mode}")
 
