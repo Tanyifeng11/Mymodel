@@ -23,7 +23,8 @@ from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
-from repo_utils.checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
+from utils.texture_preprocess import preprocess_texture_image
+from utils.checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -71,6 +72,10 @@ class IMAGGarment(StableDiffusionPipeline):
         ],
         safety_checker: StableDiffusionSafetyChecker,
         feature_extractor: CLIPImageProcessor,
+        spatial_texture_encoder=None,
+        spatial_sketch_encoder=None,
+        spatial_fusion=None,
+        spatial_injection=None,
     ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor)
 
@@ -82,6 +87,10 @@ class IMAGGarment(StableDiffusionPipeline):
             tokenizer=tokenizer,
             text_encoder=text_encoder,
             image_encoder=image_encoder,
+            spatial_texture_encoder=spatial_texture_encoder,
+            spatial_sketch_encoder=spatial_sketch_encoder,
+            spatial_fusion=spatial_fusion,
+            spatial_injection=spatial_injection,
             safety_checker=safety_checker,
             feature_extractor=feature_extractor,
         )
@@ -106,6 +115,7 @@ class IMAGGarment(StableDiffusionPipeline):
         self.image_proj_model = self.init_proj()
         self.texture_meta = {}
         self.effective_texture_num_tokens = self.num_tokens
+        self.default_texture_condition_mode = "token"
         self.load_texture_adapter()
 
     def init_proj(self):
@@ -579,6 +589,9 @@ class IMAGGarment(StableDiffusionPipeline):
         texture_clip_image=None,
         texture_embeds=None,
         texture_mode="patch_resampled",
+        texture_condition_mode="spatial",
+        fusion_type="minimal",
+        texture_preprocess_mode="crop_tile",
         texture_num_tokens=16,
         texture_scale=1.0,
         ref_clip_image=None,
@@ -635,6 +648,8 @@ class IMAGGarment(StableDiffusionPipeline):
 
         if texture_clip_image is not None or texture_embeds is not None:
             force_override = kwargs.get("force_texture_num_tokens_override", False)
+            use_token = texture_condition_mode in ("token", "hybrid")
+            use_spatial = texture_condition_mode in ("spatial", "hybrid")
             ckpt_tokens = self.effective_texture_num_tokens
             if texture_num_tokens != ckpt_tokens:
                 if force_override:
@@ -643,37 +658,68 @@ class IMAGGarment(StableDiffusionPipeline):
                 else:
                     print(f"[IMAGGarment][WARNING] CLI texture_num_tokens={texture_num_tokens} but checkpoint uses {ckpt_tokens}. using checkpoint value.")
             texture_num_tokens = ckpt_tokens
-            for attn_processor in self.unet.attn_processors.values():
-                if isinstance(attn_processor, IPAttnProcessor2_0):
-                    attn_processor.num_tokens = texture_num_tokens
+            if use_token:
+                for attn_processor in self.unet.attn_processors.values():
+                    if isinstance(attn_processor, IPAttnProcessor2_0):
+                        attn_processor.num_tokens = texture_num_tokens
             print(f"[IMAGGarment] checkpoint format: {self.texture_meta.get('checkpoint_format', 'texture_adapter')}")
             print(f"[IMAGGarment] texture mode: {texture_mode}")
-            print(f"[IMAGGarment] texture token count: {texture_num_tokens}")
+            print(f"[IMAGGarment] texture condition mode: {texture_condition_mode}")
             print(f"[IMAGGarment] texture ckpt path: {self.texture_ckpt}")
-            image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
-                pil_image=texture_clip_image,
-                clip_image_embeds=texture_embeds,
-                width=width,
-                height=height,
-                texture_mode=texture_mode,
-            )
-            image_prompt_embeds = image_prompt_embeds * texture_scale
-            uncond_image_prompt_embeds = uncond_image_prompt_embeds * texture_scale
-
-            bs_embed, seq_len, _ = image_prompt_embeds.shape
-            image_prompt_embeds = image_prompt_embeds.repeat(1, num_samples, 1)
-            image_prompt_embeds = image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
-
-            uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
-            uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
-
-            prompt_embeds = torch.cat([prompt_embeds, image_prompt_embeds], dim=1)
-            print(f"[IMAGGarment] final encoder_hidden_states shape: {tuple(prompt_embeds.shape)}")
-
-            if do_classifier_free_guidance:
-                negative_prompt_embeds = torch.cat(
-                    [negative_prompt_embeds, uncond_image_prompt_embeds], dim=1
+            if use_token:
+                print(f"[IMAGGarment] texture token count: {texture_num_tokens}")
+                image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
+                    pil_image=texture_clip_image,
+                    clip_image_embeds=texture_embeds,
+                    width=width,
+                    height=height,
+                    texture_mode=texture_mode,
                 )
+                image_prompt_embeds = image_prompt_embeds * texture_scale
+                uncond_image_prompt_embeds = uncond_image_prompt_embeds * texture_scale
+
+                bs_embed, seq_len, _ = image_prompt_embeds.shape
+                image_prompt_embeds = image_prompt_embeds.repeat(1, num_samples, 1)
+                image_prompt_embeds = image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
+
+                uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
+                uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
+
+                prompt_embeds = torch.cat([prompt_embeds, image_prompt_embeds], dim=1)
+                print(f"[IMAGGarment] final encoder_hidden_states shape: {tuple(prompt_embeds.shape)}")
+
+                if do_classifier_free_guidance:
+                    negative_prompt_embeds = torch.cat(
+                        [negative_prompt_embeds, uncond_image_prompt_embeds], dim=1
+                    )
+
+            if use_spatial and all(
+                m is not None
+                for m in [self.spatial_texture_encoder, self.spatial_sketch_encoder, self.spatial_fusion, self.spatial_injection]
+            ):
+                tex_img = texture_clip_image if isinstance(texture_clip_image, Image.Image) else texture_clip_image[0]
+                tex_tensor = preprocess_texture_image(
+                    tex_img.convert("RGB"),
+                    width=width,
+                    height=height,
+                    mode=texture_preprocess_mode,
+                ).unsqueeze(0).to(device=device, dtype=torch.float16)
+                sketch_tensor = ref_image.to(device=device, dtype=tex_tensor.dtype)
+                if sketch_tensor.shape[-2:] != tex_tensor.shape[-2:]:
+                    sketch_tensor = F.interpolate(sketch_tensor, size=tex_tensor.shape[-2:], mode="bilinear", align_corners=False)
+                sketch_feats = self.spatial_sketch_encoder(sketch_tensor)
+                texture_feats = self.spatial_texture_encoder(tex_tensor)
+                if hasattr(self.spatial_fusion, "set_fusion_type"):
+                    self.spatial_fusion.set_fusion_type(fusion_type)
+                spatial_feats = self.spatial_fusion(sketch_feats, texture_feats)
+                self.spatial_injection.set_alphas([
+                    kwargs.get("alpha1", 1.0),
+                    kwargs.get("alpha2", 1.0),
+                    kwargs.get("alpha3", 0.7),
+                    kwargs.get("alpha4", 0.5),
+                ])
+                self.spatial_injection.set_features(spatial_feats)
+                self.spatial_injection.enable()
 
         num_channels_latents = self.unet.config.in_channels
         latents = self.prepare_latents(
@@ -734,6 +780,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 )[0]
 
                 if do_classifier_free_guidance:
+                    if texture_condition_mode in ("spatial", "hybrid") and self.spatial_injection is not None:
+                        self.spatial_injection.clear_features()
                     unc_noise_pred = self.unet(
                         latent_model_input[1].unsqueeze(0),
                         t,
@@ -761,6 +809,9 @@ class IMAGGarment(StableDiffusionPipeline):
                         callback(step_idx, t, latents)
 
         latents = latents / self.vae.config.scaling_factor
+        if self.spatial_injection is not None:
+            self.spatial_injection.clear_features()
+            self.spatial_injection.disable()
         image = self.vae.decode(latents, return_dict=False)[0]
         image = (image / 2 + 0.5).clamp(0, 1)
         image = image.cpu().permute(0, 2, 3, 1).float().numpy()

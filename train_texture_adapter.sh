@@ -25,8 +25,8 @@ DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/BF/training"
 OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_BF"
 LOGGING_DIR="logs"
 
-# 严格续训：从完整 checkpoint 恢复
-RESUME_FROM_CHECKPOINT="./output/texture_adapter_MMG/checkpoint-52950"
+# 置空("")表示从头训练；填写checkpoint路径表示继续训练（resume/finetune）
+PRETRAINED_TEXTURE_ADAPTER_PATH="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture/checkpoint-43800/texture_adapter.bin"
 
 # =========================
 # Training hyperparameters
