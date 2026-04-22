@@ -11,8 +11,7 @@ from transformers import CLIPImageProcessor
 from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 from adapter.attention_processor import LogoCacheSAttnProcessor2_0, LogoRefSAttnProcessor2_0, LogoCacheCAttnProcessor2_0 , CAttnProcessor2_0,IPAttnProcessor2_0
-from models.multiscale_texture_encoder import MultiScaleTextureEncoder, MultiScaleSketchEncoder
-from models.spatial_fusion import MultiScaleFusion
+from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.spatial_injection import SpatialInjectionAdapter
 import argparse
 
@@ -104,7 +103,9 @@ def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules):
             adapter_modules.load_state_dict(adapter_modules_dict, strict=False)
             adapter_loaded = True
         meta = {}
-    elif ckpt_format in ("gam_texture_joint_v1", "gam_texture_joint_v2"):
+    elif ckpt_format in ("gam_texture_joint_v1", "gam_texture_joint_v2", "gam_texture_joint_v3") or all(
+        k in state for k in ("unet", "ref_unet", "texture_adapter")
+    ):
         if "unet" in state:
             unet.load_state_dict(state["unet"], strict=False)
             unet_loaded = True
@@ -253,13 +254,9 @@ def prepare(args):
     print(f"[prepare] effective texture_num_tokens for IPAttnProcessor2_0: {args.texture_num_tokens}")
 
     spatial_texture_encoder = None
-    spatial_sketch_encoder = None
-    spatial_fusion = None
     spatial_injection = None
     if args.texture_condition_mode in ("spatial", "hybrid"):
         spatial_texture_encoder = MultiScaleTextureEncoder(stage_channels=(64, 128, 256, 256)).to(dtype=torch.float16, device=args.device)
-        spatial_sketch_encoder = MultiScaleSketchEncoder(stage_channels=(64, 128, 256, 256)).to(dtype=torch.float16, device=args.device)
-        spatial_fusion = MultiScaleFusion((64, 128, 256, 256), (64, 128, 256, 256), (64, 128, 256, 256), fusion_type=args.fusion_type).to(dtype=torch.float16, device=args.device)
         spatial_injection = SpatialInjectionAdapter(
             unet=unet,
             fusion_channels=(64, 128, 256, 256),
@@ -269,19 +266,11 @@ def prepare(args):
         st = gam_info.get("state", {})
         spatial_loaded_flags = {
             "spatial_texture_encoder": False,
-            "spatial_sketch_encoder": False,
-            "spatial_fusion": False,
             "spatial_injection": False,
         }
         if "spatial_texture_encoder" in st:
             spatial_texture_encoder.load_state_dict(st["spatial_texture_encoder"], strict=False)
             spatial_loaded_flags["spatial_texture_encoder"] = True
-        if "spatial_sketch_encoder" in st:
-            spatial_sketch_encoder.load_state_dict(st["spatial_sketch_encoder"], strict=False)
-            spatial_loaded_flags["spatial_sketch_encoder"] = True
-        if "spatial_fusion" in st:
-            spatial_fusion.load_state_dict(st["spatial_fusion"], strict=False)
-            spatial_loaded_flags["spatial_fusion"] = True
         if "spatial_injection" in st:
             spatial_injection.load_state_dict(st["spatial_injection"], strict=False)
             spatial_loaded_flags["spatial_injection"] = True
@@ -304,8 +293,6 @@ def prepare(args):
                          text_encoder=text_encoder, image_encoder=image_encoder,
                          texture_ckpt=args.texture_ckpt,
                          spatial_texture_encoder=spatial_texture_encoder,
-                         spatial_sketch_encoder=spatial_sketch_encoder,
-                         spatial_fusion=spatial_fusion,
                          spatial_injection=spatial_injection,
                          scheduler=noise_scheduler,
                          safety_checker=StableDiffusionSafetyChecker,
@@ -358,7 +345,13 @@ if __name__ == "__main__":
     parser.add_argument('--texture_num_tokens', type=int, default=16)
     parser.add_argument('--texture_scale', type=float, default=1.0)
     parser.add_argument('--texture_condition_mode', type=str, default='spatial', choices=['token', 'spatial', 'hybrid'])
-    parser.add_argument('--fusion_type', type=str, default='minimal', choices=['minimal', 'bfm_like'])
+    parser.add_argument(
+        '--fusion_type',
+        type=str,
+        default='minimal',
+        choices=['minimal', 'bfm_like'],
+        help="Deprecated: decoupled spatial no longer uses fusion_type.",
+    )
     parser.add_argument('--texture_preprocess_mode', type=str, default='crop_tile', choices=['plain_resize', 'crop_tile', 'plain'])
     parser.add_argument('--alpha1', type=float, default=2.0)
     parser.add_argument('--alpha2', type=float, default=2.0)

@@ -94,10 +94,10 @@ sh train_LEM.sh
 
 ### 🧩 Spatial texture mode (recommended)
 
-`IMAGGarment-1` now supports a minimal BF-Fashion-style **spatial texture injection** branch:
-- `token`: old texture-token conditioning only
-- `spatial`: new multi-scale spatial injection only (**recommended**)
-- `hybrid`: token + spatial together
+`IMAGGarment-1` spatial path now uses **decoupled texture-first multi-scale spatial injection**:
+- `token`: texture-token conditioning only
+- `spatial`: decoupled texture-first spatial injection only (**recommended**)
+- `hybrid`: token + decoupled texture-first spatial injection
 
 Joint training example:
 ```bash
@@ -164,19 +164,13 @@ python inference_IMAGGarment-1.py \
 ## 🧪 Round-2 / research mode
 
 ### New flags (joint training)
-- `--fusion_type {minimal,bfm_like}` (`bfm_like` is experimental)
 - `--joint_t_drop_rate`, `--joint_i_drop_rate`, `--joint_ti_drop_rate`
 - `--style_loss_type {gram,gram+patch}`
 - `--lambda_patch_style`
 - `--val_vis_steps` (save token/spatial/hybrid validation grids to `val_outputs/step_xxxxxx/<mode>/`)
 
-### Fusion type note
-- `minimal`: safe default concat fusion
-- `bfm_like`: lightweight bidirectional modulation approximation (NOT full BF-Fashion)
-
 ### Recommended first experiment
 - `--texture_condition_mode spatial`
-- `--fusion_type minimal`
 - `--lambda_style 0.5`
 - `--joint_t_drop_rate 0.2 --joint_i_drop_rate 0.05 --joint_ti_drop_rate 0.05`
 - `--texture_preprocess_mode crop_tile`
@@ -184,27 +178,27 @@ python inference_IMAGGarment-1.py \
 ### Ablation commands (examples)
 1. **baseline token**
 ```bash
-accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode token --fusion_type minimal --lambda_style 0.0
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode token --lambda_style 0.0
 ```
-2. **spatial minimal**
+2. **spatial decoupled**
 ```bash
-accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type minimal --lambda_style 0.5
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --lambda_style 0.5
 ```
-3. **hybrid minimal**
+3. **hybrid decoupled**
 ```bash
-accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode hybrid --fusion_type minimal --lambda_style 0.5
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode hybrid --lambda_style 0.5
 ```
-4. **spatial bfm_like**
+4. **spatial + style loss**
 ```bash
-accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type bfm_like --lambda_style 0.5
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --lambda_style 0.5 --style_loss_type gram
 ```
-5. **spatial minimal + style loss**
+5. **hybrid + style loss**
 ```bash
-accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type minimal --lambda_style 0.5 --style_loss_type gram
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode hybrid --lambda_style 0.5 --style_loss_type gram
 ```
-6. **spatial minimal + style loss + joint dropout**
+6. **spatial + style loss + joint dropout**
 ```bash
-accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --fusion_type minimal --lambda_style 0.5 --joint_t_drop_rate 0.2 --joint_i_drop_rate 0.05 --joint_ti_drop_rate 0.05
+accelerate launch train_GAM_texture_joint.py ... --texture_condition_mode spatial --lambda_style 0.5 --joint_t_drop_rate 0.2 --joint_i_drop_rate 0.05 --joint_ti_drop_rate 0.05
 ```
 
 ### Diagnostics tool
@@ -216,7 +210,6 @@ python tools/texture_diagnostics.py \
   --prompt "a blue jacket" \
   --conflict_prompt "a bright red jacket" \
   --texture_condition_mode spatial \
-  --fusion_type minimal \
   --texture_preprocess_mode crop_tile \
   --output_dir diagnostics_output
 ```
@@ -254,8 +247,7 @@ Prepare a json map from experiment name/mode to checkpoint path:
 {
   "token": "/path/to/token_gam.pt",
   "spatial": "/path/to/spatial_gam.pt",
-  "hybrid": "/path/to/hybrid_gam.pt",
-  "spatial_bfm_like": "/path/to/spatial_bfm_gam.pt"
+  "hybrid": "/path/to/hybrid_gam.pt"
 }
 ```
 
@@ -283,7 +275,7 @@ python tools/run_ablation_suite.py \
 2. Run fixed benchmark  
 3. Run texture reliance analysis  
 4. Run ablation suite  
-5. Compare token/spatial/hybrid/spatial_bfm_like in markdown/csv reports
+5. Compare token/spatial/hybrid in markdown/csv reports
 原模型
 python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --sketch_path ./assets/sketch.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask.png --texture_ckpt ./output/texture_adapter_MMG/checkpoint-21900/texture_adapter.bin --device cuda
 python inference_IMAGGarment-1.py --GAM_model_ckpt ./weight/GAM.pt --LEM_model_ckpt ./weight/LEM.bin --sketch_path ./assets/sketch.png --logo_path ./assets/logo.png --mask_path ./assets/shirt_mask.png --texture_path ./assets/texture1.png --prompt "a blue long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring an adidas spezial patch and a mountain logo on the left chest." --output_path ./outputs/test_tshirt_shirtmask.png --texture_ckpt ./output/texture_adapter_MMG/checkpoint-21900/texture_adapter.bin --device cuda

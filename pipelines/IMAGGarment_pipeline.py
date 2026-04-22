@@ -73,8 +73,6 @@ class IMAGGarment(StableDiffusionPipeline):
         safety_checker: StableDiffusionSafetyChecker,
         feature_extractor: CLIPImageProcessor,
         spatial_texture_encoder=None,
-        spatial_sketch_encoder=None,
-        spatial_fusion=None,
         spatial_injection=None,
     ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor)
@@ -88,8 +86,6 @@ class IMAGGarment(StableDiffusionPipeline):
             text_encoder=text_encoder,
             image_encoder=image_encoder,
             spatial_texture_encoder=spatial_texture_encoder,
-            spatial_sketch_encoder=spatial_sketch_encoder,
-            spatial_fusion=spatial_fusion,
             spatial_injection=spatial_injection,
             safety_checker=safety_checker,
             feature_extractor=feature_extractor,
@@ -590,6 +586,7 @@ class IMAGGarment(StableDiffusionPipeline):
         texture_embeds=None,
         texture_mode="patch_resampled",
         texture_condition_mode="spatial",
+        # Kept for CLI compatibility; decoupled spatial path does not use fusion_type.
         fusion_type="minimal",
         texture_preprocess_mode="crop_tile",
         texture_num_tokens=16,
@@ -697,7 +694,7 @@ class IMAGGarment(StableDiffusionPipeline):
 
             if use_spatial and all(
                 m is not None
-                for m in [self.spatial_texture_encoder, self.spatial_sketch_encoder, self.spatial_fusion, self.spatial_injection]
+                for m in [self.spatial_texture_encoder, self.spatial_injection]
             ):
                 tex_img = texture_clip_image if isinstance(texture_clip_image, Image.Image) else texture_clip_image[0]
                 tex_tensor = preprocess_texture_image(
@@ -706,21 +703,14 @@ class IMAGGarment(StableDiffusionPipeline):
                     height=height,
                     mode=texture_preprocess_mode,
                 ).unsqueeze(0).to(device=device, dtype=torch.float16)
-                sketch_tensor = ref_image.to(device=device, dtype=tex_tensor.dtype)
-                if sketch_tensor.shape[-2:] != tex_tensor.shape[-2:]:
-                    sketch_tensor = F.interpolate(sketch_tensor, size=tex_tensor.shape[-2:], mode="bilinear", align_corners=False)
-                sketch_feats = self.spatial_sketch_encoder(sketch_tensor)
                 texture_feats = self.spatial_texture_encoder(tex_tensor)
-                if hasattr(self.spatial_fusion, "set_fusion_type"):
-                    self.spatial_fusion.set_fusion_type(fusion_type)
-                spatial_feats = self.spatial_fusion(sketch_feats, texture_feats)
                 self.spatial_injection.set_alphas([
                     kwargs.get("alpha1", 1.0),
                     kwargs.get("alpha2", 1.0),
                     kwargs.get("alpha3", 0.7),
                     kwargs.get("alpha4", 0.5),
                 ])
-                self.spatial_injection.set_features(spatial_feats)
+                self.spatial_injection.set_features(texture_feats)
                 self.spatial_injection.enable()
                 spatial_active = True
 

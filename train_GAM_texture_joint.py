@@ -34,11 +34,7 @@ from adapter.attention_processor import (
     LogoRefSAttnProcessor2_0,
 )
 from models.bf_texture_module import BFTextureConditioner
-from models.multiscale_texture_encoder import (
-    MultiScaleSketchEncoder,
-    MultiScaleTextureEncoder,
-)
-from models.spatial_fusion import MultiScaleFusion
+from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.spatial_injection import SpatialInjectionAdapter
 from texture_preprocess import preprocess_texture_image
 
@@ -217,7 +213,6 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
         "pretrained_vae_model_path": args.pretrained_vae_model_path,
         "texture_condition_mode": args.texture_condition_mode,
-        "fusion_type": args.fusion_type,
         "texture_preprocess_mode": args.texture_preprocess_mode,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
         "lambda_style": args.lambda_style,
@@ -271,8 +266,6 @@ def load_joint_checkpoint_into_models(
     ref_unet,
     bf,
     spatial_texture_encoder,
-    spatial_sketch_encoder,
-    spatial_fusion,
     spatial_injection,
 ):
     if not isinstance(state_dict, dict):
@@ -289,16 +282,6 @@ def load_joint_checkpoint_into_models(
         "spatial_texture_encoder",
         "spatial_texture_encoder",
         strict=False,
-    )
-    load_partial_state(
-        spatial_sketch_encoder,
-        state_dict,
-        "spatial_sketch_encoder",
-        "spatial_sketch_encoder",
-        strict=False,
-    )
-    load_partial_state(
-        spatial_fusion, state_dict, "spatial_fusion", "spatial_fusion", strict=False
     )
     load_partial_state(
         spatial_injection,
@@ -325,8 +308,6 @@ def save_training_checkpoint(
     ref_unet,
     bf,
     spatial_texture_encoder,
-    spatial_sketch_encoder,
-    spatial_fusion,
     spatial_injection,
     output_dir,
     global_step,
@@ -337,7 +318,7 @@ def save_training_checkpoint(
     os.makedirs(save_dir, exist_ok=True)
 
     payload = {
-        "checkpoint_format": "gam_texture_joint_v2",
+        "checkpoint_format": "gam_texture_joint_v3",
         "unet": accelerator.unwrap_model(unet).state_dict(),
         "ref_unet": accelerator.unwrap_model(ref_unet).state_dict(),
         "texture_adapter": accelerator.unwrap_model(
@@ -347,10 +328,6 @@ def save_training_checkpoint(
         "spatial_texture_encoder": accelerator.unwrap_model(
             spatial_texture_encoder
         ).state_dict(),
-        "spatial_sketch_encoder": accelerator.unwrap_model(
-            spatial_sketch_encoder
-        ).state_dict(),
-        "spatial_fusion": accelerator.unwrap_model(spatial_fusion).state_dict(),
         "spatial_injection": accelerator.unwrap_model(spatial_injection).state_dict(),
         "meta": {
             "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
@@ -358,7 +335,6 @@ def save_training_checkpoint(
             "texture_num_tokens": args.bf_num_tokens,
             "texture_mode": args.texture_mode,
             "texture_condition_mode": args.texture_condition_mode,
-            "fusion_type": args.fusion_type,
             "texture_preprocess_mode": args.texture_preprocess_mode,
             "lambda_style": args.lambda_style,
             "style_loss_type": args.style_loss_type,
@@ -478,8 +454,6 @@ def run_mode_validation_vis(
     ref_unet,
     bf,
     spatial_texture_encoder,
-    spatial_sketch_encoder,
-    spatial_fusion,
     spatial_injection,
     image_encoder,
     text_encoder,
@@ -526,10 +500,8 @@ def run_mode_validation_vis(
             enc_h = torch.cat([enc_h, tex_tokens], dim=1)
 
         if mode in ("spatial", "hybrid"):
-            sketch_feats = spatial_sketch_encoder(batch["vae_sketch"])
             texture_feats = spatial_texture_encoder(batch["texture_image"])
-            spatial_fusion.set_fusion_type(args.fusion_type)
-            spatial_injection.set_features(spatial_fusion(sketch_feats, texture_feats))
+            spatial_injection.set_features(texture_feats)
         else:
             spatial_injection.clear_features()
 
@@ -605,6 +577,7 @@ def main():
         type=str,
         default="minimal",
         choices=["minimal", "bfm_like"],
+        help="Deprecated: decoupled spatial no longer uses fusion_type.",
     )
     ap.add_argument(
         "--texture_preprocess_mode",
@@ -647,6 +620,8 @@ def main():
     ap.add_argument("--height", type=int, default=640)
 
     args = ap.parse_args()
+    is_token_mode = args.texture_condition_mode in ("token", "hybrid")
+    is_spatial_mode = args.texture_condition_mode in ("spatial", "hybrid")
 
     if (
         args.joint_t_drop_rate + args.joint_i_drop_rate + args.joint_ti_drop_rate
@@ -786,15 +761,8 @@ def main():
                 f"missing={len(missing)} unexpected={len(unexpected)}"
             )
 
-    # 新 spatial 分支
+    # decoupled texture-first spatial branch
     spatial_texture_encoder = MultiScaleTextureEncoder(stage_channels=(64, 128, 256, 256))
-    spatial_sketch_encoder = MultiScaleSketchEncoder(stage_channels=(64, 128, 256, 256))
-    spatial_fusion = MultiScaleFusion(
-        (64, 128, 256, 256),
-        (64, 128, 256, 256),
-        (64, 128, 256, 256),
-        fusion_type=args.fusion_type,
-    )
     spatial_injection = SpatialInjectionAdapter(
         unet=unet,
         fusion_channels=(64, 128, 256, 256),
@@ -819,8 +787,6 @@ def main():
             ref_unet,
             bf,
             spatial_texture_encoder,
-            spatial_sketch_encoder,
-            spatial_fusion,
             spatial_injection,
         )
 
@@ -835,8 +801,6 @@ def main():
             ref_unet,
             bf,
             spatial_texture_encoder,
-            spatial_sketch_encoder,
-            spatial_fusion,
             spatial_injection,
         )
 
@@ -848,15 +812,14 @@ def main():
             p.requires_grad = False
         for p in bf.parameters():
             p.requires_grad = False
-        use_spatial_train = True
+        use_spatial_train = is_spatial_mode
     else:
         for p in bf.parameters():
-            p.requires_grad = args.texture_condition_mode in ("token", "hybrid")
-        use_spatial_train = args.texture_condition_mode in ("spatial", "hybrid")
+            p.requires_grad = is_token_mode
+        use_spatial_train = is_spatial_mode
 
-    for module in [spatial_texture_encoder, spatial_sketch_encoder, spatial_fusion]:
-        for p in module.parameters():
-            p.requires_grad = use_spatial_train
+    for p in spatial_texture_encoder.parameters():
+        p.requires_grad = use_spatial_train
     for p in spatial_injection.parameters():
         p.requires_grad = use_spatial_train
 
@@ -888,8 +851,6 @@ def main():
     # 3. spatial 分支
     if use_spatial_train:
         add_params(spatial_texture_encoder.parameters())
-        add_params(spatial_sketch_encoder.parameters())
-        add_params(spatial_fusion.parameters())
         add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
 
     optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
@@ -931,8 +892,6 @@ def main():
         ref_unet,
         bf,
         spatial_texture_encoder,
-        spatial_sketch_encoder,
-        spatial_fusion,
         spatial_injection,
         optimizer,
         dl,
@@ -942,8 +901,6 @@ def main():
         ref_unet,
         bf,
         spatial_texture_encoder,
-        spatial_sketch_encoder,
-        spatial_fusion,
         spatial_injection,
         optimizer,
         dl,
@@ -1049,10 +1006,10 @@ def main():
                     text_h = text_encoder(input_ids)[0]
                     clip_out = image_encoder(clip_texture, output_hidden_states=True)
 
-                use_token = args.texture_condition_mode in ("token", "hybrid") and (
+                use_token = is_token_mode and (
                     not drop_token_branch
                 )
-                use_spatial = args.texture_condition_mode in ("spatial", "hybrid") and (
+                use_spatial = is_spatial_mode and (
                     not drop_spatial_branch
                 )
 
@@ -1069,11 +1026,8 @@ def main():
                     enc_h = torch.cat([enc_h, tex_tokens], dim=1)
 
                 if use_spatial:
-                    sketch_feats = spatial_sketch_encoder(batch["vae_sketch"])
                     texture_feats = spatial_texture_encoder(texture_image)
-                    spatial_fusion.set_fusion_type(args.fusion_type)
-                    fused_feats = spatial_fusion(sketch_feats, texture_feats)
-                    spatial_injection.set_features(fused_feats)
+                    spatial_injection.set_features(texture_feats)
                 else:
                     spatial_injection.clear_features()
 
@@ -1209,8 +1163,6 @@ def main():
                         ref_unet=ref_unet,
                         bf=bf,
                         spatial_texture_encoder=spatial_texture_encoder,
-                        spatial_sketch_encoder=spatial_sketch_encoder,
-                        spatial_fusion=spatial_fusion,
                         spatial_injection=spatial_injection,
                         image_encoder=image_encoder,
                         text_encoder=text_encoder,
@@ -1243,8 +1195,6 @@ def main():
                         ref_unet=ref_unet,
                         bf=bf,
                         spatial_texture_encoder=spatial_texture_encoder,
-                        spatial_sketch_encoder=spatial_sketch_encoder,
-                        spatial_fusion=spatial_fusion,
                         spatial_injection=spatial_injection,
                         image_encoder=image_encoder,
                         text_encoder=text_encoder,
@@ -1265,8 +1215,6 @@ def main():
                         ref_unet,
                         bf,
                         spatial_texture_encoder,
-                        spatial_sketch_encoder,
-                        spatial_fusion,
                         spatial_injection,
                         args.output_dir,
                         global_step,
@@ -1287,8 +1235,6 @@ def main():
             ref_unet,
             bf,
             spatial_texture_encoder,
-            spatial_sketch_encoder,
-            spatial_fusion,
             spatial_injection,
             args.output_dir,
             global_step,
