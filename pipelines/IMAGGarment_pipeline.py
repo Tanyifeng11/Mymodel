@@ -645,6 +645,8 @@ class IMAGGarment(StableDiffusionPipeline):
 
         image_prompt_embeds = None
         uncond_image_prompt_embeds = None
+        spatial_feats = None
+        spatial_active = False
 
         if texture_clip_image is not None or texture_embeds is not None:
             force_override = kwargs.get("force_texture_num_tokens_override", False)
@@ -720,6 +722,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 ])
                 self.spatial_injection.set_features(spatial_feats)
                 self.spatial_injection.enable()
+                spatial_active = True
 
         num_channels_latents = self.unet.config.in_channels
         latents = self.prepare_latents(
@@ -769,6 +772,10 @@ class IMAGGarment(StableDiffusionPipeline):
                         embedding_dim=self.unet.config.time_cond_proj_dim,
                     ).to(device=device, dtype=latents.dtype)
 
+                if spatial_active and self.spatial_injection is not None:
+                    # Keep spatial conditioning active for every denoising step.
+                    self.spatial_injection.set_features(spatial_feats)
+
                 noise_pred = self.unet(
                     latent_model_input[0].unsqueeze(0),
                     t,
@@ -780,7 +787,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 )[0]
 
                 if do_classifier_free_guidance:
-                    if texture_condition_mode in ("spatial", "hybrid") and self.spatial_injection is not None:
+                    if spatial_active and self.spatial_injection is not None:
                         self.spatial_injection.clear_features()
                     unc_noise_pred = self.unet(
                         latent_model_input[1].unsqueeze(0),

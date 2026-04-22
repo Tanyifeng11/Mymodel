@@ -104,7 +104,7 @@ def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules):
             adapter_modules.load_state_dict(adapter_modules_dict, strict=False)
             adapter_loaded = True
         meta = {}
-    elif ckpt_format == "gam_texture_joint_v1":
+    elif ckpt_format in ("gam_texture_joint_v1", "gam_texture_joint_v2"):
         if "unet" in state:
             unet.load_state_dict(state["unet"], strict=False)
             unet_loaded = True
@@ -205,6 +205,23 @@ def prepare(args):
             print(f"[WARNING] texture_num_tokens mismatch: ckpt={ckpt_tokens}, cli={args.texture_num_tokens}. using checkpoint value.")
             args.texture_num_tokens = ckpt_tokens
 
+    ckpt_width = gam_meta.get("width", None)
+    ckpt_height = gam_meta.get("height", None)
+    if args.width is None:
+        args.width = int(ckpt_width) if ckpt_width is not None else 512
+    if args.height is None:
+        args.height = int(ckpt_height) if ckpt_height is not None else 640
+    if ckpt_width is not None and ckpt_height is not None:
+        ckpt_width = int(ckpt_width)
+        ckpt_height = int(ckpt_height)
+        if args.width != ckpt_width or args.height != ckpt_height:
+            print(
+                f"[WARNING] inference resolution ({args.width}, {args.height}) "
+                f"!= GAM checkpoint resolution ({ckpt_width}, {ckpt_height}). "
+                f"建议保持一致以获得稳定结构控制。"
+            )
+    print(f"[prepare] effective inference resolution: width={args.width}, height={args.height}")
+
     for proc in unet.attn_processors.values():
         if isinstance(proc, IPAttnProcessor2_0):
             proc.num_tokens = args.texture_num_tokens
@@ -225,14 +242,29 @@ def prepare(args):
             alphas=(args.alpha1, args.alpha2, args.alpha3, args.alpha4),
         ).to(dtype=torch.float16, device=args.device)
         st = gam_info.get("state", {})
+        spatial_loaded_flags = {
+            "spatial_texture_encoder": False,
+            "spatial_sketch_encoder": False,
+            "spatial_fusion": False,
+            "spatial_injection": False,
+        }
         if "spatial_texture_encoder" in st:
             spatial_texture_encoder.load_state_dict(st["spatial_texture_encoder"], strict=False)
+            spatial_loaded_flags["spatial_texture_encoder"] = True
         if "spatial_sketch_encoder" in st:
             spatial_sketch_encoder.load_state_dict(st["spatial_sketch_encoder"], strict=False)
+            spatial_loaded_flags["spatial_sketch_encoder"] = True
         if "spatial_fusion" in st:
             spatial_fusion.load_state_dict(st["spatial_fusion"], strict=False)
+            spatial_loaded_flags["spatial_fusion"] = True
         if "spatial_injection" in st:
             spatial_injection.load_state_dict(st["spatial_injection"], strict=False)
+            spatial_loaded_flags["spatial_injection"] = True
+        if not all(spatial_loaded_flags.values()):
+            print(
+                "[WARNING] Spatial branch weights are incomplete in GAM checkpoint: "
+                f"{spatial_loaded_flags}. spatial/hybrid 可能无法正常发挥。"
+            )
 
     noise_scheduler = DDIMScheduler(
         num_train_timesteps=1000,
@@ -285,19 +317,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--width",
         type=int,
-        default=512,
+        default=None,
         help=(
-            "The resolution for input images, all the images in the train/validation dataset will be resized to this"
-            " resolution"
+            "Inference width. If omitted, use GAM checkpoint metadata width when available, otherwise fallback to 512."
         ),
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=640,
+        default=None,
         help=(
-            "The resolution for input images, all the images in the train/validation dataset will be resized to this"
-            " resolution"
+            "Inference height. If omitted, use GAM checkpoint metadata height when available, otherwise fallback to 640."
         ),
     )
     args = parser.parse_args()
@@ -315,7 +345,6 @@ if __name__ == "__main__":
     clip_image_processor = CLIPImageProcessor()
 
     img_transform = transforms.Compose([
-        transforms.Resize([640, 512], interpolation=transforms.InterpolationMode.BILINEAR),
         transforms.ToTensor(),
         transforms.Normalize([0.5], [0.5]),
     ])
@@ -326,12 +355,11 @@ if __name__ == "__main__":
     null_prompt = ''
     negative_prompt = ' worst quality, low quality'
 
-    sketch_img = Image.open(args.sketch_path).convert("RGB")
-    sketch_img = resize_img(sketch_img)
+    sketch_img = Image.open(args.sketch_path).convert("RGB").resize((args.width, args.height), Image.BILINEAR)
     vae_sketch = img_transform(sketch_img).unsqueeze(0)
     
     if args.texture_path is not None:
-        texture_image = Image.open(args.texture_path)
+        texture_image = Image.open(args.texture_path).convert("RGB")
     else:
         texture_embeds = None
         texture_clip_image = None
@@ -371,10 +399,10 @@ if __name__ == "__main__":
 
     save_output = []
     save_output.append(output[0])
-    save_output.insert(0,texture_image.resize((512, 640), Image.BICUBIC))
-    save_output.insert(0, sketch_img.resize((512, 640), Image.BICUBIC))
+    save_output.insert(0, texture_image.resize((args.width, args.height), Image.BICUBIC))
+    save_output.insert(0, sketch_img.resize((args.width, args.height), Image.BICUBIC))
     grid = image_grid(save_output, 1, 3)
-    grid.save(
-        output_path + '/' + args.sketch_path.split("/")[-1])
+    out_name = os.path.basename(args.sketch_path)
+    grid.save(output_path + "/" + out_name)
     
-    print( output_path + '/' + args.sketch_path.split("/")[-1])
+    print(output_path + "/" + out_name)
