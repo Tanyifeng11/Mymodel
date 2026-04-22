@@ -214,6 +214,8 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "git_commit": safe_git_hash(),
         "output_dir": args.output_dir,
+        "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
+        "pretrained_vae_model_path": args.pretrained_vae_model_path,
         "texture_condition_mode": args.texture_condition_mode,
         "fusion_type": args.fusion_type,
         "texture_preprocess_mode": args.texture_preprocess_mode,
@@ -351,6 +353,8 @@ def save_training_checkpoint(
         "spatial_fusion": accelerator.unwrap_model(spatial_fusion).state_dict(),
         "spatial_injection": accelerator.unwrap_model(spatial_injection).state_dict(),
         "meta": {
+            "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
+            "pretrained_vae_model_path": args.pretrained_vae_model_path,
             "texture_num_tokens": args.bf_num_tokens,
             "texture_mode": args.texture_mode,
             "texture_condition_mode": args.texture_condition_mode,

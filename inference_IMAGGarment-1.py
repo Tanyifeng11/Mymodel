@@ -128,16 +128,41 @@ def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules):
 
 
 def prepare(args):
+    if not args.texture_ckpt:
+        args.texture_ckpt = args.GAM_model_ckpt
+        print(f"[prepare] texture_ckpt is empty, using GAM_model_ckpt: {args.texture_ckpt}")
+
+    gam_meta_for_paths = {}
+    if args.base_model_path == "auto" or args.vae_model_path == "auto":
+        try:
+            gam_state_for_paths = load_checkpoint_file(args.GAM_model_ckpt)
+            gam_meta_for_paths = extract_texture_metadata(gam_state_for_paths)
+        except Exception as e:
+            print(f"[WARNING] failed to read GAM metadata for base path auto-resolve: {e}")
+
+    if args.base_model_path == "auto":
+        args.base_model_path = gam_meta_for_paths.get(
+            "pretrained_model_name_or_path",
+            "stable-diffusion-v1-5/stable-diffusion-v1-5",
+        )
+    if args.vae_model_path == "auto":
+        args.vae_model_path = gam_meta_for_paths.get(
+            "pretrained_vae_model_path",
+            "stabilityai/sd-vae-ft-mse",
+        )
+
     generator = torch.Generator(device=args.device).manual_seed(42)
     resolved_image_encoder_path = resolve_image_encoder_path(args)
+    print(f"[prepare] base model path: {args.base_model_path}")
+    print(f"[prepare] vae model path: {args.vae_model_path}")
     print(f"[prepare] resolved image encoder path: {resolved_image_encoder_path}")
     
-    #GAM data
-    vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(dtype=torch.float16, device=args.device)
-    tokenizer = CLIPTokenizer.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="tokenizer")
-    text_encoder = CLIPTextModel.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="text_encoder").to(
+    # Keep inference base components aligned with training base components.
+    vae = AutoencoderKL.from_pretrained(args.vae_model_path).to(dtype=torch.float16, device=args.device)
+    tokenizer = CLIPTokenizer.from_pretrained(args.base_model_path, subfolder="tokenizer")
+    text_encoder = CLIPTextModel.from_pretrained(args.base_model_path, subfolder="text_encoder").to(
         dtype=torch.float16, device=args.device)
-    unet = UNet2DConditionModel.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="unet").to(
+    unet = UNet2DConditionModel.from_pretrained(args.base_model_path, subfolder="unet").to(
         dtype=torch.float16,device=args.device)
     image_encoder = load_image_encoder_flexible(
         resolved_image_encoder_path,
@@ -169,7 +194,7 @@ def prepare(args):
     del st
     
 
-    ref_unet = UNet2DConditionModel.from_pretrained("SG161222/Realistic_Vision_V4.0_noVAE", subfolder="unet").to(
+    ref_unet = UNet2DConditionModel.from_pretrained(args.base_model_path, subfolder="unet").to(
         dtype=torch.float16,
         device=args.device)
     attn_procs2 = {}
@@ -285,6 +310,30 @@ def prepare(args):
                          scheduler=noise_scheduler,
                          safety_checker=StableDiffusionSafetyChecker,
                          feature_extractor=CLIPImageProcessor)
+
+    # IMAGGarment will load args.texture_ckpt in __init__, which can overwrite
+    # adapter/BF states already loaded from GAM checkpoint. Restore GAM states here.
+    gam_state = gam_info.get("state", {})
+    if "texture_adapter" in gam_state:
+        missing, unexpected = torch.nn.ModuleList(pipe.unet.attn_processors.values()).load_state_dict(
+            gam_state["texture_adapter"], strict=False
+        )
+        print(
+            "[prepare] restored texture_adapter from GAM checkpoint after pipe init "
+            f"(missing={len(missing)}, unexpected={len(unexpected)})"
+        )
+
+    bf_state = gam_info.get("bf_state", None)
+    if bf_state is not None and getattr(pipe, "bf_texture_conditioner", None) is not None:
+        missing, unexpected = pipe.bf_texture_conditioner.load_state_dict(bf_state, strict=False)
+        print(
+            "[prepare] restored bf_texture_conditioner from GAM checkpoint after pipe init "
+            f"(missing={len(missing)}, unexpected={len(unexpected)})"
+        )
+
+    pipe.effective_texture_num_tokens = args.texture_num_tokens
+    if isinstance(pipe.texture_meta, dict):
+        pipe.texture_meta.update(gam_meta)
     return pipe, generator
 
 
@@ -295,7 +344,12 @@ if __name__ == "__main__":
     parser.add_argument('--sketch_path', type=str, required=True)
     parser.add_argument('--texture_path',type=str,required=True)
     parser.add_argument('--output_path', type=str, default="./output_sd_base")
-    parser.add_argument('--texture_ckpt', type=str, required=True)
+    parser.add_argument(
+        '--texture_ckpt',
+        type=str,
+        default="",
+        help="Texture adapter checkpoint. If empty, GAM_model_ckpt is used.",
+    )
     parser.add_argument('--guidance_scale', type=float, default=7.0)
     parser.add_argument('--sketch_scale', type=float, default=0.6)
     parser.add_argument('--ipa_scale', type=float, default=1.0)
@@ -311,6 +365,24 @@ if __name__ == "__main__":
     parser.add_argument('--alpha3', type=float, default=1.5)
     parser.add_argument('--alpha4', type=float, default=1.0)
 
+    parser.add_argument(
+        '--base_model_path',
+        type=str,
+        default="auto",
+        help=(
+            "Base model path used to load tokenizer/text_encoder/unet for inference. "
+            "Use 'auto' to read from GAM metadata when available."
+        ),
+    )
+    parser.add_argument(
+        '--vae_model_path',
+        type=str,
+        default="auto",
+        help=(
+            "VAE model path used for inference. "
+            "Use 'auto' to read from GAM metadata when available."
+        ),
+    )
     parser.add_argument('--image_encoder_path', type=str, default='auto')
     parser.add_argument('--force_texture_num_tokens_override', action='store_true')
     parser.add_argument('--device', type=str, default="cuda:0")
