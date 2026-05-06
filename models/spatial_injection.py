@@ -27,16 +27,32 @@ class SpatialInjectionAdapter(nn.Module):
         self._fused_features: Optional[List[torch.Tensor]] = None
         self._enabled = False
         self._hooks = []
+        self._debug = False
+        self._debug_print_count = 0
+        self._debug_print_limit = 4
 
 
     def trainable_parameters(self):
         return self.proj.parameters()
+
+    def bind_unet(self, unet: nn.Module):
+        was_enabled = self._enabled
+        if was_enabled:
+            self.disable()
+        object.__setattr__(self, "unet", unet)
+        if was_enabled:
+            self.enable()
 
     def set_alphas(self, alphas: Sequence[float]):
         self.alphas = list(alphas)
 
     def set_features(self, fused_features: Optional[List[torch.Tensor]]):
         self._fused_features = fused_features
+
+    def set_debug(self, enabled: bool, limit: int = 4):
+        self._debug = bool(enabled)
+        self._debug_print_limit = int(limit)
+        self._debug_print_count = 0
 
     def clear_features(self):
         self._fused_features = None
@@ -74,6 +90,14 @@ class SpatialInjectionAdapter(nn.Module):
                 proj_feat = F.interpolate(
                     proj_feat, size=hidden.shape[-2:], mode="bilinear", align_corners=False
                 )
+            if self._debug and self._debug_print_count < self._debug_print_limit:
+                hidden_norm = hidden.float().norm().item()
+                proj_norm = proj_feat.float().norm().item()
+                print(
+                    f"[spatial] idx={idx}, hidden_norm={hidden_norm:.4f}, "
+                    f"proj_norm={proj_norm:.4f}, alpha={self.alphas[idx]}"
+                )
+                self._debug_print_count += 1
             mixed = hidden + self.alphas[idx] * proj_feat
 
             if isinstance(output, tuple):

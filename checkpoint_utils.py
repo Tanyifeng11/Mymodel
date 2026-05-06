@@ -16,6 +16,8 @@ def load_checkpoint_file(path: str):
 
 
 def detect_gam_checkpoint_format(state_dict: dict) -> str:
+    if isinstance(state_dict, dict) and state_dict.get("checkpoint_format") == "gam_texture_joint_v3":
+        return "gam_texture_joint_v3"
     if isinstance(state_dict, dict) and state_dict.get("checkpoint_format") == "gam_texture_joint_v2":
         return "gam_texture_joint_v2"
     if isinstance(state_dict, dict) and state_dict.get("checkpoint_format") == "gam_texture_joint_v1":

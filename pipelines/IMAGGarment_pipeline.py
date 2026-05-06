@@ -571,6 +571,11 @@ class IMAGGarment(StableDiffusionPipeline):
             if isinstance(attn_processor, IPAttnProcessor2_0):
                 attn_processor.scale = ipa_scale
 
+    def set_texture_token_enabled(self, enabled: bool):
+        for attn_processor in self.unet.attn_processors.values():
+            if isinstance(attn_processor, IPAttnProcessor2_0):
+                attn_processor.use_ip_adapter = bool(enabled)
+
     @torch.no_grad()
     def __call__(
         self,
@@ -644,6 +649,7 @@ class IMAGGarment(StableDiffusionPipeline):
         uncond_image_prompt_embeds = None
         spatial_feats = None
         spatial_active = False
+        self.set_texture_token_enabled(False)
 
         if texture_clip_image is not None or texture_embeds is not None:
             force_override = kwargs.get("force_texture_num_tokens_override", False)
@@ -661,6 +667,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 for attn_processor in self.unet.attn_processors.values():
                     if isinstance(attn_processor, IPAttnProcessor2_0):
                         attn_processor.num_tokens = texture_num_tokens
+            self.set_texture_token_enabled(use_token)
             print(f"[IMAGGarment] checkpoint format: {self.texture_meta.get('checkpoint_format', 'texture_adapter')}")
             print(f"[IMAGGarment] texture mode: {texture_mode}")
             print(f"[IMAGGarment] texture condition mode: {texture_condition_mode}")
@@ -704,12 +711,15 @@ class IMAGGarment(StableDiffusionPipeline):
                     mode=texture_preprocess_mode,
                 ).unsqueeze(0).to(device=device, dtype=torch.float16)
                 texture_feats = self.spatial_texture_encoder(tex_tensor)
+                spatial_feats = texture_feats
                 self.spatial_injection.set_alphas([
                     kwargs.get("alpha1", 1.0),
                     kwargs.get("alpha2", 1.0),
                     kwargs.get("alpha3", 0.7),
                     kwargs.get("alpha4", 0.5),
                 ])
+                if hasattr(self.spatial_injection, "set_debug"):
+                    self.spatial_injection.set_debug(kwargs.get("debug_spatial", False))
                 self.spatial_injection.set_features(texture_feats)
                 self.spatial_injection.enable()
                 spatial_active = True

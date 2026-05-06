@@ -15,7 +15,11 @@ from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.spatial_injection import SpatialInjectionAdapter
 import argparse
 
-_checkpoint_utils = importlib.import_module("repo_utils.checkpoint_utils") if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None else importlib.import_module("checkpoint_utils")
+try:
+    _repo_checkpoint_spec = importlib.util.find_spec("repo_utils.checkpoint_utils")
+except ModuleNotFoundError:
+    _repo_checkpoint_spec = None
+_checkpoint_utils = importlib.import_module("repo_utils.checkpoint_utils") if _repo_checkpoint_spec is not None else importlib.import_module("checkpoint_utils")
 load_checkpoint_file = _checkpoint_utils.load_checkpoint_file
 detect_gam_checkpoint_format = _checkpoint_utils.detect_gam_checkpoint_format
 infer_texture_num_tokens = _checkpoint_utils.infer_texture_num_tokens
@@ -357,6 +361,7 @@ if __name__ == "__main__":
     parser.add_argument('--alpha2', type=float, default=2.0)
     parser.add_argument('--alpha3', type=float, default=1.5)
     parser.add_argument('--alpha4', type=float, default=1.0)
+    parser.add_argument('--debug_spatial', action='store_true')
 
     parser.add_argument(
         '--base_model_path',
@@ -459,6 +464,7 @@ if __name__ == "__main__":
         alpha2=args.alpha2,
         alpha3=args.alpha3,
         alpha4=args.alpha4,
+        debug_spatial=args.debug_spatial,
         force_texture_num_tokens_override=args.force_texture_num_tokens_override,
     )
 

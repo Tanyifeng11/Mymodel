@@ -38,7 +38,11 @@ from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.spatial_injection import SpatialInjectionAdapter
 from texture_preprocess import preprocess_texture_image
 
-if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None:
+try:
+    _repo_checkpoint_spec = importlib.util.find_spec("repo_utils.checkpoint_utils")
+except ModuleNotFoundError:
+    _repo_checkpoint_spec = None
+if _repo_checkpoint_spec is not None:
     from repo_utils.checkpoint_utils import extract_texture_metadata
 else:
     from checkpoint_utils import extract_texture_metadata
@@ -250,6 +254,14 @@ def set_unet_trainable(unet):
     for proc in unet.attn_processors.values():
         for p in proc.parameters():
             p.requires_grad = True
+
+
+def set_texture_token_enabled(unet, enabled):
+    if hasattr(unet, "module"):
+        unet = unet.module
+    for proc in unet.attn_processors.values():
+        if isinstance(proc, IPAttnProcessor2_0):
+            proc.use_ip_adapter = bool(enabled)
 
 
 def load_partial_state(module, state_dict, key, name, strict=False):
@@ -504,6 +516,7 @@ def run_mode_validation_vis(
             spatial_injection.set_features(texture_feats)
         else:
             spatial_injection.clear_features()
+        set_texture_token_enabled(unet, mode in ("token", "hybrid"))
 
         noise_pred = unet(
             latents,
@@ -528,6 +541,8 @@ def run_mode_validation_vis(
         mode_dir = os.path.join(out_dir, f"step_{step:06d}", mode)
         os.makedirs(mode_dir, exist_ok=True)
         save_image(grid, os.path.join(mode_dir, "x0_hat_grid.png"))
+    spatial_injection.clear_features()
+    set_texture_token_enabled(unet, False)
 
 
 # =========================
@@ -774,7 +789,6 @@ def main():
         ),
         alphas=(args.alpha1, args.alpha2, args.alpha3, args.alpha4),
     )
-    spatial_injection.enable()
 
     # gam 初始化
     if args.gam_init_ckpt:
@@ -906,6 +920,9 @@ def main():
         dl,
         lr_scheduler,
     )
+    spatial_injection_module = accelerator.unwrap_model(spatial_injection)
+    spatial_injection_module.bind_unet(accelerator.unwrap_model(unet))
+    spatial_injection_module.enable()
 
     text_encoder.to(accelerator.device)
     vae.to(accelerator.device)
@@ -1027,9 +1044,10 @@ def main():
 
                 if use_spatial:
                     texture_feats = spatial_texture_encoder(texture_image)
-                    spatial_injection.set_features(texture_feats)
+                    spatial_injection_module.set_features(texture_feats)
                 else:
-                    spatial_injection.clear_features()
+                    spatial_injection_module.clear_features()
+                set_texture_token_enabled(unet, use_token)
 
                 # ---- diffusion 前向 ----
                 noise = torch.randn_like(latents)
@@ -1163,7 +1181,7 @@ def main():
                         ref_unet=ref_unet,
                         bf=bf,
                         spatial_texture_encoder=spatial_texture_encoder,
-                        spatial_injection=spatial_injection,
+                        spatial_injection=spatial_injection_module,
                         image_encoder=image_encoder,
                         text_encoder=text_encoder,
                         vae=vae,
@@ -1195,7 +1213,7 @@ def main():
                         ref_unet=ref_unet,
                         bf=bf,
                         spatial_texture_encoder=spatial_texture_encoder,
-                        spatial_injection=spatial_injection,
+                        spatial_injection=spatial_injection_module,
                         image_encoder=image_encoder,
                         text_encoder=text_encoder,
                         vae=vae,

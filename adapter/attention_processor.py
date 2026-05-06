@@ -318,6 +318,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.cross_attention_dim = cross_attention_dim
         self.scale = scale
         self.num_tokens = num_tokens
+        self.use_ip_adapter = True
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
@@ -363,9 +364,12 @@ class IPAttnProcessor2_0(torch.nn.Module):
         if cond_hidden_states is not None:
             encoder_hidden_states = cond_hidden_states
 
+        use_ip_adapter = self.use_ip_adapter and self.num_tokens > 0
+        ip_hidden_states = None
+
         if encoder_hidden_states is None:
             raise ValueError("IPAttnProcessor2_0 expects encoder_hidden_states with appended texture tokens.")
-        else:
+        elif use_ip_adapter:
             if encoder_hidden_states.shape[1] < self.num_tokens:
                 raise ValueError(
                     f"encoder_hidden_states has {encoder_hidden_states.shape[1]} tokens, expected at least {self.num_tokens}."
@@ -384,6 +388,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
             )
             if attn.norm_cross:
                 encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
+        elif attn.norm_cross:
+            encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
 
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
@@ -405,26 +411,26 @@ class IPAttnProcessor2_0(torch.nn.Module):
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
 
-        # for ip-adapter
-        ip_key = self.to_k_ip(ip_hidden_states)
-        ip_value = self.to_v_ip(ip_hidden_states)
+        if use_ip_adapter:
+            ip_key = self.to_k_ip(ip_hidden_states)
+            ip_value = self.to_v_ip(ip_hidden_states)
 
-        ip_key = ip_key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
-        ip_value = ip_value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+            ip_key = ip_key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+            ip_value = ip_value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
-        # the output of sdp = (batch, num_heads, seq_len, head_dim)
-        # TODO: add support for attn.scale when we move to Torch 2.1
-        ip_hidden_states = F.scaled_dot_product_attention(
-            query, ip_key, ip_value, attn_mask=None, dropout_p=0.0, is_causal=False
-        )
-        with torch.no_grad():
-            self.attn_map = query @ ip_key.transpose(-2, -1).softmax(dim=-1)
-            #print(self.attn_map.shape)
+            # the output of sdp = (batch, num_heads, seq_len, head_dim)
+            # TODO: add support for attn.scale when we move to Torch 2.1
+            ip_hidden_states = F.scaled_dot_product_attention(
+                query, ip_key, ip_value, attn_mask=None, dropout_p=0.0, is_causal=False
+            )
+            with torch.no_grad():
+                self.attn_map = query @ ip_key.transpose(-2, -1).softmax(dim=-1)
+                #print(self.attn_map.shape)
 
-        ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
-        ip_hidden_states = ip_hidden_states.to(query.dtype)
+            ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+            ip_hidden_states = ip_hidden_states.to(query.dtype)
 
-        hidden_states = hidden_states + self.scale * ip_hidden_states
+            hidden_states = hidden_states + self.scale * ip_hidden_states
 
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)
