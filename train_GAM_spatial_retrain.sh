@@ -30,6 +30,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_spatial_full_retr
 
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
 MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-10000}"
+CHECKPOINTING_STEPS="${CHECKPOINTING_STEPS:-2000}"
 LEARNING_RATE="${LEARNING_RATE:-1e-4}"
 NUM_WARMUP_STEPS="${NUM_WARMUP_STEPS:-300}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
@@ -87,6 +88,7 @@ CMD=(
   --output_dir "${OUTPUT_DIR}"
   --train_batch_size "${TRAIN_BATCH_SIZE}"
   --max_train_steps "${MAX_TRAIN_STEPS}"
+  --checkpointing_steps "${CHECKPOINTING_STEPS}"
   --learning_rate "${LEARNING_RATE}"
   --num_warmup_steps "${NUM_WARMUP_STEPS}"
   --max_grad_norm "${MAX_GRAD_NORM}"

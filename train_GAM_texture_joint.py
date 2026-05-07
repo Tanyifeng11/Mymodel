@@ -567,6 +567,7 @@ def main():
     # train
     ap.add_argument("--train_batch_size", type=int, default=1)
     ap.add_argument("--max_train_steps", type=int, default=20000)
+    ap.add_argument("--checkpointing_steps", type=int, default=2000)
     ap.add_argument("--learning_rate", type=float, default=1e-4)
     ap.add_argument("--num_warmup_steps", type=int, default=500)
     ap.add_argument("--max_grad_norm", type=float, default=1.0)
@@ -1224,7 +1225,8 @@ def main():
 
                 if (
                     accelerator.is_main_process
-                    and global_step % 2000 == 0
+                    and args.checkpointing_steps > 0
+                    and global_step % args.checkpointing_steps == 0
                     and global_step > 0
                 ):
                     save_dir = save_training_checkpoint(
