@@ -4,6 +4,7 @@ import itertools
 import json
 import os
 import random
+import re
 import subprocess
 from datetime import datetime, timezone
 
@@ -223,6 +224,8 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "style_loss_type": args.style_loss_type,
         "lambda_patch_style": args.lambda_patch_style,
         "lambda_edge": args.lambda_edge,
+        "lambda_texture_color": args.lambda_texture_color,
+        "lambda_texture_gram": args.lambda_texture_gram,
         "joint_t_drop_rate": args.joint_t_drop_rate,
         "joint_i_drop_rate": args.joint_i_drop_rate,
         "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -314,6 +317,17 @@ def load_joint_checkpoint_into_models(
         )
 
 
+def infer_checkpoint_step(path):
+    if not path:
+        return None
+    candidates = [path, os.path.dirname(path)]
+    for candidate in candidates:
+        match = re.search(r"checkpoint-(\d+)", candidate)
+        if match:
+            return int(match.group(1))
+    return None
+
+
 def save_training_checkpoint(
     accelerator,
     unet,
@@ -351,6 +365,8 @@ def save_training_checkpoint(
             "lambda_style": args.lambda_style,
             "style_loss_type": args.style_loss_type,
             "lambda_patch_style": args.lambda_patch_style,
+            "lambda_texture_color": args.lambda_texture_color,
+            "lambda_texture_gram": args.lambda_texture_gram,
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -452,6 +468,36 @@ def masked_edge_l1(pred, target, mask=None):
         pred_edge = pred_edge * mask
         target_edge = target_edge * mask
     return F.l1_loss(pred_edge, target_edge)
+
+
+def _weighted_mean_per_sample(loss_per_sample, sample_weight=None):
+    if sample_weight is None:
+        return loss_per_sample.mean()
+    weight = sample_weight.to(device=loss_per_sample.device, dtype=loss_per_sample.dtype).view(-1)
+    denom = weight.sum().clamp_min(1.0)
+    return (loss_per_sample * weight).sum() / denom
+
+
+def _masked_channel_mean_std(x, mask=None):
+    x = ((x + 1.0) * 0.5).clamp(0.0, 1.0)
+    if mask is None:
+        mean = x.mean(dim=(2, 3))
+        std = x.std(dim=(2, 3), unbiased=False)
+        return mean, std
+
+    mask = F.interpolate(mask, size=x.shape[-2:], mode="nearest").to(dtype=x.dtype)
+    denom = mask.sum(dim=(2, 3)).clamp_min(1.0)
+    mean = (x * mask).sum(dim=(2, 3)) / denom
+    var = (((x - mean[:, :, None, None]) * mask) ** 2).sum(dim=(2, 3)) / denom
+    return mean, torch.sqrt(var + 1e-6)
+
+
+def texture_color_stat_loss(pred, texture, garment_mask=None, sample_weight=None):
+    pred_mean, pred_std = _masked_channel_mean_std(pred, garment_mask)
+    texture_mean, texture_std = _masked_channel_mean_std(texture, None)
+    mean_loss = F.smooth_l1_loss(pred_mean, texture_mean, reduction="none").mean(dim=1)
+    std_loss = F.smooth_l1_loss(pred_std, texture_std, reduction="none").mean(dim=1)
+    return _weighted_mean_per_sample(mean_loss + std_loss, sample_weight=sample_weight)
 
 
 # =========================
@@ -562,6 +608,15 @@ def main():
     ap.add_argument("--gam_init_ckpt", type=str, default="")
     ap.add_argument("--texture_adapter_ckpt", required=True)
     ap.add_argument("--resume_from_checkpoint", type=str, default="")
+    ap.add_argument(
+        "--start_global_step",
+        type=int,
+        default=-1,
+        help=(
+            "Starting step used for checkpoint numbering. "
+            "Use -1 to infer from gam_init_ckpt/resume_from_checkpoint path."
+        ),
+    )
     ap.add_argument("--output_dir", default="joint_texture_output")
 
     # train
@@ -621,6 +676,8 @@ def main():
     )
     ap.add_argument("--lambda_patch_style", type=float, default=0.0)
     ap.add_argument("--lambda_edge", type=float, default=0.05)
+    ap.add_argument("--lambda_texture_color", type=float, default=0.0)
+    ap.add_argument("--lambda_texture_gram", type=float, default=0.0)
 
     # dropout
     ap.add_argument("--joint_t_drop_rate", type=float, default=0.3)
@@ -966,7 +1023,21 @@ def main():
     warned_no_mask_once = False
     drop_counts = {"t": 0, "i": 0, "ti": 0, "total": 0}
     branch_drop_counts = {"token": 0, "spatial": 0, "total": 0}
-    global_step = 0
+    if args.start_global_step >= 0:
+        global_step = args.start_global_step
+    else:
+        global_step = (
+            infer_checkpoint_step(args.resume_from_checkpoint)
+            or infer_checkpoint_step(args.gam_init_ckpt)
+            or 0
+        )
+    target_global_step = global_step + args.max_train_steps
+    if accelerator.is_main_process:
+        print(
+            f"[train] start_global_step={global_step}, "
+            f"additional_train_steps={args.max_train_steps}, "
+            f"target_global_step={target_global_step}"
+        )
 
     null_input_ids = tokenizer(
         "",
@@ -976,7 +1047,7 @@ def main():
         return_tensors="pt",
     ).input_ids[0]
 
-    while global_step < args.max_train_steps:
+    while global_step < target_global_step:
         for batch in dl:
             with accelerator.accumulate(unet):
                 drop_token_branch = False
@@ -997,6 +1068,7 @@ def main():
 
                 # ---- 先复制，再做 dropout ----
                 input_ids = batch["input_ids"].clone()
+                texture_image_target = batch["texture_image"].clone()
                 texture_image = batch["texture_image"].clone()
                 clip_texture = batch["clip_texture"].clone()
 
@@ -1014,11 +1086,15 @@ def main():
                     joint_ti_rate = 0.0
 
                 bsz = input_ids.shape[0]
+                texture_condition_weight = torch.ones(
+                    bsz, device=accelerator.device, dtype=torch.float32
+                )
                 for bi in range(bsz):
                     r = random.random()
                     if r < joint_i_rate:
                         texture_image[bi] = 0.0
                         clip_texture[bi] = 0.0
+                        texture_condition_weight[bi] = 0.0
                         drop_counts["i"] += 1
                     elif r < (joint_i_rate + joint_t_rate):
                         input_ids[bi] = null_input_ids.to(input_ids.device)
@@ -1031,6 +1107,7 @@ def main():
                         input_ids[bi] = null_input_ids.to(input_ids.device)
                         texture_image[bi] = 0.0
                         clip_texture[bi] = 0.0
+                        texture_condition_weight[bi] = 0.0
                         drop_counts["ti"] += 1
                     drop_counts["total"] += 1
 
@@ -1138,6 +1215,26 @@ def main():
                     batch["vae_sketch"].float(),
                     mask=batch["garment_mask"].float(),
                 )
+                texture_loss_active = (use_token or use_spatial) and (
+                    texture_condition_weight.sum().item() > 0
+                )
+                loss_texture_color = torch.tensor(0.0, device=loss_style.device)
+                loss_texture_gram = torch.tensor(0.0, device=loss_style.device)
+                if texture_loss_active:
+                    if args.lambda_texture_color > 0:
+                        loss_texture_color = texture_color_stat_loss(
+                            decoded.float(),
+                            texture_image_target.float(),
+                            garment_mask=mask.float(),
+                            sample_weight=texture_condition_weight,
+                        )
+                    if args.lambda_texture_gram > 0:
+                        keep_texture = texture_condition_weight > 0
+                        loss_texture_gram = style_loss_fn(
+                            decoded[keep_texture].float(),
+                            texture_image_target[keep_texture].float(),
+                            mask=mask[keep_texture].float(),
+                        )
 
                 loss = loss_denoise + args.lambda_style * loss_style
                 if (
@@ -1146,6 +1243,8 @@ def main():
                 ):
                     loss = loss + args.lambda_patch_style * loss_patch
                 loss = loss + args.lambda_edge * loss_edge
+                loss = loss + args.lambda_texture_color * loss_texture_color
+                loss = loss + args.lambda_texture_gram * loss_texture_gram
 
                 accelerator.backward(loss)
 
@@ -1175,6 +1274,8 @@ def main():
                             "train/loss_style": loss_style.detach().float().item(),
                             "train/loss_patch": loss_patch.detach().float().item(),
                             "train/loss_edge": loss_edge.detach().float().item(),
+                            "train/loss_texture_color": loss_texture_color.detach().float().item(),
+                            "train/loss_texture_gram": loss_texture_gram.detach().float().item(),
                             "train/lr": optimizer.param_groups[0]["lr"],
                             "train/grad_norm": grad_norm_log,
                             "train/drop_t_rate": drop_counts["t"] / max(1, drop_counts["total"]),
@@ -1184,6 +1285,7 @@ def main():
                             "train/drop_spatial_branch_rate": branch_drop_counts["spatial"] / max(1, branch_drop_counts["total"]),
                             "train/use_token": float(use_token),
                             "train/use_spatial": float(use_spatial),
+                            "train/texture_condition_keep_rate": texture_condition_weight.mean().item(),
                             "train/encoder_hidden_tokens": enc_h.shape[1],
                             "train/batch_size": bsz,
                         },
@@ -1203,6 +1305,8 @@ def main():
                         f"loss_style={loss_style.item():.6f}, "
                         f"loss_patch={loss_patch.item():.6f}, "
                         f"loss_edge={loss_edge.item():.6f}, "
+                        f"loss_tex_color={loss_texture_color.item():.6f}, "
+                        f"loss_tex_gram={loss_texture_gram.item():.6f}, "
                         f"grad_norm={grad_norm_val}, "
                         f"drop_t={drop_counts['t'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_i={drop_counts['i'] / max(1, drop_counts['total']):.3f}, "
@@ -1297,7 +1401,7 @@ def main():
                     print(f"[info] checkpoint saved to {save_dir}")
 
             global_step += 1
-            if global_step >= args.max_train_steps:
+            if global_step >= target_global_step:
                 break
 
     accelerator.wait_for_everyone()
