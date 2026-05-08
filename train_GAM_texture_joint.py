@@ -571,6 +571,11 @@ def main():
     ap.add_argument("--learning_rate", type=float, default=1e-4)
     ap.add_argument("--num_warmup_steps", type=int, default=500)
     ap.add_argument("--max_grad_norm", type=float, default=1.0)
+    ap.add_argument("--report_to", type=str, default="tensorboard", choices=["tensorboard", "wandb", "all", "none"])
+    ap.add_argument("--wandb_project", type=str, default="IMAGGarment-1")
+    ap.add_argument("--wandb_run_name", type=str, default=None)
+    ap.add_argument("--wandb_entity", type=str, default=None)
+    ap.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"])
 
     # conditioning
     ap.add_argument("--bf_num_tokens", type=int, default=16)
@@ -651,10 +656,12 @@ def main():
     accelerator_project_config = ProjectConfiguration(
         project_dir=args.output_dir, logging_dir=os.path.join(args.output_dir, "logs")
     )
+    log_with = None if args.report_to == "none" else args.report_to
     accelerator = Accelerator(
         gradient_accumulation_steps=1,
         mixed_precision="fp16" if torch.cuda.is_available() else "no",
         project_config=accelerator_project_config,
+        log_with=log_with,
     )
 
     # ---- texture ckpt meta ----
@@ -925,6 +932,22 @@ def main():
     spatial_injection_module.bind_unet(accelerator.unwrap_model(unet))
     spatial_injection_module.enable()
 
+    if accelerator.is_main_process and args.report_to != "none":
+        init_kwargs = {}
+        if args.report_to in ("wandb", "all"):
+            init_kwargs = {
+                "wandb": {
+                    "name": args.wandb_run_name,
+                    "entity": args.wandb_entity,
+                    "mode": args.wandb_mode,
+                }
+            }
+        accelerator.init_trackers(
+            args.wandb_project,
+            config=vars(args),
+            init_kwargs=init_kwargs,
+        )
+
     text_encoder.to(accelerator.device)
     vae.to(accelerator.device)
     image_encoder.to(accelerator.device)
@@ -1136,6 +1159,36 @@ def main():
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
+
+                if accelerator.sync_gradients and args.report_to != "none":
+                    grad_norm_log = None
+                    if grad_norm is not None:
+                        grad_norm_log = (
+                            float(grad_norm.item())
+                            if hasattr(grad_norm, "item")
+                            else float(grad_norm)
+                        )
+                    accelerator.log(
+                        {
+                            "train/loss": loss.detach().float().item(),
+                            "train/loss_denoise": loss_denoise.detach().float().item(),
+                            "train/loss_style": loss_style.detach().float().item(),
+                            "train/loss_patch": loss_patch.detach().float().item(),
+                            "train/loss_edge": loss_edge.detach().float().item(),
+                            "train/lr": optimizer.param_groups[0]["lr"],
+                            "train/grad_norm": grad_norm_log,
+                            "train/drop_t_rate": drop_counts["t"] / max(1, drop_counts["total"]),
+                            "train/drop_i_rate": drop_counts["i"] / max(1, drop_counts["total"]),
+                            "train/drop_ti_rate": drop_counts["ti"] / max(1, drop_counts["total"]),
+                            "train/drop_token_branch_rate": branch_drop_counts["token"] / max(1, branch_drop_counts["total"]),
+                            "train/drop_spatial_branch_rate": branch_drop_counts["spatial"] / max(1, branch_drop_counts["total"]),
+                            "train/use_token": float(use_token),
+                            "train/use_spatial": float(use_spatial),
+                            "train/encoder_hidden_tokens": enc_h.shape[1],
+                            "train/batch_size": bsz,
+                        },
+                        step=global_step,
+                    )
 
                 if accelerator.is_main_process and global_step % 100 == 0:
                     grad_norm_val = (

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Retrain GAM with the fixed spatial path.
-# Default: initialize from the existing texture adapter, then train GAM attention
-# processors plus spatial_texture_encoder/spatial_injection. This is the right
-# choice when the current spatial-only result collapses into texture patches.
+# Train GAM from scratch with the fixed spatial path.
+# "From scratch" here means:
+#   - do not load an old GAM joint_model.pt
+#   - do not resume an old GAM run
+#   - initialize GAM texture/BF modules from texture_adapter.bin, which is
+#     required by train_GAM_texture_joint.py
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
@@ -21,12 +23,13 @@ DATA_ROOT_PATH="${DATA_ROOT_PATH:-/mnt/d/tyf/fuxian/datasets/MMDGarment}"
 DATASET_JSON_PATH="${DATASET_JSON_PATH:-/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG/checkpoint-52950/texture_adapter.bin}"
 
-# Optional: set this to a good existing joint_model.pt that already generates
-# garments. With a good GAM_INIT_CKPT, TRAIN_SPATIAL_ONLY=1 becomes reasonable.
+# Keep this enabled for a clean GAM run. Set START_FROM_SCRATCH=0 only when you
+# intentionally want to use GAM_INIT_CKPT or RESUME_FROM_CHECKPOINT below.
+START_FROM_SCRATCH="${START_FROM_SCRATCH:-1}"
 GAM_INIT_CKPT="${GAM_INIT_CKPT:-}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 
-OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_spatial_full_retrain}"
+OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_spatial_from_scratch}"
 
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
 MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-10000}"
@@ -41,6 +44,12 @@ TEXTURE_MODE="${TEXTURE_MODE:-patch_resampled}"
 TEXTURE_CONDITION_MODE="${TEXTURE_CONDITION_MODE:-spatial}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
 CLIP_HIDDEN_LAYER="${CLIP_HIDDEN_LAYER:--1}"
+
+REPORT_TO="${REPORT_TO:-wandb}"
+WANDB_PROJECT="${WANDB_PROJECT:-IMAGGarment-1}"
+WANDB_RUN_NAME="${WANDB_RUN_NAME:-gam_${TEXTURE_CONDITION_MODE}_$(date +%Y%m%d_%H%M%S)}"
+WANDB_ENTITY="${WANDB_ENTITY:-}"
+WANDB_MODE="${WANDB_MODE:-online}"
 
 LAMBDA_STYLE="${LAMBDA_STYLE:-0.5}"
 STYLE_LOSS_TYPE="${STYLE_LOSS_TYPE:-gram}"
@@ -73,6 +82,11 @@ VIS_EVERY_N_STEPS="${VIS_EVERY_N_STEPS:-500}"
 NUM_VIS_SAMPLES="${NUM_VIS_SAMPLES:-2}"
 FIXED_VIS_JSON="${FIXED_VIS_JSON:-}"
 
+if [[ "${START_FROM_SCRATCH}" == "1" ]]; then
+  GAM_INIT_CKPT=""
+  RESUME_FROM_CHECKPOINT=""
+fi
+
 mkdir -p "${OUTPUT_DIR}"
 
 CMD=(
@@ -92,6 +106,10 @@ CMD=(
   --learning_rate "${LEARNING_RATE}"
   --num_warmup_steps "${NUM_WARMUP_STEPS}"
   --max_grad_norm "${MAX_GRAD_NORM}"
+  --report_to "${REPORT_TO}"
+  --wandb_project "${WANDB_PROJECT}"
+  --wandb_run_name "${WANDB_RUN_NAME}"
+  --wandb_mode "${WANDB_MODE}"
   --bf_num_tokens "${BF_NUM_TOKENS}"
   --bf_base_channels "${BF_BASE_CHANNELS}"
   --texture_mode "${TEXTURE_MODE}"
@@ -130,6 +148,10 @@ if [[ -n "${FIXED_VIS_JSON}" ]]; then
   CMD+=(--fixed_vis_json "${FIXED_VIS_JSON}")
 fi
 
+if [[ -n "${WANDB_ENTITY}" ]]; then
+  CMD+=(--wandb_entity "${WANDB_ENTITY}")
+fi
+
 if [[ "${TRAIN_SPATIAL_ONLY}" == "1" ]]; then
   CMD+=(--train_spatial_only)
 fi
@@ -137,5 +159,11 @@ fi
 echo "Running command:"
 printf '%q ' "${CMD[@]}"
 echo
+echo "START_FROM_SCRATCH=${START_FROM_SCRATCH}"
+echo "OUTPUT_DIR=${OUTPUT_DIR}"
+echo "REPORT_TO=${REPORT_TO}"
+echo "WANDB_PROJECT=${WANDB_PROJECT}"
+echo "WANDB_RUN_NAME=${WANDB_RUN_NAME}"
+echo "WANDB_MODE=${WANDB_MODE}"
 
 "${CMD[@]}"
