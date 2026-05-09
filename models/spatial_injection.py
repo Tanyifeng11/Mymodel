@@ -25,6 +25,7 @@ class SpatialInjectionAdapter(nn.Module):
         )
         self.alphas = list(alphas)
         self._fused_features: Optional[List[torch.Tensor]] = None
+        self._spatial_mask: Optional[torch.Tensor] = None
         self._enabled = False
         self._hooks = []
         self._debug = False
@@ -49,6 +50,9 @@ class SpatialInjectionAdapter(nn.Module):
     def set_features(self, fused_features: Optional[List[torch.Tensor]]):
         self._fused_features = fused_features
 
+    def set_mask(self, spatial_mask: Optional[torch.Tensor]):
+        self._spatial_mask = spatial_mask
+
     def set_debug(self, enabled: bool, limit: int = 4):
         self._debug = bool(enabled)
         self._debug_print_limit = int(limit)
@@ -56,6 +60,7 @@ class SpatialInjectionAdapter(nn.Module):
 
     def clear_features(self):
         self._fused_features = None
+        self._spatial_mask = None
 
     def enable(self):
         if self._enabled:
@@ -90,6 +95,18 @@ class SpatialInjectionAdapter(nn.Module):
                 proj_feat = F.interpolate(
                     proj_feat, size=hidden.shape[-2:], mode="bilinear", align_corners=False
                 )
+            if self._spatial_mask is not None:
+                mask = self._spatial_mask.to(device=hidden.device, dtype=hidden.dtype)
+                if mask.ndim == 3:
+                    mask = mask.unsqueeze(1)
+                if mask.shape[-2:] != hidden.shape[-2:]:
+                    mask = F.interpolate(mask, size=hidden.shape[-2:], mode="nearest")
+                if mask.shape[0] != hidden.shape[0]:
+                    if mask.shape[0] == 1:
+                        mask = mask.expand(hidden.shape[0], -1, -1, -1)
+                    else:
+                        mask = mask[: hidden.shape[0]]
+                proj_feat = proj_feat * mask
             if self._debug and self._debug_print_count < self._debug_print_limit:
                 hidden_norm = hidden.float().norm().item()
                 proj_norm = proj_feat.float().norm().item()

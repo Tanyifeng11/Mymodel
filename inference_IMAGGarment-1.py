@@ -2,9 +2,11 @@ from pipelines.IMAGGarment_pipeline import IMAGGarment
 import os
 import importlib
 import importlib.util
+from collections import deque
 import torch
+import numpy as np
 
-from PIL import Image
+from PIL import Image, ImageFilter
 from diffusers import UNet2DConditionModel, AutoencoderKL, DDIMScheduler
 from torchvision import transforms
 from transformers import CLIPImageProcessor
@@ -60,6 +62,71 @@ def resize_img(input_image, max_side=640, min_side=512, size=None,
     input_image = input_image.resize([w_resize_new, h_resize_new], mode)
 
     return input_image
+
+
+def sketch_to_garment_mask(
+    sketch: Image.Image,
+    width: int,
+    height: int,
+    line_threshold: int = 245,
+    dilate_size: int = 9,
+) -> Image.Image:
+    dilate_size = max(3, int(dilate_size) | 1)
+    gray = sketch.convert("L").resize((width, height), Image.BILINEAR)
+    line = np.asarray(gray) < line_threshold
+    barrier = np.asarray(
+        Image.fromarray((line.astype(np.uint8) * 255), mode="L").filter(
+            ImageFilter.MaxFilter(dilate_size)
+        )
+    ) > 0
+
+    h, w = barrier.shape
+    passable = ~barrier
+    outside = np.zeros((h, w), dtype=bool)
+    q = deque()
+
+    def push(y, x):
+        if passable[y, x] and not outside[y, x]:
+            outside[y, x] = True
+            q.append((y, x))
+
+    for x in range(w):
+        push(0, x)
+        push(h - 1, x)
+    for y in range(h):
+        push(y, 0)
+        push(y, w - 1)
+
+    while q:
+        y, x = q.popleft()
+        if y > 0:
+            push(y - 1, x)
+        if y + 1 < h:
+            push(y + 1, x)
+        if x > 0:
+            push(y, x - 1)
+        if x + 1 < w:
+            push(y, x + 1)
+
+    mask = ~outside
+    area = float(mask.mean())
+    if area < 0.02 or area > 0.95:
+        ys, xs = np.where(line)
+        if len(xs) == 0:
+            mask = np.ones((h, w), dtype=bool)
+        else:
+            pad_x = max(8, int(0.06 * w))
+            pad_y = max(8, int(0.06 * h))
+            x0 = max(0, int(xs.min()) - pad_x)
+            x1 = min(w, int(xs.max()) + pad_x)
+            y0 = max(0, int(ys.min()) - pad_y)
+            y1 = min(h, int(ys.max()) + pad_y)
+            mask = np.zeros((h, w), dtype=bool)
+            mask[y0:y1, x0:x1] = True
+
+    return Image.fromarray((mask.astype(np.uint8) * 255), mode="L").filter(
+        ImageFilter.MaxFilter(5)
+    )
 
 
 def image_grid(imgs, rows, cols):
@@ -427,6 +494,8 @@ if __name__ == "__main__":
 
     sketch_img = Image.open(args.sketch_path).convert("RGB").resize((args.width, args.height), Image.BILINEAR)
     vae_sketch = img_transform(sketch_img).unsqueeze(0)
+    spatial_mask_img = sketch_to_garment_mask(sketch_img, args.width, args.height)
+    spatial_mask = transforms.ToTensor()(spatial_mask_img).unsqueeze(0)
     
     if args.texture_path is not None:
         texture_image = Image.open(args.texture_path).convert("RGB")
@@ -464,6 +533,7 @@ if __name__ == "__main__":
         alpha2=args.alpha2,
         alpha3=args.alpha3,
         alpha4=args.alpha4,
+        spatial_mask=spatial_mask,
         debug_spatial=args.debug_spatial,
         force_texture_num_tokens_override=args.force_texture_num_tokens_override,
     )
@@ -475,5 +545,6 @@ if __name__ == "__main__":
     grid = image_grid(save_output, 1, 3)
     out_name = os.path.basename(args.sketch_path)
     grid.save(output_path + "/" + out_name)
+    spatial_mask_img.save(output_path + "/" + os.path.splitext(out_name)[0] + "_mask.png")
     
     print(output_path + "/" + out_name)

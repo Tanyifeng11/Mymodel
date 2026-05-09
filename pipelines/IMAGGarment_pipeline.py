@@ -648,6 +648,7 @@ class IMAGGarment(StableDiffusionPipeline):
         image_prompt_embeds = None
         uncond_image_prompt_embeds = None
         spatial_feats = None
+        spatial_mask = None
         spatial_active = False
         self.set_texture_token_enabled(False)
 
@@ -712,6 +713,9 @@ class IMAGGarment(StableDiffusionPipeline):
                 ).unsqueeze(0).to(device=device, dtype=torch.float16)
                 texture_feats = self.spatial_texture_encoder(tex_tensor)
                 spatial_feats = texture_feats
+                spatial_mask = kwargs.get("spatial_mask", None)
+                if spatial_mask is not None:
+                    spatial_mask = spatial_mask.to(device=device, dtype=torch.float16)
                 self.spatial_injection.set_alphas([
                     kwargs.get("alpha1", 1.0),
                     kwargs.get("alpha2", 1.0),
@@ -721,6 +725,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 if hasattr(self.spatial_injection, "set_debug"):
                     self.spatial_injection.set_debug(kwargs.get("debug_spatial", False))
                 self.spatial_injection.set_features(texture_feats)
+                self.spatial_injection.set_mask(spatial_mask)
                 self.spatial_injection.enable()
                 spatial_active = True
 
@@ -775,6 +780,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 if spatial_active and self.spatial_injection is not None:
                     # Keep spatial conditioning active for every denoising step.
                     self.spatial_injection.set_features(spatial_feats)
+                    self.spatial_injection.set_mask(spatial_mask)
 
                 noise_pred = self.unet(
                     latent_model_input[0].unsqueeze(0),

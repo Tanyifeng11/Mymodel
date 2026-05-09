@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Train GAM from scratch with the fixed spatial path.
-# "From scratch" here means:
-#   - do not load an old GAM joint_model.pt
-#   - do not resume an old GAM run
-#   - initialize GAM texture/BF modules from texture_adapter.bin, which is
-#     required by train_GAM_texture_joint.py
+# Continue training GAM from the existing 180k hybrid checkpoint with masked
+# spatial injection enabled. Override variables at launch time if needed.
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
@@ -23,18 +19,18 @@ DATA_ROOT_PATH="${DATA_ROOT_PATH:-/mnt/d/tyf/fuxian/datasets/MMDGarment}"
 DATASET_JSON_PATH="${DATASET_JSON_PATH:-/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG/checkpoint-52950/texture_adapter.bin}"
 
-# Keep this enabled for a clean GAM run. Set START_FROM_SCRATCH=0 only when you
-# intentionally want to use GAM_INIT_CKPT or RESUME_FROM_CHECKPOINT below.
-START_FROM_SCRATCH="${START_FROM_SCRATCH:-1}"
-GAM_INIT_CKPT="${GAM_INIT_CKPT:-}"
+# Default is to continue from the best existing hybrid checkpoint.
+# Set START_FROM_SCRATCH=1 only when intentionally starting a clean GAM run.
+START_FROM_SCRATCH="${START_FROM_SCRATCH:-0}"
+GAM_INIT_CKPT="${GAM_INIT_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/gam_hybrid_texture_loss/checkpoint-180000/joint_model.pt}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 START_GLOBAL_STEP="${START_GLOBAL_STEP:--1}"
 
-OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_spatial_from_scratch}"
+OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_hybrid_mask_injection}"
 
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
-MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-10000}"
-CHECKPOINTING_STEPS="${CHECKPOINTING_STEPS:-2000}"
+MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-30000}"
+CHECKPOINTING_STEPS="${CHECKPOINTING_STEPS:-5000}"
 LEARNING_RATE="${LEARNING_RATE:-1e-4}"
 NUM_WARMUP_STEPS="${NUM_WARMUP_STEPS:-300}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
@@ -42,7 +38,7 @@ MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 BF_NUM_TOKENS="${BF_NUM_TOKENS:-16}"
 BF_BASE_CHANNELS="${BF_BASE_CHANNELS:-32}"
 TEXTURE_MODE="${TEXTURE_MODE:-patch_resampled}"
-TEXTURE_CONDITION_MODE="${TEXTURE_CONDITION_MODE:-spatial}"
+TEXTURE_CONDITION_MODE="${TEXTURE_CONDITION_MODE:-hybrid}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
 CLIP_HIDDEN_LAYER="${CLIP_HIDDEN_LAYER:--1}"
 
@@ -56,8 +52,8 @@ LAMBDA_STYLE="${LAMBDA_STYLE:-1.0}"
 STYLE_LOSS_TYPE="${STYLE_LOSS_TYPE:-gram}"
 LAMBDA_PATCH_STYLE="${LAMBDA_PATCH_STYLE:-0.0}"
 LAMBDA_EDGE="${LAMBDA_EDGE:-0.05}"
-LAMBDA_TEXTURE_COLOR="${LAMBDA_TEXTURE_COLOR:-2.0}"
-LAMBDA_TEXTURE_GRAM="${LAMBDA_TEXTURE_GRAM:-0.5}"
+LAMBDA_TEXTURE_COLOR="${LAMBDA_TEXTURE_COLOR:-1.0}"
+LAMBDA_TEXTURE_GRAM="${LAMBDA_TEXTURE_GRAM:-0.0}"
 
 JOINT_T_DROP_RATE="${JOINT_T_DROP_RATE:-0.4}"
 JOINT_I_DROP_RATE="${JOINT_I_DROP_RATE:-0.0}"
