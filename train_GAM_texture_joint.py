@@ -295,6 +295,10 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "lambda_edge": args.lambda_edge,
         "lambda_texture_color": args.lambda_texture_color,
         "lambda_texture_gram": args.lambda_texture_gram,
+        "lambda_region_texture": args.lambda_region_texture,
+        "lambda_boundary": args.lambda_boundary,
+        "lambda_leak": args.lambda_leak,
+        "region_kernel_size": args.region_kernel_size,
         "joint_t_drop_rate": args.joint_t_drop_rate,
         "joint_i_drop_rate": args.joint_i_drop_rate,
         "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -436,6 +440,10 @@ def save_training_checkpoint(
             "lambda_patch_style": args.lambda_patch_style,
             "lambda_texture_color": args.lambda_texture_color,
             "lambda_texture_gram": args.lambda_texture_gram,
+            "lambda_region_texture": args.lambda_region_texture,
+            "lambda_boundary": args.lambda_boundary,
+            "lambda_leak": args.lambda_leak,
+            "region_kernel_size": args.region_kernel_size,
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -567,6 +575,35 @@ def texture_color_stat_loss(pred, texture, garment_mask=None, sample_weight=None
     mean_loss = F.smooth_l1_loss(pred_mean, texture_mean, reduction="none").mean(dim=1)
     std_loss = F.smooth_l1_loss(pred_std, texture_std, reduction="none").mean(dim=1)
     return _weighted_mean_per_sample(mean_loss + std_loss, sample_weight=sample_weight)
+
+
+def build_region_masks(mask, kernel_size=9):
+    """
+    Split a garment mask into inner body, boundary band, and outside regions.
+    mask: [B, 1, H, W], values in [0, 1].
+    """
+    k = max(1, int(kernel_size))
+    if k % 2 == 0:
+        k += 1
+
+    mask = mask.float().clamp(0.0, 1.0)
+    dilated = F.max_pool2d(mask, kernel_size=k, stride=1, padding=k // 2)
+    eroded = -F.max_pool2d(-mask, kernel_size=k, stride=1, padding=k // 2)
+
+    body = eroded.clamp(0.0, 1.0)
+    boundary = (dilated - eroded).clamp(0.0, 1.0)
+    outside = (1.0 - dilated).clamp(0.0, 1.0)
+    return body, boundary, outside
+
+
+def masked_l1_loss(pred, target, mask):
+    if mask.shape[-2:] != pred.shape[-2:]:
+        mask = F.interpolate(mask, size=pred.shape[-2:], mode="nearest")
+    mask = mask.to(device=pred.device, dtype=pred.dtype)
+    if mask.shape[1] == 1 and pred.shape[1] != 1:
+        mask = mask.expand(-1, pred.shape[1], -1, -1)
+    denom = mask.sum().clamp_min(1.0)
+    return (torch.abs(pred - target) * mask).sum() / denom
 
 
 # =========================
@@ -748,6 +785,30 @@ def main():
     ap.add_argument("--lambda_edge", type=float, default=0.05)
     ap.add_argument("--lambda_texture_color", type=float, default=0.0)
     ap.add_argument("--lambda_texture_gram", type=float, default=0.0)
+    ap.add_argument(
+        "--lambda_region_texture",
+        type=float,
+        default=0.0,
+        help="Extra texture color-stat loss on the eroded garment body region.",
+    )
+    ap.add_argument(
+        "--lambda_boundary",
+        type=float,
+        default=0.0,
+        help="L1 reconstruction loss on the garment boundary band to suppress boundary texture spill.",
+    )
+    ap.add_argument(
+        "--lambda_leak",
+        type=float,
+        default=0.0,
+        help="L1 reconstruction loss outside the dilated garment mask to suppress texture leakage.",
+    )
+    ap.add_argument(
+        "--region_kernel_size",
+        type=int,
+        default=9,
+        help="Odd morphology kernel size used to build body/boundary/outside masks.",
+    )
 
     # dropout
     ap.add_argument("--joint_t_drop_rate", type=float, default=0.3)
@@ -1286,11 +1347,26 @@ def main():
                     batch["vae_sketch"].float(),
                     mask=batch["garment_mask"].float(),
                 )
+                use_region_losses = (
+                    args.lambda_region_texture > 0
+                    or args.lambda_boundary > 0
+                    or args.lambda_leak > 0
+                )
+                if use_region_losses:
+                    body_mask, boundary_mask, outside_mask = build_region_masks(
+                        mask.float(), kernel_size=args.region_kernel_size
+                    )
+                else:
+                    body_mask = boundary_mask = outside_mask = None
+
                 texture_loss_active = (use_token or use_spatial) and (
                     texture_condition_weight.sum().item() > 0
                 )
                 loss_texture_color = torch.tensor(0.0, device=loss_style.device)
                 loss_texture_gram = torch.tensor(0.0, device=loss_style.device)
+                loss_region_texture = torch.tensor(0.0, device=loss_style.device)
+                loss_boundary = torch.tensor(0.0, device=loss_style.device)
+                loss_leak = torch.tensor(0.0, device=loss_style.device)
                 if texture_loss_active:
                     if args.lambda_texture_color > 0:
                         loss_texture_color = texture_color_stat_loss(
@@ -1306,6 +1382,26 @@ def main():
                             texture_image_target[keep_texture].float(),
                             mask=mask[keep_texture].float(),
                         )
+                    if args.lambda_region_texture > 0:
+                        loss_region_texture = texture_color_stat_loss(
+                            decoded.float(),
+                            texture_image_target.float(),
+                            garment_mask=body_mask.float(),
+                            sample_weight=texture_condition_weight,
+                        )
+
+                if args.lambda_boundary > 0:
+                    loss_boundary = masked_l1_loss(
+                        decoded.float(),
+                        target.float(),
+                        boundary_mask.float(),
+                    )
+                if args.lambda_leak > 0:
+                    loss_leak = masked_l1_loss(
+                        decoded.float(),
+                        target.float(),
+                        outside_mask.float(),
+                    )
 
                 loss = loss_denoise + args.lambda_style * loss_style
                 if (
@@ -1316,6 +1412,9 @@ def main():
                 loss = loss + args.lambda_edge * loss_edge
                 loss = loss + args.lambda_texture_color * loss_texture_color
                 loss = loss + args.lambda_texture_gram * loss_texture_gram
+                loss = loss + args.lambda_region_texture * loss_region_texture
+                loss = loss + args.lambda_boundary * loss_boundary
+                loss = loss + args.lambda_leak * loss_leak
 
                 accelerator.backward(loss)
 
@@ -1347,6 +1446,9 @@ def main():
                             "train/loss_edge": loss_edge.detach().float().item(),
                             "train/loss_texture_color": loss_texture_color.detach().float().item(),
                             "train/loss_texture_gram": loss_texture_gram.detach().float().item(),
+                            "train/loss_region_texture": loss_region_texture.detach().float().item(),
+                            "train/loss_boundary": loss_boundary.detach().float().item(),
+                            "train/loss_leak": loss_leak.detach().float().item(),
                             "train/lr": optimizer.param_groups[0]["lr"],
                             "train/grad_norm": grad_norm_log,
                             "train/drop_t_rate": drop_counts["t"] / max(1, drop_counts["total"]),
@@ -1378,6 +1480,9 @@ def main():
                         f"loss_edge={loss_edge.item():.6f}, "
                         f"loss_tex_color={loss_texture_color.item():.6f}, "
                         f"loss_tex_gram={loss_texture_gram.item():.6f}, "
+                        f"loss_region_tex={loss_region_texture.item():.6f}, "
+                        f"loss_boundary={loss_boundary.item():.6f}, "
+                        f"loss_leak={loss_leak.item():.6f}, "
                         f"grad_norm={grad_norm_val}, "
                         f"drop_t={drop_counts['t'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_i={drop_counts['i'] / max(1, drop_counts['total']):.3f}, "
