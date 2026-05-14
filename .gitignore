@@ -6,3 +6,8 @@ output_sd_base/
 outputs/
 *.zip
 timed
+# model weights
+weight/
+*.pt
+*.bin
+wandb/
