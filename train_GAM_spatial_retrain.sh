@@ -15,23 +15,49 @@ PRETRAINED_MODEL_NAME_OR_PATH="${PRETRAINED_MODEL_NAME_OR_PATH:-stable-diffusion
 PRETRAINED_VAE_MODEL_PATH="${PRETRAINED_VAE_MODEL_PATH:-stabilityai/sd-vae-ft-mse}"
 IMAGE_ENCODER_PATH="${IMAGE_ENCODER_PATH:-openai/clip-vit-large-patch14}"
 
-DATA_ROOT_PATH="${DATA_ROOT_PATH:-/mnt/d/tyf/fuxian/datasets/MMDGarment}"
-DATASET_JSON_PATH="${DATASET_JSON_PATH:-/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json}"
-TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG/checkpoint-52950/texture_adapter.bin}"
+DATASET_PRESET="${DATASET_PRESET:-mmd}"
+case "${DATASET_PRESET}" in
+  bf|BF)
+    DATA_ROOT_PATH="${DATA_ROOT_PATH:-/mnt/d/tyf/fuxian/datasets/BF/training}"
+    DATASET_JSON_PATH="${DATASET_JSON_PATH:-/mnt/d/tyf/fuxian/Mymodel/data/train_bf_texture.json}"
+    TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_BF/checkpoint-100000/texture_adapter.bin}"
+    ;;
+  mmd|MMD)
+    DATA_ROOT_PATH="${DATA_ROOT_PATH:-/mnt/d/tyf/fuxian/datasets/MMDGarment}"
+    DATASET_JSON_PATH="${DATASET_JSON_PATH:-/mnt/d/tyf/fuxian/Mymodel/data/train_MMD_texture.json}"
+    TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG/checkpoint-52950/texture_adapter.bin}"
+    ;;
+  *)
+    echo "Unknown DATASET_PRESET='${DATASET_PRESET}'. Expected 'mmd' or 'bf'." >&2
+    exit 1
+    ;;
+esac
 
 # Default is to continue from the best existing hybrid checkpoint.
 # Set START_FROM_SCRATCH=1 only when intentionally starting a clean GAM run.
 START_FROM_SCRATCH="${START_FROM_SCRATCH:-0}"
-GAM_INIT_CKPT="${GAM_INIT_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/gam_hybrid_texture_loss/checkpoint-180000/joint_model.pt}"
+if [[ "${DATASET_PRESET}" =~ ^([bB][fF])$ ]]; then
+  GAM_INIT_CKPT="${GAM_INIT_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/gam_hybrid_mask_injection/checkpoint-205000/joint_model.pt}"
+else
+  GAM_INIT_CKPT="${GAM_INIT_CKPT:-/mnt/d/tyf/fuxian/Mymodel/output/gam_hybrid_texture_loss/checkpoint-180000/joint_model.pt}"
+fi
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 START_GLOBAL_STEP="${START_GLOBAL_STEP:--1}"
 
-OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_hybrid_mask_injection}"
+if [[ "${DATASET_PRESET}" =~ ^([bB][fF])$ ]]; then
+  OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_bf_hybrid_retrain}"
+else
+  OUTPUT_DIR="${OUTPUT_DIR:-/mnt/d/tyf/fuxian/Mymodel/output/gam_hybrid_mask_injection}"
+fi
 
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
-MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-30000}"
-CHECKPOINTING_STEPS="${CHECKPOINTING_STEPS:-5000}"
-LEARNING_RATE="${LEARNING_RATE:-1e-4}"
+MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-200000}"
+CHECKPOINTING_STEPS="${CHECKPOINTING_STEPS:-20000}"
+if [[ "${DATASET_PRESET}" =~ ^([bB][fF])$ ]]; then
+  LEARNING_RATE="${LEARNING_RATE:-5e-6}"
+else
+  LEARNING_RATE="${LEARNING_RATE:-1e-4}"
+fi
 NUM_WARMUP_STEPS="${NUM_WARMUP_STEPS:-300}"
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 
@@ -39,7 +65,11 @@ BF_NUM_TOKENS="${BF_NUM_TOKENS:-16}"
 BF_BASE_CHANNELS="${BF_BASE_CHANNELS:-32}"
 TEXTURE_MODE="${TEXTURE_MODE:-patch_resampled}"
 TEXTURE_CONDITION_MODE="${TEXTURE_CONDITION_MODE:-hybrid}"
-TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
+if [[ "${DATASET_PRESET}" =~ ^([bB][fF])$ ]]; then
+  TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-crop_tile}"
+else
+  TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
+fi
 CLIP_HIDDEN_LAYER="${CLIP_HIDDEN_LAYER:--1}"
 
 REPORT_TO="${REPORT_TO:-wandb}"
@@ -54,9 +84,15 @@ LAMBDA_PATCH_STYLE="${LAMBDA_PATCH_STYLE:-0.0}"
 LAMBDA_EDGE="${LAMBDA_EDGE:-0.05}"
 LAMBDA_TEXTURE_COLOR="${LAMBDA_TEXTURE_COLOR:-1.0}"
 LAMBDA_TEXTURE_GRAM="${LAMBDA_TEXTURE_GRAM:-0.0}"
-LAMBDA_REGION_TEXTURE="${LAMBDA_REGION_TEXTURE:-0.0}"
-LAMBDA_BOUNDARY="${LAMBDA_BOUNDARY:-0.0}"
-LAMBDA_LEAK="${LAMBDA_LEAK:-0.0}"
+if [[ "${DATASET_PRESET}" =~ ^([bB][fF])$ ]]; then
+  LAMBDA_REGION_TEXTURE="${LAMBDA_REGION_TEXTURE:-0.03}"
+  LAMBDA_BOUNDARY="${LAMBDA_BOUNDARY:-0.03}"
+  LAMBDA_LEAK="${LAMBDA_LEAK:-0.05}"
+else
+  LAMBDA_REGION_TEXTURE="${LAMBDA_REGION_TEXTURE:-0.0}"
+  LAMBDA_BOUNDARY="${LAMBDA_BOUNDARY:-0.0}"
+  LAMBDA_LEAK="${LAMBDA_LEAK:-0.0}"
+fi
 REGION_KERNEL_SIZE="${REGION_KERNEL_SIZE:-9}"
 
 JOINT_T_DROP_RATE="${JOINT_T_DROP_RATE:-0.4}"
@@ -79,6 +115,11 @@ MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-29510}"
 #     only from texture_adapter.bin.
 # 1 = train only spatial branch. Use this only with a good GAM_INIT_CKPT.
 TRAIN_SPATIAL_ONLY="${TRAIN_SPATIAL_ONLY:-0}"
+if [[ "${DATASET_PRESET}" =~ ^([bB][fF])$ ]]; then
+  RELOAD_TEXTURE_ADAPTER_AFTER_GAM_INIT="${RELOAD_TEXTURE_ADAPTER_AFTER_GAM_INIT:-1}"
+else
+  RELOAD_TEXTURE_ADAPTER_AFTER_GAM_INIT="${RELOAD_TEXTURE_ADAPTER_AFTER_GAM_INIT:-0}"
+fi
 
 VAL_VIS_STEPS="${VAL_VIS_STEPS:-0}"
 VIS_EVERY_N_STEPS="${VIS_EVERY_N_STEPS:-500}"
@@ -88,6 +129,23 @@ FIXED_VIS_JSON="${FIXED_VIS_JSON:-}"
 if [[ "${START_FROM_SCRATCH}" == "1" ]]; then
   GAM_INIT_CKPT=""
   RESUME_FROM_CHECKPOINT=""
+fi
+
+if [[ ! -d "${DATA_ROOT_PATH}" ]]; then
+  echo "DATA_ROOT_PATH does not exist: ${DATA_ROOT_PATH}" >&2
+  exit 1
+fi
+if [[ ! -f "${DATASET_JSON_PATH}" ]]; then
+  echo "DATASET_JSON_PATH does not exist: ${DATASET_JSON_PATH}" >&2
+  exit 1
+fi
+if [[ ! -f "${TEXTURE_ADAPTER_CKPT}" ]]; then
+  echo "TEXTURE_ADAPTER_CKPT does not exist: ${TEXTURE_ADAPTER_CKPT}" >&2
+  exit 1
+fi
+if [[ -n "${GAM_INIT_CKPT}" && ! -f "${GAM_INIT_CKPT}" ]]; then
+  echo "GAM_INIT_CKPT does not exist: ${GAM_INIT_CKPT}" >&2
+  exit 1
 fi
 
 mkdir -p "${OUTPUT_DIR}"
@@ -166,9 +224,19 @@ if [[ "${TRAIN_SPATIAL_ONLY}" == "1" ]]; then
   CMD+=(--train_spatial_only)
 fi
 
+if [[ "${RELOAD_TEXTURE_ADAPTER_AFTER_GAM_INIT}" == "1" ]]; then
+  CMD+=(--reload_texture_adapter_after_gam_init)
+fi
+
 echo "Running command:"
 printf '%q ' "${CMD[@]}"
 echo
+echo "DATASET_PRESET=${DATASET_PRESET}"
+echo "DATA_ROOT_PATH=${DATA_ROOT_PATH}"
+echo "DATASET_JSON_PATH=${DATASET_JSON_PATH}"
+echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
+echo "GAM_INIT_CKPT=${GAM_INIT_CKPT}"
+echo "RELOAD_TEXTURE_ADAPTER_AFTER_GAM_INIT=${RELOAD_TEXTURE_ADAPTER_AFTER_GAM_INIT}"
 echo "START_FROM_SCRATCH=${START_FROM_SCRATCH}"
 echo "OUTPUT_DIR=${OUTPUT_DIR}"
 echo "START_GLOBAL_STEP=${START_GLOBAL_STEP}"
@@ -177,5 +245,10 @@ echo "REPORT_TO=${REPORT_TO}"
 echo "WANDB_PROJECT=${WANDB_PROJECT}"
 echo "WANDB_RUN_NAME=${WANDB_RUN_NAME}"
 echo "WANDB_MODE=${WANDB_MODE}"
+
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+  echo "DRY_RUN=1, command not executed."
+  exit 0
+fi
 
 "${CMD[@]}"

@@ -273,6 +273,8 @@ def override_args_from_texture_meta(args, texture_meta):
         args.clip_hidden_layer = int(texture_meta["clip_hidden_layer"])
     if "texture_mode" in texture_meta:
         args.texture_mode = str(texture_meta["texture_mode"])
+    if "texture_preprocess_mode" in texture_meta:
+        args.texture_preprocess_mode = str(texture_meta["texture_preprocess_mode"])
     if "width" in texture_meta and texture_meta["width"]:
         args.width = int(texture_meta["width"])
     if "height" in texture_meta and texture_meta["height"]:
@@ -305,6 +307,7 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "hybrid_drop_token_rate": args.hybrid_drop_token_rate,
         "hybrid_drop_spatial_rate": args.hybrid_drop_spatial_rate,
         "train_spatial_only": args.train_spatial_only,
+        "reload_texture_adapter_after_gam_init": args.reload_texture_adapter_after_gam_init,
         "vis_every_n_steps": args.vis_every_n_steps,
         "num_vis_samples": args.num_vis_samples,
         "fixed_vis_json": args.fixed_vis_json,
@@ -390,6 +393,30 @@ def load_joint_checkpoint_into_models(
         )
 
 
+def load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]"):
+    if not isinstance(texture_state, dict):
+        return
+
+    if "texture_adapter" in texture_state:
+        adapter_modules = nn.ModuleList(unet.attn_processors.values())
+        missing, unexpected = adapter_modules.load_state_dict(
+            texture_state["texture_adapter"], strict=False
+        )
+        print(
+            f"{log_prefix} texture_adapter -> unet.attn_processors: "
+            f"missing={len(missing)} unexpected={len(unexpected)}"
+        )
+
+    if "bf_texture_conditioner" in texture_state:
+        missing, unexpected = bf.load_state_dict(
+            texture_state["bf_texture_conditioner"], strict=False
+        )
+        print(
+            f"{log_prefix} bf_texture_conditioner: "
+            f"missing={len(missing)} unexpected={len(unexpected)}"
+        )
+
+
 def infer_checkpoint_step(path):
     if not path:
         return None
@@ -447,6 +474,7 @@ def save_training_checkpoint(
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
+            "reload_texture_adapter_after_gam_init": args.reload_texture_adapter_after_gam_init,
             "image_encoder_path": resolved_image_encoder_path,
             "clip_hidden_layer": args.clip_hidden_layer,
             "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
@@ -716,6 +744,15 @@ def main():
     ap.add_argument("--texture_adapter_ckpt", required=True)
     ap.add_argument("--resume_from_checkpoint", type=str, default="")
     ap.add_argument(
+        "--reload_texture_adapter_after_gam_init",
+        action="store_true",
+        help=(
+            "Load texture_adapter_ckpt again after gam_init_ckpt. "
+            "Use this when adapting a GAM checkpoint to a dataset-specific "
+            "texture adapter, e.g. BF-Fashion."
+        ),
+    )
+    ap.add_argument(
         "--start_global_step",
         type=int,
         default=-1,
@@ -951,26 +988,9 @@ def main():
     )
 
     # 旧 token 路线初始化
-    if "texture_adapter" in texture_state:
-        adapter_modules = nn.ModuleList(unet.attn_processors.values())
-        missing, unexpected = adapter_modules.load_state_dict(
-            texture_state["texture_adapter"], strict=False
-        )
-        if accelerator.is_main_process:
-            print(
-                f"[load] texture_adapter -> unet.attn_processors: "
-                f"missing={len(missing)} unexpected={len(unexpected)}"
-            )
-
-    if "bf_texture_conditioner" in texture_state:
-        missing, unexpected = bf.load_state_dict(
-            texture_state["bf_texture_conditioner"], strict=False
-        )
-        if accelerator.is_main_process:
-            print(
-                f"[load] bf_texture_conditioner: "
-                f"missing={len(missing)} unexpected={len(unexpected)}"
-            )
+    if accelerator.is_main_process:
+        print(f"[load] texture branch init from: {args.texture_adapter_ckpt}")
+    load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]")
 
     # decoupled texture-first spatial branch
     spatial_texture_encoder = MultiScaleTextureEncoder(stage_channels=(64, 128, 256, 256))
@@ -999,6 +1019,15 @@ def main():
             spatial_texture_encoder,
             spatial_injection,
         )
+        if args.reload_texture_adapter_after_gam_init:
+            if accelerator.is_main_process:
+                print(
+                    "[load] reloading texture branch after gam_init_ckpt "
+                    f"from: {args.texture_adapter_ckpt}"
+                )
+            load_texture_adapter_branch(
+                texture_state, unet, bf, log_prefix="[load after gam_init]"
+            )
 
     # resume 继续训练
     if args.resume_from_checkpoint:
