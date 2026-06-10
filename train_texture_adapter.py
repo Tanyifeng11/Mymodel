@@ -26,10 +26,7 @@ from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjec
 from adapter.utils import is_torch2_available
 from models.bf_texture_module import BFTextureConditioner
 from texture_preprocess import preprocess_texture_image
-if importlib.util.find_spec("repo_utils.checkpoint_utils") is not None:
-    from repo_utils.checkpoint_utils import extract_texture_metadata
-else:
-    from checkpoint_utils import extract_texture_metadata
+from checkpoint_utils import extract_texture_metadata
 
 if is_torch2_available():
     from adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
