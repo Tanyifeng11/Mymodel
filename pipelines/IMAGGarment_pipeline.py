@@ -112,7 +112,32 @@ class IMAGGarment(StableDiffusionPipeline):
         self.texture_meta = {}
         self.effective_texture_num_tokens = self.num_tokens
         self.default_texture_condition_mode = "token"
+        self.layer_group_enabled = True  # Phase 1: Ti-MGD routing enabled by default
         self.load_texture_adapter()
+
+    def _setup_layer_groups(self):
+        """
+        Phase 1: Set layer_group for each IPAttnProcessor2_0 based on UNet layer position.
+        Called after unet.attn_processors are loaded (i.e., after load_texture_adapter).
+        """
+        if not self.layer_group_enabled:
+            return
+        for name, proc in self.unet.attn_processors.items():
+            if not isinstance(proc, IPAttnProcessor2_0):
+                continue
+            # Ti-MGD grouping: semantic = low-res layers, detail = high-res layers
+            if ("down_blocks.2" in name or "down_blocks.3" in name or
+                "mid_block" in name or
+                "up_blocks.0" in name or "up_blocks.1" in name):
+                proc.layer_group = "semantic"
+            else:
+                proc.layer_group = "detail"
+                # For detail layers, text cross-attn gets scaled down
+                if "up_blocks" in name:
+                    proc.detail_text_scale = 0.15
+                else:
+                    proc.detail_text_scale = 0.05
+        print("[IMAGGarment] Phase 1 layer groups applied: semantic/detail routing active.")
 
     def init_proj(self):
         image_proj_model = ImageProjModel(
@@ -284,6 +309,9 @@ class IMAGGarment(StableDiffusionPipeline):
             print(f"[load_texture_adapter] missing keys: {len(missing)}")
         if len(unexpected) > 0:
             print(f"[load_texture_adapter] unexpected keys: {len(unexpected)}")
+
+        # Phase 1: Apply layer-group routing after adapter weights are loaded
+        self._setup_layer_groups()
 
     @property
     def cross_attention_kwargs(self):
@@ -575,6 +603,25 @@ class IMAGGarment(StableDiffusionPipeline):
         for attn_processor in self.unet.attn_processors.values():
             if isinstance(attn_processor, IPAttnProcessor2_0):
                 attn_processor.use_ip_adapter = bool(enabled)
+
+    def set_layer_group_enabled(self, enabled: bool):
+        """
+        Enable/disable Ti-MGD layer-grouped routing.
+        When disabled, all IPAttnProcessor2_0 layers use layer_group="all".
+        When enabled, layers use their preset layer_group ("semantic"/"detail"/"all").
+        """
+        self.layer_group_enabled = bool(enabled)
+        for attn_processor in self.unet.attn_processors.values():
+            if isinstance(attn_processor, IPAttnProcessor2_0):
+                if not enabled:
+                    # Store original and override
+                    if not hasattr(attn_processor, "_saved_layer_group"):
+                        attn_processor._saved_layer_group = attn_processor.layer_group
+                    attn_processor.layer_group = "all"
+                else:
+                    # Restore original
+                    if hasattr(attn_processor, "_saved_layer_group"):
+                        attn_processor.layer_group = attn_processor._saved_layer_group
 
     @torch.no_grad()
     def __call__(

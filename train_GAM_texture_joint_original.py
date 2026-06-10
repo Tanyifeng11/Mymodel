@@ -51,29 +51,6 @@ else:
     from checkpoint_utils import extract_texture_metadata
 
 
-
-# =========================
-# Phase 1: Ti-MGD layer group routing
-# =========================
-def _get_layer_group(name: str) -> str:
-    """
-    Map UNet attention processor name to frequency group.
-    "semantic" = text-only, "detail" = texture-dominant.
-    """
-    if "down_blocks.2" in name or "down_blocks.3" in name:
-        return "semantic"
-    if "mid_block" in name:
-        return "semantic"
-    if "up_blocks.0" in name or "up_blocks.1" in name:
-        return "semantic"
-    return "detail"
-
-
-def _get_detail_text_scale(name: str) -> float:
-    if "up_blocks" in name:
-        return 0.15
-    return 0.05
-
 # =========================
 # Dataset
 # =========================
@@ -324,7 +301,6 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "lambda_boundary": args.lambda_boundary,
         "lambda_leak": args.lambda_leak,
         "region_kernel_size": args.region_kernel_size,
-            "layer_group_enabled": args.layer_group_enabled,
         "joint_t_drop_rate": args.joint_t_drop_rate,
         "joint_i_drop_rate": args.joint_i_drop_rate,
         "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -495,7 +471,6 @@ def save_training_checkpoint(
             "lambda_boundary": args.lambda_boundary,
             "lambda_leak": args.lambda_leak,
             "region_kernel_size": args.region_kernel_size,
-            "layer_group_enabled": args.layer_group_enabled,
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -790,10 +765,9 @@ def main():
 
     # train
     ap.add_argument("--train_batch_size", type=int, default=1)
-    ap.add_argument("--max_train_steps", type=int, default=-1)
-    ap.add_argument("--num_train_epochs", type=int, default=5)
-    ap.add_argument("--checkpointing_epochs", type=int, default=1)
-    ap.add_argument("--learning_rate", type=float, default=5e-5)
+    ap.add_argument("--max_train_steps", type=int, default=20000)
+    ap.add_argument("--checkpointing_steps", type=int, default=2000)
+    ap.add_argument("--learning_rate", type=float, default=1e-4)
     ap.add_argument("--num_warmup_steps", type=int, default=500)
     ap.add_argument("--max_grad_norm", type=float, default=1.0)
     ap.add_argument("--report_to", type=str, default="tensorboard", choices=["tensorboard", "wandb", "all", "none"])
@@ -874,7 +848,7 @@ def main():
     )
 
     # dropout
-    ap.add_argument("--joint_t_drop_rate", type=float, default=0.2)
+    ap.add_argument("--joint_t_drop_rate", type=float, default=0.3)
     ap.add_argument("--joint_i_drop_rate", type=float, default=0.05)
     ap.add_argument("--joint_ti_drop_rate", type=float, default=0.05)
     ap.add_argument("--hybrid_drop_token_rate", type=float, default=0.25)
@@ -882,7 +856,7 @@ def main():
     ap.add_argument("--train_spatial_only", action="store_true")
 
     # vis
-    ap.add_argument("--val_vis_steps", type=int, default=500)
+    ap.add_argument("--val_vis_steps", type=int, default=0)
     ap.add_argument("--vis_every_n_steps", type=int, default=0)
     ap.add_argument("--num_vis_samples", type=int, default=4)
     ap.add_argument("--fixed_vis_json", type=str, default=None)
@@ -929,7 +903,6 @@ def main():
         print(f"[info] effective texture_mode = {args.texture_mode}")
         print(f"[info] effective texture_preprocess_mode = {args.texture_preprocess_mode}")
         print(f"[info] effective resolution = {args.height} x {args.width}")
-        print(f"[info] layer_group_enabled = {args.layer_group_enabled}, texture_condition_mode = {args.texture_condition_mode}")
 
     # ---- models ----
     tokenizer = CLIPTokenizer.from_pretrained(
@@ -964,17 +937,8 @@ def main():
         if cross_attention_dim is None:
             attn_procs[name] = LogoRefSAttnProcessor2_0(name, hidden_size)
         else:
-            if args.layer_group_enabled:
-                layer_group = _get_layer_group(name)
-                detail_ts = _get_detail_text_scale(name)
-            else:
-                layer_group = "all"
-                detail_ts = 0.1
             attn_procs[name] = IPAttnProcessor2_0(
-                hidden_size, cross_attention_dim,
-                num_tokens=args.bf_num_tokens,
-                layer_group=layer_group,
-                detail_text_scale=detail_ts,
+                hidden_size, cross_attention_dim, num_tokens=args.bf_num_tokens
             )
     unet.set_attn_processor(attn_procs)
 
@@ -1219,20 +1183,6 @@ def main():
     warned_no_mask_once = False
     drop_counts = {"t": 0, "i": 0, "ti": 0, "total": 0}
     branch_drop_counts = {"token": 0, "spatial": 0, "total": 0}
-
-    # ---- Epoch-based training setup ----
-    dataset_len = len(ds)
-    steps_per_epoch = dataset_len // (args.train_batch_size * accelerator.num_processes)
-
-    if args.max_train_steps > 0:
-        target_global_step = args.max_train_steps
-        total_epochs = max(1, target_global_step // max(1, steps_per_epoch))
-        checkpoint_interval_steps = max(1, args.checkpointing_steps) if args.checkpointing_steps > 0 else max(1, args.checkpointing_epochs * steps_per_epoch)
-    else:
-        total_epochs = max(1, args.num_train_epochs)
-        target_global_step = total_epochs * steps_per_epoch
-        checkpoint_interval_steps = max(1, args.checkpointing_epochs * steps_per_epoch)
-
     if args.start_global_step >= 0:
         global_step = args.start_global_step
     else:
@@ -1241,23 +1191,14 @@ def main():
             or infer_checkpoint_step(args.gam_init_ckpt)
             or 0
         )
-
+    target_global_step = global_step + args.max_train_steps
     if accelerator.is_main_process:
         print(
-            f"[train] dataset_size={dataset_len}, batch_size={args.train_batch_size}, "
-            f"num_gpus={accelerator.num_processes}"
-        )
-        print(
-            f"[train] steps_per_epoch={steps_per_epoch}, total_epochs={total_epochs}, "
-            f"total_steps={target_global_step}"
-        )
-        print(
             f"[train] start_global_step={global_step}, "
-            f"ckpt_interval={checkpoint_interval_steps} "
-            f"(~{checkpoint_interval_steps // max(1, steps_per_epoch)} epoch(s))"
+            f"additional_train_steps={args.max_train_steps}, "
+            f"target_global_step={target_global_step}"
         )
 
-    total_steps_done = 0
     null_input_ids = tokenizer(
         "",
         padding="max_length",
@@ -1268,7 +1209,6 @@ def main():
 
     while global_step < target_global_step:
         for batch in dl:
-            current_epoch = global_step // max(1, steps_per_epoch)
             with accelerator.accumulate(unet):
                 drop_token_branch = False
                 drop_spatial_branch = False
@@ -1550,8 +1490,6 @@ def main():
                             "train/texture_condition_keep_rate": texture_condition_weight.mean().item(),
                             "train/encoder_hidden_tokens": enc_h.shape[1],
                             "train/batch_size": bsz,
-                            "train/epoch": float(current_epoch) + (float(global_step % max(1, steps_per_epoch)) / max(1, steps_per_epoch)),
-                            "train/use_layer_group": float(args.layer_group_enabled),
                         },
                         step=global_step,
                     )
@@ -1563,7 +1501,7 @@ def main():
                         else grad_norm
                     )
                     print(
-                        f"step={global_step}, epoch={current_epoch + 1}/{total_epochs}, "
+                        f"step={global_step}, "
                         f"loss_total={loss.item():.6f}, "
                         f"loss_denoise={loss_denoise.item():.6f}, "
                         f"loss_style={loss_style.item():.6f}, "
@@ -1649,8 +1587,8 @@ def main():
 
                 if (
                     accelerator.is_main_process
-                    and checkpoint_interval_steps > 0
-                    and global_step % checkpoint_interval_steps == 0
+                    and args.checkpointing_steps > 0
+                    and global_step % args.checkpointing_steps == 0
                     and global_step > 0
                 ):
                     save_dir = save_training_checkpoint(
@@ -1665,14 +1603,9 @@ def main():
                         args,
                         image_encoder_path,
                     )
-                    if accelerator.is_main_process:
-                        print(
-                            f"[info] checkpoint saved to {save_dir} "
-                            f"(epoch {current_epoch + 1}/{total_epochs})"
-                        )
+                    print(f"[info] checkpoint saved to {save_dir}")
 
             global_step += 1
-            total_steps_done += 1
             if global_step >= target_global_step:
                 break
 

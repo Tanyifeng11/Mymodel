@@ -297,6 +297,15 @@ class CAttnProcessor2_0(torch.nn.Module):
 class IPAttnProcessor2_0(torch.nn.Module):
     r"""
     Attention processor for IP-Adapater for PyTorch 2.0.
+
+    Supports Ti-MGD-style layer-grouped frequency separation:
+      - layer_group="semantic": text-only cross-attention (no IP adapter).
+        Used in low-resolution UNet layers (deep down_blocks, mid_block, shallow up_blocks).
+      - layer_group="detail": texture-only IP adapter, text cross-attention uses
+        zeroed-out encoder_hidden_states (prevent text from diluting texture).
+        Used in high-resolution UNet layers (shallow down_blocks, deep up_blocks).
+      - layer_group="all": legacy behavior — both text and texture participate.
+
     Args:
         hidden_size (`int`):
             The hidden size of the attention layer.
@@ -306,9 +315,15 @@ class IPAttnProcessor2_0(torch.nn.Module):
             the weight scale of image prompt.
         num_tokens (`int`, defaults to 4 when do ip_adapter_plus it should be 16):
             The context length of the image features.
+        layer_group (`str`, defaults to "all"):
+            "semantic" / "detail" / "all" — which frequency group this layer belongs to.
+        detail_text_scale (`float`, defaults to 0.1):
+            When layer_group="detail", text cross-attention is kept but scaled down
+            by this factor (instead of being fully zeroed). 0.0 = fully zeroed.
     """
 
-    def __init__(self, hidden_size, cross_attention_dim=None, scale=1.0, num_tokens=4):
+    def __init__(self, hidden_size, cross_attention_dim=None, scale=1.0, num_tokens=4,
+                 layer_group: str = "all", detail_text_scale: float = 0.1):
         super().__init__()
 
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -319,6 +334,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.scale = scale
         self.num_tokens = num_tokens
         self.use_ip_adapter = True
+        self.layer_group = layer_group
+        self.detail_text_scale = detail_text_scale
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
@@ -380,12 +397,29 @@ class IPAttnProcessor2_0(torch.nn.Module):
             if kwargs.get("debug_texture_tokens", False):
                 print(
                     f"[IPAttnProcessor2_0] encoder_hidden_states={tuple(encoder_hidden_states.shape)}, "
-                    f"text_tokens={text_token_count}, texture_tokens={texture_token_count}, expected_texture_tokens={self.num_tokens}"
+                    f"text_tokens={text_token_count}, texture_tokens={texture_token_count}, "
+                    f"expected_texture_tokens={self.num_tokens}, layer_group={self.layer_group}"
                 )
             encoder_hidden_states, ip_hidden_states = (
                 encoder_hidden_states[:, :end_pos, :],
                 encoder_hidden_states[:, end_pos:, :],
             )
+
+            # === Phase 1: Ti-MGD layer-grouped frequency routing ===
+            if self.layer_group == "semantic":
+                # Low-resolution layers: text-only, disable IP adapter
+                use_ip_adapter = False
+            elif self.layer_group == "detail":
+                # High-resolution layers: texture-dominant
+                # Scale down text cross-attention to prevent text from diluting texture
+                # but keep a small amount for structural guidance
+                if self.detail_text_scale < 1e-6:
+                    encoder_hidden_states = torch.zeros_like(encoder_hidden_states)
+                else:
+                    encoder_hidden_states = encoder_hidden_states * self.detail_text_scale
+            # "all" — legacy behavior, no change
+            # === end layer-grouped routing ===
+
             if attn.norm_cross:
                 encoder_hidden_states = attn.norm_encoder_hidden_states(encoder_hidden_states)
         elif attn.norm_cross:

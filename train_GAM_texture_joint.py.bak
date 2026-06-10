@@ -51,14 +51,26 @@ else:
     from checkpoint_utils import extract_texture_metadata
 
 
-
 # =========================
 # Phase 1: Ti-MGD layer group routing
 # =========================
 def _get_layer_group(name: str) -> str:
     """
     Map UNet attention processor name to frequency group.
-    "semantic" = text-only, "detail" = texture-dominant.
+
+    SD 1.5 UNet layout (downsample factors):
+      down_blocks.0  → 1x/2x  down  → detail (highest spatial resolution)
+      down_blocks.1  → 4x   down  → detail
+      down_blocks.2  → 8x   down  → semantic (low resolution, global)
+      down_blocks.3  → 16x  down  → semantic
+      mid_block      → 32x  down  → semantic (bottleneck, purely semantic)
+      up_blocks.0    → 32x  up    → semantic
+      up_blocks.1    → 16x  up    → semantic
+      up_blocks.2    → 8x   up    → detail
+      up_blocks.3    → 4x   up    → detail (highest spatial resolution)
+
+    "semantic" = text-only cross-attention (no texture IP adapter)
+    "detail"   = texture-dominant IP adapter (text scaled down)
     """
     if "down_blocks.2" in name or "down_blocks.3" in name:
         return "semantic"
@@ -70,9 +82,15 @@ def _get_layer_group(name: str) -> str:
 
 
 def _get_detail_text_scale(name: str) -> float:
+    """
+    When layer_group="detail", how much text signal to keep.
+    0.0 = fully zeroed (pure texture); 0.1 = 10% text retained.
+    Up_blocks tend to benefit from slightly more structure guidance.
+    """
     if "up_blocks" in name:
-        return 0.15
-    return 0.05
+        return 0.15  # slightly more text guidance in decoder detail layers
+    return 0.05  # near-zero in encoder detail layers
+
 
 # =========================
 # Dataset
@@ -324,7 +342,7 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "lambda_boundary": args.lambda_boundary,
         "lambda_leak": args.lambda_leak,
         "region_kernel_size": args.region_kernel_size,
-            "layer_group_enabled": args.layer_group_enabled,
+        "layer_group_enabled": args.layer_group_enabled,
         "joint_t_drop_rate": args.joint_t_drop_rate,
         "joint_i_drop_rate": args.joint_i_drop_rate,
         "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -506,6 +524,7 @@ def save_training_checkpoint(
             "bf_base_channels": args.bf_base_channels,
             "width": args.width,
             "height": args.height,
+            "texture_condition_mode": args.texture_condition_mode,
         },
     }
     torch.save(payload, os.path.join(save_dir, "joint_model.pt"))
@@ -790,9 +809,14 @@ def main():
 
     # train
     ap.add_argument("--train_batch_size", type=int, default=1)
-    ap.add_argument("--max_train_steps", type=int, default=-1)
-    ap.add_argument("--num_train_epochs", type=int, default=5)
-    ap.add_argument("--checkpointing_epochs", type=int, default=1)
+    ap.add_argument("--max_train_steps", type=int, default=-1,
+                    help="Max training steps. -1 = use --num_train_epochs instead.")
+    ap.add_argument("--num_train_epochs", type=int, default=5,
+                    help="Number of full passes over the dataset. Ignored if --max_train_steps > 0.")
+    ap.add_argument("--checkpointing_epochs", type=int, default=1,
+                    help="Save checkpoint every N epochs. Ignored if --checkpointing_steps > 0.")
+    ap.add_argument("--checkpointing_steps", type=int, default=0,
+                    help="Save checkpoint every N steps. 0 = use --checkpointing_epochs instead.")
     ap.add_argument("--learning_rate", type=float, default=5e-5)
     ap.add_argument("--num_warmup_steps", type=int, default=500)
     ap.add_argument("--max_grad_norm", type=float, default=1.0)
@@ -815,8 +839,15 @@ def main():
     ap.add_argument(
         "--texture_condition_mode",
         type=str,
-        default="hybrid",
+        default="token",
         choices=["token", "spatial", "hybrid"],
+    )
+    ap.add_argument(
+        "--layer_group_enabled",
+        type=int,
+        default=1,
+        choices=[0, 1],
+        help="1 = enable Ti-MGD layer-grouped routing (Phase 1). 0 = legacy all-layer mode.",
     )
     ap.add_argument(
         "--fusion_type",
@@ -871,6 +902,12 @@ def main():
         type=int,
         default=9,
         help="Odd morphology kernel size used to build body/boundary/outside masks.",
+    )
+    ap.add_argument(
+        "--lambda_tex_align",
+        type=float,
+        default=0.0,
+        help="Phase 2: weight for text-texture contrastive alignment loss. Start with 0.0 for Phase 1.",
     )
 
     # dropout
@@ -1227,10 +1264,12 @@ def main():
     if args.max_train_steps > 0:
         target_global_step = args.max_train_steps
         total_epochs = max(1, target_global_step // max(1, steps_per_epoch))
+        use_epoch_checkpointing = (args.checkpointing_steps <= 0)
         checkpoint_interval_steps = max(1, args.checkpointing_steps) if args.checkpointing_steps > 0 else max(1, args.checkpointing_epochs * steps_per_epoch)
     else:
         total_epochs = max(1, args.num_train_epochs)
         target_global_step = total_epochs * steps_per_epoch
+        use_epoch_checkpointing = True
         checkpoint_interval_steps = max(1, args.checkpointing_epochs * steps_per_epoch)
 
     if args.start_global_step >= 0:
@@ -1241,6 +1280,7 @@ def main():
             or infer_checkpoint_step(args.gam_init_ckpt)
             or 0
         )
+    train_steps_to_run = target_global_step - global_step
 
     if accelerator.is_main_process:
         print(
@@ -1253,11 +1293,12 @@ def main():
         )
         print(
             f"[train] start_global_step={global_step}, "
-            f"ckpt_interval={checkpoint_interval_steps} "
-            f"(~{checkpoint_interval_steps // max(1, steps_per_epoch)} epoch(s))"
+            f"checkpoint_interval_steps={checkpoint_interval_steps} "
+            f"(~{checkpoint_interval_steps // max(1, steps_per_epoch)} epoch(s) per ckpt)"
         )
 
     total_steps_done = 0
+
     null_input_ids = tokenizer(
         "",
         padding="max_length",
@@ -1268,6 +1309,7 @@ def main():
 
     while global_step < target_global_step:
         for batch in dl:
+            # Track epoch progress
             current_epoch = global_step // max(1, steps_per_epoch)
             with accelerator.accumulate(unet):
                 drop_token_branch = False
@@ -1565,6 +1607,7 @@ def main():
                     print(
                         f"step={global_step}, epoch={current_epoch + 1}/{total_epochs}, "
                         f"loss_total={loss.item():.6f}, "
+                        f"loss_total={loss.item():.6f}, "
                         f"loss_denoise={loss_denoise.item():.6f}, "
                         f"loss_style={loss_style.item():.6f}, "
                         f"loss_patch={loss_patch.item():.6f}, "
@@ -1632,68 +1675,3 @@ def main():
                     }
                     run_mode_validation_vis(
                         out_dir=os.path.join(args.output_dir, "training_vis"),
-                        step=global_step,
-                        modes=[args.texture_condition_mode],
-                        unet=unet,
-                        ref_unet=ref_unet,
-                        bf=bf,
-                        spatial_texture_encoder=spatial_texture_encoder,
-                        spatial_injection=spatial_injection_module,
-                        image_encoder=image_encoder,
-                        text_encoder=text_encoder,
-                        vae=vae,
-                        batch=vis_batch,
-                        noise_scheduler=noise_scheduler,
-                        args=args,
-                    )
-
-                if (
-                    accelerator.is_main_process
-                    and checkpoint_interval_steps > 0
-                    and global_step % checkpoint_interval_steps == 0
-                    and global_step > 0
-                ):
-                    save_dir = save_training_checkpoint(
-                        accelerator,
-                        unet,
-                        ref_unet,
-                        bf,
-                        spatial_texture_encoder,
-                        spatial_injection,
-                        args.output_dir,
-                        global_step,
-                        args,
-                        image_encoder_path,
-                    )
-                    if accelerator.is_main_process:
-                        print(
-                            f"[info] checkpoint saved to {save_dir} "
-                            f"(epoch {current_epoch + 1}/{total_epochs})"
-                        )
-
-            global_step += 1
-            total_steps_done += 1
-            if global_step >= target_global_step:
-                break
-
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        save_dir = save_training_checkpoint(
-            accelerator,
-            unet,
-            ref_unet,
-            bf,
-            spatial_texture_encoder,
-            spatial_injection,
-            args.output_dir,
-            global_step,
-            args,
-            image_encoder_path,
-        )
-        print(f"[info] final full checkpoint saved to {save_dir}")
-
-    accelerator.end_training()
-
-
-if __name__ == "__main__":
-    main()

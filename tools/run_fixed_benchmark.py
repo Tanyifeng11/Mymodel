@@ -16,7 +16,7 @@ from eval.benchmark_utils import (
     write_manifest,
     write_markdown_table,
 )
-from eval.metrics import evaluate_pair
+from eval.metrics import evaluate_full
 
 
 def parse_modes(s):
@@ -111,8 +111,15 @@ def run_benchmark(args):
             gen_path = run_one_inference(args, sample, mode, run_dir)
             target_path = os.path.join(args.data_root, sample["target"]) if sample.get("target") else None
             texture_path = os.path.join(args.data_root, sample["texture"]) if sample.get("texture") else None
+            sketch_path = os.path.join(args.data_root, sample["sketch"]) if sample.get("sketch") else None
             mask_path = os.path.join(args.data_root, sample["mask"]) if sample.get("mask") else None
-            metrics = evaluate_pair(gen_path, target_path=target_path, texture_path=texture_path, mask_path=mask_path)
+            metrics = evaluate_full(
+                gen_path,
+                target_path=target_path,
+                texture_path=texture_path,
+                sketch_path=sketch_path,
+                mask_path=mask_path,
+            )
             row = {"mode": mode, "uid": sample_uid(sample), "gen_path": gen_path, **metrics}
             per_image_rows.append(row)
             by_mode[mode].append(row)
