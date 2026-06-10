@@ -790,6 +790,7 @@ def main():
 
     # train
     ap.add_argument("--train_batch_size", type=int, default=1)
+    ap.add_argument("--gradient_accumulation_steps", type=int, default=1)
     ap.add_argument("--max_train_steps", type=int, default=-1)
     ap.add_argument("--num_train_epochs", type=int, default=5)
     ap.add_argument("--checkpointing_epochs", type=int, default=1)
@@ -909,7 +910,7 @@ def main():
     )
     log_with = None if args.report_to == "none" else args.report_to
     accelerator = Accelerator(
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision="fp16" if torch.cuda.is_available() else "no",
         project_config=accelerator_project_config,
         log_with=log_with,
@@ -1127,6 +1128,12 @@ def main():
     if use_spatial_train:
         add_params(spatial_texture_encoder.parameters())
         add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
+
+    # Prioritize epochs over steps
+    if args.max_train_steps <= 0:
+        dataset_len = len(ds)
+        steps_per_epoch_lr = dataset_len // (args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps)
+        args.max_train_steps = args.num_train_epochs * max(1, steps_per_epoch_lr)
 
     optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
     lr_scheduler = get_scheduler(
