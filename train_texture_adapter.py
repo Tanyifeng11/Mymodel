@@ -335,7 +335,11 @@ def set_trainable_texture_blocks(unet, unfreeze_mid_block=True, unfreeze_up_bloc
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Texture Adapter training script.")
-    parser.add_argument("--pretrained_model_name_or_path", type=str, required=True)
+    parser.add_argument(
+        "--pretrained_model_name_or_path",
+        type=str,
+        default="/share/home/u2515283058/Mymodel/stable-diffusion-v1-5",
+    )
     parser.add_argument("--pretrained_texture_adapter_path", type=str, default=None)
     parser.add_argument("--pretrained_color_adapter_path", type=str, default=None)
     parser.add_argument("--resume_from_checkpoint", type=str, default=None)

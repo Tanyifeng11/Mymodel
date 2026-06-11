@@ -16,7 +16,7 @@ export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 # =========================
 # Paths
 # =========================
-PRETRAINED_MODEL_NAME_OR_PATH="stable-diffusion-v1-5/stable-diffusion-v1-5"
+PRETRAINED_MODEL_NAME_OR_PATH="/share/home/u2515283058/Mymodel/stable-diffusion-v1-5"
 IMAGE_ENCODER_PATH="openai/clip-vit-large-patch14"
 
 DATA_JSON_FILE="/mnt/d/tyf/fuxian/Mymodel/data/train_BF_texture.json"
@@ -24,6 +24,7 @@ DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/BF/training"
 
 OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_BF"
 LOGGING_DIR="logs"
+RESUME_FROM_CHECKPOINT=""
 
 # 置空("")表示从头训练；填写checkpoint路径表示继续训练（resume/finetune）
 PRETRAINED_TEXTURE_ADAPTER_PATH="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_MMG_Bf_Texture/checkpoint-43800/texture_adapter.bin"
