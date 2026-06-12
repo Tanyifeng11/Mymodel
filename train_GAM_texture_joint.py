@@ -1136,20 +1136,6 @@ def main():
         add_params(spatial_texture_encoder.parameters())
         add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
 
-    # Prioritize epochs over steps
-    if args.max_train_steps <= 0:
-        dataset_len = len(ds)
-        steps_per_epoch_lr = dataset_len // (args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps)
-        args.max_train_steps = args.num_train_epochs * max(1, steps_per_epoch_lr)
-
-    optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
-    lr_scheduler = get_scheduler(
-        "cosine",
-        optimizer=optimizer,
-        num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=args.max_train_steps,
-    )
-
     # dataset
     ds = JointTextureDataset(
         args.dataset_json_path,
@@ -1166,6 +1152,20 @@ def main():
         collate_fn=collate_fn,
         num_workers=4,
         pin_memory=True,
+    )
+
+    # Prioritize epochs over steps
+    if args.max_train_steps <= 0:
+        dataset_len = len(ds)
+        steps_per_epoch_lr = dataset_len // (args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps)
+        args.max_train_steps = args.num_train_epochs * max(1, steps_per_epoch_lr)
+
+    optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
+    lr_scheduler = get_scheduler(
+        "cosine",
+        optimizer=optimizer,
+        num_warmup_steps=args.num_warmup_steps,
+        num_training_steps=args.max_train_steps,
     )
 
     fixed_vis_batch = None
