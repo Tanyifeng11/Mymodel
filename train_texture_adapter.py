@@ -250,6 +250,18 @@ def save_texture_adapter_checkpoint(accelerator, model, save_path, meta=None):
     torch.save(state, save_path)
 
 
+def save_training_checkpoint(accelerator, model, save_dir, meta=None):
+    accelerator.save_state(save_dir, safe_serialization=False)
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        save_texture_adapter_checkpoint(
+            accelerator,
+            model,
+            os.path.join(save_dir, "texture_adapter.bin"),
+            meta=meta,
+        )
+
+
 def parse_step_from_ckpt_path(ckpt_path: str) -> int:
     if ckpt_path is None or ckpt_path == "":
         return 0
@@ -393,6 +405,7 @@ def parse_args():
     parser.add_argument("--loss_type", type=str, default="huber", choices=["mse", "huber"])
     parser.add_argument("--huber_c", type=float, default=0.1)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
+    parser.add_argument("--log_every_n_steps", type=int, default=50)
     parser.add_argument("--local_rank", type=int, default=-1)
 
     args = parser.parse_args()
@@ -479,6 +492,12 @@ def main():
 
     if accelerator.is_main_process and args.output_dir is not None:
         os.makedirs(args.output_dir, exist_ok=True)
+
+    accelerator.print("[train] starting texture adapter training")
+    accelerator.print(f"[train] pretrained_model_name_or_path={args.pretrained_model_name_or_path}")
+    accelerator.print(f"[train] data_json_file={args.data_json_file}")
+    accelerator.print(f"[train] data_root_path={args.data_root_path}")
+    accelerator.print(f"[train] output_dir={args.output_dir}")
 
     if args.resume_from_checkpoint is not None:
         args.resume_from_checkpoint = resolve_resume_checkpoint(args.resume_from_checkpoint, args.output_dir)
@@ -681,6 +700,7 @@ def main():
         )
 
     for epoch in range(first_epoch, args.num_train_epochs):
+        accelerator.print(f"[train] epoch {epoch + 1}/{args.num_train_epochs} started")
         begin = time.perf_counter()
 
         for step, batch in enumerate(train_dataloader):
@@ -777,6 +797,12 @@ def main():
                         step=global_step,
                     )
 
+                    if accelerator.is_main_process and (global_step % args.log_every_n_steps == 0 or global_step == 1):
+                        accelerator.print(
+                            f"[train] step={global_step} epoch={epoch + 1}/{args.num_train_epochs} "
+                            f"loss={avg_loss:.4f} lr={optimizer.param_groups[0]['lr']:.2e}"
+                        )
+
                     if accelerator.is_main_process and global_step % args.validation_steps == 0:
                         run_texture_validation(
                             accelerator,
@@ -792,30 +818,19 @@ def main():
                             weight_dtype,
                         )
 
-                    if global_step % args.save_steps == 0:
+                    if args.save_steps > 0 and global_step % args.save_steps == 0:
                         save_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-                        accelerator.save_state(save_dir, safe_serialization=False)
-                        accelerator.wait_for_everyone()
-                        if accelerator.is_main_process:
-                            save_texture_adapter_checkpoint(
-                                accelerator,
-                                texture_adapter,
-                                os.path.join(save_dir, "texture_adapter.bin"),
-                                meta=checkpoint_meta,
-                            )
+                        save_training_checkpoint(accelerator, texture_adapter, save_dir, meta=checkpoint_meta)
 
             begin = time.perf_counter()
 
-    final_dir = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-    accelerator.save_state(final_dir, safe_serialization=False)
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        save_texture_adapter_checkpoint(
-            accelerator,
-            texture_adapter,
-            os.path.join(final_dir, "texture_adapter.bin"),
-            meta=checkpoint_meta,
-        )
+        epoch_save_dir = os.path.join(args.output_dir, f"checkpoint-epoch-{epoch + 1}")
+        save_training_checkpoint(accelerator, texture_adapter, epoch_save_dir, meta=checkpoint_meta)
+        accelerator.print(f"[train] epoch {epoch + 1}/{args.num_train_epochs} saved to {epoch_save_dir}")
+
+    final_dir = os.path.join(args.output_dir, "checkpoint-final")
+    save_training_checkpoint(accelerator, texture_adapter, final_dir, meta=checkpoint_meta)
+    accelerator.print(f"[train] final checkpoint saved to {final_dir}")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ PRETRAINED_MODEL_NAME_OR_PATH="/share/home/u2515283058/Mymodel/stable-diffusion-
 IMAGE_ENCODER_PATH="openai/clip-vit-large-patch14"
 
 DATA_JSON_FILE="/mnt/d/tyf/fuxian/Mymodel/data/train_BF_texture.json"
-DATA_ROOT_PATH="/mnt/d/tyf/fuxian/datasets/BF/training"
+DATA_ROOT_PATH="/share/home/u2515283058/datasets/BF/training"
 
 OUTPUT_DIR="/mnt/d/tyf/fuxian/Mymodel/output/texture_adapter_BF"
 LOGGING_DIR="logs"

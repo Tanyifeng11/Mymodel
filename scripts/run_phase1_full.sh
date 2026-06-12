@@ -9,13 +9,20 @@ set -euo pipefail
 # ===========================================================================
 # 0. 路径配置 — 修改这里
 # ===========================================================================
-DATA_ROOT="data"
-TRAIN_JSON="${DATA_ROOT}/bf_fashion_train.json"
-VAL_JSON="${DATA_ROOT}/bf_fashion_val.json"
-REAL_IMG_DIR="${DATA_ROOT}/test_real_images"           # ground truth 图片目录，用于 FID/CLIP-I
-SD_MODEL="runwayml/stable-diffusion-v1-5"
-VAE_MODEL="stabilityai/sd-vae-ft-mse"
-CLIP_MODEL="openai/clip-vit-large-patch14"
+DATA_JSON_DIR="data"
+DATA_ROOT_PATH="/share/home/u2515283058/datasets/BF/training"
+VAL_ROOT_PATH="/share/home/u2515283058/datasets/BF/validation"
+
+TRAIN_JSON="${DATA_JSON_DIR}/bf_fashion_train.json"
+VAL_JSON="${DATA_JSON_DIR}/bf_fashion_val.json"
+REAL_IMG_DIR="${VAL_ROOT_PATH}"           # ground truth 图片目录，用于 FID/CLIP-I
+SD_MODEL="/share/home/u2515283058/Mymodel/models/stable-diffusion-v1-5"
+VAE_MODEL="/share/home/u2515283058/Mymodel/models/stable-diffusion-v1-5/vae"
+CLIP_MODEL="/share/home/u2515283058/Mymodel/models/clip"
+
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-0}"
 
 OUTPUT_BASE="output"
 EVAL_BASE="eval_outputs"
@@ -44,11 +51,11 @@ if [ -f "${TEXTURE_ADAPTER_DIR}/checkpoint-final/texture_adapter.bin" ]; then
 else
     echo ""
     echo "=== Step 1/4: 训练 Texture Adapter (20 epoch, 约 8 小时) ==="
-    accelerate launch --num_processes=${NUM_GPUS} --mixed_precision=${MIXED_PRECISION} \
+    accelerate launch --num_processes=${NUM_GPUS} --main_process_port ${MAIN_PROCESS_PORT} --mixed_precision=${MIXED_PRECISION} \
         train_texture_adapter.py \
         --pretrained_model_name_or_path ${SD_MODEL} \
         --data_json_file ${TRAIN_JSON} \
-        --data_root_path ${DATA_ROOT} \
+        --data_root_path ${DATA_ROOT_PATH} \
         --image_encoder_path ${CLIP_MODEL} \
         --output_dir ${TEXTURE_ADAPTER_DIR} \
         --resolution 512 \
@@ -75,7 +82,7 @@ else
         --unfreeze_mid_block \
         --unfreeze_up_blocks 2 \
         --unfreeze_attention_only \
-        --save_steps 0 \
+        --save_steps 45338 \
         --validation_steps 2000 \
         --validation_num_textures 4 \
         --report_to wandb \
@@ -102,13 +109,13 @@ if [ -f "${E0_DIR}/checkpoint-epoch-5/joint_model.pt" ]; then
 else
     echo ""
     echo "=== Step 2/4: 训练 E0 Baseline (无分组, 5 epoch, 约 10 小时) ==="
-    accelerate launch --num_processes=${NUM_GPUS} --mixed_precision=${MIXED_PRECISION} \
+    accelerate launch --num_processes=${NUM_GPUS} --main_process_port ${MAIN_PROCESS_PORT} --mixed_precision=${MIXED_PRECISION} \
         train_GAM_texture_joint.py \
         --pretrained_model_name_or_path ${SD_MODEL} \
         --pretrained_vae_model_path ${VAE_MODEL} \
         --image_encoder_path ${CLIP_MODEL} \
         --dataset_json_path ${TRAIN_JSON} \
-        --data_root_path ${DATA_ROOT} \
+        --data_root_path ${DATA_ROOT_PATH} \
         --texture_adapter_ckpt ${TEXTURE_CKPT} \
         --output_dir ${E0_DIR} \
         --texture_condition_mode token \
@@ -149,13 +156,13 @@ if [ -f "${E1_DIR}/checkpoint-epoch-5/joint_model.pt" ]; then
 else
     echo ""
     echo "=== Step 3/4: 训练 E1 Grouped (有分组, 5 epoch, 约 10 小时) ==="
-    accelerate launch --num_processes=${NUM_GPUS} --mixed_precision=${MIXED_PRECISION} \
+    accelerate launch --num_processes=${NUM_GPUS} --main_process_port ${MAIN_PROCESS_PORT} --mixed_precision=${MIXED_PRECISION} \
         train_GAM_texture_joint.py \
         --pretrained_model_name_or_path ${SD_MODEL} \
         --pretrained_vae_model_path ${VAE_MODEL} \
         --image_encoder_path ${CLIP_MODEL} \
         --dataset_json_path ${TRAIN_JSON} \
-        --data_root_path ${DATA_ROOT} \
+        --data_root_path ${DATA_ROOT_PATH} \
         --texture_adapter_ckpt ${TEXTURE_CKPT} \
         --output_dir ${E1_DIR} \
         --texture_condition_mode token \
@@ -207,7 +214,7 @@ for EXP in e0_baseline e1_grouped; do
         echo "  评估 ${EXP} ..."
         python tools/run_fixed_benchmark.py \
             --dataset_json ${VAL_JSON} \
-            --data_root ${DATA_ROOT} \
+            --data_root ${VAL_ROOT_PATH} \
             --gam_ckpt ${CKPT_PATH} \
             --texture_ckpt ${TEXTURE_CKPT} \
             --modes token \
