@@ -832,6 +832,13 @@ def main():
         default="plain_resize",
         choices=["plain_resize", "crop_tile", "plain"],
     )
+    ap.add_argument(
+        "--layer_group_enabled",
+        type=int,
+        default=0,
+        choices=[0, 1],
+        help="Enable Ti-MGD-style layer-grouped texture routing for token mode.",
+    )
     ap.add_argument("--alpha1", type=float, default=1.0)
     ap.add_argument("--alpha2", type=float, default=1.0)
     ap.add_argument("--alpha3", type=float, default=0.7)
