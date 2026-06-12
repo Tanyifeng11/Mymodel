@@ -1241,7 +1241,7 @@ def main():
     if args.max_train_steps > 0:
         target_global_step = args.max_train_steps
         total_epochs = max(1, target_global_step // max(1, steps_per_epoch))
-        checkpoint_interval_steps = max(1, args.checkpointing_steps) if args.checkpointing_steps > 0 else max(1, args.checkpointing_epochs * steps_per_epoch)
+        checkpoint_interval_steps = max(1, args.checkpointing_epochs * steps_per_epoch)
     else:
         total_epochs = max(1, args.num_train_epochs)
         target_global_step = total_epochs * steps_per_epoch
