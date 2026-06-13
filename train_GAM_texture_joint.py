@@ -467,18 +467,26 @@ def save_training_checkpoint(
     save_dir = os.path.join(output_dir, f"checkpoint-{global_step}")
     os.makedirs(save_dir, exist_ok=True)
 
+    def unwrap(model):
+        if accelerator is not None:
+            return accelerator.unwrap_model(model)
+        return model.module if hasattr(model, "module") else model
+
+    unet_raw = unwrap(unet)
+    ref_unet_raw = unwrap(ref_unet)
+    bf_raw = unwrap(bf)
+    spatial_texture_encoder_raw = unwrap(spatial_texture_encoder)
+    spatial_injection_raw = unwrap(spatial_injection)
+    texture_adapter_raw = nn.ModuleList(unet_raw.attn_processors.values())
+
     payload = {
         "checkpoint_format": "gam_texture_joint_v3",
-        "unet": accelerator.unwrap_model(unet).state_dict(),
-        "ref_unet": accelerator.unwrap_model(ref_unet).state_dict(),
-        "texture_adapter": accelerator.unwrap_model(
-            nn.ModuleList(unet.attn_processors.values())
-        ).state_dict(),
-        "bf_texture_conditioner": accelerator.unwrap_model(bf).state_dict(),
-        "spatial_texture_encoder": accelerator.unwrap_model(
-            spatial_texture_encoder
-        ).state_dict(),
-        "spatial_injection": accelerator.unwrap_model(spatial_injection).state_dict(),
+        "unet": unet_raw.state_dict(),
+        "ref_unet": ref_unet_raw.state_dict(),
+        "texture_adapter": texture_adapter_raw.state_dict(),
+        "bf_texture_conditioner": bf_raw.state_dict(),
+        "spatial_texture_encoder": spatial_texture_encoder_raw.state_dict(),
+        "spatial_injection": spatial_injection_raw.state_dict(),
         "meta": {
             "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
             "pretrained_vae_model_path": args.pretrained_vae_model_path,
