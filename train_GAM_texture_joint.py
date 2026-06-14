@@ -2,6 +2,7 @@ import argparse
 import importlib.util
 import itertools
 import json
+import math
 from collections import deque
 import os
 import random
@@ -1162,18 +1163,32 @@ def main():
         pin_memory=True,
     )
 
-    # Prioritize epochs over steps
-    if args.max_train_steps <= 0:
-        dataset_len = len(ds)
-        steps_per_epoch_lr = dataset_len // (args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps)
-        args.max_train_steps = args.num_train_epochs * max(1, steps_per_epoch_lr)
+    dataset_len = len(ds)
+    steps_per_epoch = max(
+        1,
+        math.ceil(
+            dataset_len
+            / (
+                args.train_batch_size
+                * accelerator.num_processes
+                * args.gradient_accumulation_steps
+            )
+        ),
+    )
+    if args.max_train_steps > 0:
+        target_global_step = args.max_train_steps
+        total_epochs = max(1, math.ceil(target_global_step / steps_per_epoch))
+    else:
+        total_epochs = max(1, args.num_train_epochs)
+        target_global_step = total_epochs * steps_per_epoch
+    checkpoint_interval_steps = max(1, args.checkpointing_epochs * steps_per_epoch)
 
     optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
     lr_scheduler = get_scheduler(
         "cosine",
         optimizer=optimizer,
         num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=args.max_train_steps,
+        num_training_steps=target_global_step,
     )
 
     fixed_vis_batch = None
@@ -1241,19 +1256,6 @@ def main():
     warned_no_mask_once = False
     drop_counts = {"t": 0, "i": 0, "ti": 0, "total": 0}
     branch_drop_counts = {"token": 0, "spatial": 0, "total": 0}
-
-    # ---- Epoch-based training setup ----
-    dataset_len = len(ds)
-    steps_per_epoch = dataset_len // (args.train_batch_size * accelerator.num_processes)
-
-    if args.max_train_steps > 0:
-        target_global_step = args.max_train_steps
-        total_epochs = max(1, target_global_step // max(1, steps_per_epoch))
-        checkpoint_interval_steps = max(1, args.checkpointing_epochs * steps_per_epoch)
-    else:
-        total_epochs = max(1, args.num_train_epochs)
-        target_global_step = total_epochs * steps_per_epoch
-        checkpoint_interval_steps = max(1, args.checkpointing_epochs * steps_per_epoch)
 
     if args.start_global_step >= 0:
         global_step = args.start_global_step
@@ -1533,12 +1535,11 @@ def main():
                     grad_norm = accelerator.clip_grad_norm_(
                         trainable_params, args.max_grad_norm
                     )
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
                 else:
                     grad_norm = None
-
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
 
                 if accelerator.sync_gradients and args.report_to != "none":
                     grad_norm_log = None
@@ -1578,7 +1579,11 @@ def main():
                         step=global_step,
                     )
 
-                if accelerator.is_main_process and global_step % 100 == 0:
+                if (
+                    accelerator.sync_gradients
+                    and accelerator.is_main_process
+                    and global_step % 100 == 0
+                ):
                     grad_norm_val = (
                         float(grad_norm.item())
                         if grad_norm is not None and not isinstance(grad_norm, float)
@@ -1606,6 +1611,8 @@ def main():
                     )
 
                 if (
+                    accelerator.sync_gradients
+                    and
                     accelerator.is_main_process
                     and args.val_vis_steps > 0
                     and global_step % args.val_vis_steps == 0
@@ -1638,6 +1645,8 @@ def main():
                     )
 
                 if (
+                    accelerator.sync_gradients
+                    and
                     accelerator.is_main_process
                     and args.vis_every_n_steps > 0
                     and global_step % args.vis_every_n_steps == 0
@@ -1670,6 +1679,8 @@ def main():
                     )
 
                 if (
+                    accelerator.sync_gradients
+                    and
                     accelerator.is_main_process
                     and checkpoint_interval_steps > 0
                     and global_step % checkpoint_interval_steps == 0
@@ -1693,10 +1704,11 @@ def main():
                             f"(epoch {current_epoch + 1}/{total_epochs})"
                         )
 
-            global_step += 1
-            total_steps_done += 1
-            if global_step >= target_global_step:
-                break
+                if accelerator.sync_gradients:
+                    global_step += 1
+                    total_steps_done += 1
+                    if global_step >= target_global_step:
+                        break
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
