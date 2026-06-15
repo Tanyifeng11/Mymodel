@@ -21,7 +21,7 @@ from torchvision.models import VGG19_Weights, vgg19
 from torchvision.utils import make_grid, save_image
 
 from accelerate import Accelerator
-from accelerate.utils import ProjectConfiguration
+from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration
 from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from transformers import (
@@ -464,6 +464,7 @@ def save_training_checkpoint(
     global_step,
     args,
     resolved_image_encoder_path,
+    aliases=None,
 ):
     save_dir = os.path.join(output_dir, f"checkpoint-{global_step}")
     os.makedirs(save_dir, exist_ok=True)
@@ -518,6 +519,21 @@ def save_training_checkpoint(
         },
     }
     torch.save(payload, os.path.join(save_dir, "joint_model.pt"))
+
+    aliases = aliases or []
+    for alias_name in aliases:
+        alias_path = os.path.join(output_dir, alias_name)
+        if os.path.lexists(alias_path):
+            if os.path.islink(alias_path):
+                os.unlink(alias_path)
+            else:
+                print(f"[warn] skip checkpoint alias because path exists: {alias_path}")
+                continue
+        rel_target = os.path.relpath(save_dir, start=output_dir)
+        try:
+            os.symlink(rel_target, alias_path, target_is_directory=True)
+        except OSError as e:
+            print(f"[warn] failed to create checkpoint symlink {alias_path} -> {rel_target}: {e}")
     return save_dir
 
 
@@ -806,6 +822,11 @@ def main():
     ap.add_argument("--learning_rate", type=float, default=5e-5)
     ap.add_argument("--num_warmup_steps", type=int, default=500)
     ap.add_argument("--max_grad_norm", type=float, default=1.0)
+    ap.add_argument(
+        "--debug_trainable_params",
+        action="store_true",
+        help="Print trainable UNet parameter indices and names for DDP unused-parameter debugging.",
+    )
     ap.add_argument("--report_to", type=str, default="tensorboard", choices=["tensorboard", "wandb", "all", "none"])
     ap.add_argument("--wandb_project", type=str, default="IMAGGarment-1")
     ap.add_argument("--wandb_run_name", type=str, default=None)
@@ -925,11 +946,13 @@ def main():
         project_dir=args.output_dir, logging_dir=os.path.join(args.output_dir, "logs")
     )
     log_with = None if args.report_to == "none" else args.report_to
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision="fp16" if torch.cuda.is_available() else "no",
         project_config=accelerator_project_config,
         log_with=log_with,
+        kwargs_handlers=[ddp_kwargs],
     )
 
     # ---- texture ckpt meta ----
@@ -1144,6 +1167,12 @@ def main():
     if use_spatial_train:
         add_params(spatial_texture_encoder.parameters())
         add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
+
+    if args.debug_trainable_params and accelerator.is_main_process:
+        print("[debug] trainable UNet parameters:")
+        for idx, (name, p) in enumerate(unet.named_parameters()):
+            if p.requires_grad:
+                print(f"[debug] unet_param[{idx}] {name} {tuple(p.shape)}")
 
     # dataset
     ds = JointTextureDataset(
@@ -1541,6 +1570,10 @@ def main():
                 else:
                     grad_norm = None
 
+                if accelerator.sync_gradients:
+                    global_step += 1
+                    total_steps_done += 1
+
                 if accelerator.sync_gradients and args.report_to != "none":
                     grad_norm_log = None
                     if grad_norm is not None:
@@ -1582,7 +1615,7 @@ def main():
                 if (
                     accelerator.sync_gradients
                     and accelerator.is_main_process
-                    and global_step % 100 == 0
+                    and (global_step == 1 or global_step % 100 == 0)
                 ):
                     grad_norm_val = (
                         float(grad_norm.item())
@@ -1686,6 +1719,10 @@ def main():
                     and global_step % checkpoint_interval_steps == 0
                     and global_step > 0
                 ):
+                    completed_epoch = min(
+                        total_epochs,
+                        max(1, math.ceil(global_step / max(1, steps_per_epoch))),
+                    )
                     save_dir = save_training_checkpoint(
                         accelerator,
                         unet,
@@ -1697,18 +1734,16 @@ def main():
                         global_step,
                         args,
                         image_encoder_path,
+                        aliases=[f"checkpoint-epoch-{completed_epoch:03d}"],
                     )
                     if accelerator.is_main_process:
                         print(
                             f"[info] checkpoint saved to {save_dir} "
-                            f"(epoch {current_epoch + 1}/{total_epochs})"
+                            f"(epoch {completed_epoch}/{total_epochs})"
                         )
 
-                if accelerator.sync_gradients:
-                    global_step += 1
-                    total_steps_done += 1
-                    if global_step >= target_global_step:
-                        break
+                if accelerator.sync_gradients and global_step >= target_global_step:
+                    break
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
@@ -1723,6 +1758,10 @@ def main():
             global_step,
             args,
             image_encoder_path,
+            aliases=[
+                "checkpoint-final",
+                f"checkpoint-epoch-{total_epochs:03d}",
+            ],
         )
         print(f"[info] final full checkpoint saved to {save_dir}")
 
