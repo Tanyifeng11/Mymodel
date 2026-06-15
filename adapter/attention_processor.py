@@ -401,8 +401,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
                     f"expected_texture_tokens={self.num_tokens}, layer_group={self.layer_group}"
                 )
             encoder_hidden_states, ip_hidden_states = (
-                encoder_hidden_states[:, :end_pos, :],
-                encoder_hidden_states[:, end_pos:, :],
+                encoder_hidden_states[:, :end_pos, :].contiguous(),
+                encoder_hidden_states[:, end_pos:, :].contiguous(),
             )
 
             # === Phase 1: Ti-MGD layer-grouped frequency routing ===
@@ -416,7 +416,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
                 if self.detail_text_scale < 1e-6:
                     encoder_hidden_states = torch.zeros_like(encoder_hidden_states)
                 else:
-                    encoder_hidden_states = encoder_hidden_states * self.detail_text_scale
+                    encoder_hidden_states = (encoder_hidden_states * self.detail_text_scale).contiguous()
             # "all" — legacy behavior, no change
             # === end layer-grouped routing ===
 

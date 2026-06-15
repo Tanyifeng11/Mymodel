@@ -289,7 +289,7 @@ def override_args_from_texture_meta(args, texture_meta):
     if not isinstance(texture_meta, dict):
         return
 
-    if "texture_num_tokens" in texture_meta:
+    if "texture_num_tokens" in texture_meta and not args.force_bf_num_tokens_override:
         args.bf_num_tokens = int(texture_meta["texture_num_tokens"])
     if "bf_base_channels" in texture_meta:
         args.bf_base_channels = int(texture_meta["bf_base_channels"])
@@ -299,9 +299,9 @@ def override_args_from_texture_meta(args, texture_meta):
         args.texture_mode = str(texture_meta["texture_mode"])
     if "texture_preprocess_mode" in texture_meta:
         args.texture_preprocess_mode = str(texture_meta["texture_preprocess_mode"])
-    if "width" in texture_meta and texture_meta["width"]:
+    if "width" in texture_meta and texture_meta["width"] and not args.force_resolution_override:
         args.width = int(texture_meta["width"])
-    if "height" in texture_meta and texture_meta["height"]:
+    if "height" in texture_meta and texture_meta["height"] and not args.force_resolution_override:
         args.height = int(texture_meta["height"])
 
 
@@ -376,6 +376,17 @@ def load_partial_state(module, state_dict, key, name, strict=False):
     print(f"[load] {name}: missing={len(missing)} unexpected={len(unexpected)}")
 
 
+def print_load_key_details(prefix, missing, unexpected, max_items=32):
+    if missing:
+        print(f"{prefix} missing keys (first {min(len(missing), max_items)}):")
+        for key in list(missing)[:max_items]:
+            print(f"  MISSING {key}")
+    if unexpected:
+        print(f"{prefix} unexpected keys (first {min(len(unexpected), max_items)}):")
+        for key in list(unexpected)[:max_items]:
+            print(f"  UNEXPECTED {key}")
+
+
 def load_joint_checkpoint_into_models(
     state_dict,
     unet,
@@ -418,7 +429,31 @@ def load_joint_checkpoint_into_models(
         )
 
 
-def load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]"):
+def adapt_bf_state_for_token_count(bf, bf_state, log_prefix="[load]"):
+    bf_state = dict(bf_state)
+    key = "resampler_queries"
+    if key not in bf_state:
+        return bf_state
+
+    current = bf.state_dict().get(key)
+    saved = bf_state[key]
+    if current is None or tuple(saved.shape) == tuple(current.shape):
+        return bf_state
+    if saved.ndim != 3 or current.ndim != 3 or saved.shape[0] != current.shape[0] or saved.shape[2] != current.shape[2]:
+        return bf_state
+
+    adapted = current.detach().clone()
+    n = min(saved.shape[1], current.shape[1])
+    adapted[:, :n, :] = saved[:, :n, :]
+    bf_state[key] = adapted
+    print(
+        f"{log_prefix} adapted bf_texture_conditioner.{key}: "
+        f"checkpoint={tuple(saved.shape)} current={tuple(current.shape)} copied_tokens={n}"
+    )
+    return bf_state
+
+
+def load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]", debug=False):
     if not isinstance(texture_state, dict):
         return
 
@@ -431,15 +466,37 @@ def load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]"):
             f"{log_prefix} texture_adapter -> unet.attn_processors: "
             f"missing={len(missing)} unexpected={len(unexpected)}"
         )
+        if debug:
+            print(
+                f"{log_prefix} texture_adapter key counts: "
+                f"checkpoint={len(texture_state['texture_adapter'])} "
+                f"current={len(adapter_modules.state_dict())}"
+            )
+            print_load_key_details(
+                f"{log_prefix} texture_adapter -> unet.attn_processors",
+                missing,
+                unexpected,
+            )
 
     if "bf_texture_conditioner" in texture_state:
+        bf_state = adapt_bf_state_for_token_count(
+            bf,
+            texture_state["bf_texture_conditioner"],
+            log_prefix=log_prefix,
+        )
         missing, unexpected = bf.load_state_dict(
-            texture_state["bf_texture_conditioner"], strict=False
+            bf_state, strict=False
         )
         print(
             f"{log_prefix} bf_texture_conditioner: "
             f"missing={len(missing)} unexpected={len(unexpected)}"
         )
+        if debug:
+            print_load_key_details(
+                f"{log_prefix} bf_texture_conditioner",
+                missing,
+                unexpected,
+            )
 
 
 def infer_checkpoint_step(path):
@@ -816,6 +873,8 @@ def main():
     # train
     ap.add_argument("--train_batch_size", type=int, default=1)
     ap.add_argument("--gradient_accumulation_steps", type=int, default=1)
+    ap.add_argument("--dataloader_num_workers", type=int, default=1)
+    ap.add_argument("--mixed_precision", type=str, default=None, choices=["no", "fp16", "bf16"])
     ap.add_argument("--max_train_steps", type=int, default=-1)
     ap.add_argument("--num_train_epochs", type=int, default=5)
     ap.add_argument("--checkpointing_epochs", type=int, default=1)
@@ -827,6 +886,11 @@ def main():
         action="store_true",
         help="Print trainable UNet parameter indices and names for DDP unused-parameter debugging.",
     )
+    ap.add_argument(
+        "--debug_checkpoint_load",
+        action="store_true",
+        help="Print missing/unexpected checkpoint keys when loading texture/GAM checkpoints.",
+    )
     ap.add_argument("--report_to", type=str, default="tensorboard", choices=["tensorboard", "wandb", "all", "none"])
     ap.add_argument("--wandb_project", type=str, default="IMAGGarment-1")
     ap.add_argument("--wandb_run_name", type=str, default=None)
@@ -836,6 +900,11 @@ def main():
     # conditioning
     ap.add_argument("--bf_num_tokens", type=int, default=16)
     ap.add_argument("--bf_base_channels", type=int, default=32)
+    ap.add_argument(
+        "--force_bf_num_tokens_override",
+        action="store_true",
+        help="Keep CLI bf_num_tokens even when texture checkpoint metadata has another value.",
+    )
     ap.add_argument(
         "--texture_mode",
         type=str,
@@ -928,8 +997,16 @@ def main():
     # resolution
     ap.add_argument("--width", type=int, default=512)
     ap.add_argument("--height", type=int, default=640)
+    ap.add_argument(
+        "--force_resolution_override",
+        action="store_true",
+        help="Keep CLI width/height even when texture checkpoint metadata has another value.",
+    )
 
     args = ap.parse_args()
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = False
+
     is_token_mode = args.texture_condition_mode in ("token", "hybrid")
     is_spatial_mode = args.texture_condition_mode in ("spatial", "hybrid")
 
@@ -947,9 +1024,12 @@ def main():
     )
     log_with = None if args.report_to == "none" else args.report_to
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    accelerator_mixed_precision = args.mixed_precision
+    if accelerator_mixed_precision is None:
+        accelerator_mixed_precision = "fp16" if torch.cuda.is_available() else "no"
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        mixed_precision="fp16" if torch.cuda.is_available() else "no",
+        mixed_precision=accelerator_mixed_precision,
         project_config=accelerator_project_config,
         log_with=log_with,
         kwargs_handlers=[ddp_kwargs],
@@ -1066,7 +1146,13 @@ def main():
     # 旧 token 路线初始化
     if accelerator.is_main_process:
         print(f"[load] texture branch init from: {args.texture_adapter_ckpt}")
-    load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]")
+    load_texture_adapter_branch(
+        texture_state,
+        unet,
+        bf,
+        log_prefix="[load]",
+        debug=args.debug_checkpoint_load,
+    )
 
     # decoupled texture-first spatial branch
     spatial_texture_encoder = MultiScaleTextureEncoder(stage_channels=(64, 128, 256, 256))
@@ -1102,7 +1188,11 @@ def main():
                     f"from: {args.texture_adapter_ckpt}"
                 )
             load_texture_adapter_branch(
-                texture_state, unet, bf, log_prefix="[load after gam_init]"
+                texture_state,
+                unet,
+                bf,
+                log_prefix="[load after gam_init]",
+                debug=args.debug_checkpoint_load,
             )
 
     # resume 继续训练
@@ -1188,8 +1278,8 @@ def main():
         batch_size=args.train_batch_size,
         shuffle=True,
         collate_fn=collate_fn,
-        num_workers=4,
-        pin_memory=True,
+        num_workers=args.dataloader_num_workers,
+        pin_memory=torch.cuda.is_available(),
     )
 
     dataset_len = len(ds)
@@ -1270,7 +1360,12 @@ def main():
     text_encoder.to(accelerator.device)
     vae.to(accelerator.device)
     image_encoder.to(accelerator.device)
-    style_loss_fn = VGGGramStyleLoss().to(accelerator.device)
+    use_style_loss_module = (
+        args.lambda_style > 0
+        or args.lambda_patch_style > 0
+        or args.lambda_texture_gram > 0
+    )
+    style_loss_fn = VGGGramStyleLoss().to(accelerator.device) if use_style_loss_module else None
 
     save_training_manifest(args, image_encoder_path)
 
@@ -1414,6 +1509,12 @@ def main():
                         ][:, 1:, :],
                         texture_mode=args.texture_mode,
                     )
+                    if tex_tokens.shape[1] != args.bf_num_tokens:
+                        raise RuntimeError(
+                            "Texture token count mismatch: "
+                            f"got {tex_tokens.shape[1]}, expected {args.bf_num_tokens}. "
+                            "Check texture checkpoint metadata and --force_bf_num_tokens_override."
+                        )
                     enc_h = torch.cat([enc_h, tex_tokens], dim=1)
 
                 if use_spatial:
@@ -1455,95 +1556,121 @@ def main():
                     noise_pred.float(), noise.float(), reduction="mean"
                 )
 
-                x0_hat = reconstruct_x0(
-                    noisy_latents, noise_pred, timesteps, noise_scheduler
-                )
-                decoded = vae.decode(x0_hat / vae.config.scaling_factor).sample
-                target = batch["vae_cloth"]
-                mask = batch["garment_mask"]
+                zero_aux_loss = loss_denoise.new_tensor(0.0)
+                loss_style = zero_aux_loss
+                loss_patch = zero_aux_loss
+                loss_edge = zero_aux_loss
+                loss_texture_color = zero_aux_loss
+                loss_texture_gram = zero_aux_loss
+                loss_region_texture = zero_aux_loss
+                loss_boundary = zero_aux_loss
+                loss_leak = zero_aux_loss
 
-                if (
-                    batch["has_mask"].sum().item() < batch["has_mask"].numel()
-                    and not warned_no_mask_once
-                    and accelerator.is_main_process
-                ):
-                    print(
-                        "[train_GAM_texture_joint] WARNING: some samples have no "
-                        "garment mask, fallback to full-image style loss."
-                    )
-                    warned_no_mask_once = True
-
-                loss_style = style_loss_fn(
-                    decoded.float(), target.float(), mask=mask.float()
-                )
-                loss_patch = torch.tensor(0.0, device=loss_style.device)
-                if (
-                    args.style_loss_type == "gram+patch"
-                    and args.lambda_patch_style > 0
-                ):
-                    loss_patch = style_loss_fn.patch_cosine_loss(
-                        decoded.float(), target.float(), mask=mask.float()
-                    )
-                loss_edge = masked_edge_l1(
-                    decoded.float(),
-                    batch["vae_sketch"].float(),
-                    mask=batch["garment_mask"].float(),
-                )
                 use_region_losses = (
                     args.lambda_region_texture > 0
                     or args.lambda_boundary > 0
                     or args.lambda_leak > 0
                 )
-                if use_region_losses:
-                    body_mask, boundary_mask, outside_mask = build_region_masks(
-                        mask.float(), kernel_size=args.region_kernel_size
-                    )
-                else:
-                    body_mask = boundary_mask = outside_mask = None
-
                 texture_loss_active = (use_token or use_spatial) and (
                     texture_condition_weight.sum().item() > 0
                 )
-                loss_texture_color = torch.tensor(0.0, device=loss_style.device)
-                loss_texture_gram = torch.tensor(0.0, device=loss_style.device)
-                loss_region_texture = torch.tensor(0.0, device=loss_style.device)
-                loss_boundary = torch.tensor(0.0, device=loss_style.device)
-                loss_leak = torch.tensor(0.0, device=loss_style.device)
-                if texture_loss_active:
-                    if args.lambda_texture_color > 0:
-                        loss_texture_color = texture_color_stat_loss(
-                            decoded.float(),
-                            texture_image_target.float(),
-                            garment_mask=mask.float(),
-                            sample_weight=texture_condition_weight,
+                use_decoded_losses = (
+                    args.lambda_style > 0
+                    or (
+                        args.style_loss_type == "gram+patch"
+                        and args.lambda_patch_style > 0
+                    )
+                    or args.lambda_edge > 0
+                    or (
+                        texture_loss_active
+                        and (
+                            args.lambda_texture_color > 0
+                            or args.lambda_texture_gram > 0
+                            or args.lambda_region_texture > 0
                         )
-                    if args.lambda_texture_gram > 0:
-                        keep_texture = texture_condition_weight > 0
-                        loss_texture_gram = style_loss_fn(
-                            decoded[keep_texture].float(),
-                            texture_image_target[keep_texture].float(),
-                            mask=mask[keep_texture].float(),
-                        )
-                    if args.lambda_region_texture > 0:
-                        loss_region_texture = texture_color_stat_loss(
-                            decoded.float(),
-                            texture_image_target.float(),
-                            garment_mask=body_mask.float(),
-                            sample_weight=texture_condition_weight,
-                        )
+                    )
+                    or args.lambda_boundary > 0
+                    or args.lambda_leak > 0
+                )
 
-                if args.lambda_boundary > 0:
-                    loss_boundary = masked_l1_loss(
-                        decoded.float(),
-                        target.float(),
-                        boundary_mask.float(),
+                if use_decoded_losses:
+                    x0_hat = reconstruct_x0(
+                        noisy_latents, noise_pred, timesteps, noise_scheduler
                     )
-                if args.lambda_leak > 0:
-                    loss_leak = masked_l1_loss(
-                        decoded.float(),
-                        target.float(),
-                        outside_mask.float(),
-                    )
+                    decoded = vae.decode(x0_hat / vae.config.scaling_factor).sample
+                    target = batch["vae_cloth"]
+                    mask = batch["garment_mask"]
+
+                    if (
+                        batch["has_mask"].sum().item() < batch["has_mask"].numel()
+                        and not warned_no_mask_once
+                        and accelerator.is_main_process
+                    ):
+                        print(
+                            "[train_GAM_texture_joint] WARNING: some samples have no "
+                            "garment mask, fallback to full-image style loss."
+                        )
+                        warned_no_mask_once = True
+
+                    if use_region_losses:
+                        body_mask, boundary_mask, outside_mask = build_region_masks(
+                            mask.float(), kernel_size=args.region_kernel_size
+                        )
+                    else:
+                        body_mask = boundary_mask = outside_mask = None
+
+                    if args.lambda_style > 0:
+                        loss_style = style_loss_fn(
+                            decoded.float(), target.float(), mask=mask.float()
+                        )
+                    if (
+                        args.style_loss_type == "gram+patch"
+                        and args.lambda_patch_style > 0
+                    ):
+                        loss_patch = style_loss_fn.patch_cosine_loss(
+                            decoded.float(), target.float(), mask=mask.float()
+                        )
+                    if args.lambda_edge > 0:
+                        loss_edge = masked_edge_l1(
+                            decoded.float(),
+                            batch["vae_sketch"].float(),
+                            mask=batch["garment_mask"].float(),
+                        )
+                    if texture_loss_active:
+                        if args.lambda_texture_color > 0:
+                            loss_texture_color = texture_color_stat_loss(
+                                decoded.float(),
+                                texture_image_target.float(),
+                                garment_mask=mask.float(),
+                                sample_weight=texture_condition_weight,
+                            )
+                        if args.lambda_texture_gram > 0:
+                            keep_texture = texture_condition_weight > 0
+                            loss_texture_gram = style_loss_fn(
+                                decoded[keep_texture].float(),
+                                texture_image_target[keep_texture].float(),
+                                mask=mask[keep_texture].float(),
+                            )
+                        if args.lambda_region_texture > 0:
+                            loss_region_texture = texture_color_stat_loss(
+                                decoded.float(),
+                                texture_image_target.float(),
+                                garment_mask=body_mask.float(),
+                                sample_weight=texture_condition_weight,
+                            )
+
+                    if args.lambda_boundary > 0:
+                        loss_boundary = masked_l1_loss(
+                            decoded.float(),
+                            target.float(),
+                            boundary_mask.float(),
+                        )
+                    if args.lambda_leak > 0:
+                        loss_leak = masked_l1_loss(
+                            decoded.float(),
+                            target.float(),
+                            outside_mask.float(),
+                        )
 
                 loss = loss_denoise + args.lambda_style * loss_style
                 if (
