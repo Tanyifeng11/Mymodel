@@ -31,15 +31,7 @@ DATA_ROOT_PATH="${DATA_ROOT_PATH:-${BF_TRAIN_ROOT}}"
 
 SD_MODEL="${SD_MODEL:-${PROJECT_ROOT}/models/stable-diffusion-v1-5}"
 VAE_MODEL="${VAE_MODEL:-${SD_MODEL}/vae}"
-if [[ -z "${CLIP_MODEL:-}" ]]; then
-  if [[ -d "${PROJECT_ROOT}/models/CLIP" ]]; then
-    CLIP_MODEL="${PROJECT_ROOT}/models/CLIP"
-  elif [[ -d "${PROJECT_ROOT}/models/clip" ]]; then
-    CLIP_MODEL="${PROJECT_ROOT}/models/clip"
-  else
-    CLIP_MODEL="${PROJECT_ROOT}/models/CLIP"
-  fi
-fi
+CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
 
 OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 TEXTURE_ADAPTER_DIR="${TEXTURE_ADAPTER_DIR:-${OUTPUT_BASE}/texture_adapter_bf_e20}"
