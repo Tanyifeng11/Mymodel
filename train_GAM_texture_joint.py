@@ -608,14 +608,20 @@ class VGGGramStyleLoss(nn.Module):
 
     @staticmethod
     def gram(x):
+        x = x.float().contiguous()
         b, c, h, w = x.shape
         x = x.view(b, c, h * w)
         return (x @ x.transpose(1, 2)) / (c * h * w + 1e-6)
 
     def forward(self, pred, target, mask=None):
+        pred = pred.float().contiguous()
+        target = target.float().contiguous()
         if mask is not None:
+            mask = mask.float().contiguous()
             pred = pred * mask
             target = target * mask
+            pred = pred.contiguous()
+            target = target.contiguous()
         p3, t3 = self.l3(pred), self.l3(target)
         p4, t4 = self.l4(pred), self.l4(target)
         return F.l1_loss(self.gram(p3), self.gram(t3)) + F.l1_loss(
@@ -623,11 +629,16 @@ class VGGGramStyleLoss(nn.Module):
         )
 
     def patch_cosine_loss(self, pred, target, mask=None, patch_size=8, stride=8):
+        pred = pred.float().contiguous()
+        target = target.float().contiguous()
         if mask is not None:
+            mask = mask.float().contiguous()
             pred = pred * mask
             target = target * mask
-        p = F.unfold(pred, kernel_size=patch_size, stride=stride)
-        t = F.unfold(target, kernel_size=patch_size, stride=stride)
+            pred = pred.contiguous()
+            target = target.contiguous()
+        p = F.unfold(pred.contiguous(), kernel_size=patch_size, stride=stride)
+        t = F.unfold(target.contiguous(), kernel_size=patch_size, stride=stride)
         p = F.normalize(p, dim=1)
         t = F.normalize(t, dim=1)
         return 1.0 - (p * t).sum(dim=1).mean()
@@ -655,8 +666,9 @@ def rgb_to_gray(x):
 
 
 def sobel_edges(x):
+    x = x.float().contiguous()
     x01 = (x + 1.0) * 0.5
-    gray = rgb_to_gray(x01)
+    gray = rgb_to_gray(x01).contiguous()
     kx = torch.tensor(
         [[[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]]],
         device=gray.device,
@@ -667,18 +679,23 @@ def sobel_edges(x):
         device=gray.device,
         dtype=gray.dtype,
     ).unsqueeze(0)
-    gx = F.conv2d(gray, kx, padding=1)
-    gy = F.conv2d(gray, ky, padding=1)
+    gx = F.conv2d(gray.contiguous(), kx.contiguous(), padding=1)
+    gy = F.conv2d(gray.contiguous(), ky.contiguous(), padding=1)
     return torch.sqrt(gx * gx + gy * gy + 1e-6)
 
 
 def masked_edge_l1(pred, target, mask=None):
+    pred = pred.float().contiguous()
+    target = target.float().contiguous()
     pred_edge = sobel_edges(pred)
     target_edge = sobel_edges(target)
     if mask is not None:
-        mask = F.interpolate(mask, size=pred_edge.shape[-2:], mode="nearest")
+        mask = mask.float().contiguous()
+        mask = F.interpolate(mask, size=pred_edge.shape[-2:], mode="nearest").contiguous()
         pred_edge = pred_edge * mask
         target_edge = target_edge * mask
+        pred_edge = pred_edge.contiguous()
+        target_edge = target_edge.contiguous()
     return F.l1_loss(pred_edge, target_edge)
 
 
@@ -691,13 +708,16 @@ def _weighted_mean_per_sample(loss_per_sample, sample_weight=None):
 
 
 def _masked_channel_mean_std(x, mask=None):
+    x = x.float().contiguous()
     x = ((x + 1.0) * 0.5).clamp(0.0, 1.0)
     if mask is None:
         mean = x.mean(dim=(2, 3))
         std = x.std(dim=(2, 3), unbiased=False)
         return mean, std
 
-    mask = F.interpolate(mask, size=x.shape[-2:], mode="nearest").to(dtype=x.dtype)
+    mask = mask.float().contiguous()
+    mask = F.interpolate(mask, size=x.shape[-2:], mode="nearest").contiguous()
+    mask = mask.to(device=x.device, dtype=x.dtype).contiguous()
     denom = mask.sum(dim=(2, 3)).clamp_min(1.0)
     mean = (x * mask).sum(dim=(2, 3)) / denom
     var = (((x - mean[:, :, None, None]) * mask) ** 2).sum(dim=(2, 3)) / denom
@@ -705,6 +725,10 @@ def _masked_channel_mean_std(x, mask=None):
 
 
 def texture_color_stat_loss(pred, texture, garment_mask=None, sample_weight=None):
+    pred = pred.float().contiguous()
+    texture = texture.float().contiguous()
+    if garment_mask is not None:
+        garment_mask = garment_mask.float().contiguous()
     pred_mean, pred_std = _masked_channel_mean_std(pred, garment_mask)
     texture_mean, texture_std = _masked_channel_mean_std(texture, None)
     mean_loss = F.smooth_l1_loss(pred_mean, texture_mean, reduction="none").mean(dim=1)
@@ -721,22 +745,26 @@ def build_region_masks(mask, kernel_size=9):
     if k % 2 == 0:
         k += 1
 
-    mask = mask.float().clamp(0.0, 1.0)
-    dilated = F.max_pool2d(mask, kernel_size=k, stride=1, padding=k // 2)
-    eroded = -F.max_pool2d(-mask, kernel_size=k, stride=1, padding=k // 2)
+    mask = mask.float().contiguous().clamp(0.0, 1.0)
+    dilated = F.max_pool2d(mask.contiguous(), kernel_size=k, stride=1, padding=k // 2).contiguous()
+    eroded = -F.max_pool2d((-mask).contiguous(), kernel_size=k, stride=1, padding=k // 2)
+    eroded = eroded.contiguous()
 
-    body = eroded.clamp(0.0, 1.0)
-    boundary = (dilated - eroded).clamp(0.0, 1.0)
-    outside = (1.0 - dilated).clamp(0.0, 1.0)
+    body = eroded.clamp(0.0, 1.0).contiguous()
+    boundary = (dilated - eroded).clamp(0.0, 1.0).contiguous()
+    outside = (1.0 - dilated).clamp(0.0, 1.0).contiguous()
     return body, boundary, outside
 
 
 def masked_l1_loss(pred, target, mask):
+    pred = pred.float().contiguous()
+    target = target.float().contiguous()
+    mask = mask.float().contiguous()
     if mask.shape[-2:] != pred.shape[-2:]:
-        mask = F.interpolate(mask, size=pred.shape[-2:], mode="nearest")
-    mask = mask.to(device=pred.device, dtype=pred.dtype)
+        mask = F.interpolate(mask, size=pred.shape[-2:], mode="nearest").contiguous()
+    mask = mask.to(device=pred.device, dtype=pred.dtype).contiguous()
     if mask.shape[1] == 1 and pred.shape[1] != 1:
-        mask = mask.expand(-1, pred.shape[1], -1, -1)
+        mask = mask.expand(-1, pred.shape[1], -1, -1).contiguous()
     denom = mask.sum().clamp_min(1.0)
     return (torch.abs(pred - target) * mask).sum() / denom
 
@@ -1612,65 +1640,71 @@ def main():
                         )
                         warned_no_mask_once = True
 
-                    if use_region_losses:
-                        body_mask, boundary_mask, outside_mask = build_region_masks(
-                            mask.float(), kernel_size=args.region_kernel_size
-                        )
-                    else:
-                        body_mask = boundary_mask = outside_mask = None
+                    with torch.cuda.amp.autocast(enabled=False):
+                        decoded_loss = decoded.float().contiguous()
+                        target_loss = target.float().contiguous()
+                        mask_loss = mask.float().contiguous()
+                        texture_target_loss = texture_image_target.float().contiguous()
 
-                    if args.lambda_style > 0:
-                        loss_style = style_loss_fn(
-                            decoded.float(), target.float(), mask=mask.float()
-                        )
-                    if (
-                        args.style_loss_type == "gram+patch"
-                        and args.lambda_patch_style > 0
-                    ):
-                        loss_patch = style_loss_fn.patch_cosine_loss(
-                            decoded.float(), target.float(), mask=mask.float()
-                        )
-                    if args.lambda_edge > 0:
-                        loss_edge = masked_edge_l1(
-                            decoded.float(),
-                            batch["vae_sketch"].float(),
-                            mask=batch["garment_mask"].float(),
-                        )
-                    if texture_loss_active:
-                        if args.lambda_texture_color > 0:
-                            loss_texture_color = texture_color_stat_loss(
-                                decoded.float(),
-                                texture_image_target.float(),
-                                garment_mask=mask.float(),
-                                sample_weight=texture_condition_weight,
+                        if use_region_losses:
+                            body_mask, boundary_mask, outside_mask = build_region_masks(
+                                mask_loss, kernel_size=args.region_kernel_size
                             )
-                        if args.lambda_texture_gram > 0:
-                            keep_texture = texture_condition_weight > 0
-                            loss_texture_gram = style_loss_fn(
-                                decoded[keep_texture].float(),
-                                texture_image_target[keep_texture].float(),
-                                mask=mask[keep_texture].float(),
-                            )
-                        if args.lambda_region_texture > 0:
-                            loss_region_texture = texture_color_stat_loss(
-                                decoded.float(),
-                                texture_image_target.float(),
-                                garment_mask=body_mask.float(),
-                                sample_weight=texture_condition_weight,
-                            )
+                        else:
+                            body_mask = boundary_mask = outside_mask = None
 
-                    if args.lambda_boundary > 0:
-                        loss_boundary = masked_l1_loss(
-                            decoded.float(),
-                            target.float(),
-                            boundary_mask.float(),
-                        )
-                    if args.lambda_leak > 0:
-                        loss_leak = masked_l1_loss(
-                            decoded.float(),
-                            target.float(),
-                            outside_mask.float(),
-                        )
+                        if args.lambda_style > 0:
+                            loss_style = style_loss_fn(
+                                decoded_loss, target_loss, mask=mask_loss
+                            )
+                        if (
+                            args.style_loss_type == "gram+patch"
+                            and args.lambda_patch_style > 0
+                        ):
+                            loss_patch = style_loss_fn.patch_cosine_loss(
+                                decoded_loss, target_loss, mask=mask_loss
+                            )
+                        if args.lambda_edge > 0:
+                            loss_edge = masked_edge_l1(
+                                decoded_loss,
+                                batch["vae_sketch"].float().contiguous(),
+                                mask=mask_loss,
+                            )
+                        if texture_loss_active:
+                            if args.lambda_texture_color > 0:
+                                loss_texture_color = texture_color_stat_loss(
+                                    decoded_loss,
+                                    texture_target_loss,
+                                    garment_mask=mask_loss,
+                                    sample_weight=texture_condition_weight,
+                                )
+                            if args.lambda_texture_gram > 0:
+                                keep_texture = texture_condition_weight > 0
+                                loss_texture_gram = style_loss_fn(
+                                    decoded_loss[keep_texture].contiguous(),
+                                    texture_target_loss[keep_texture].contiguous(),
+                                    mask=mask_loss[keep_texture].contiguous(),
+                                )
+                            if args.lambda_region_texture > 0:
+                                loss_region_texture = texture_color_stat_loss(
+                                    decoded_loss,
+                                    texture_target_loss,
+                                    garment_mask=body_mask,
+                                    sample_weight=texture_condition_weight,
+                                )
+
+                        if args.lambda_boundary > 0:
+                            loss_boundary = masked_l1_loss(
+                                decoded_loss,
+                                target_loss,
+                                boundary_mask,
+                            )
+                        if args.lambda_leak > 0:
+                            loss_leak = masked_l1_loss(
+                                decoded_loss,
+                                target_loss,
+                                outside_mask,
+                            )
 
                 loss = loss_denoise + args.lambda_style * loss_style
                 if (
@@ -1684,6 +1718,29 @@ def main():
                 loss = loss + args.lambda_region_texture * loss_region_texture
                 loss = loss + args.lambda_boundary * loss_boundary
                 loss = loss + args.lambda_leak * loss_leak
+
+                if not torch.isfinite(loss.detach()).all():
+                    loss_items = {
+                        "loss_total": loss,
+                        "loss_denoise": loss_denoise,
+                        "loss_style": loss_style,
+                        "loss_patch": loss_patch,
+                        "loss_edge": loss_edge,
+                        "loss_texture_color": loss_texture_color,
+                        "loss_texture_gram": loss_texture_gram,
+                        "loss_region_texture": loss_region_texture,
+                        "loss_boundary": loss_boundary,
+                        "loss_leak": loss_leak,
+                    }
+                    print("[train_GAM_texture_joint] non-finite loss detected")
+                    for loss_name, loss_value in loss_items.items():
+                        value = loss_value.detach().float()
+                        is_finite = torch.isfinite(value).all().item()
+                        print(
+                            f"  {loss_name}: value={value.item():.8g}, "
+                            f"finite={bool(is_finite)}"
+                        )
+                    raise RuntimeError("non-finite loss detected")
 
                 accelerator.backward(loss)
 
