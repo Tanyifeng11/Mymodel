@@ -43,6 +43,9 @@ SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/phase1_bf_val_split.js
 EVAL_NUM_SAMPLES="${EVAL_NUM_SAMPLES:-100}"
 EVAL_SEED="${EVAL_SEED:-42}"
 EVAL_DEVICE="${EVAL_DEVICE:-cuda:0}"
+EVAL_PARALLEL="${EVAL_PARALLEL:-0}"
+E0_DEVICE="${E0_DEVICE:-cuda:0}"
+E1_DEVICE="${E1_DEVICE:-cuda:1}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
 EVAL_MODES="${EVAL_MODES:-token}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
@@ -78,6 +81,7 @@ find_latest_gam_ckpt() {
 run_benchmark_if_needed() {
   local run_name="$1"
   local gam_ckpt="$2"
+  local eval_device="${3:-${EVAL_DEVICE}}"
   local run_dir="${EVAL_BASE}/${run_name}"
 
   if [[ "${FORCE_EVAL:-0}" != "1" && -f "${run_dir}/summary_metrics.json" ]]; then
@@ -95,7 +99,7 @@ run_benchmark_if_needed() {
     --modes "${EVAL_MODES}"
     --num_samples "${EVAL_NUM_SAMPLES}"
     --seed "${EVAL_SEED}"
-    --device "${EVAL_DEVICE}"
+    --device "${eval_device}"
     --texture_preprocess_mode "${TEXTURE_PREPROCESS_MODE}"
     --output_dir "${EVAL_BASE}"
     --run_name "${run_name}"
@@ -160,6 +164,8 @@ echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
+echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
+echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, EVAL_DEVICE=${EVAL_DEVICE}"
 echo "============================================"
 
 mkdir -p "${EVAL_BASE}" "${REPORT_DIR}"
@@ -178,11 +184,29 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     exit 1
   fi
 
-  echo "=== Fixed benchmark: E0 ==="
-  run_benchmark_if_needed "e0_baseline" "${E0_CKPT}"
+  if [[ "${EVAL_PARALLEL}" == "1" ]]; then
+    echo "=== Fixed benchmark parallel: E0 on ${E0_DEVICE}, E1 on ${E1_DEVICE} ==="
+    run_benchmark_if_needed "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}" &
+    e0_pid=$!
+    run_benchmark_if_needed "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}" &
+    e1_pid=$!
 
-  echo "=== Fixed benchmark: E1 ==="
-  run_benchmark_if_needed "e1_grouped" "${E1_CKPT}"
+    e0_status=0
+    e1_status=0
+    wait "${e0_pid}" || e0_status=$?
+    wait "${e1_pid}" || e1_status=$?
+
+    if [[ "${e0_status}" != "0" || "${e1_status}" != "0" ]]; then
+      echo "[ERROR] Parallel evaluation failed. E0 status=${e0_status}, E1 status=${e1_status}" >&2
+      exit 1
+    fi
+  else
+    echo "=== Fixed benchmark: E0 ==="
+    run_benchmark_if_needed "e0_baseline" "${E0_CKPT}" "${EVAL_DEVICE}"
+
+    echo "=== Fixed benchmark: E1 ==="
+    run_benchmark_if_needed "e1_grouped" "${E1_CKPT}" "${EVAL_DEVICE}"
+  fi
 else
   echo "[SKIP] RUN_EVAL=0"
 fi
