@@ -46,6 +46,7 @@ EVAL_DEVICE="${EVAL_DEVICE:-cuda:0}"
 EVAL_PARALLEL="${EVAL_PARALLEL:-0}"
 E0_DEVICE="${E0_DEVICE:-cuda:0}"
 E1_DEVICE="${E1_DEVICE:-cuda:1}"
+EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
 EVAL_MODES="${EVAL_MODES:-token}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
@@ -84,7 +85,7 @@ run_benchmark_if_needed() {
   local eval_device="${3:-${EVAL_DEVICE}}"
   local run_dir="${EVAL_BASE}/${run_name}"
 
-  if [[ "${FORCE_EVAL:-0}" != "1" && -f "${run_dir}/summary_metrics.json" ]]; then
+  if [[ "${FORCE_EVAL:-0}" != "1" && "${EVAL_METRICS_ONLY}" != "1" && -f "${run_dir}/summary_metrics.json" ]]; then
     echo "[SKIP] Evaluation exists: ${run_dir}/summary_metrics.json"
     return
   fi
@@ -104,6 +105,9 @@ run_benchmark_if_needed() {
     --output_dir "${EVAL_BASE}"
     --run_name "${run_name}"
   )
+  if [[ "${EVAL_METRICS_ONLY}" == "1" ]]; then
+    cmd+=(--metrics_only)
+  fi
 
   printf '%q ' "${cmd[@]}"
   echo
@@ -165,21 +169,22 @@ echo "E1_CKPT=${E1_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
+echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"
 echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, EVAL_DEVICE=${EVAL_DEVICE}"
 echo "============================================"
 
 mkdir -p "${EVAL_BASE}" "${REPORT_DIR}"
 
 if [[ "${RUN_EVAL:-1}" == "1" ]]; then
-  if [[ ! -f "${TEXTURE_ADAPTER_CKPT}" ]]; then
+  if [[ "${EVAL_METRICS_ONLY}" != "1" && ! -f "${TEXTURE_ADAPTER_CKPT}" ]]; then
     echo "[ERROR] TEXTURE_ADAPTER_CKPT does not exist: ${TEXTURE_ADAPTER_CKPT}" >&2
     exit 1
   fi
-  if [[ ! -f "${E0_CKPT}" ]]; then
+  if [[ "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E0_CKPT}" ]]; then
     echo "[ERROR] E0_CKPT does not exist: ${E0_CKPT}" >&2
     exit 1
   fi
-  if [[ ! -f "${E1_CKPT}" ]]; then
+  if [[ "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E1_CKPT}" ]]; then
     echo "[ERROR] E1_CKPT does not exist: ${E1_CKPT}" >&2
     exit 1
   fi

@@ -52,7 +52,40 @@ def collect_image_paths(exp_dir: str, pattern: str = "*.png") -> List[str]:
     return sorted(paths)
 
 
-def collect_pair_paths(exp_dir: str) -> List[Tuple[str, str, str, str]]:
+def load_sample_path_map(exp_dir: str) -> Dict[str, Dict[str, Optional[str]]]:
+    manifest_file = os.path.join(exp_dir, "experiment_manifest.json")
+    if not os.path.exists(manifest_file):
+        return {}
+
+    try:
+        from eval.benchmark_utils import sample_uid
+
+        with open(manifest_file, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        split_path = manifest.get("split_path")
+        data_root = manifest.get("data_root")
+        if not split_path or not data_root or not os.path.exists(split_path):
+            return {}
+
+        with open(split_path, "r", encoding="utf-8") as f:
+            split = json.load(f)
+
+        by_uid = {}
+        for sample in split:
+            uid = sample_uid(sample)
+            by_uid[uid] = {
+                "target_path": os.path.join(data_root, sample["target"]) if sample.get("target") else None,
+                "texture_path": os.path.join(data_root, sample["texture"]) if sample.get("texture") else None,
+                "sketch_path": os.path.join(data_root, sample["sketch"]) if sample.get("sketch") else None,
+                "mask_path": os.path.join(data_root, sample["mask"]) if sample.get("mask") else None,
+            }
+        return by_uid
+    except Exception as e:
+        print(f"[ablation_report] WARNING: failed to load sample path map for {exp_dir}: {e}")
+        return {}
+
+
+def collect_pair_paths(exp_dir: str) -> List[Tuple[str, Optional[str], Optional[str], Optional[str], Optional[str]]]:
     """
     Walk experiment directory and find (gen, target, texture, sketch) tuples.
     Expects structure like:
@@ -62,6 +95,7 @@ def collect_pair_paths(exp_dir: str) -> List[Tuple[str, str, str, str]]:
     If target/texture/sketch not available in metadata, those entries will be None.
     """
     pairs = []
+    sample_paths = load_sample_path_map(exp_dir)
     meta_file = os.path.join(exp_dir, "per_image_metrics.json")
     if os.path.exists(meta_file):
         with open(meta_file, "r") as f:
@@ -70,17 +104,26 @@ def collect_pair_paths(exp_dir: str) -> List[Tuple[str, str, str, str]]:
             gen = row.get("gen_path", "")
             if not gen or not os.path.exists(gen):
                 continue
+            fallback = sample_paths.get(row.get("uid"), {})
             pairs.append((
                 gen,
-                row.get("target_path"),
-                row.get("texture_path"),
-                row.get("sketch_path"),
-                row.get("mask_path"),
+                row.get("target_path") or fallback.get("target_path"),
+                row.get("texture_path") or fallback.get("texture_path"),
+                row.get("sketch_path") or fallback.get("sketch_path"),
+                row.get("mask_path") or fallback.get("mask_path"),
             ))
     else:
         # Fallback: just collect all generated images
         for p in collect_image_paths(exp_dir):
-            pairs.append((p, None, None, None, None))
+            uid = Path(p).parent.name
+            fallback = sample_paths.get(uid, {})
+            pairs.append((
+                p,
+                fallback.get("target_path"),
+                fallback.get("texture_path"),
+                fallback.get("sketch_path"),
+                fallback.get("mask_path"),
+            ))
     return pairs
 
 
@@ -511,9 +554,11 @@ def main():
             real_paths = json.load(f)
     elif args.real_images_dir:
         real_dir = Path(args.real_images_dir)
-        real_paths = sorted([str(p) for p in real_dir.glob("*.png")] +
-                            [str(p) for p in real_dir.glob("*.jpg")] +
-                            [str(p) for p in real_dir.glob("*.jpeg")])
+        real_paths = sorted(
+            [str(p) for p in real_dir.rglob("*.png")]
+            + [str(p) for p in real_dir.rglob("*.jpg")]
+            + [str(p) for p in real_dir.rglob("*.jpeg")]
+        )
 
     if real_paths:
         print(f"[ablation_report] Found {len(real_paths)} real images for FID/CLIP-I")

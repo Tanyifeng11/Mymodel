@@ -35,6 +35,15 @@ def mode_to_flags(mode_name):
     raise ValueError(f"Unsupported mode: {mode_name}")
 
 
+def sample_paths(args, sample):
+    return {
+        "target_path": os.path.join(args.data_root, sample["target"]) if sample.get("target") else None,
+        "texture_path": os.path.join(args.data_root, sample["texture"]) if sample.get("texture") else None,
+        "sketch_path": os.path.join(args.data_root, sample["sketch"]) if sample.get("sketch") else None,
+        "mask_path": os.path.join(args.data_root, sample["mask"]) if sample.get("mask") else None,
+    }
+
+
 def run_one_inference(args, sample, mode_name, out_dir):
     uid = sample_uid(sample)
     sample_out = os.path.join(out_dir, mode_name, uid)
@@ -42,6 +51,19 @@ def run_one_inference(args, sample, mode_name, out_dir):
     flags = mode_to_flags(mode_name)
     sketch_path = os.path.join(args.data_root, sample["sketch"])
     texture_path = os.path.join(args.data_root, sample["texture"])
+    dst = os.path.join(sample_out, "generated.png")
+    src = os.path.join(sample_out, os.path.basename(sketch_path))
+
+    if os.path.exists(dst):
+        return dst
+    if os.path.exists(src):
+        shutil.move(src, dst)
+        return dst
+    if args.metrics_only:
+        raise FileNotFoundError(
+            f"metrics_only=1 but generated image is missing: {dst}"
+        )
+
     cmd = [
         "python",
         "inference_IMAGGarment-1.py",
@@ -75,10 +97,10 @@ def run_one_inference(args, sample, mode_name, out_dir):
         str(args.alpha4),
     ]
     subprocess.run(cmd, check=True)
-    src = os.path.join(sample_out, os.path.basename(sketch_path))
-    dst = os.path.join(sample_out, "generated.png")
     if os.path.exists(src):
         shutil.move(src, dst)
+    if not os.path.exists(dst):
+        raise FileNotFoundError(f"Generated image not found after inference: {dst}")
     return dst
 
 
@@ -109,18 +131,21 @@ def run_benchmark(args):
     for mode in modes:
         for sample in split:
             gen_path = run_one_inference(args, sample, mode, run_dir)
-            target_path = os.path.join(args.data_root, sample["target"]) if sample.get("target") else None
-            texture_path = os.path.join(args.data_root, sample["texture"]) if sample.get("texture") else None
-            sketch_path = os.path.join(args.data_root, sample["sketch"]) if sample.get("sketch") else None
-            mask_path = os.path.join(args.data_root, sample["mask"]) if sample.get("mask") else None
+            paths = sample_paths(args, sample)
             metrics = evaluate_full(
                 gen_path,
-                target_path=target_path,
-                texture_path=texture_path,
-                sketch_path=sketch_path,
-                mask_path=mask_path,
+                target_path=paths["target_path"],
+                texture_path=paths["texture_path"],
+                sketch_path=paths["sketch_path"],
+                mask_path=paths["mask_path"],
             )
-            row = {"mode": mode, "uid": sample_uid(sample), "gen_path": gen_path, **metrics}
+            row = {
+                "mode": mode,
+                "uid": sample_uid(sample),
+                "gen_path": gen_path,
+                **paths,
+                **metrics,
+            }
             per_image_rows.append(row)
             by_mode[mode].append(row)
 
@@ -156,6 +181,7 @@ def run_benchmark(args):
             "texture_ckpt": args.texture_ckpt,
             "texture_preprocess_mode": args.texture_preprocess_mode,
             "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
+            "metrics_only": args.metrics_only,
         },
     )
 
@@ -178,6 +204,11 @@ def build_argparser():
     ap.add_argument("--alpha4", type=float, default=0.5)
     ap.add_argument("--output_dir", default="eval_outputs")
     ap.add_argument("--run_name", default="step_000000")
+    ap.add_argument(
+        "--metrics_only",
+        action="store_true",
+        help="Only recompute metrics from existing generated.png files; never run inference.",
+    )
     return ap
 
 
