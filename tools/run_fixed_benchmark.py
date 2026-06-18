@@ -127,30 +127,102 @@ def run_benchmark(args):
     modes = parse_modes(args.modes)
     per_image_rows = []
     by_mode = {m: [] for m in modes}
+    print(
+        f"[benchmark] split_samples={len(split)}, requested_samples={args.num_samples}, "
+        f"split_path={args.split_path}"
+    )
+    if len(split) != args.num_samples:
+        raise RuntimeError(
+            f"Fixed split contains {len(split)} samples, but {args.num_samples} "
+            f"were requested. Use the same {args.num_samples}-sample split as E0/E1: "
+            f"{args.split_path}"
+        )
+    write_manifest(
+        os.path.join(run_dir, "experiment_manifest.json"),
+        {
+            "task": "fixed_benchmark",
+            "status": "running",
+            "run_name": args.run_name,
+            "modes": modes,
+            "seed": args.seed,
+            "requested_samples": args.num_samples,
+            "split_samples": len(split),
+            "split_path": args.split_path,
+            "dataset_json": args.dataset_json,
+            "data_root": args.data_root,
+            "gam_ckpt": args.gam_ckpt,
+            "texture_ckpt": args.texture_ckpt,
+            "texture_preprocess_mode": args.texture_preprocess_mode,
+            "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
+            "metrics_only": args.metrics_only,
+        },
+    )
 
+    generated_rows = []
     for mode in modes:
-        for sample in split:
+        for sample_index, sample in enumerate(split, start=1):
+            print(
+                f"[benchmark] generating mode={mode}, sample={sample_index}/{len(split)}, "
+                f"uid={sample_uid(sample)}"
+            )
             gen_path = run_one_inference(args, sample, mode, run_dir)
             paths = sample_paths(args, sample)
-            metrics = evaluate_full(
-                gen_path,
-                target_path=paths["target_path"],
-                texture_path=paths["texture_path"],
-                sketch_path=paths["sketch_path"],
-                mask_path=paths["mask_path"],
+            generated_rows.append(
+                {
+                    "mode": mode,
+                    "uid": sample_uid(sample),
+                    "gen_path": gen_path,
+                    **paths,
+                }
             )
-            row = {
-                "mode": mode,
-                "uid": sample_uid(sample),
-                "gen_path": gen_path,
-                **paths,
-                **metrics,
-            }
-            per_image_rows.append(row)
-            by_mode[mode].append(row)
 
-        mode_grid_paths = [r["gen_path"] for r in by_mode[mode]]
+        mode_grid_paths = [
+            row["gen_path"] for row in generated_rows if row["mode"] == mode
+        ]
         make_grid(mode_grid_paths, os.path.join(run_dir, f"grid_{mode}.png"), cols=4)
+
+    write_manifest(
+        os.path.join(run_dir, "experiment_manifest.json"),
+        {
+            "task": "fixed_benchmark",
+            "status": "evaluating",
+            "run_name": args.run_name,
+            "modes": modes,
+            "seed": args.seed,
+            "requested_samples": args.num_samples,
+            "split_samples": len(split),
+            "generated_images": len(generated_rows),
+            "split_path": args.split_path,
+            "dataset_json": args.dataset_json,
+            "data_root": args.data_root,
+            "gam_ckpt": args.gam_ckpt,
+            "texture_ckpt": args.texture_ckpt,
+            "texture_preprocess_mode": args.texture_preprocess_mode,
+            "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
+            "metrics_only": args.metrics_only,
+        },
+    )
+
+    for row_index, generated_row in enumerate(generated_rows, start=1):
+        print(
+            f"[benchmark] evaluating sample={row_index}/{len(generated_rows)}, "
+            f"uid={generated_row['uid']}"
+        )
+        metrics = evaluate_full(
+            generated_row["gen_path"],
+            target_path=generated_row["target_path"],
+            texture_path=generated_row["texture_path"],
+            sketch_path=generated_row["sketch_path"],
+            mask_path=generated_row["mask_path"],
+        )
+        row = {
+            **generated_row,
+            **metrics,
+        }
+        per_image_rows.append(row)
+        by_mode[row["mode"]].append(row)
+        write_csv(os.path.join(run_dir, "per_image_metrics.csv"), per_image_rows)
+        write_json(os.path.join(run_dir, "per_image_metrics.json"), per_image_rows)
 
     summary_rows = []
     for mode, rows in by_mode.items():
@@ -171,9 +243,13 @@ def run_benchmark(args):
         os.path.join(run_dir, "experiment_manifest.json"),
         {
             "task": "fixed_benchmark",
+            "status": "completed",
             "run_name": args.run_name,
             "modes": modes,
             "seed": args.seed,
+            "requested_samples": args.num_samples,
+            "split_samples": len(split),
+            "generated_images": len(generated_rows),
             "split_path": args.split_path,
             "dataset_json": args.dataset_json,
             "data_root": args.data_root,
