@@ -33,11 +33,13 @@ TEXTURE_OUTPUT_DIR="${TEXTURE_OUTPUT_DIR:-${OUTPUT_BASE}/texture_adapter_bf_e20}
 E0_OUTPUT_DIR="${E0_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e0_baseline_e5}"
 E1_OUTPUT_DIR="${E1_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e1_grouped_e5}"
 E2A_OUTPUT_DIR="${E2A_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2a_region_e5}"
+E2B_OUTPUT_DIR="${E2B_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_gate_e5}"
 
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-}"
 E0_CKPT="${E0_CKPT:-}"
 E1_CKPT="${E1_CKPT:-}"
 E2A_CKPT="${E2A_CKPT:-}"
+E2B_CKPT="${E2B_CKPT:-}"
 
 EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
 REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report}"
@@ -49,6 +51,7 @@ EVAL_PARALLEL="${EVAL_PARALLEL:-0}"
 E0_DEVICE="${E0_DEVICE:-cuda:0}"
 E1_DEVICE="${E1_DEVICE:-cuda:1}"
 E2A_DEVICE="${E2A_DEVICE:-${EVAL_DEVICE}}"
+E2B_DEVICE="${E2B_DEVICE:-${EVAL_DEVICE}}"
 EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
 EVAL_MODES="${EVAL_MODES:-token}"
@@ -56,7 +59,19 @@ TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
 RUN_E0="${RUN_E0:-0}"
 RUN_E1="${RUN_E1:-0}"
 RUN_E2A="${RUN_E2A:-1}"
+RUN_E2B="${RUN_E2B:-0}"
 REPORT_EXPERIMENTS="${REPORT_EXPERIMENTS:-e0_baseline,e1_grouped,e2a_region}"
+CLIP_MODEL_PATH="${CLIP_MODEL_PATH:-${PROJECT_ROOT}/models/clip}"
+COMPUTE_FID="${COMPUTE_FID:-1}"
+COMPUTE_CLIP_I="${COMPUTE_CLIP_I:-1}"
+COMPUTE_LEAKAGE="${COMPUTE_LEAKAGE:-1}"
+COMPUTE_STRUCTURE="${COMPUTE_STRUCTURE:-1}"
+DEBUG_SAVE_MASKS="${DEBUG_SAVE_MASKS:-20}"
+FAIL_ON_EMPTY_MASKS="${FAIL_ON_EMPTY_MASKS:-0}"
+MIN_VALID_PIXELS="${MIN_VALID_PIXELS:-50}"
+TEXTURE_IMAGES_DIR="${TEXTURE_IMAGES_DIR:-}"
+SKETCH_IMAGES_DIR="${SKETCH_IMAGES_DIR:-}"
+MASK_DIR="${MASK_DIR:-}"
 
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
@@ -92,8 +107,8 @@ run_benchmark_if_needed() {
   local eval_device="${3:-${EVAL_DEVICE}}"
   local run_dir="${EVAL_BASE}/${run_name}"
 
-  if [[ "${FORCE_EVAL:-0}" != "1" && "${EVAL_METRICS_ONLY}" != "1" && -f "${run_dir}/summary_metrics.json" ]]; then
-    echo "[SKIP] Evaluation exists: ${run_dir}/summary_metrics.json"
+  if [[ "${FORCE_EVAL:-0}" != "1" && "${EVAL_METRICS_ONLY}" != "1" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
+    echo "[SKIP] Evaluation exists: ${run_dir}/metrics_summary.json"
     return
   fi
 
@@ -109,9 +124,27 @@ run_benchmark_if_needed() {
     --seed "${EVAL_SEED}"
     --device "${eval_device}"
     --texture_preprocess_mode "${TEXTURE_PREPROCESS_MODE}"
+    --real_images_dir "${REAL_IMG_DIR}"
+    --clip_model_path "${CLIP_MODEL_PATH}"
+    --compute_fid "${COMPUTE_FID}"
+    --compute_clip_i "${COMPUTE_CLIP_I}"
+    --compute_leakage "${COMPUTE_LEAKAGE}"
+    --compute_structure "${COMPUTE_STRUCTURE}"
+    --debug_save_masks "${DEBUG_SAVE_MASKS}"
+    --fail_on_empty_masks "${FAIL_ON_EMPTY_MASKS}"
+    --min_valid_pixels "${MIN_VALID_PIXELS}"
     --output_dir "${EVAL_BASE}"
     --run_name "${run_name}"
   )
+  if [[ -n "${TEXTURE_IMAGES_DIR}" ]]; then
+    cmd+=(--texture_images_dir "${TEXTURE_IMAGES_DIR}")
+  fi
+  if [[ -n "${SKETCH_IMAGES_DIR}" ]]; then
+    cmd+=(--sketch_images_dir "${SKETCH_IMAGES_DIR}")
+  fi
+  if [[ -n "${MASK_DIR}" ]]; then
+    cmd+=(--mask_dir "${MASK_DIR}")
+  fi
   if [[ "${EVAL_METRICS_ONLY}" == "1" ]]; then
     cmd+=(--metrics_only)
   fi
@@ -168,6 +201,9 @@ fi
 if [[ -z "${E2A_CKPT}" ]]; then
   E2A_CKPT="$(find_latest_gam_ckpt "${E2A_OUTPUT_DIR}")"
 fi
+if [[ -z "${E2B_CKPT}" ]]; then
+  E2B_CKPT="$(find_latest_gam_ckpt "${E2B_OUTPUT_DIR}")"
+fi
 
 echo "============================================"
 echo "Phase 1/2A evaluation"
@@ -177,12 +213,14 @@ echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
 echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
+echo "E2B_CKPT=${E2B_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
 echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"
-echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}"
-echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}"
+echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E2B=${RUN_E2B}"
+echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}, E2B_DEVICE=${E2B_DEVICE}"
+echo "COMPUTE_FID=${COMPUTE_FID}, COMPUTE_CLIP_I=${COMPUTE_CLIP_I}, COMPUTE_LEAKAGE=${COMPUTE_LEAKAGE}, COMPUTE_STRUCTURE=${COMPUTE_STRUCTURE}"
 echo "============================================"
 
 mkdir -p "${EVAL_BASE}" "${REPORT_DIR}"
@@ -204,6 +242,10 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     echo "[ERROR] E2A_CKPT does not exist: ${E2A_CKPT}" >&2
     exit 1
   fi
+  if [[ "${RUN_E2B}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E2B_CKPT}" ]]; then
+    echo "[ERROR] E2B_CKPT does not exist: ${E2B_CKPT}" >&2
+    exit 1
+  fi
 
   if [[ "${EVAL_PARALLEL}" == "1" ]]; then
     pids=()
@@ -222,6 +264,11 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
       run_benchmark_if_needed "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}" &
       pids+=("$!")
       names+=("E2A")
+    fi
+    if [[ "${RUN_E2B}" == "1" ]]; then
+      run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}" &
+      pids+=("$!")
+      names+=("E2B")
     fi
 
     for i in "${!pids[@]}"; do
@@ -245,6 +292,10 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
       echo "=== Fixed benchmark: E2A ==="
       run_benchmark_if_needed "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
     fi
+    if [[ "${RUN_E2B}" == "1" ]]; then
+      echo "=== Fixed benchmark: E2B ==="
+      run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
+    fi
   fi
 else
   echo "[SKIP] RUN_EVAL=0"
@@ -258,6 +309,7 @@ if [[ "${RUN_REPORT:-1}" == "1" ]]; then
     --output_dir "${REPORT_DIR}"
     --experiment_names "${REPORT_EXPERIMENTS}"
     --device "${REPORT_DEVICE}"
+    --clip_model_path "${CLIP_MODEL_PATH}"
   )
 
   echo "=== Building report and radar chart ==="

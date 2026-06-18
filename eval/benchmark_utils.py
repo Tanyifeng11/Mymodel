@@ -6,6 +6,8 @@ import random
 import subprocess
 from datetime import datetime, timezone
 
+from eval.eval_utils import json_safe
+
 
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
@@ -26,7 +28,7 @@ def git_commit_hash(default="unknown"):
 def write_json(path: str, obj):
     ensure_dir(os.path.dirname(path) or ".")
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, ensure_ascii=False)
+        json.dump(json_safe(obj), f, indent=2, ensure_ascii=False)
 
 
 def write_csv(path: str, rows):
@@ -40,7 +42,7 @@ def write_csv(path: str, rows):
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(json_safe(row))
 
 
 def write_markdown_table(path: str, rows, title="Results"):
@@ -53,7 +55,15 @@ def write_markdown_table(path: str, rows, title="Results"):
         sep = "| " + " | ".join(["---"] * len(keys)) + " |"
         lines = [f"# {title}", "", header, sep]
         for r in rows:
-            lines.append("| " + " | ".join(str(r.get(k, "")) for k in keys) + " |")
+            safe_row = json_safe(r)
+            lines.append(
+                "| "
+                + " | ".join(
+                    "—" if safe_row.get(k) is None else str(safe_row.get(k, ""))
+                    for k in keys
+                )
+                + " |"
+            )
         content = "\n".join(lines) + "\n"
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)

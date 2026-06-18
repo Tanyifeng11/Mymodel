@@ -4,6 +4,8 @@ __pycache__/
 output/
 output_sd_base/
 outputs/
+eval_outputs/
+eval_output/
 *.zip
 timed
 # model weights

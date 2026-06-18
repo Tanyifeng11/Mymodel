@@ -10,14 +10,21 @@ Covers 4 categories for paper-ready ablation tables:
 
 import math
 import os
+import warnings
 import numpy as np
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from PIL import Image
-from scipy import linalg
+from PIL import Image, ImageFilter
+
+from eval.eval_utils import (
+    estimate_foreground_mask,
+    existing_file,
+    prepare_evaluation_masks,
+    safe_open_rgb,
+)
 
 
 # ============================================================================
@@ -25,14 +32,19 @@ from scipy import linalg
 # ============================================================================
 
 def _open_rgb(path):
-    return Image.open(path).convert("RGB")
+    image = safe_open_rgb(path)
+    if image is None:
+        raise FileNotFoundError(f"image missing or unreadable: {path}")
+    return image
 
 
 def _open_mask(path, size):
-    if path is None:
+    if not existing_file(path):
         return None
-    m = Image.open(path).convert("L").resize(size, Image.NEAREST)
-    return m
+    try:
+        return Image.open(path).convert("L").resize(size, Image.NEAREST)
+    except Exception:
+        return None
 
 
 def _iter_pixels(img, mask=None):
@@ -40,8 +52,119 @@ def _iter_pixels(img, mask=None):
     if mask is None:
         return px
     m = list(mask.getdata())
-    out = [p for p, mm in zip(px, m) if mm > 0]
-    return out if out else px
+    return [p for p, mm in zip(px, m) if mm > 0]
+
+
+def _nan_result(keys, reason):
+    warnings.warn(reason, RuntimeWarning)
+    result = {key: float("nan") for key in keys}
+    result["metric_warnings"] = [reason]
+    return result
+
+
+def _valid_pixels(mask, min_valid_pixels):
+    return mask is not None and int(mask.sum()) >= int(min_valid_pixels)
+
+
+def _rgb_to_lab(arr):
+    try:
+        from skimage.color import rgb2lab
+
+        return rgb2lab(arr.astype(np.float32) / 255.0).astype(np.float32)
+    except ImportError:
+        try:
+            import cv2
+
+            lab = cv2.cvtColor(arr, cv2.COLOR_RGB2LAB).astype(np.float32)
+            lab[..., 0] *= 100.0 / 255.0
+            lab[..., 1:] -= 128.0
+            return lab
+        except ImportError:
+            rgb = arr.astype(np.float32) / 255.0
+            rgb = np.where(
+                rgb <= 0.04045,
+                rgb / 12.92,
+                ((rgb + 0.055) / 1.055) ** 2.4,
+            )
+            xyz = rgb @ np.array(
+                [
+                    [0.4124564, 0.3575761, 0.1804375],
+                    [0.2126729, 0.7151522, 0.0721750],
+                    [0.0193339, 0.1191920, 0.9503041],
+                ],
+                dtype=np.float32,
+            ).T
+            xyz /= np.array([0.95047, 1.0, 1.08883], dtype=np.float32)
+            delta = 6.0 / 29.0
+            f_xyz = np.where(
+                xyz > delta**3,
+                np.cbrt(xyz),
+                xyz / (3.0 * delta * delta) + 4.0 / 29.0,
+            )
+            return np.stack(
+                [
+                    116.0 * f_xyz[..., 1] - 16.0,
+                    500.0 * (f_xyz[..., 0] - f_xyz[..., 1]),
+                    200.0 * (f_xyz[..., 1] - f_xyz[..., 2]),
+                ],
+                axis=-1,
+            ).astype(np.float32)
+
+
+def _gradient_magnitude(gray):
+    gray = gray.astype(np.float32) / 255.0
+    grad_y, grad_x = np.gradient(gray)
+    return np.sqrt(grad_x * grad_x + grad_y * grad_y)
+
+
+def _binary_edges(gray, low_threshold=0.08, high_threshold=0.16):
+    try:
+        import cv2
+
+        return cv2.Canny(
+            gray.astype(np.uint8),
+            int(low_threshold * 1000),
+            int(high_threshold * 1000),
+        ) > 0
+    except ImportError:
+        magnitude = _gradient_magnitude(gray)
+        adaptive = max(
+            low_threshold,
+            float(np.percentile(magnitude, 80)) if magnitude.size else low_threshold,
+        )
+        return magnitude >= adaptive
+
+
+def _dilate_binary(mask, kernel_size=5):
+    try:
+        import cv2
+
+        return cv2.dilate(
+            mask.astype(np.uint8),
+            np.ones((kernel_size, kernel_size), dtype=np.uint8),
+        ) > 0
+    except ImportError:
+        image = Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
+        return np.asarray(image.filter(ImageFilter.MaxFilter(kernel_size))) > 127
+
+
+def _hsv_histogram(arr, mask=None, bins=(24, 16, 16)):
+    hsv = np.asarray(Image.fromarray(arr, mode="RGB").convert("HSV"), dtype=np.uint8)
+    pixels = hsv[mask] if mask is not None else hsv.reshape(-1, 3)
+    if pixels.size == 0:
+        return None
+    parts = []
+    for channel, channel_bins in enumerate(bins):
+        hist, _ = np.histogram(
+            pixels[:, channel],
+            bins=channel_bins,
+            range=(0, 256),
+        )
+        total = hist.sum()
+        if total <= 0:
+            return None
+        parts.append(hist.astype(np.float64) / total / len(bins))
+    return np.concatenate(parts)
 
 
 def _pil_to_tensor(pil_img, size=None):
@@ -73,7 +196,8 @@ def _get_inception_v3(device="cuda"):
     """Lazy-load InceptionV3 with the standard FID feature layer (pool3, 2048-d)."""
     global _inception_v3
     if _inception_v3 is not None:
-        return _inception_v3.to(device)
+        model, normalize = _inception_v3
+        return model.to(device), normalize
 
     from torchvision.models import inception_v3
     from torchvision.transforms import Normalize
@@ -136,6 +260,8 @@ def compute_fid(
 
     FID = ||mu_g - mu_r||^2 + Tr(Sigma_g + Sigma_r - 2*(Sigma_g*Sigma_r)^{1/2})
     """
+    from scipy import linalg
+
     mu_g = np.mean(gen_features, axis=0)
     mu_r = np.mean(real_features, axis=0)
     sigma_g = np.cov(gen_features, rowvar=False)
@@ -163,32 +289,100 @@ def compute_fid_from_paths(
     batch_size: int = 32,
     device: str = "cuda",
 ) -> float:
-    """High-level FID: given two lists of image paths, return FID score."""
-    gen_feat = extract_inception_features(gen_paths, batch_size=batch_size, device=device)
-    real_feat = extract_inception_features(real_paths, batch_size=batch_size, device=device)
+    """Compute FID with torchmetrics first and a torchvision fallback."""
+    gen_paths = [path for path in gen_paths if existing_file(path)]
+    real_paths = [path for path in real_paths if existing_file(path)]
+    if len(gen_paths) < 2 or len(real_paths) < 2:
+        raise ValueError(
+            f"FID needs at least 2 generated and 2 real images; "
+            f"got generated={len(gen_paths)}, real={len(real_paths)}"
+        )
+    device = device if str(device).startswith("cuda") and torch.cuda.is_available() else "cpu"
+
+    try:
+        from torchmetrics.image.fid import FrechetInceptionDistance
+
+        metric = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
+        for paths, real in ((real_paths, True), (gen_paths, False)):
+            for index in range(0, len(paths), batch_size):
+                batch = []
+                for path in paths[index : index + batch_size]:
+                    image = _open_rgb(path).resize((299, 299), Image.BICUBIC)
+                    tensor = torch.from_numpy(
+                        np.asarray(image, dtype=np.float32) / 255.0
+                    ).permute(2, 0, 1)
+                    batch.append(tensor)
+                metric.update(torch.stack(batch).to(device), real=real)
+        return float(metric.compute().detach().cpu().item())
+    except Exception as torchmetrics_error:
+        warnings.warn(
+            f"torchmetrics FID unavailable, using torchvision fallback: "
+            f"{torchmetrics_error}",
+            RuntimeWarning,
+        )
+
+    gen_feat = extract_inception_features(
+        gen_paths, batch_size=batch_size, device=device
+    )
+    real_feat = extract_inception_features(
+        real_paths, batch_size=batch_size, device=device
+    )
     return compute_fid(gen_feat, real_feat)
 
 
 # ---- CLIP-I (CLIP Image Similarity) ----
 
-_clip_model_cache = None
-_clip_processor_cache = None
+_clip_model_cache = {}
 
 
 def _get_clip_model(device="cuda", model_name="openai/clip-vit-large-patch14"):
     """Lazy-load CLIP model for image similarity."""
-    global _clip_model_cache, _clip_processor_cache
-    if _clip_model_cache is not None:
-        return _clip_model_cache.to(device), _clip_processor_cache
+    global _clip_model_cache
+    device = device if str(device).startswith("cuda") and torch.cuda.is_available() else "cpu"
+    cache_key = str(model_name)
+    if cache_key in _clip_model_cache:
+        model, processor = _clip_model_cache[cache_key]
+        return model.to(device), processor
 
-    from transformers import CLIPModel, CLIPProcessor
-    model = CLIPModel.from_pretrained(model_name)
-    processor = CLIPProcessor.from_pretrained(model_name)
+    try:
+        from transformers import CLIPImageProcessor, CLIPModel, CLIPProcessor
+
+        model = CLIPModel.from_pretrained(model_name)
+        try:
+            processor = CLIPProcessor.from_pretrained(model_name)
+        except Exception:
+            processor = CLIPImageProcessor.from_pretrained(model_name)
+    except Exception as clip_model_error:
+        try:
+            from transformers import (
+                CLIPImageProcessor,
+                CLIPVisionModelWithProjection,
+            )
+
+            try:
+                model = CLIPVisionModelWithProjection.from_pretrained(model_name)
+            except Exception:
+                model = CLIPVisionModelWithProjection.from_pretrained(
+                    model_name, subfolder="models/image_encoder"
+                )
+            try:
+                processor = CLIPImageProcessor.from_pretrained(model_name)
+            except Exception:
+                processor = CLIPImageProcessor()
+            warnings.warn(
+                f"CLIPModel unavailable at {model_name}; using "
+                f"CLIPVisionModelWithProjection: {clip_model_error}",
+                RuntimeWarning,
+            )
+        except Exception as vision_error:
+            raise RuntimeError(
+                f"failed to load CLIP model from {model_name}; "
+                f"CLIPModel error={clip_model_error}; vision error={vision_error}"
+            ) from vision_error
     model.eval()
     for p in model.parameters():
         p.requires_grad = False
-    _clip_model_cache = model
-    _clip_processor_cache = processor
+    _clip_model_cache[cache_key] = (model, processor)
     return model.to(device), processor
 
 
@@ -197,16 +391,24 @@ def extract_clip_image_features(
     image_paths: List[str],
     batch_size: int = 16,
     device: str = "cuda",
+    model_name: str = "openai/clip-vit-large-patch14",
 ) -> np.ndarray:
     """Extract CLIP image embeddings [N, D] from image paths."""
-    model, processor = _get_clip_model(device)
+    image_paths = [path for path in image_paths if existing_file(path)]
+    if not image_paths:
+        raise ValueError("no valid images for CLIP-I")
+    device = device if str(device).startswith("cuda") and torch.cuda.is_available() else "cpu"
+    model, processor = _get_clip_model(device, model_name=model_name)
     features = []
 
     for i in range(0, len(image_paths), batch_size):
         batch_paths = image_paths[i : i + batch_size]
         images = [_open_rgb(p) for p in batch_paths]
         inputs = processor(images=images, return_tensors="pt").to(device)
-        feat = model.get_image_features(**inputs)
+        if hasattr(model, "get_image_features"):
+            feat = model.get_image_features(**inputs)
+        else:
+            feat = model(**inputs).image_embeds
         feat = feat / feat.norm(dim=-1, keepdim=True)  # L2 normalize
         features.append(feat.cpu().numpy())
 
@@ -218,6 +420,7 @@ def compute_clip_i(
     ref_paths: List[str],
     batch_size: int = 16,
     device: str = "cuda",
+    model_name: str = "openai/clip-vit-large-patch14",
 ) -> Dict[str, float]:
     """
     Compute CLIP-I between generated and reference images.
@@ -226,11 +429,13 @@ def compute_clip_i(
         clip_i_mean: mean cosine similarity
         clip_i_std:  standard deviation
     """
-    gen_feat = extract_clip_image_features(gen_paths, batch_size=batch_size, device=device)
-    ref_feat = extract_clip_image_features(ref_paths, batch_size=batch_size, device=device)
-
-    # Pairwise cosine similarity (already L2-normalized, so dot product)
-    sims = np.sum(gen_feat * ref_feat, axis=1)  # [N]
+    sims = compute_clip_i_values(
+        gen_paths,
+        ref_paths,
+        batch_size=batch_size,
+        device=device,
+        model_name=model_name,
+    )
 
     return {
         "clip_i_mean": float(np.mean(sims)),
@@ -238,6 +443,41 @@ def compute_clip_i(
         "clip_i_min": float(np.min(sims)),
         "clip_i_max": float(np.max(sims)),
     }
+
+
+def compute_clip_i_values(
+    gen_paths: List[str],
+    ref_paths: List[str],
+    batch_size: int = 16,
+    device: str = "cuda",
+    model_name: str = "openai/clip-vit-large-patch14",
+) -> np.ndarray:
+    if len(gen_paths) != len(ref_paths):
+        raise ValueError(
+            f"CLIP-I needs paired paths; got generated={len(gen_paths)}, "
+            f"reference={len(ref_paths)}"
+        )
+    valid_pairs = [
+        (gen_path, ref_path)
+        for gen_path, ref_path in zip(gen_paths, ref_paths)
+        if existing_file(gen_path) and existing_file(ref_path)
+    ]
+    if not valid_pairs:
+        raise ValueError("no valid generated/reference pairs for CLIP-I")
+    valid_gen, valid_ref = zip(*valid_pairs)
+    gen_feat = extract_clip_image_features(
+        list(valid_gen),
+        batch_size=batch_size,
+        device=device,
+        model_name=model_name,
+    )
+    ref_feat = extract_clip_image_features(
+        list(valid_ref),
+        batch_size=batch_size,
+        device=device,
+        model_name=model_name,
+    )
+    return np.sum(gen_feat * ref_feat, axis=1)
 
 
 # ---- SSIM (using skimage or torchmetrics) ----
@@ -285,7 +525,14 @@ def compute_texture_sensitivity_score(
         tss_hsv:    mean pairwise HSV histogram L1
     """
     if len(gen_image_groups) == 0 or len(gen_image_groups[0]) < 2:
-        return {"tss_clip": 0.0, "tss_lab": 0.0, "tss_hsv": 0.0}
+        return {
+            "tss_clip_mean": float("nan"),
+            "tss_clip_std": float("nan"),
+            "tss_lab_mean": float("nan"),
+            "tss_lab_std": float("nan"),
+            "tss_hsv_mean": float("nan"),
+            "tss_hsv_std": float("nan"),
+        }
 
     model, processor = _get_clip_model(device)
     all_clip_dists = []
@@ -318,12 +565,12 @@ def compute_texture_sensitivity_score(
                 all_hsv_dists.append(hsv_dist)
 
     return {
-        "tss_clip_mean": float(np.mean(all_clip_dists)) if all_clip_dists else 0.0,
-        "tss_clip_std": float(np.std(all_clip_dists)) if all_clip_dists else 0.0,
-        "tss_lab_mean": float(np.mean(all_lab_dists)) if all_lab_dists else 0.0,
-        "tss_lab_std": float(np.std(all_lab_dists)) if all_lab_dists else 0.0,
-        "tss_hsv_mean": float(np.mean(all_hsv_dists)) if all_hsv_dists else 0.0,
-        "tss_hsv_std": float(np.std(all_hsv_dists)) if all_hsv_dists else 0.0,
+        "tss_clip_mean": float(np.mean(all_clip_dists)) if all_clip_dists else float("nan"),
+        "tss_clip_std": float(np.std(all_clip_dists)) if all_clip_dists else float("nan"),
+        "tss_lab_mean": float(np.mean(all_lab_dists)) if all_lab_dists else float("nan"),
+        "tss_lab_std": float(np.std(all_lab_dists)) if all_lab_dists else float("nan"),
+        "tss_hsv_mean": float(np.mean(all_hsv_dists)) if all_hsv_dists else float("nan"),
+        "tss_hsv_std": float(np.std(all_hsv_dists)) if all_hsv_dists else float("nan"),
     }
 
 
@@ -331,7 +578,11 @@ def compute_texture_color_fidelity(
     gen_path: str,
     texture_path: str,
     mask_path: Optional[str] = None,
-) -> Dict[str, float]:
+    sketch_path: Optional[str] = None,
+    target_path: Optional[str] = None,
+    min_valid_pixels: int = 50,
+    mask_bundle: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Texture Color Fidelity (TCF).
     How closely the generated garment's colors match the texture reference.
@@ -342,38 +593,82 @@ def compute_texture_color_fidelity(
         tcf_hsv_l1:     HSV histogram L1 distance (lower = better match)
         tcf_rgb_l2:     RGB mean L2 distance (lower = better match)
     """
-    gen = _open_rgb(gen_path)
-    tex = _open_rgb(texture_path).resize(gen.size, Image.BICUBIC)
-    mask = _open_mask(mask_path, gen.size) if mask_path else None
+    keys = [
+        "tcf_lab_delta",
+        "tcf_hsv_l1",
+        "tcf_rgb_l2",
+        "gen_lab_mean_L",
+        "gen_lab_mean_a",
+        "gen_lab_mean_b",
+        "tex_lab_mean_L",
+        "tex_lab_mean_a",
+        "tex_lab_mean_b",
+        "garment_mask_pixels",
+    ]
+    gen = safe_open_rgb(gen_path)
+    tex = safe_open_rgb(texture_path)
+    if gen is None:
+        return _nan_result(keys, f"TCF skipped: generated image missing: {gen_path}")
+    if tex is None:
+        return _nan_result(keys, f"TCF skipped: texture image missing: {texture_path}")
 
-    # LAB
+    tex = tex.resize(gen.size, Image.BICUBIC)
+    if mask_bundle is None:
+        mask_bundle = prepare_evaluation_masks(
+            gen.size,
+            mask_path=mask_path,
+            sketch_path=sketch_path,
+            target_path=target_path,
+            gen_path=gen_path,
+        )
+    garment_mask = mask_bundle.get("garment")
+    garment_pixels = int(garment_mask.sum()) if garment_mask is not None else 0
+    if not _valid_pixels(garment_mask, min_valid_pixels):
+        result = _nan_result(
+            keys,
+            f"TCF skipped: garment mask has {garment_pixels} pixels, "
+            f"minimum is {min_valid_pixels}",
+        )
+        result["garment_mask_pixels"] = garment_pixels
+        return result
+
+    gen_arr = _pil_to_np(gen)
+    tex_arr = _pil_to_np(tex)
     try:
-        import cv2
-        gen_lab = cv2.cvtColor(_pil_to_np(gen), cv2.COLOR_RGB2LAB).astype(np.float32)
-        tex_lab = cv2.cvtColor(_pil_to_np(tex), cv2.COLOR_RGB2LAB).astype(np.float32)
-        if mask is not None:
-            mask_np = np.asarray(mask, dtype=np.uint8) > 127
-            gen_px = gen_lab[mask_np]
-            tex_px = tex_lab[mask_np] if mask_np.shape == tex_lab.shape[:2] else tex_lab.reshape(-1, 3)
-        else:
-            gen_px = gen_lab.reshape(-1, 3)
-            tex_px = tex_lab.reshape(-1, 3)
-        lab_delta = float(np.linalg.norm(gen_px.mean(axis=0) - tex_px.mean(axis=0)))
-    except ImportError:
-        lab_delta = 0.0
+        gen_lab = _rgb_to_lab(gen_arr)
+        tex_lab = _rgb_to_lab(tex_arr)
+    except Exception as exc:
+        result = _nan_result(keys, f"TCF LAB conversion failed: {exc}")
+        result["garment_mask_pixels"] = garment_pixels
+        return result
 
-    # HSV histogram
-    hsv_l1 = hist_l1(histogram_rgb(gen, mask=mask), histogram_rgb(tex))
+    gen_lab_mean = gen_lab[garment_mask].mean(axis=0)
+    tex_lab_mean = tex_lab.reshape(-1, 3).mean(axis=0)
+    lab_delta = float(np.linalg.norm(gen_lab_mean - tex_lab_mean))
 
-    # RGB mean L2
-    g_mean = mean_rgb(gen, mask=mask)
-    t_mean = mean_rgb(tex)
-    rgb_l2_val = rgb_l2(g_mean, t_mean)
+    gen_hsv_hist = _hsv_histogram(gen_arr, garment_mask)
+    tex_hsv_hist = _hsv_histogram(tex_arr)
+    hsv_l1 = (
+        float(np.abs(gen_hsv_hist - tex_hsv_hist).sum())
+        if gen_hsv_hist is not None and tex_hsv_hist is not None
+        else float("nan")
+    )
+    gen_rgb_mean = gen_arr[garment_mask].astype(np.float32).mean(axis=0)
+    tex_rgb_mean = tex_arr.reshape(-1, 3).astype(np.float32).mean(axis=0)
+    rgb_l2_val = float(np.linalg.norm(gen_rgb_mean - tex_rgb_mean))
 
     return {
         "tcf_lab_delta": lab_delta,
         "tcf_hsv_l1": hsv_l1,
         "tcf_rgb_l2": rgb_l2_val,
+        "gen_lab_mean_L": float(gen_lab_mean[0]),
+        "gen_lab_mean_a": float(gen_lab_mean[1]),
+        "gen_lab_mean_b": float(gen_lab_mean[2]),
+        "tex_lab_mean_L": float(tex_lab_mean[0]),
+        "tex_lab_mean_a": float(tex_lab_mean[1]),
+        "tex_lab_mean_b": float(tex_lab_mean[2]),
+        "garment_mask_pixels": garment_pixels,
+        "metric_warnings": [],
     }
 
 
@@ -381,7 +676,11 @@ def compute_texture_pattern_fidelity(
     gen_path: str,
     texture_path: str,
     mask_path: Optional[str] = None,
-) -> Dict[str, float]:
+    sketch_path: Optional[str] = None,
+    target_path: Optional[str] = None,
+    min_valid_pixels: int = 50,
+    mask_bundle: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Texture Pattern Fidelity (TPF).
     How closely the generated garment's local patterns match the texture.
@@ -390,9 +689,31 @@ def compute_texture_pattern_fidelity(
         tpf_patch_sim:    Patch-level texture similarity (higher = better)
         tpf_gram_l1:      Gram matrix L1 distance at multiple VGG layers (lower = better)
     """
-    gen = _open_rgb(gen_path)
-    tex = _open_rgb(texture_path).resize(gen.size, Image.BICUBIC)
-    mask = _open_mask(mask_path, gen.size) if mask_path else None
+    keys = ["tpf_patch_sim", "tpf_gram_l1"]
+    gen = safe_open_rgb(gen_path)
+    tex = safe_open_rgb(texture_path)
+    if gen is None:
+        return _nan_result(keys, f"TPF skipped: generated image missing: {gen_path}")
+    if tex is None:
+        return _nan_result(keys, f"TPF skipped: texture image missing: {texture_path}")
+    tex = tex.resize(gen.size, Image.BICUBIC)
+    if mask_bundle is None:
+        mask_bundle = prepare_evaluation_masks(
+            gen.size,
+            mask_path=mask_path,
+            sketch_path=sketch_path,
+            target_path=target_path,
+            gen_path=gen_path,
+        )
+    garment_mask = mask_bundle.get("garment")
+    garment_pixels = int(garment_mask.sum()) if garment_mask is not None else 0
+    if not _valid_pixels(garment_mask, min_valid_pixels):
+        return _nan_result(
+            keys,
+            f"TPF skipped: garment mask has {garment_pixels} pixels, "
+            f"minimum is {min_valid_pixels}",
+        )
+    mask = Image.fromarray(garment_mask.astype(np.uint8) * 255, mode="L")
 
     # Patch similarity
     patch_sim = patch_texture_similarity(gen, tex, mask=mask, patch=8)
@@ -400,12 +721,16 @@ def compute_texture_pattern_fidelity(
     # Gram matrix via VGG
     try:
         gram_l1 = _compute_gram_l1(gen, tex, mask=mask)
-    except Exception:
-        gram_l1 = 0.0
+        metric_warnings = []
+    except Exception as exc:
+        gram_l1 = float("nan")
+        metric_warnings = [f"TPF Gram skipped: {exc}"]
+        warnings.warn(metric_warnings[0], RuntimeWarning)
 
     return {
         "tpf_patch_sim": patch_sim,
         "tpf_gram_l1": gram_l1,
+        "metric_warnings": metric_warnings,
     }
 
 
@@ -419,7 +744,11 @@ def compute_texture_leakage(
     gen_path: str,
     mask_path: Optional[str] = None,
     dilate_kernel: int = 13,
-) -> Dict[str, float]:
+    target_path: Optional[str] = None,
+    sketch_path: Optional[str] = None,
+    min_valid_pixels: int = 50,
+    mask_bundle: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Compute texture leakage metrics from a generated image and its garment mask.
 
@@ -429,65 +758,99 @@ def compute_texture_leakage(
         leak_value_shift:      Mean brightness shift in background (vs. expected white/gray)
         leak_edge_density:     Edge density at garment boundary (high = artifacts)
     """
-    try:
-        import cv2
-    except ImportError:
-        return {
-            "leak_colored_frac": 0.0,
-            "leak_mean_saturation": 0.0,
-            "leak_value_shift": 0.0,
-            "leak_edge_density": 0.0,
-        }
-
-    gen = _open_rgb(gen_path)
+    keys = [
+        "leak_colored_frac",
+        "leak_mean_saturation",
+        "leak_value_shift",
+        "leak_edge_density",
+        "outside_mask_pixels",
+        "boundary_mask_pixels",
+    ]
+    gen = safe_open_rgb(gen_path)
+    if gen is None:
+        return _nan_result(keys, f"leakage skipped: generated image missing: {gen_path}")
     arr = _pil_to_np(gen)
-    hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV).astype(np.float32)
-    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    hsv = np.asarray(gen.convert("HSV"), dtype=np.float32)
+    if mask_bundle is None:
+        mask_bundle = prepare_evaluation_masks(
+            gen.size,
+            mask_path=mask_path,
+            sketch_path=sketch_path,
+            target_path=target_path,
+            gen_path=gen_path,
+            kernel_size=dilate_kernel,
+        )
+    outside = mask_bundle.get("outside")
+    boundary = mask_bundle.get("boundary")
+    outside_pixels = int(outside.sum()) if outside is not None else 0
+    boundary_pixels = int(boundary.sum()) if boundary is not None else 0
+    metric_warnings = []
 
-    if mask_path is None:
-        # Auto-estimate foreground mask
-        sat = hsv[..., 1] / 255.0
-        val = hsv[..., 2] / 255.0
-        fg_mask = (sat > 0.10) | (val < 0.88)
-        kernel = np.ones((7, 7), np.uint8)
-        fg_mask = cv2.morphologyEx(fg_mask.astype(np.uint8), cv2.MORPH_OPEN, kernel)
-        fg_mask = cv2.morphologyEx(fg_mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
-        fg_mask = fg_mask > 127
+    if outside_pixels < min_valid_pixels:
+        result = _nan_result(
+            keys,
+            f"leakage skipped: outside mask has {outside_pixels} pixels, "
+            f"minimum is {min_valid_pixels}",
+        )
+        result["outside_mask_pixels"] = outside_pixels
+        result["boundary_mask_pixels"] = boundary_pixels
+        return result
+
+    sat = hsv[..., 1] / 255.0
+    colored = sat > 0.16
+    target = safe_open_rgb(target_path)
+    target_arr = None
+    if target is not None:
+        target_arr = _pil_to_np(target, size=gen.size)
+        target_hsv = np.asarray(
+            Image.fromarray(target_arr, mode="RGB").convert("HSV"),
+            dtype=np.float32,
+        )
+        color_delta = np.linalg.norm(
+            arr.astype(np.float32) - target_arr.astype(np.float32), axis=2
+        ) / math.sqrt(3.0 * 255.0 * 255.0)
+        colored = colored | (color_delta > 0.08)
+        value_shift = float(
+            np.abs(hsv[..., 2] - target_hsv[..., 2])[outside].mean() / 255.0
+        )
     else:
-        mask_img = Image.open(mask_path).convert("L").resize(gen.size, Image.NEAREST)
-        fg_mask = np.asarray(mask_img, dtype=np.uint8) > 127
+        value_shift = float("nan")
+        metric_warnings.append(
+            f"leak_value_shift skipped: target image missing: {target_path}"
+        )
 
-    # Dilate mask to define boundary/outside
-    mask_u8 = fg_mask.astype(np.uint8) * 255
-    dilated_u8 = cv2.dilate(mask_u8, np.ones((dilate_kernel, dilate_kernel), np.uint8))
-    outside = ~(dilated_u8 > 127)
-    boundary = (dilated_u8 > 127) & ~fg_mask
+    colored_frac = float(colored[outside].mean())
+    mean_sat = float(sat[outside].mean())
 
-    # ---- Leakage: colored pixels outside ----
-    if outside.sum() < 16:
-        colored_frac = 0.0
-        mean_sat = 0.0
-        value_shift = 0.0
+    if boundary_pixels < min_valid_pixels:
+        edge_density = float("nan")
+        metric_warnings.append(
+            f"leak_edge_density skipped: boundary mask has {boundary_pixels} pixels"
+        )
     else:
-        outside_hsv = hsv[outside]
-        sat = outside_hsv[:, 1] / 255.0
-        val = outside_hsv[:, 2] / 255.0
-        colored_frac = float(((sat > 0.16) & (val < 0.96)).mean())
-        mean_sat = float(sat.mean())
-        value_shift = float(abs(val.mean() - 0.95))
+        gray = np.asarray(gen.convert("L"), dtype=np.float32)
+        edges = _binary_edges(gray)
+        if target_arr is not None:
+            target_gray = np.asarray(
+                Image.fromarray(target_arr, mode="RGB").convert("L"),
+                dtype=np.float32,
+            )
+            target_edges = _binary_edges(target_gray)
+            edge_density = float((edges != target_edges)[boundary].mean())
+        else:
+            edge_density = float(edges[boundary].mean())
 
-    # ---- Boundary artifacts: edge density at boundary ----
-    if boundary.sum() < 16:
-        edge_density = 0.0
-    else:
-        edges = cv2.Sobel(gray, cv2.CV_64F, 1, 1, ksize=3)
-        edge_density = float(np.abs(edges[boundary]).mean())
+    for warning in metric_warnings:
+        warnings.warn(warning, RuntimeWarning)
 
     return {
         "leak_colored_frac": colored_frac,
         "leak_mean_saturation": mean_sat,
         "leak_value_shift": value_shift,
         "leak_edge_density": edge_density,
+        "outside_mask_pixels": outside_pixels,
+        "boundary_mask_pixels": boundary_pixels,
+        "metric_warnings": metric_warnings,
     }
 
 
@@ -499,7 +862,10 @@ def compute_structure_preservation(
     gen_path: str,
     sketch_path: str,
     mask_path: Optional[str] = None,
-) -> Dict[str, float]:
+    target_path: Optional[str] = None,
+    min_valid_pixels: int = 50,
+    mask_bundle: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Measure how well the generated garment preserves the sketch structure.
 
@@ -508,56 +874,100 @@ def compute_structure_preservation(
         struct_iou:         Foreground IoU vs. sketch-derived mask (higher = better)
         struct_edge_l1:     Mean edge L1 distance (lower = better)
     """
-    try:
-        import cv2
-    except ImportError:
-        return {"struct_edge_f1": 0.0, "struct_iou": 0.0, "struct_edge_l1": 0.0}
+    keys = [
+        "struct_edge_f1",
+        "struct_edge_precision",
+        "struct_edge_recall",
+        "struct_iou",
+        "struct_edge_l1",
+        "edge_f1",
+        "edge_precision",
+        "edge_recall",
+        "sketch_iou",
+        "edge_l1",
+        "sketch_edge_pixels",
+        "gen_edge_pixels",
+    ]
+    gen = safe_open_rgb(gen_path)
+    sketch = safe_open_rgb(sketch_path)
+    if gen is None:
+        return _nan_result(keys, f"structure skipped: generated image missing: {gen_path}")
+    if sketch is None:
+        return _nan_result(keys, f"structure skipped: sketch image missing: {sketch_path}")
+    sketch = sketch.resize(gen.size, Image.BICUBIC)
 
-    gen = _open_rgb(gen_path)
-    sketch = _open_rgb(sketch_path).resize(gen.size, Image.BICUBIC)
+    gen_gray = np.asarray(gen.convert("L"), dtype=np.float32)
+    sketch_gray = np.asarray(sketch.convert("L"), dtype=np.float32)
 
-    gen_np = _pil_to_np(gen)
-    sketch_np = _pil_to_np(sketch)
+    gen_edge = _binary_edges(gen_gray, low_threshold=0.08, high_threshold=0.16)
+    sketch_edge = _binary_edges(
+        sketch_gray, low_threshold=0.04, high_threshold=0.12
+    )
+    gen_edge_pixels = int(gen_edge.sum())
+    sketch_edge_pixels = int(sketch_edge.sum())
+    if (
+        gen_edge_pixels < min_valid_pixels
+        or sketch_edge_pixels < min_valid_pixels
+    ):
+        result = _nan_result(
+            keys,
+            f"structure skipped: edge pixels generated={gen_edge_pixels}, "
+            f"sketch={sketch_edge_pixels}, minimum={min_valid_pixels}",
+        )
+        result["gen_edge_pixels"] = gen_edge_pixels
+        result["sketch_edge_pixels"] = sketch_edge_pixels
+        return result
 
-    gen_gray = cv2.cvtColor(gen_np, cv2.COLOR_RGB2GRAY).astype(np.float32)
-    sketch_gray = cv2.cvtColor(sketch_np, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    sketch_dilated = _dilate_binary(sketch_edge, kernel_size=5)
+    gen_dilated = _dilate_binary(gen_edge, kernel_size=5)
+    precision = float((gen_edge & sketch_dilated).sum() / gen_edge_pixels)
+    recall = float((sketch_edge & gen_dilated).sum() / sketch_edge_pixels)
+    edge_f1 = (
+        2.0 * precision * recall / (precision + recall)
+        if precision + recall > 0
+        else 0.0
+    )
 
-    # Sobel edges
-    gen_edge = np.abs(cv2.Sobel(gen_gray, cv2.CV_64F, 1, 1, ksize=3))
-    sketch_edge = np.abs(cv2.Sobel(sketch_gray, cv2.CV_64F, 1, 1, ksize=3))
-
-    # Normalize to [0, 1] for F1
-    gen_edge_n = (gen_edge / (gen_edge.max() + 1e-6)).flatten()
-    sketch_edge_n = (sketch_edge / (sketch_edge.max() + 1e-6)).flatten()
-
-    # Binary threshold
-    gen_bin = (gen_edge_n > 0.1).astype(np.float32)
-    sketch_bin = (sketch_edge_n > 0.3).astype(np.float32)  # sketches have stronger edges
-
-    tp = (gen_bin * sketch_bin).sum()
-    fp = (gen_bin * (1 - sketch_bin)).sum()
-    fn = ((1 - gen_bin) * sketch_bin).sum()
-    precision = tp / max(tp + fp, 1.0)
-    recall = tp / max(tp + fn, 1.0)
-    edge_f1 = 2 * precision * recall / max(precision + recall, 1e-6)
-
-    # IoU of foreground
-    if mask_path:
-        mask = np.asarray(Image.open(mask_path).convert("L").resize(gen.size, Image.NEAREST)) > 127
-        gen_fg = gen_gray < 240  # approximate foreground
-        intersection = (gen_fg & mask).sum()
-        union = (gen_fg | mask).sum()
-        iou = intersection / max(union, 1.0)
+    if mask_bundle is None:
+        mask_bundle = prepare_evaluation_masks(
+            gen.size,
+            mask_path=mask_path,
+            sketch_path=sketch_path,
+            target_path=target_path,
+            gen_path=gen_path,
+        )
+    sketch_mask = mask_bundle.get("garment")
+    gen_mask = estimate_foreground_mask(gen, gen.size)
+    if (
+        not _valid_pixels(sketch_mask, min_valid_pixels)
+        or not _valid_pixels(gen_mask, min_valid_pixels)
+    ):
+        iou = float("nan")
+        metric_warnings = ["struct_iou skipped: invalid generated or sketch mask"]
     else:
-        iou = 0.0
+        intersection = int((gen_mask & sketch_mask).sum())
+        union = int((gen_mask | sketch_mask).sum())
+        iou = float(intersection / union) if union >= min_valid_pixels else float("nan")
+        metric_warnings = []
 
-    # Edge L1
-    edge_l1 = float(np.abs(gen_edge - sketch_edge).mean())
+    gen_magnitude = _gradient_magnitude(gen_gray)
+    sketch_magnitude = _gradient_magnitude(sketch_gray)
+    edge_l1 = float(np.abs(gen_magnitude - sketch_magnitude).mean())
 
     return {
         "struct_edge_f1": float(edge_f1),
+        "struct_edge_precision": precision,
+        "struct_edge_recall": recall,
         "struct_iou": float(iou),
         "struct_edge_l1": edge_l1,
+        "edge_f1": float(edge_f1),
+        "edge_precision": precision,
+        "edge_recall": recall,
+        "sketch_iou": float(iou),
+        "edge_l1": edge_l1,
+        "sketch_edge_pixels": sketch_edge_pixels,
+        "gen_edge_pixels": gen_edge_pixels,
+        "metric_warnings": metric_warnings,
     }
 
 
@@ -567,7 +977,9 @@ def compute_structure_preservation(
 
 def mean_rgb(img, mask=None):
     px = _iter_pixels(img, mask)
-    n = max(1, len(px))
+    if not px:
+        return (float("nan"), float("nan"), float("nan"))
+    n = len(px)
     return (
         sum(p[0] for p in px) / n,
         sum(p[1] for p in px) / n,
@@ -581,6 +993,8 @@ def rgb_l2(a, b):
 
 def histogram_rgb(img, bins=16, mask=None):
     px = _iter_pixels(img, mask)
+    if not px:
+        return [float("nan")] * (bins * 3)
     hist = [0] * (bins * 3)
     for r, g, b in px:
         hist[min(bins - 1, r * bins // 256)] += 1
@@ -591,13 +1005,16 @@ def histogram_rgb(img, bins=16, mask=None):
 
 
 def hist_l1(h1, h2):
-    return sum(abs(a - b) for a, b in zip(h1, h2))
+    values = [abs(a - b) for a, b in zip(h1, h2)]
+    return float(sum(values)) if values and all(math.isfinite(v) for v in values) else float("nan")
 
 
 def ssim_like(img1, img2, mask=None):
     p1 = _iter_pixels(img1, mask)
     p2 = _iter_pixels(img2, mask)
-    n = max(1, min(len(p1), len(p2)))
+    n = min(len(p1), len(p2))
+    if n == 0:
+        return float("nan")
     mse = sum(
         ((p1[i][0] - p2[i][0]) ** 2 + (p1[i][1] - p2[i][1]) ** 2 + (p1[i][2] - p2[i][2]) ** 2) / 3.0
         for i in range(n)
@@ -608,7 +1025,9 @@ def ssim_like(img1, img2, mask=None):
 def lpips_like(img1, img2, mask=None):
     p1 = _iter_pixels(img1, mask)
     p2 = _iter_pixels(img2, mask)
-    n = max(1, min(len(p1), len(p2)))
+    n = min(len(p1), len(p2))
+    if n == 0:
+        return float("nan")
     return sum(
         math.sqrt(
             (p1[i][0] - p2[i][0]) ** 2
@@ -625,7 +1044,9 @@ def patch_texture_similarity(gen_img, tex_img, mask=None, patch=8):
         tex_img = tex_img.resize(gen_img.size, Image.BICUBIC)
     p1 = _iter_pixels(gen_img, mask)
     p2 = _iter_pixels(tex_img, mask)
-    n = max(1, min(len(p1), len(p2)))
+    n = min(len(p1), len(p2))
+    if n == 0:
+        return float("nan")
     step = max(1, patch * patch)
     sims = []
     for i in range(0, n, step):
@@ -636,7 +1057,7 @@ def patch_texture_similarity(gen_img, tex_img, mask=None, patch=8):
         ma = tuple(sum(x[c] for x in a) / len(a) for c in range(3))
         mb = tuple(sum(x[c] for x in b) / len(b) for c in range(3))
         sims.append(1.0 / (1.0 + rgb_l2(ma, mb)))
-    return sum(sims) / max(1, len(sims))
+    return sum(sims) / len(sims) if sims else float("nan")
 
 
 def _pairwise_lab_distance(img1, img2):
@@ -721,14 +1142,14 @@ def evaluate_pair(gen_path, target_path=None, texture_path=None, mask_path=None)
     g_mean = mean_rgb(gen, mask=mask)
     out["gen_mean_r"], out["gen_mean_g"], out["gen_mean_b"] = g_mean
 
-    if target_path:
+    if existing_file(target_path):
         tgt = _open_rgb(target_path).resize(gen.size)
         out["lpips_like"] = lpips_like(gen, tgt, mask=mask)
         out["ssim_like"] = ssim_like(gen, tgt, mask=mask)
         out["hist_l1_target"] = hist_l1(histogram_rgb(gen, mask=mask), histogram_rgb(tgt, mask=mask))
         out["mean_rgb_l2_target"] = rgb_l2(g_mean, mean_rgb(tgt, mask=mask))
 
-    if texture_path:
+    if existing_file(texture_path):
         tex = _open_rgb(texture_path).resize(gen.size)
         out["hist_l1_texture"] = hist_l1(histogram_rgb(gen, mask=mask), histogram_rgb(tex, mask=mask))
         out["patch_texture_similarity"] = patch_texture_similarity(gen, tex, mask=mask, patch=8)
@@ -745,36 +1166,146 @@ def evaluate_full(
     texture_path: Optional[str] = None,
     sketch_path: Optional[str] = None,
     mask_path: Optional[str] = None,
-) -> Dict[str, float]:
+    compute_leakage: bool = True,
+    compute_structure: bool = True,
+    min_valid_pixels: int = 50,
+    mask_bundle: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Run the complete evaluation suite on a single generated image.
     Returns a flat dict of all metrics for one sample.
     """
     result = {}
+    metric_warnings = []
+    gen = safe_open_rgb(gen_path)
+    if gen is None:
+        return _nan_result(
+            [
+                "ssim",
+                "tcf_lab_delta",
+                "tcf_hsv_l1",
+                "tcf_rgb_l2",
+                "tpf_patch_sim",
+                "tpf_gram_l1",
+                "leak_colored_frac",
+                "leak_mean_saturation",
+                "leak_value_shift",
+                "leak_edge_density",
+                "struct_edge_f1",
+                "struct_iou",
+                "struct_edge_l1",
+            ],
+            f"all metrics skipped: generated image missing: {gen_path}",
+        )
 
-    # Quality (if target available)
-    if target_path:
-        result["ssim"] = compute_ssim(_open_rgb(gen_path), _open_rgb(target_path),
-                                       _open_mask(mask_path, _open_rgb(gen_path).size) if mask_path else None)
+    if mask_bundle is None:
+        mask_bundle = prepare_evaluation_masks(
+            gen.size,
+            mask_path=mask_path,
+            sketch_path=sketch_path,
+            target_path=target_path,
+            gen_path=gen_path,
+        )
+    result.update(mask_bundle.get("stats", {}))
+    metric_warnings.extend(mask_bundle.get("warnings", []))
 
-    # Texture strength
-    if texture_path:
-        tcf = compute_texture_color_fidelity(gen_path, texture_path, mask_path)
-        tpf = compute_texture_pattern_fidelity(gen_path, texture_path, mask_path)
-        result.update(tcf)
-        result.update(tpf)
+    if existing_file(target_path):
+        try:
+            target = _open_rgb(target_path)
+            mask = mask_bundle.get("garment")
+            mask_image = (
+                Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
+                if _valid_pixels(mask, min_valid_pixels)
+                else None
+            )
+            result["ssim"] = compute_ssim(gen, target, mask_image)
+        except Exception as exc:
+            result["ssim"] = float("nan")
+            metric_warnings.append(f"SSIM skipped: {exc}")
+    else:
+        result["ssim"] = float("nan")
+        metric_warnings.append(f"SSIM skipped: target image missing: {target_path}")
 
-    # Texture leakage
-    leak = compute_texture_leakage(gen_path, mask_path)
-    result.update(leak)
+    tcf = compute_texture_color_fidelity(
+        gen_path,
+        texture_path,
+        mask_path=mask_path,
+        sketch_path=sketch_path,
+        target_path=target_path,
+        min_valid_pixels=min_valid_pixels,
+        mask_bundle=mask_bundle,
+    )
+    tpf = compute_texture_pattern_fidelity(
+        gen_path,
+        texture_path,
+        mask_path=mask_path,
+        sketch_path=sketch_path,
+        target_path=target_path,
+        min_valid_pixels=min_valid_pixels,
+        mask_bundle=mask_bundle,
+    )
+    metric_warnings.extend(tcf.pop("metric_warnings", []))
+    metric_warnings.extend(tpf.pop("metric_warnings", []))
+    result.update(tcf)
+    result.update(tpf)
 
-    # Structure preservation
-    if sketch_path:
-        struct = compute_structure_preservation(gen_path, sketch_path, mask_path)
+    if compute_leakage:
+        leak = compute_texture_leakage(
+            gen_path,
+            mask_path=mask_path,
+            target_path=target_path,
+            sketch_path=sketch_path,
+            min_valid_pixels=min_valid_pixels,
+            mask_bundle=mask_bundle,
+        )
+        metric_warnings.extend(leak.pop("metric_warnings", []))
+        result.update(leak)
+    else:
+        result.update(
+            {
+                key: float("nan")
+                for key in (
+                    "leak_colored_frac",
+                    "leak_mean_saturation",
+                    "leak_value_shift",
+                    "leak_edge_density",
+                )
+            }
+        )
+
+    if compute_structure:
+        struct = compute_structure_preservation(
+            gen_path,
+            sketch_path,
+            mask_path=mask_path,
+            target_path=target_path,
+            min_valid_pixels=min_valid_pixels,
+            mask_bundle=mask_bundle,
+        )
+        metric_warnings.extend(struct.pop("metric_warnings", []))
         result.update(struct)
+    else:
+        result.update(
+            {
+                key: float("nan")
+                for key in (
+                    "struct_edge_f1",
+                    "struct_edge_precision",
+                    "struct_edge_recall",
+                    "struct_iou",
+                    "struct_edge_l1",
+                    "edge_f1",
+                    "edge_precision",
+                    "edge_recall",
+                    "sketch_iou",
+                    "edge_l1",
+                )
+            }
+        )
 
-    # Also run original evaluate_pair for backward compat
-    orig = evaluate_pair(gen_path, target_path, texture_path, mask_path)
-    result.update(orig)
-
+    try:
+        result.update(evaluate_pair(gen_path, target_path, texture_path, mask_path))
+    except Exception as exc:
+        metric_warnings.append(f"legacy pair metrics skipped: {exc}")
+    result["metric_warnings"] = sorted(set(metric_warnings))
     return result

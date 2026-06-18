@@ -34,6 +34,18 @@ def main():
     ap.add_argument("--mode_ckpt_map_json", required=True, help="JSON file: {mode_or_name: gam_ckpt_path}")
     ap.add_argument("--output_dir", default="eval_outputs/ablation_suite")
     ap.add_argument("--texture_preprocess_mode", default="crop_tile", choices=["plain_resize", "crop_tile", "plain"])
+    ap.add_argument("--real_images_dir", default=None)
+    ap.add_argument("--texture_images_dir", default=None)
+    ap.add_argument("--sketch_images_dir", default=None)
+    ap.add_argument("--mask_dir", default=None)
+    ap.add_argument("--clip_model_path", default="openai/clip-vit-large-patch14")
+    ap.add_argument("--compute_fid", type=int, choices=[0, 1], default=1)
+    ap.add_argument("--compute_clip_i", type=int, choices=[0, 1], default=1)
+    ap.add_argument("--compute_leakage", type=int, choices=[0, 1], default=1)
+    ap.add_argument("--compute_structure", type=int, choices=[0, 1], default=1)
+    ap.add_argument("--debug_save_masks", type=int, default=0)
+    ap.add_argument("--fail_on_empty_masks", type=int, choices=[0, 1], default=0)
+    ap.add_argument("--min_valid_pixels", type=int, default=50)
     args = ap.parse_args()
 
     import json
@@ -74,12 +86,32 @@ def main():
                 exp_mode,
                 "--texture_preprocess_mode",
                 args.texture_preprocess_mode,
+                "--clip_model_path",
+                args.clip_model_path,
+                "--compute_fid",
+                str(args.compute_fid),
+                "--compute_clip_i",
+                str(args.compute_clip_i),
+                "--compute_leakage",
+                str(args.compute_leakage),
+                "--compute_structure",
+                str(args.compute_structure),
+                "--debug_save_masks",
+                str(args.debug_save_masks),
+                "--fail_on_empty_masks",
+                str(args.fail_on_empty_masks),
+                "--min_valid_pixels",
+                str(args.min_valid_pixels),
                 "--output_dir",
                 args.output_dir,
                 "--run_name",
                 exp_name,
             ]
         )
+        bench_args.real_images_dir = args.real_images_dir
+        bench_args.texture_images_dir = args.texture_images_dir
+        bench_args.sketch_images_dir = args.sketch_images_dir
+        bench_args.mask_dir = args.mask_dir
         run_benchmark(bench_args)
         summary_json = os.path.join(args.output_dir, exp_name, "summary_metrics.json")
         if os.path.exists(summary_json):
