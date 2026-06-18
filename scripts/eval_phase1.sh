@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 阶段 1：单独评估 E0/E1，并生成最终报告和雷达图。
+# 阶段 1/2A：默认只评估 E2A，并复用已有 E0/E1 结果生成对比报告。
 
 PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 DATASETS_ROOT="${DATASETS_ROOT:-/share/home/u2515283058/datasets}"
@@ -32,10 +32,12 @@ OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 TEXTURE_OUTPUT_DIR="${TEXTURE_OUTPUT_DIR:-${OUTPUT_BASE}/texture_adapter_bf_e20}"
 E0_OUTPUT_DIR="${E0_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e0_baseline_e5}"
 E1_OUTPUT_DIR="${E1_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e1_grouped_e5}"
+E2A_OUTPUT_DIR="${E2A_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2a_region_e5}"
 
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-}"
 E0_CKPT="${E0_CKPT:-}"
 E1_CKPT="${E1_CKPT:-}"
+E2A_CKPT="${E2A_CKPT:-}"
 
 EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
 REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report}"
@@ -46,10 +48,15 @@ EVAL_DEVICE="${EVAL_DEVICE:-cuda:0}"
 EVAL_PARALLEL="${EVAL_PARALLEL:-0}"
 E0_DEVICE="${E0_DEVICE:-cuda:0}"
 E1_DEVICE="${E1_DEVICE:-cuda:1}"
+E2A_DEVICE="${E2A_DEVICE:-${EVAL_DEVICE}}"
 EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
 EVAL_MODES="${EVAL_MODES:-token}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
+RUN_E0="${RUN_E0:-0}"
+RUN_E1="${RUN_E1:-0}"
+RUN_E2A="${RUN_E2A:-1}"
+REPORT_EXPERIMENTS="${REPORT_EXPERIMENTS:-e0_baseline,e1_grouped,e2a_region}"
 
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
@@ -158,19 +165,24 @@ fi
 if [[ -z "${E1_CKPT}" ]]; then
   E1_CKPT="$(find_latest_gam_ckpt "${E1_OUTPUT_DIR}")"
 fi
+if [[ -z "${E2A_CKPT}" ]]; then
+  E2A_CKPT="$(find_latest_gam_ckpt "${E2A_OUTPUT_DIR}")"
+fi
 
 echo "============================================"
-echo "Phase 1 evaluation"
+echo "Phase 1/2A evaluation"
 echo "VAL_JSON=${VAL_JSON}"
 echo "VAL_ROOT_PATH=${VAL_ROOT_PATH}"
 echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
 echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
+echo "E2A_CKPT=${E2A_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
 echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"
-echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, EVAL_DEVICE=${EVAL_DEVICE}"
+echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}"
+echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}"
 echo "============================================"
 
 mkdir -p "${EVAL_BASE}" "${REPORT_DIR}"
@@ -180,37 +192,59 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     echo "[ERROR] TEXTURE_ADAPTER_CKPT does not exist: ${TEXTURE_ADAPTER_CKPT}" >&2
     exit 1
   fi
-  if [[ "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E0_CKPT}" ]]; then
+  if [[ "${RUN_E0}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E0_CKPT}" ]]; then
     echo "[ERROR] E0_CKPT does not exist: ${E0_CKPT}" >&2
     exit 1
   fi
-  if [[ "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E1_CKPT}" ]]; then
+  if [[ "${RUN_E1}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E1_CKPT}" ]]; then
     echo "[ERROR] E1_CKPT does not exist: ${E1_CKPT}" >&2
+    exit 1
+  fi
+  if [[ "${RUN_E2A}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E2A_CKPT}" ]]; then
+    echo "[ERROR] E2A_CKPT does not exist: ${E2A_CKPT}" >&2
     exit 1
   fi
 
   if [[ "${EVAL_PARALLEL}" == "1" ]]; then
-    echo "=== Fixed benchmark parallel: E0 on ${E0_DEVICE}, E1 on ${E1_DEVICE} ==="
-    run_benchmark_if_needed "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}" &
-    e0_pid=$!
-    run_benchmark_if_needed "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}" &
-    e1_pid=$!
-
-    e0_status=0
-    e1_status=0
-    wait "${e0_pid}" || e0_status=$?
-    wait "${e1_pid}" || e1_status=$?
-
-    if [[ "${e0_status}" != "0" || "${e1_status}" != "0" ]]; then
-      echo "[ERROR] Parallel evaluation failed. E0 status=${e0_status}, E1 status=${e1_status}" >&2
-      exit 1
+    pids=()
+    names=()
+    if [[ "${RUN_E0}" == "1" ]]; then
+      run_benchmark_if_needed "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}" &
+      pids+=("$!")
+      names+=("E0")
     fi
-  else
-    echo "=== Fixed benchmark: E0 ==="
-    run_benchmark_if_needed "e0_baseline" "${E0_CKPT}" "${EVAL_DEVICE}"
+    if [[ "${RUN_E1}" == "1" ]]; then
+      run_benchmark_if_needed "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}" &
+      pids+=("$!")
+      names+=("E1")
+    fi
+    if [[ "${RUN_E2A}" == "1" ]]; then
+      run_benchmark_if_needed "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}" &
+      pids+=("$!")
+      names+=("E2A")
+    fi
 
-    echo "=== Fixed benchmark: E1 ==="
-    run_benchmark_if_needed "e1_grouped" "${E1_CKPT}" "${EVAL_DEVICE}"
+    for i in "${!pids[@]}"; do
+      status=0
+      wait "${pids[$i]}" || status=$?
+      if [[ "${status}" != "0" ]]; then
+        echo "[ERROR] ${names[$i]} evaluation failed. status=${status}" >&2
+        exit "${status}"
+      fi
+    done
+  else
+    if [[ "${RUN_E0}" == "1" ]]; then
+      echo "=== Fixed benchmark: E0 ==="
+      run_benchmark_if_needed "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
+    fi
+    if [[ "${RUN_E1}" == "1" ]]; then
+      echo "=== Fixed benchmark: E1 ==="
+      run_benchmark_if_needed "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
+    fi
+    if [[ "${RUN_E2A}" == "1" ]]; then
+      echo "=== Fixed benchmark: E2A ==="
+      run_benchmark_if_needed "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+    fi
   fi
 else
   echo "[SKIP] RUN_EVAL=0"
@@ -222,7 +256,7 @@ if [[ "${RUN_REPORT:-1}" == "1" ]]; then
     --experiments_dir "${EVAL_BASE}"
     --real_images_dir "${REAL_IMG_DIR}"
     --output_dir "${REPORT_DIR}"
-    --experiment_names e0_baseline,e1_grouped
+    --experiment_names "${REPORT_EXPERIMENTS}"
     --device "${REPORT_DEVICE}"
   )
 
