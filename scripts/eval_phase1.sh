@@ -48,16 +48,23 @@ EVAL_NUM_SAMPLES="${EVAL_NUM_SAMPLES:-100}"
 EVAL_SEED="${EVAL_SEED:-42}"
 EVAL_DEVICE="${EVAL_DEVICE:-cuda:0}"
 EVAL_PARALLEL="${EVAL_PARALLEL:-0}"
-E0_DEVICE="${E0_DEVICE:-cuda:0}"
-E1_DEVICE="${E1_DEVICE:-cuda:1}"
+E0_DEVICE="${E0_DEVICE:-${EVAL_DEVICE}}"
+E1_DEVICE="${E1_DEVICE:-${EVAL_DEVICE}}"
 E2A_DEVICE="${E2A_DEVICE:-${EVAL_DEVICE}}"
 E2B_DEVICE="${E2B_DEVICE:-${EVAL_DEVICE}}"
 EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
 EVAL_MODES="${EVAL_MODES:-token}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
-RUN_E0="${RUN_E0:-0}"
-RUN_E1="${RUN_E1:-0}"
+if [[ "${EVAL_METRICS_ONLY}" == "1" ]]; then
+  DEFAULT_RUN_E0=1
+  DEFAULT_RUN_E1=1
+else
+  DEFAULT_RUN_E0=0
+  DEFAULT_RUN_E1=0
+fi
+RUN_E0="${RUN_E0:-${DEFAULT_RUN_E0}}"
+RUN_E1="${RUN_E1:-${DEFAULT_RUN_E1}}"
 RUN_E2A="${RUN_E2A:-1}"
 RUN_E2B="${RUN_E2B:-0}"
 REPORT_EXPERIMENTS="${REPORT_EXPERIMENTS:-e0_baseline,e1_grouped,e2a_region}"
@@ -302,6 +309,21 @@ else
 fi
 
 if [[ "${RUN_REPORT:-1}" == "1" ]]; then
+  IFS=',' read -r -a report_experiments <<< "${REPORT_EXPERIMENTS}"
+  for experiment_name in "${report_experiments[@]}"; do
+    experiment_name="${experiment_name//[[:space:]]/}"
+    if [[ ! -f "${EVAL_BASE}/${experiment_name}/metrics_summary.json" ]]; then
+      echo "[ERROR] Missing new-format metrics: ${EVAL_BASE}/${experiment_name}/metrics_summary.json" >&2
+      echo "[ERROR] Recompute all requested experiments with EVAL_METRICS_ONLY=1 FORCE_EVAL=1." >&2
+      exit 1
+    fi
+    if [[ ! -f "${EVAL_BASE}/${experiment_name}/diagnostics.json" ]]; then
+      echo "[ERROR] Missing diagnostics: ${EVAL_BASE}/${experiment_name}/diagnostics.json" >&2
+      echo "[ERROR] Recompute all requested experiments with EVAL_METRICS_ONLY=1 FORCE_EVAL=1." >&2
+      exit 1
+    fi
+  done
+
   report_cmd=(
     python -m eval.ablation_report
     --experiments_dir "${EVAL_BASE}"

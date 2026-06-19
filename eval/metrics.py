@@ -196,8 +196,10 @@ def _get_inception_v3(device="cuda"):
     """Lazy-load InceptionV3 with the standard FID feature layer (pool3, 2048-d)."""
     global _inception_v3
     if _inception_v3 is not None:
-        model, normalize = _inception_v3
-        return model.to(device), normalize
+        if isinstance(_inception_v3, tuple):
+            model, normalize = _inception_v3
+            return model.to(device), normalize
+        _inception_v3 = None
 
     from torchvision.models import inception_v3
     from torchvision.transforms import Normalize
@@ -212,7 +214,7 @@ def _get_inception_v3(device="cuda"):
     normalize = Normalize(mean=[0.485, 0.456, 0.406],
                           std=[0.229, 0.224, 0.225])
 
-    _inception_v3 = model
+    _inception_v3 = (model, normalize)
     return model.to(device), normalize
 
 
