@@ -4,15 +4,6 @@ set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 cd "${PROJECT_ROOT}"
 
-module load anaconda3/4.12.0 || true
-if command -v conda >/dev/null 2>&1; then
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  # 如果项目实际环境名不是 mymodel，请修改 CONDA_ENV。
-  CONDA_ENV="${CONDA_ENV:-mymodel}"
-  conda activate "${CONDA_ENV}" || conda activate base
-else
-  echo "[WARN] conda command not found; using the current Python environment."
-fi
 
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
