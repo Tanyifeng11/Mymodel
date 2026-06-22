@@ -646,6 +646,58 @@ def _collect_gate_stats(unet):
     return rows, summary
 
 
+def _get_gate_params(unet, only_trainable=False):
+    params = []
+    seen = set()
+    for _, proc in _iter_unet_processors(unet):
+        if not hasattr(proc, "texture_gate_delta") or proc.texture_gate_delta is None:
+            continue
+        p = proc.texture_gate_delta
+        if only_trainable and not p.requires_grad:
+            continue
+        if id(p) in seen:
+            continue
+        seen.add(id(p))
+        params.append(p)
+    return params
+
+
+def _detached_gate_l2(unet, device):
+    gate_params = _get_gate_params(unet, only_trainable=True)
+    if not gate_params:
+        return torch.tensor(0.0, device=device)
+    values = [p.detach().float() * p.detach().float() for p in gate_params]
+    return torch.stack(values).mean()
+
+
+def _add_gate_l2_grad(unet, weight):
+    if weight <= 0:
+        return
+    gate_params = _get_gate_params(unet, only_trainable=True)
+    if not gate_params:
+        return
+    scale = float(2.0 * weight / max(1, len(gate_params)))
+    for p in gate_params:
+        grad = p.detach().float() * scale
+        grad = grad.to(device=p.device, dtype=p.dtype)
+        if p.grad is None:
+            p.grad = grad.clone()
+        else:
+            p.grad = p.grad + grad
+
+
+def _find_shared_attention_processors(unet):
+    seen = {}
+    shared = []
+    for name, proc in _iter_unet_processors(unet):
+        proc_id = id(proc)
+        if proc_id in seen:
+            shared.append((seen[proc_id], name))
+        else:
+            seen[proc_id] = name
+    return shared
+
+
 # =========================
 # Loss
 # =========================
@@ -1024,6 +1076,8 @@ def main():
     ap.add_argument("--gate_reg_weight", type=float, default=0.0)
     ap.add_argument("--freeze_except_gate", type=int, default=0, choices=[0, 1])
     ap.add_argument("--log_gate_stats", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--ddp_find_unused_parameters", type=int, default=-1, choices=[-1, 0, 1])
+    ap.add_argument("--disable_gradient_checkpointing", type=int, default=1, choices=[0, 1])
     ap.add_argument("--alpha1", type=float, default=1.0)
     ap.add_argument("--alpha2", type=float, default=1.0)
     ap.add_argument("--alpha3", type=float, default=0.7)
@@ -1109,7 +1163,11 @@ def main():
         project_dir=args.output_dir, logging_dir=os.path.join(args.output_dir, "logs")
     )
     log_with = None if args.report_to == "none" else args.report_to
-    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    if args.ddp_find_unused_parameters >= 0:
+        find_unused_parameters = bool(args.ddp_find_unused_parameters)
+    else:
+        find_unused_parameters = True
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=find_unused_parameters)
     accelerator_mixed_precision = args.mixed_precision
     if accelerator_mixed_precision is None:
         accelerator_mixed_precision = "fp16" if torch.cuda.is_available() else "no"
@@ -1120,6 +1178,8 @@ def main():
         log_with=log_with,
         kwargs_handlers=[ddp_kwargs],
     )
+    if accelerator.is_main_process:
+        print(f"[info] ddp_find_unused_parameters = {find_unused_parameters}")
 
     # ---- texture ckpt meta ----
     texture_state = load_checkpoint_file(args.texture_adapter_ckpt)
@@ -1187,6 +1247,16 @@ def main():
                 gate_reg_weight=args.gate_reg_weight,
             )
     unet.set_attn_processor(attn_procs)
+    if args.disable_gradient_checkpointing and hasattr(unet, "disable_gradient_checkpointing"):
+        unet.disable_gradient_checkpointing()
+        if accelerator.is_main_process:
+            print("[info] unet gradient checkpointing disabled")
+    shared_processors = _find_shared_attention_processors(unet)
+    if accelerator.is_main_process:
+        if shared_processors:
+            print(f"[WARNING] shared attention processor instances detected: {shared_processors[:16]}")
+        else:
+            print("[info] no shared attention processor instances detected")
 
     attn_procs2 = {}
     for name in ref_unet.attn_processors.keys():
@@ -1824,16 +1894,7 @@ def main():
                 loss = loss + args.lambda_region_texture * loss_region_texture
                 loss = loss + args.lambda_boundary * loss_boundary
                 loss = loss + args.lambda_leak * loss_leak
-                loss_gate = loss.new_tensor(0.0)
-                if args.use_texture_gate and args.gate_reg_weight > 0:
-                    gate_deltas = [
-                        proc.texture_gate_delta.float()
-                        for _, proc in _iter_unet_processors(unet)
-                        if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None
-                    ]
-                    if gate_deltas:
-                        loss_gate = torch.stack([d * d for d in gate_deltas]).mean()
-                        loss = loss + args.gate_reg_weight * loss_gate
+                loss_gate = _detached_gate_l2(unet, loss.device) if args.use_texture_gate else loss.new_tensor(0.0)
 
                 if not torch.isfinite(loss.detach()).all():
                     loss_items = {
@@ -1860,6 +1921,9 @@ def main():
                     raise RuntimeError("non-finite loss detected")
 
                 accelerator.backward(loss)
+
+                if accelerator.sync_gradients and args.use_texture_gate and args.gate_reg_weight > 0:
+                    _add_gate_l2_grad(unet, args.gate_reg_weight)
 
                 if accelerator.sync_gradients:
                     grad_norm = accelerator.clip_grad_norm_(
