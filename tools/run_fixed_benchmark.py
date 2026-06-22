@@ -2,6 +2,7 @@
 import argparse
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -113,29 +114,90 @@ def sample_paths(args, sample):
     }
 
 
-def run_one_inference(args, sample, mode_name, out_dir, paths):
+def _sample_output_paths(out_dir, mode_name, sample):
     uid = sample_uid(sample)
-    sample_out = os.path.join(out_dir, mode_name, uid)
-    ensure_dir(sample_out)
-    dst = os.path.join(sample_out, "generated.png")
-    comparison_path = os.path.join(sample_out, "comparison_grid.png")
+    sample_id = sample["sample_id"]
+    sample_out = os.path.join(out_dir, mode_name, f"{sample_id}_{uid}")
+    return {
+        "uid": uid,
+        "sample_id": sample_id,
+        "sample_out": sample_out,
+        "generated": os.path.join(sample_out, f"generated_{sample_id}.png"),
+        "legacy_generated": os.path.join(sample_out, "generated.png"),
+        "comparison": os.path.join(sample_out, f"comparison_{sample_id}.png"),
+    }
 
-    if existing_file(dst):
+
+def _existing_generation_candidates(args, sample, mode_name, out_dir):
+    current = _sample_output_paths(out_dir, mode_name, sample)
+    uid = current["uid"]
+    sample_id = current["sample_id"]
+    candidates = [
+        current["generated"],
+        current["legacy_generated"],
+    ]
+    if args.reuse_from_dir:
+        source_mode = os.path.join(args.reuse_from_dir, mode_name)
+        candidates.extend(
+            [
+                os.path.join(
+                    source_mode,
+                    f"{sample_id}_{uid}",
+                    f"generated_{sample_id}.png",
+                ),
+                os.path.join(source_mode, f"{sample_id}_{uid}", "generated.png"),
+                os.path.join(source_mode, uid, f"generated_{sample_id}.png"),
+                os.path.join(source_mode, uid, "generated.png"),
+            ]
+        )
+    return current, [path for path in candidates if existing_file(path)]
+
+
+def run_one_inference(args, sample, mode_name, out_dir, paths):
+    output_paths, existing_candidates = _existing_generation_candidates(
+        args, sample, mode_name, out_dir
+    )
+    sample_out = output_paths["sample_out"]
+    ensure_dir(sample_out)
+    dst = output_paths["generated"]
+    comparison_path = output_paths["comparison"]
+
+    if existing_candidates and not args.overwrite:
+        if not args.skip_existing and not args.resume_generation:
+            raise FileExistsError(
+                f"generated image already exists for sample_id="
+                f"{sample['sample_id']}; enable --skip_existing 1 or "
+                "--resume_generation 1, or use --overwrite 1"
+            )
+        source = existing_candidates[0]
+        if os.path.normcase(os.path.abspath(source)) != os.path.normcase(
+            os.path.abspath(dst)
+        ):
+            if os.path.normcase(os.path.dirname(os.path.abspath(source))) == (
+                os.path.normcase(os.path.abspath(sample_out))
+            ):
+                shutil.move(source, dst)
+            else:
+                shutil.copy2(source, dst)
+            status = "reused_existing"
+        else:
+            status = "skipped_existing"
         extract_generated_panel(dst, comparison_path=comparison_path)
-        return dst
+        return dst, status
+
     if args.metrics_only:
-        return None
+        return None, "missing"
     if not existing_file(paths["sketch_path"]):
-        return None
+        return None, "missing_sketch"
     if not existing_file(paths["texture_path"]):
-        return None
+        return None, "missing_texture"
 
     flags = mode_to_flags(mode_name)
     src = os.path.join(sample_out, os.path.basename(paths["sketch_path"]))
-    if existing_file(src):
+    if existing_file(src) and not args.overwrite:
         shutil.move(src, dst)
         extract_generated_panel(dst, comparison_path=comparison_path)
-        return dst
+        return dst, "reused_existing"
 
     cmd = [
         "python",
@@ -173,9 +235,9 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
     if existing_file(src):
         shutil.move(src, dst)
     if not existing_file(dst):
-        return None
+        return None, "generation_missing_output"
     extract_generated_panel(dst, comparison_path=comparison_path)
-    return dst
+    return dst, "generated"
 
 
 def make_grid(image_paths, save_path, cols=4):
@@ -281,26 +343,93 @@ def _write_progress(run_dir, rows):
     write_json(os.path.join(run_dir, "per_image_metrics.json"), rows)
 
 
+def _prepare_evaluation_images(rows, metrics_dir, resize_size):
+    if not resize_size:
+        for row in rows:
+            row["evaluation_protocol"] = "original_image_size"
+        return rows
+
+    from PIL import Image
+
+    generated_dir = os.path.join(metrics_dir, "generated")
+    real_dir = os.path.join(metrics_dir, "real")
+    ensure_dir(generated_dir)
+    ensure_dir(real_dir)
+
+    for row in rows:
+        source_gen = row["gen_path"]
+        source_target = row["target_path"]
+        row["source_gen_path"] = source_gen
+        row["source_target_path"] = source_target
+        filename = f"{row['mode']}_{row['sample_id']}.png"
+        resized_gen = os.path.join(generated_dir, filename)
+        resized_target = os.path.join(real_dir, filename)
+
+        if existing_file(source_gen):
+            image = Image.open(source_gen).convert("RGB")
+            image.resize((resize_size, resize_size), Image.BICUBIC).save(
+                resized_gen
+            )
+        if existing_file(source_target):
+            image = Image.open(source_target).convert("RGB")
+            image.resize((resize_size, resize_size), Image.BICUBIC).save(
+                resized_target
+            )
+
+        row["gen_path"] = resized_gen
+        row["target_path"] = resized_target
+        row["evaluation_protocol"] = (
+            f"resize_generated_real_to_{resize_size}"
+        )
+    return rows
+
+
 def run_benchmark(args):
+    sample_id_end = (
+        args.num_samples if args.sample_id_end is None else args.sample_id_end
+    )
     split = create_or_load_fixed_split(
         args.dataset_json,
         args.split_path,
         num_samples=args.num_samples,
         seed=args.seed,
+        sample_id_start=args.sample_id_start,
+        sample_id_end=sample_id_end,
     )
     run_dir = os.path.join(args.output_dir, args.run_name)
     ensure_dir(run_dir)
+    metrics_dir = args.metrics_output_dir or run_dir
+    ensure_dir(metrics_dir)
     modes = parse_modes(args.modes)
     reason_counts = Counter()
+    expected_num_samples = len(split) * len(modes)
+    expected_range_size = sample_id_end - args.sample_id_start
+    sample_ids = [sample["sample_id"] for sample in split]
+    duplicate_sample_ids = sorted(
+        sample_id
+        for sample_id, count in Counter(sample_ids).items()
+        if count > 1
+    )
+    existing_before_generation = 0
+    for mode in modes:
+        for sample in split:
+            _, candidates = _existing_generation_candidates(
+                args, sample, mode, run_dir
+            )
+            existing_before_generation += int(bool(candidates))
 
     print(
-        f"[benchmark] split_samples={len(split)}, requested_samples={args.num_samples}, "
-        f"split_path={args.split_path}"
+        f"[benchmark] split_samples={len(split)}, requested_range="
+        f"[{args.sample_id_start}, {sample_id_end}), split_path={args.split_path}"
     )
-    if len(split) != args.num_samples:
+    if len(split) != expected_range_size:
         raise RuntimeError(
-            f"Fixed split contains {len(split)} samples, but {args.num_samples} "
-            f"were requested. Use the same split as the compared experiments."
+            f"Fixed split contains {len(split)} selected samples, but "
+            f"{expected_range_size} were requested"
+        )
+    if duplicate_sample_ids:
+        raise RuntimeError(
+            f"duplicate sample_ids in fixed split: {duplicate_sample_ids}"
         )
 
     manifest = {
@@ -311,6 +440,8 @@ def run_benchmark(args):
         "seed": args.seed,
         "requested_samples": args.num_samples,
         "split_samples": len(split),
+        "sample_id_start": args.sample_id_start,
+        "sample_id_end": sample_id_end,
         "split_path": args.split_path,
         "dataset_json": args.dataset_json,
         "data_root": args.data_root,
@@ -320,32 +451,47 @@ def run_benchmark(args):
         "texture_preprocess_mode": args.texture_preprocess_mode,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
         "metrics_only": args.metrics_only,
+        "resume_generation": bool(args.resume_generation),
+        "skip_existing": bool(args.skip_existing),
+        "overwrite": bool(args.overwrite),
+        "reuse_from_dir": args.reuse_from_dir,
+        "evaluation_protocol": args.evaluation_protocol,
     }
-    write_manifest(os.path.join(run_dir, "experiment_manifest.json"), manifest)
+    write_manifest(
+        os.path.join(metrics_dir, "experiment_manifest.json"), manifest
+    )
 
     rows = []
+    generation_status_counts = Counter()
     for mode in modes:
         for sample_index, sample in enumerate(split, start=1):
             uid = sample_uid(sample)
             paths = sample_paths(args, sample)
             print(
-                f"[benchmark] generating mode={mode}, "
-                f"sample={sample_index}/{len(split)}, uid={uid}"
+                f"[benchmark] generation mode={mode}, "
+                f"sample={sample_index}/{len(split)}, "
+                f"sample_id={sample['sample_id']}, uid={uid}"
             )
             try:
-                gen_path = run_one_inference(
+                gen_path, generation_status = run_one_inference(
                     args, sample, mode, run_dir, paths=paths
                 )
             except Exception as exc:
                 gen_path = None
+                generation_status = "failed"
                 reason = f"inference failed for {uid}: {exc}"
                 print(f"[benchmark] WARNING: {reason}")
                 _append_reason(reason_counts, reason)
+            generation_status_counts[generation_status] += 1
+            output_paths = _sample_output_paths(run_dir, mode, sample)
             row = {
                 "mode": mode,
+                "sample_id": sample["sample_id"],
+                "dataset_index": sample["idx"],
                 "uid": uid,
                 "gen_path": gen_path
-                or os.path.join(run_dir, mode, uid, "generated.png"),
+                or output_paths["generated"],
+                "generation_status": generation_status,
                 **paths,
             }
             for metric in PER_SAMPLE_METRICS:
@@ -357,14 +503,71 @@ def run_benchmark(args):
                 row["gen_path"]
                 for row in rows
                 if row["mode"] == mode and existing_file(row["gen_path"])
-            ],
+            ][: args.grid_max_images],
             os.path.join(run_dir, f"grid_{mode}.png"),
             cols=4,
         )
 
+    final_generated_count = sum(
+        existing_file(row["gen_path"]) for row in rows
+    )
+    generated_sample_keys = []
+    for mode in modes:
+        mode_dir = os.path.join(run_dir, mode)
+        if not os.path.isdir(mode_dir):
+            continue
+        for root, _, files in os.walk(mode_dir):
+            for filename in files:
+                match = re.fullmatch(r"generated_(\d{6})\.png", filename)
+                if match:
+                    generated_sample_keys.append(
+                        f"{mode}:{match.group(1)}"
+                    )
+    duplicate_generated_sample_ids = sorted(
+        key
+        for key, count in Counter(generated_sample_keys).items()
+        if count > 1
+    )
+    all_duplicate_sample_ids = sorted(
+        set(duplicate_sample_ids + duplicate_generated_sample_ids)
+    )
+    missing_sample_ids = [
+        f"{row['mode']}:{row['sample_id']}"
+        for row in rows
+        if not existing_file(row["gen_path"])
+    ]
+    if final_generated_count != expected_num_samples:
+        print(
+            f"[benchmark] WARNING: final_generated_count={final_generated_count}, "
+            f"expected_num_samples={expected_num_samples}"
+        )
+        print(
+            "[benchmark] WARNING: missing_sample_ids="
+            + ",".join(missing_sample_ids)
+        )
+
     diagnostics = {
+        "expected_num_samples": expected_num_samples,
+        "expected_unique_sample_ids": len(split),
+        "existing_before_generation": existing_before_generation,
+        "newly_generated": generation_status_counts["generated"],
+        "skipped_existing": (
+            generation_status_counts["skipped_existing"]
+            + generation_status_counts["reused_existing"]
+        ),
+        "reused_from_existing_results": generation_status_counts[
+            "reused_existing"
+        ],
+        "final_generated_count": final_generated_count,
+        "duplicate_sample_ids": all_duplicate_sample_ids,
+        "duplicate_generated_sample_ids": duplicate_generated_sample_ids,
+        "missing_sample_ids": missing_sample_ids,
+        "resume_generation": bool(args.resume_generation),
+        "skip_existing": bool(args.skip_existing),
+        "overwrite": bool(args.overwrite),
+        "evaluation_protocol": args.evaluation_protocol,
         "num_samples": len(rows),
-        "num_generated_found": sum(existing_file(row["gen_path"]) for row in rows),
+        "num_generated_found": final_generated_count,
         "num_real_found": sum(existing_file(row["target_path"]) for row in rows),
         "num_texture_found": sum(existing_file(row["texture_path"]) for row in rows),
         "num_sketch_found": sum(existing_file(row["sketch_path"]) for row in rows),
@@ -383,8 +586,91 @@ def run_benchmark(args):
         "number_of_empty_boundary_masks": 0,
         "skipped_metrics_and_reasons": {},
     }
+    write_json(os.path.join(metrics_dir, "benchmark_samples.json"), rows)
+    _write_progress(metrics_dir, rows)
+    write_json(os.path.join(metrics_dir, "diagnostics.json"), diagnostics)
 
-    debug_dir = os.path.join(run_dir, "debug_masks")
+    preflight_errors = []
+    if final_generated_count != expected_num_samples:
+        preflight_errors.append(
+            f"generated images incomplete: {final_generated_count}/"
+            f"{expected_num_samples}"
+        )
+    if all_duplicate_sample_ids:
+        preflight_errors.append(
+            f"duplicate sample ids: {all_duplicate_sample_ids}"
+        )
+    for key, label in (
+        ("num_real_found", "real images"),
+        ("num_texture_found", "texture images"),
+        ("num_sketch_found", "sketch images"),
+    ):
+        if diagnostics[key] != expected_num_samples:
+            preflight_errors.append(
+                f"{label} incomplete: {diagnostics[key]}/"
+                f"{expected_num_samples}"
+            )
+    if preflight_errors:
+        diagnostics["preflight_errors"] = preflight_errors
+        write_json(os.path.join(metrics_dir, "diagnostics.json"), diagnostics)
+        raise RuntimeError(
+            "benchmark preflight failed: " + "; ".join(preflight_errors)
+        )
+
+    rows = _prepare_evaluation_images(
+        rows, metrics_dir, args.evaluation_resize
+    )
+    diagnostics["evaluation_resize"] = args.evaluation_resize or None
+    diagnostics["evaluation_protocol"] = (
+        f"resize_generated_real_to_{args.evaluation_resize}"
+        if args.evaluation_resize
+        else "original_image_size"
+    )
+    diagnostics["num_evaluation_generated_found"] = sum(
+        existing_file(row["gen_path"]) for row in rows
+    )
+    diagnostics["num_evaluation_real_found"] = sum(
+        existing_file(row["target_path"]) for row in rows
+    )
+    if (
+        diagnostics["num_evaluation_generated_found"] != expected_num_samples
+        or diagnostics["num_evaluation_real_found"] != expected_num_samples
+    ):
+        write_json(
+            os.path.join(metrics_dir, "diagnostics.json"), diagnostics
+        )
+        raise RuntimeError(
+            "evaluation image preparation incomplete: "
+            f"generated={diagnostics['num_evaluation_generated_found']}, "
+            f"real={diagnostics['num_evaluation_real_found']}, "
+            f"expected={expected_num_samples}"
+        )
+    if args.evaluation_resize:
+        from PIL import Image
+
+        invalid_sizes = []
+        expected_size = (args.evaluation_resize, args.evaluation_resize)
+        for row in rows:
+            for key in ("gen_path", "target_path"):
+                if not existing_file(row[key]):
+                    continue
+                with Image.open(row[key]) as image:
+                    if image.size != expected_size or image.mode != "RGB":
+                        invalid_sizes.append(
+                            f"{row['sample_id']}:{key}:{image.mode}:{image.size}"
+                        )
+        diagnostics["invalid_resized_images"] = invalid_sizes
+        if invalid_sizes:
+            write_json(
+                os.path.join(metrics_dir, "diagnostics.json"), diagnostics
+            )
+            raise RuntimeError(
+                "resize evaluation preflight failed: "
+                + ", ".join(invalid_sizes[:20])
+            )
+    _write_progress(metrics_dir, rows)
+
+    debug_dir = os.path.join(metrics_dir, "debug_masks")
     for row_index, row in enumerate(rows, start=1):
         print(
             f"[benchmark] evaluating sample={row_index}/{len(rows)}, uid={row['uid']}"
@@ -394,7 +680,7 @@ def run_benchmark(args):
             reason = f"generated image missing: {row['gen_path']}"
             _append_reason(reason_counts, reason)
             row["metric_warnings"] = [reason]
-            _write_progress(run_dir, rows)
+            _write_progress(metrics_dir, rows)
             continue
 
         mask_bundle = prepare_evaluation_masks(
@@ -442,7 +728,7 @@ def run_benchmark(args):
             _append_reason(reason_counts, reason)
         row.update(metrics)
         row["metric_warnings"] = sorted(set(metric_warnings))
-        _write_progress(run_dir, rows)
+        _write_progress(metrics_dir, rows)
 
     if args.compute_clip_i:
         _assign_clip_metric(
@@ -532,26 +818,30 @@ def run_benchmark(args):
         summary["FID_std"] = None
         summary_rows.append(summary)
 
-    _write_progress(run_dir, rows)
-    write_csv(os.path.join(run_dir, "metrics_summary.csv"), summary_rows)
-    write_json(os.path.join(run_dir, "metrics_summary.json"), summary_rows)
-    write_csv(os.path.join(run_dir, "summary_metrics.csv"), summary_rows)
-    write_json(os.path.join(run_dir, "summary_metrics.json"), summary_rows)
+    _write_progress(metrics_dir, rows)
+    write_csv(os.path.join(metrics_dir, "metrics_summary.csv"), summary_rows)
+    write_json(os.path.join(metrics_dir, "metrics_summary.json"), summary_rows)
+    write_csv(os.path.join(metrics_dir, "summary_metrics.csv"), summary_rows)
+    write_json(os.path.join(metrics_dir, "summary_metrics.json"), summary_rows)
     write_markdown_table(
-        os.path.join(run_dir, "summary_metrics.md"),
+        os.path.join(metrics_dir, "summary_metrics.md"),
         summary_rows,
         title="Fixed Benchmark Summary",
     )
-    write_json(os.path.join(run_dir, "diagnostics.json"), diagnostics)
+    write_json(os.path.join(metrics_dir, "diagnostics.json"), diagnostics)
 
     manifest.update(
         {
             "status": "completed",
             "generated_images": diagnostics["num_generated_found"],
-            "diagnostics_path": os.path.join(run_dir, "diagnostics.json"),
+            "diagnostics_path": os.path.join(
+                metrics_dir, "diagnostics.json"
+            ),
         }
     )
-    write_manifest(os.path.join(run_dir, "experiment_manifest.json"), manifest)
+    write_manifest(
+        os.path.join(metrics_dir, "experiment_manifest.json"), manifest
+    )
     return summary_rows, diagnostics
 
 
@@ -566,6 +856,18 @@ def build_argparser():
     )
     parser.add_argument("--num_samples", type=int, default=16)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--sample_id_start", type=int, default=0)
+    parser.add_argument("--sample_id_end", type=int, default=None)
+    parser.add_argument(
+        "--resume_generation", type=int, choices=[0, 1], default=1
+    )
+    parser.add_argument("--skip_existing", type=int, choices=[0, 1], default=1)
+    parser.add_argument("--overwrite", type=int, choices=[0, 1], default=0)
+    parser.add_argument(
+        "--reuse_from_dir",
+        default=None,
+        help="Existing experiment directory whose generated results can be reused.",
+    )
     parser.add_argument("--gam_ckpt", required=True)
     parser.add_argument("--texture_ckpt", required=True)
     parser.add_argument("--device", default="cuda:0")
@@ -583,6 +885,25 @@ def build_argparser():
     parser.add_argument("--alpha4", type=float, default=0.5)
     parser.add_argument("--output_dir", default="eval_outputs")
     parser.add_argument("--run_name", default="step_000000")
+    parser.add_argument(
+        "--metrics_output_dir",
+        default=None,
+        help="Optional separate directory for metrics and resized evaluation images.",
+    )
+    parser.add_argument(
+        "--evaluation_resize",
+        type=int,
+        default=0,
+        help="Resize generated and real images to this square size before evaluation.",
+    )
+    parser.add_argument(
+        "--evaluation_protocol",
+        default="original_image_size",
+        choices=[
+            "original_image_size",
+            "resize_generated_real_to_256",
+        ],
+    )
     parser.add_argument("--real_images_dir", default=None)
     parser.add_argument("--texture_images_dir", default=None)
     parser.add_argument("--sketch_images_dir", default=None)
@@ -601,6 +922,7 @@ def build_argparser():
     parser.add_argument("--min_valid_pixels", type=int, default=50)
     parser.add_argument("--clip_batch_size", type=int, default=16)
     parser.add_argument("--fid_batch_size", type=int, default=16)
+    parser.add_argument("--grid_max_images", type=int, default=100)
     parser.add_argument(
         "--metrics_only",
         action="store_true",

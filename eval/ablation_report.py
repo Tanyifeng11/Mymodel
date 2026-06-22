@@ -381,6 +381,46 @@ def export_csv(all_metrics, path):
         writer.writerows(rows)
 
 
+def _report_metadata_markdown(metadata):
+    return "\n".join(
+        [
+            "# Evaluation Protocol",
+            "",
+            f"- Evaluation protocol: `{metadata['evaluation_protocol']}`",
+            f"- num_samples: `{metadata['num_samples']}`",
+            f"- resume_generation: `{str(metadata['resume_generation']).lower()}`",
+            "- existing samples were skipped: "
+            f"`{str(metadata['existing_samples_were_skipped']).lower()}`",
+            f"- image size policy: {metadata['image_size_policy']}",
+            "",
+        ]
+    )
+
+
+def _collect_per_sample_rows(experiment_dirs):
+    combined = []
+    for experiment_dir in experiment_dirs:
+        rows = _load_json(
+            os.path.join(experiment_dir, "metrics_per_sample.json"), []
+        )
+        for row in rows:
+            item = dict(row)
+            item["experiment"] = experiment_dir.name
+            combined.append(item)
+    return combined
+
+
+def _write_rows_csv(rows, path):
+    keys = sorted({key for row in rows for key in row})
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        if not keys:
+            return
+        writer = csv.DictWriter(handle, fieldnames=keys)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(json_safe(row))
+
+
 def build_radar_html(all_metrics, output_path):
     if not all_metrics:
         return
@@ -453,6 +493,21 @@ def main():
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--clip_model_path", default=None)
     parser.add_argument("--experiment_names", default=None)
+    parser.add_argument(
+        "--evaluation_protocol",
+        default="original_image_size",
+        choices=[
+            "original_image_size",
+            "resize_generated_real_to_256",
+        ],
+    )
+    parser.add_argument("--num_samples", type=int, default=500)
+    parser.add_argument(
+        "--resume_generation", type=int, choices=[0, 1], default=1
+    )
+    parser.add_argument(
+        "--existing_samples_skipped", type=int, choices=[0, 1], default=1
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -490,6 +545,20 @@ def main():
     if not all_metrics:
         raise SystemExit("ERROR: no experiment metrics found")
 
+    metadata = {
+        "evaluation_protocol": args.evaluation_protocol,
+        "num_samples": args.num_samples,
+        "resume_generation": bool(args.resume_generation),
+        "existing_samples_were_skipped": bool(
+            args.existing_samples_skipped
+        ),
+        "image_size_policy": (
+            "normal evaluation uses original image size"
+            if args.evaluation_protocol == "original_image_size"
+            else "resize256 evaluation resizes generated and real images to 256x256"
+        ),
+    }
+    metadata_markdown = _report_metadata_markdown(metadata)
     comprehensive = build_comprehensive_table(all_metrics)
     categorized = build_ablation_table(all_metrics)
     with open(
@@ -497,22 +566,61 @@ def main():
         "w",
         encoding="utf-8",
     ) as handle:
-        handle.write(comprehensive)
+        handle.write(metadata_markdown + "\n" + comprehensive)
     with open(
         os.path.join(args.output_dir, "ablation_tables.md"),
         "w",
         encoding="utf-8",
     ) as handle:
-        handle.write(categorized)
+        handle.write(metadata_markdown + "\n" + categorized)
     export_csv(all_metrics, os.path.join(args.output_dir, "ablation_results.csv"))
     with open(
         os.path.join(args.output_dir, "ablation_results.json"),
         "w",
         encoding="utf-8",
     ) as handle:
-        json.dump(json_safe(all_metrics), handle, indent=2, ensure_ascii=False)
+        json.dump(
+            json_safe({"metadata": metadata, "experiments": all_metrics}),
+            handle,
+            indent=2,
+            ensure_ascii=False,
+        )
+    with open(
+        os.path.join(args.output_dir, "metrics_summary.json"),
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            json_safe({"metadata": metadata, "experiments": all_metrics}),
+            handle,
+            indent=2,
+            ensure_ascii=False,
+        )
+    combined_rows = _collect_per_sample_rows(experiment_dirs)
+    _write_rows_csv(
+        combined_rows,
+        os.path.join(args.output_dir, "metrics_per_sample.csv"),
+    )
+    combined_diagnostics = {
+        "metadata": metadata,
+        "experiments": {
+            metrics["experiment"]: metrics.get("diagnostics", {})
+            for metrics in all_metrics
+        },
+    }
+    with open(
+        os.path.join(args.output_dir, "diagnostics.json"),
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            json_safe(combined_diagnostics),
+            handle,
+            indent=2,
+            ensure_ascii=False,
+        )
     build_radar_html(all_metrics, os.path.join(args.output_dir, "radar_chart.html"))
-    print(comprehensive)
+    print(metadata_markdown + "\n" + comprehensive)
 
 
 if __name__ == "__main__":

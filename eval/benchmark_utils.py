@@ -69,32 +69,86 @@ def write_markdown_table(path: str, rows, title="Results"):
         f.write(content)
 
 
-def create_or_load_fixed_split(dataset_json_path: str, split_path: str, num_samples: int = 16, seed: int = 42):
-    if os.path.exists(split_path):
-        with open(split_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+def _split_item(item, dataset_index, sample_position):
+    return {
+        "sample_id": f"{sample_position:06d}",
+        "idx": dataset_index,
+        "prompt": item["caption"] if isinstance(item["caption"], str) else item["caption"][0],
+        "sketch": item["sketch"],
+        "texture": item.get("texture", item.get("color", item["cloth"])),
+        "target": item.get("cloth"),
+        "mask": item.get("mask", None),
+    }
 
+
+def create_or_load_fixed_split(
+    dataset_json_path: str,
+    split_path: str,
+    num_samples: int = 16,
+    seed: int = 42,
+    sample_id_start: int = 0,
+    sample_id_end: int = None,
+):
     with open(dataset_json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    requested_end = num_samples if sample_id_end is None else sample_id_end
+    if sample_id_start < 0 or requested_end <= sample_id_start:
+        raise ValueError(
+            f"invalid sample range: start={sample_id_start}, end={requested_end}"
+        )
+    if requested_end > len(data):
+        raise ValueError(
+            f"dataset only contains {len(data)} samples, but sample_id_end={requested_end}"
+        )
+
+    split = []
+    if os.path.exists(split_path):
+        with open(split_path, "r", encoding="utf-8") as f:
+            split = json.load(f)
+
+    # Keep every existing sample in its original position so previously generated
+    # results retain the same uid and seed association.
+    normalized = []
+    seen_indices = set()
+    for position, sample in enumerate(split):
+        dataset_index = int(sample.get("idx", sample.get("dataset_index", -1)))
+        if dataset_index < 0 or dataset_index >= len(data):
+            raise ValueError(
+                f"invalid dataset index in existing split at position {position}: "
+                f"{dataset_index}"
+            )
+        if dataset_index in seen_indices:
+            raise ValueError(
+                f"duplicate dataset index in existing split: {dataset_index}"
+            )
+        seen_indices.add(dataset_index)
+        normalized_sample = dict(sample)
+        normalized_sample["sample_id"] = f"{position:06d}"
+        normalized_sample["idx"] = dataset_index
+        normalized.append(normalized_sample)
+    split = normalized
+
+    # Extend the old split using the same deterministic shuffled dataset order.
+    # Existing entries are never reordered or replaced.
     rnd = random.Random(seed)
     idxs = list(range(len(data)))
     rnd.shuffle(idxs)
-    chosen = idxs[: min(num_samples, len(idxs))]
-    split = []
-    for i in chosen:
-        item = data[i]
-        split.append(
-            {
-                "idx": i,
-                "prompt": item["caption"] if isinstance(item["caption"], str) else item["caption"][0],
-                "sketch": item["sketch"],
-                "texture": item.get("texture", item.get("color", item["cloth"])),
-                "target": item.get("cloth"),
-                "mask": item.get("mask", None),
-            }
+    for dataset_index in idxs:
+        if len(split) >= requested_end:
+            break
+        if dataset_index in seen_indices:
+            continue
+        split.append(_split_item(data[dataset_index], dataset_index, len(split)))
+        seen_indices.add(dataset_index)
+
+    if len(split) < requested_end:
+        raise RuntimeError(
+            f"could only build {len(split)} fixed samples; requested {requested_end}"
         )
+
     write_json(split_path, split)
-    return split
+    return split[sample_id_start:requested_end]
 
 
 def sample_uid(sample):
