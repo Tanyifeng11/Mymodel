@@ -258,7 +258,12 @@ def prepare(args):
         if cross_attention_dim is None:
             attn_procs[name] = LogoRefSAttnProcessor2_0(name, hidden_size)
         else:
-            attn_procs[name] = IPAttnProcessor2_0( hidden_size=hidden_size, cross_attention_dim=cross_attention_dim, num_tokens=args.texture_num_tokens)
+            attn_procs[name] = IPAttnProcessor2_0(
+                hidden_size=hidden_size,
+                cross_attention_dim=cross_attention_dim,
+                num_tokens=args.texture_num_tokens,
+                use_texture_gate=bool(args.use_texture_gate),
+            )
 
     unet.set_attn_processor(attn_procs)
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
@@ -365,6 +370,7 @@ def prepare(args):
                          texture_ckpt=args.texture_ckpt,
                          spatial_texture_encoder=spatial_texture_encoder,
                          spatial_injection=spatial_injection,
+                         use_texture_gate=bool(args.use_texture_gate),
                          scheduler=noise_scheduler,
                          safety_checker=StableDiffusionSafetyChecker,
                          feature_extractor=CLIPImageProcessor)
@@ -376,6 +382,15 @@ def prepare(args):
         missing, unexpected = torch.nn.ModuleList(pipe.unet.attn_processors.values()).load_state_dict(
             gam_state["texture_adapter"], strict=False
         )
+        gate_unexpected = [k for k in unexpected if "texture_gate_delta" in k or "gate" in k]
+        if args.use_texture_gate:
+            gate_keys = []
+            for name, proc in pipe.unet.attn_processors.items():
+                if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
+                    gate_keys.append(name)
+            print(f"[prepare] Loaded texture gate parameters, count={len(gate_keys)}")
+        elif gate_unexpected:
+            print("[prepare] WARNING: checkpoint contains gate parameters but use_texture_gate=0")
         print(
             "[prepare] restored texture_adapter from GAM checkpoint after pipe init "
             f"(missing={len(missing)}, unexpected={len(unexpected)})"
@@ -416,6 +431,7 @@ if __name__ == "__main__":
     parser.add_argument('--texture_num_tokens', type=int, default=16)
     parser.add_argument('--texture_scale', type=float, default=1.0)
     parser.add_argument('--texture_condition_mode', type=str, default='spatial', choices=['token', 'spatial', 'hybrid'])
+    parser.add_argument('--use_texture_gate', type=int, default=0, choices=[0, 1])
     parser.add_argument(
         '--fusion_type',
         type=str,

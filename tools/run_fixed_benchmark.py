@@ -222,6 +222,8 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         flags["fusion_type"],
         "--texture_preprocess_mode",
         args.texture_preprocess_mode,
+        "--use_texture_gate",
+        str(int(args.use_texture_gate)),
         "--alpha1",
         str(args.alpha1),
         "--alpha2",
@@ -870,6 +872,7 @@ def build_argparser():
     )
     parser.add_argument("--gam_ckpt", required=True)
     parser.add_argument("--texture_ckpt", required=True)
+    parser.add_argument("--use_texture_gate", type=int, choices=[0, 1], default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--modes", default="token,spatial,hybrid,spatial_bfm_like"

@@ -1,4 +1,5 @@
 import argparse
+import csv
 import importlib.util
 import itertools
 import json
@@ -394,6 +395,7 @@ def load_joint_checkpoint_into_models(
     bf,
     spatial_texture_encoder,
     spatial_injection,
+    accelerator=None,
 ):
     if not isinstance(state_dict, dict):
         return
@@ -419,14 +421,21 @@ def load_joint_checkpoint_into_models(
     )
 
     if "texture_adapter" in state_dict:
-        attn_module_list = nn.ModuleList(unet.attn_processors.values())
-        missing, unexpected = attn_module_list.load_state_dict(
-            state_dict["texture_adapter"], strict=False
-        )
-        print(
-            f"[load] texture_adapter(attn processors): "
-            f"missing={len(missing)} unexpected={len(unexpected)}"
-        )
+        unet_raw = accelerator.unwrap_model(unet) if accelerator is not None else (unet.module if hasattr(unet, "module") else unet)
+        attn_module_list = nn.ModuleList(unet_raw.attn_processors.values())
+        missing, unexpected = attn_module_list.load_state_dict(state_dict["texture_adapter"], strict=False)
+        gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
+        nongate_missing = [k for k in missing if k not in gate_missing]
+        nongate_unexpected = [k for k in unexpected if "texture_gate_delta" not in k and "gate" not in k]
+        print(f"[load] texture_adapter(attn processors): missing={len(missing)} unexpected={len(unexpected)}")
+        if gate_missing:
+            print(f"[Expected missing gate keys] {gate_missing[:16]}")
+        if nongate_missing:
+            print(f"[Unexpected non-gate missing keys] {nongate_missing[:16]}")
+        if unexpected:
+            print(f"[Unexpected keys] {list(unexpected)[:16]}")
+        if nongate_unexpected:
+            print(f"[Unexpected non-gate unexpected keys] {nongate_unexpected[:16]}")
 
 
 def adapt_bf_state_for_token_count(bf, bf_state, log_prefix="[load]"):
@@ -563,6 +572,10 @@ def save_training_checkpoint(
             "lambda_leak": args.lambda_leak,
             "region_kernel_size": args.region_kernel_size,
             "layer_group_enabled": args.layer_group_enabled,
+            "use_texture_gate": args.use_texture_gate,
+            "gate_type": args.gate_type,
+            "gate_init": args.gate_init,
+            "gate_reg_weight": args.gate_reg_weight,
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -592,6 +605,45 @@ def save_training_checkpoint(
         except OSError as e:
             print(f"[warn] failed to create checkpoint symlink {alias_path} -> {rel_target}: {e}")
     return save_dir
+
+
+def _iter_unet_processors(unet):
+    unet_raw = unet.module if hasattr(unet, "module") else unet
+    return list(unet_raw.attn_processors.items())
+
+
+def _collect_gate_stats(unet):
+    rows = []
+    gate_values = []
+    for name, proc in _iter_unet_processors(unet):
+        if not hasattr(proc, "texture_gate_delta") or proc.texture_gate_delta is None:
+            continue
+        delta = float(proc.texture_gate_delta.detach().float().cpu().item())
+        value = float(math.exp(delta))
+        layer_group = getattr(proc, "layer_group", "all")
+        rows.append(
+            {
+                "layer_name": name,
+                "layer_group": layer_group,
+                "gate_delta": delta,
+                "gate_value": value,
+            }
+        )
+        gate_values.append((layer_group, value))
+    if not gate_values:
+        return rows, {}
+    values = np.array([v for _, v in gate_values], dtype=np.float32)
+    summary = {
+        "gate_mean": float(values.mean()),
+        "gate_std": float(values.std()),
+        "gate_min": float(values.min()),
+        "gate_max": float(values.max()),
+    }
+    for group in ("semantic", "detail", "all"):
+        group_values = [v for g, v in gate_values if g == group]
+        if group_values:
+            summary[f"{group}_gate_mean"] = float(np.mean(group_values))
+    return rows, summary
 
 
 # =========================
@@ -966,6 +1018,12 @@ def main():
         choices=[0, 1],
         help="Enable Ti-MGD-style layer-grouped texture routing for token mode.",
     )
+    ap.add_argument("--use_texture_gate", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--gate_type", type=str, default="layer")
+    ap.add_argument("--gate_init", type=str, default="identity")
+    ap.add_argument("--gate_reg_weight", type=float, default=0.0)
+    ap.add_argument("--freeze_except_gate", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--log_gate_stats", type=int, default=0, choices=[0, 1])
     ap.add_argument("--alpha1", type=float, default=1.0)
     ap.add_argument("--alpha2", type=float, default=1.0)
     ap.add_argument("--alpha3", type=float, default=0.7)
@@ -1123,6 +1181,10 @@ def main():
                 num_tokens=args.bf_num_tokens,
                 layer_group=layer_group,
                 detail_text_scale=detail_ts,
+                use_texture_gate=bool(args.use_texture_gate),
+                gate_type=args.gate_type,
+                gate_init=args.gate_init,
+                gate_reg_weight=args.gate_reg_weight,
             )
     unet.set_attn_processor(attn_procs)
 
@@ -1208,6 +1270,7 @@ def main():
             bf,
             spatial_texture_encoder,
             spatial_injection,
+            accelerator=accelerator,
         )
         if args.reload_texture_adapter_after_gam_init:
             if accelerator.is_main_process:
@@ -1235,6 +1298,7 @@ def main():
             bf,
             spatial_texture_encoder,
             spatial_injection,
+            accelerator=accelerator,
         )
 
     # bf/token + spatial branch 是否训练
@@ -1255,6 +1319,21 @@ def main():
         p.requires_grad = use_spatial_train
     for p in spatial_injection.parameters():
         p.requires_grad = use_spatial_train
+
+    if args.freeze_except_gate:
+        for p in unet.parameters():
+            p.requires_grad = False
+        for _, proc in _iter_unet_processors(unet):
+            if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
+                proc.texture_gate_delta.requires_grad = True
+        for p in bf.parameters():
+            p.requires_grad = False
+        for p in spatial_texture_encoder.parameters():
+            p.requires_grad = False
+        for p in spatial_injection.parameters():
+            p.requires_grad = False
+        if accelerator.is_main_process:
+            print("[info] freeze_except_gate=1, only texture_gate_delta remains trainable.")
 
     # 显式构造 trainable params
     trainable_param_groups = []
@@ -1286,11 +1365,27 @@ def main():
         add_params(spatial_texture_encoder.parameters())
         add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
 
+    if args.freeze_except_gate:
+        trainable_param_groups = []
+        trainable_params = []
+        gate_params = []
+        for _, proc in _iter_unet_processors(unet):
+            if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
+                gate_params.append(proc.texture_gate_delta)
+        if gate_params:
+            trainable_param_groups.append({"params": gate_params, "lr": args.learning_rate})
+            trainable_params.extend(gate_params)
+
     if args.debug_trainable_params and accelerator.is_main_process:
         print("[debug] trainable UNet parameters:")
         for idx, (name, p) in enumerate(unet.named_parameters()):
             if p.requires_grad:
                 print(f"[debug] unet_param[{idx}] {name} {tuple(p.shape)}")
+        if args.freeze_except_gate:
+            print("[debug] gate-only trainable parameters:")
+            for idx, (name, proc) in enumerate(_iter_unet_processors(unet)):
+                if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
+                    print(f"[debug] gate[{idx}] {name} {tuple(proc.texture_gate_delta.shape)}")
 
     # dataset
     ds = JointTextureDataset(
@@ -1432,6 +1527,17 @@ def main():
             f"ckpt_interval={checkpoint_interval_steps} "
             f"(~{checkpoint_interval_steps // max(1, steps_per_epoch)} epoch(s))"
         )
+        print(f"[info] use_texture_gate = {bool(args.use_texture_gate)}")
+        print(f"[info] gate_type = {args.gate_type}")
+        gate_rows, gate_summary = _collect_gate_stats(unet)
+        print(f"[info] number_of_gate_params = {len(gate_rows)}")
+        if gate_rows:
+            for row in gate_rows[:32]:
+                print(
+                    f"[gate] {row['layer_name']} | group={row['layer_group']} | "
+                    f"delta={row['gate_delta']:.6f} | gate={row['gate_value']:.6f}"
+                )
+            print(f"[gate] summary = {gate_summary}")
 
     total_steps_done = 0
     null_input_ids = tokenizer(
@@ -1718,6 +1824,16 @@ def main():
                 loss = loss + args.lambda_region_texture * loss_region_texture
                 loss = loss + args.lambda_boundary * loss_boundary
                 loss = loss + args.lambda_leak * loss_leak
+                loss_gate = loss.new_tensor(0.0)
+                if args.use_texture_gate and args.gate_reg_weight > 0:
+                    gate_deltas = [
+                        proc.texture_gate_delta.float()
+                        for _, proc in _iter_unet_processors(unet)
+                        if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None
+                    ]
+                    if gate_deltas:
+                        loss_gate = torch.stack([d * d for d in gate_deltas]).mean()
+                        loss = loss + args.gate_reg_weight * loss_gate
 
                 if not torch.isfinite(loss.detach()).all():
                     loss_items = {
@@ -1731,6 +1847,7 @@ def main():
                         "loss_region_texture": loss_region_texture,
                         "loss_boundary": loss_boundary,
                         "loss_leak": loss_leak,
+                        "loss_gate": loss_gate,
                     }
                     print("[train_GAM_texture_joint] non-finite loss detected")
                     for loss_name, loss_value in loss_items.items():
@@ -1778,6 +1895,7 @@ def main():
                             "train/loss_region_texture": loss_region_texture.detach().float().item(),
                             "train/loss_boundary": loss_boundary.detach().float().item(),
                             "train/loss_leak": loss_leak.detach().float().item(),
+                            "train/loss_gate": loss_gate.detach().float().item(),
                             "train/lr": optimizer.param_groups[0]["lr"],
                             "train/grad_norm": grad_norm_log,
                             "train/drop_t_rate": drop_counts["t"] / max(1, drop_counts["total"]),
@@ -1818,6 +1936,7 @@ def main():
                         f"loss_region_tex={loss_region_texture.item():.6f}, "
                         f"loss_boundary={loss_boundary.item():.6f}, "
                         f"loss_leak={loss_leak.item():.6f}, "
+                        f"loss_gate={loss_gate.item():.6f}, "
                         f"grad_norm={grad_norm_val}, "
                         f"drop_t={drop_counts['t'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_i={drop_counts['i'] / max(1, drop_counts['total']):.3f}, "
@@ -1826,6 +1945,33 @@ def main():
                         f"drop_spatial_branch={branch_drop_counts['spatial'] / max(1, branch_drop_counts['total']):.3f}, "
                         f"encoder_hidden_states={tuple(enc_h.shape)}"
                     )
+
+                if (
+                    accelerator.sync_gradients
+                    and accelerator.is_main_process
+                    and args.log_gate_stats
+                    and global_step > 0
+                    and global_step % max(1, checkpoint_interval_steps) == 0
+                ):
+                    gate_rows, gate_summary = _collect_gate_stats(unet)
+                    gate_csv = os.path.join(args.output_dir, "gate_stats.csv")
+                    gate_jsonl = os.path.join(args.output_dir, "gate_stats.jsonl")
+                    if gate_rows:
+                        write_header = not os.path.exists(gate_csv)
+                        with open(gate_csv, "a", newline="", encoding="utf-8") as f:
+                            writer = csv.DictWriter(
+                                f,
+                                fieldnames=["global_step", "layer_name", "layer_group", "gate_delta", "gate_value"],
+                            )
+                            if write_header:
+                                writer.writeheader()
+                            for row in gate_rows:
+                                writer.writerow({"global_step": global_step, **row})
+                        with open(gate_jsonl, "a", encoding="utf-8") as f:
+                            for row in gate_rows:
+                                f.write(json.dumps({"global_step": global_step, **row}, ensure_ascii=False) + "\n")
+                        if args.report_to != "none":
+                            accelerator.log({f"gate/{k}": v for k, v in gate_summary.items()}, step=global_step)
 
                 if (
                     accelerator.sync_gradients

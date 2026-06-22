@@ -74,6 +74,7 @@ class IMAGGarment(StableDiffusionPipeline):
         feature_extractor: CLIPImageProcessor,
         spatial_texture_encoder=None,
         spatial_injection=None,
+        use_texture_gate=False,
     ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor)
 
@@ -113,6 +114,7 @@ class IMAGGarment(StableDiffusionPipeline):
         self.effective_texture_num_tokens = self.num_tokens
         self.default_texture_condition_mode = "token"
         self.layer_group_enabled = True  # Phase 1: Ti-MGD routing enabled by default
+        self.use_texture_gate = bool(use_texture_gate)
         self.load_texture_adapter()
 
     def _setup_layer_groups(self):
@@ -303,10 +305,21 @@ class IMAGGarment(StableDiffusionPipeline):
 
         ip_layers = torch.nn.ModuleList(self.unet.attn_processors.values())
         missing, unexpected = ip_layers.load_state_dict(adapter_sd, strict=False)
+        gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
+        nongate_missing = [k for k in missing if k not in gate_missing]
+        if self.use_texture_gate:
+            if gate_missing:
+                print(f"[load_texture_adapter] expected missing gate keys: {gate_missing[:16]}")
+            else:
+                print("[load_texture_adapter] Loaded texture gate parameters")
+        elif any("texture_gate_delta" in k or "gate" in k for k in adapter_sd.keys()):
+            print("[load_texture_adapter] WARNING: checkpoint contains gate parameters but use_texture_gate=False")
 
         print(f"[load_texture_adapter] loaded adapter branch: {adapter_name}")
         if len(missing) > 0:
             print(f"[load_texture_adapter] missing keys: {len(missing)}")
+        if nongate_missing:
+            print(f"[load_texture_adapter] WARNING non-gate missing keys: {nongate_missing[:16]}")
         if len(unexpected) > 0:
             print(f"[load_texture_adapter] unexpected keys: {len(unexpected)}")
 

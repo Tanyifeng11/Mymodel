@@ -322,8 +322,19 @@ class IPAttnProcessor2_0(torch.nn.Module):
             by this factor (instead of being fully zeroed). 0.0 = fully zeroed.
     """
 
-    def __init__(self, hidden_size, cross_attention_dim=None, scale=1.0, num_tokens=4,
-                 layer_group: str = "all", detail_text_scale: float = 0.1):
+    def __init__(
+        self,
+        hidden_size,
+        cross_attention_dim=None,
+        scale=1.0,
+        num_tokens=4,
+        layer_group: str = "all",
+        detail_text_scale: float = 0.1,
+        use_texture_gate: bool = False,
+        gate_type: str = "layer",
+        gate_init: str = "identity",
+        gate_reg_weight: float = 0.0,
+    ):
         super().__init__()
 
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -336,6 +347,20 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.use_ip_adapter = True
         self.layer_group = layer_group
         self.detail_text_scale = detail_text_scale
+        self.use_texture_gate = bool(use_texture_gate)
+        self.gate_type = gate_type
+        self.gate_init = gate_init
+        self.gate_reg_weight = gate_reg_weight
+
+        if self.gate_type != "layer":
+            raise NotImplementedError("E2b-lite 目前只支持 gate_type='layer'.")
+
+        if self.use_texture_gate:
+            if self.gate_init != "identity":
+                raise NotImplementedError("E2b-lite 目前只支持 gate_init='identity'.")
+            self.texture_gate_delta = nn.Parameter(torch.zeros(()))
+        else:
+            self.register_parameter("texture_gate_delta", None)
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
@@ -464,7 +489,10 @@ class IPAttnProcessor2_0(torch.nn.Module):
             ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
             ip_hidden_states = ip_hidden_states.to(query.dtype)
 
-            hidden_states = hidden_states + self.scale * ip_hidden_states
+            gate = 1.0
+            if self.use_texture_gate and self.texture_gate_delta is not None:
+                gate = torch.exp(self.texture_gate_delta).to(dtype=hidden_states.dtype, device=hidden_states.device)
+            hidden_states = hidden_states + self.scale * gate * ip_hidden_states
 
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)
