@@ -53,9 +53,8 @@ E0_DEVICE="${E0_DEVICE:-${EVAL_DEVICE}}"
 E1_DEVICE="${E1_DEVICE:-${EVAL_DEVICE}}"
 E2A_DEVICE="${E2A_DEVICE:-${EVAL_DEVICE}}"
 E2B_DEVICE="${E2B_DEVICE:-${EVAL_DEVICE}}"
-# 默认复用已有 E0/E1/E2A 图片并重新计算全部指标。
-# 需要重新生成测试图片时显式设置 EVAL_METRICS_ONLY=0。
-EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-1}"
+# Default to generating only missing samples.
+EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
 EVAL_MODES="${EVAL_MODES:-token}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
@@ -106,14 +105,30 @@ find_latest_gam_ckpt() {
   find "${base_dir}" -maxdepth 2 -path '*/joint_model.pt' -type f 2>/dev/null | sort -V | tail -1 || true
 }
 
+count_generated_images() {
+  local dir="$1"
+  if [[ ! -d "${dir}" ]]; then
+    echo 0
+    return
+  fi
+  find "${dir}" -path '*/generated_*.png' -type f 2>/dev/null | wc -l
+}
+
 run_benchmark_if_needed() {
   local run_name="$1"
   local gam_ckpt="$2"
   local eval_device="${3:-${EVAL_DEVICE}}"
   local run_dir="${EVAL_BASE}/${run_name}"
   local reuse_dir="${OLD_EVAL_BASE}/${run_name}"
+  local metrics_only="${EVAL_METRICS_ONLY}"
+  local existing_count=0
+  existing_count=$(( $(count_generated_images "${run_dir}") + $(count_generated_images "${reuse_dir}") ))
+  if [[ "${metrics_only}" == "1" && "${existing_count}" -lt "${EVAL_NUM_SAMPLES}" ]]; then
+    echo "[WARN] ${run_name}: metrics-only requested but only ${existing_count}/${EVAL_NUM_SAMPLES} generated images found; generating missing samples."
+    metrics_only=0
+  fi
 
-  if [[ "${FORCE_EVAL:-0}" != "1" && "${EVAL_METRICS_ONLY}" != "1" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
+  if [[ "${FORCE_EVAL:-0}" != "1" && "${metrics_only}" != "1" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
     echo "[SKIP] Evaluation exists: ${run_dir}/metrics_summary.json"
     return
   fi
@@ -155,7 +170,7 @@ run_benchmark_if_needed() {
   if [[ -n "${MASK_DIR}" ]]; then
     cmd+=(--mask_dir "${MASK_DIR}")
   fi
-  if [[ "${EVAL_METRICS_ONLY}" == "1" ]]; then
+  if [[ "${metrics_only}" == "1" ]]; then
     cmd+=(--metrics_only)
   fi
 
