@@ -36,6 +36,8 @@ TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-}"
 E2A_OUTPUT_DIR="${E2A_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2a_region_e5}"
 E2A_CKPT="${E2A_CKPT:-}"
 OUTPUT_DIR="${E2B_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3}"
+E2B_RESUME_CKPT="${E2B_RESUME_CKPT:-}"
+AUTO_RESUME_E2B="${AUTO_RESUME_E2B:-1}"
 
 MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-0}"
 MIXED_PRECISION="${MIXED_PRECISION:-fp16}"
@@ -45,7 +47,7 @@ CUDA_DEBUG="${CUDA_DEBUG:-0}"
 
 TRAIN_BATCH_SIZE="${GAM_TRAIN_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GAM_GRADIENT_ACCUMULATION_STEPS:-2}"
-NUM_TRAIN_EPOCHS="${E2B_NUM_TRAIN_EPOCHS:-3}"
+NUM_TRAIN_EPOCHS="${E2B_NUM_TRAIN_EPOCHS:-5}"
 MAX_TRAIN_STEPS="${E2B_MAX_TRAIN_STEPS:--1}"
 CHECKPOINTING_EPOCHS="${GAM_CHECKPOINTING_EPOCHS:-1}"
 LEARNING_RATE="${E2B_LEARNING_RATE:-1e-5}"
@@ -141,6 +143,11 @@ find_latest_gam_ckpt() {
   find "${base_dir}" -maxdepth 2 -path '*/joint_model.pt' -type f 2>/dev/null | sort -V | tail -1 || true
 }
 
+find_latest_numbered_gam_ckpt() {
+  local base_dir="$1"
+  find "${base_dir}" -maxdepth 2 -path '*/checkpoint-[0-9]*/joint_model.pt' -type f 2>/dev/null | sort -V | tail -1 || true
+}
+
 if [[ ! -d "${PROJECT_ROOT}" ]]; then
   echo "[ERROR] PROJECT_ROOT does not exist: ${PROJECT_ROOT}" >&2
   exit 1
@@ -153,13 +160,8 @@ fi
 if [[ -z "${E2A_CKPT}" ]]; then
   E2A_CKPT="$(find_latest_gam_ckpt "${E2A_OUTPUT_DIR}")"
 fi
-
-if [[ "${FORCE_TRAIN:-0}" != "1" ]]; then
-  EXISTING_CKPT="$(find_latest_gam_ckpt "${OUTPUT_DIR}")"
-  if [[ -n "${EXISTING_CKPT}" ]]; then
-    echo "[SKIP] E2B checkpoint already exists: ${EXISTING_CKPT}"
-    exit 0
-  fi
+if [[ -z "${E2B_RESUME_CKPT}" && "${AUTO_RESUME_E2B}" == "1" ]]; then
+  E2B_RESUME_CKPT="$(find_latest_numbered_gam_ckpt "${OUTPUT_DIR}")"
 fi
 
 if [[ ! -f "${TRAIN_JSON}" ]]; then
@@ -176,6 +178,10 @@ if [[ ! -f "${TEXTURE_ADAPTER_CKPT}" ]]; then
 fi
 if [[ ! -f "${E2A_CKPT}" ]]; then
   echo "[ERROR] E2A_CKPT does not exist: ${E2A_CKPT}" >&2
+  exit 1
+fi
+if [[ -n "${E2B_RESUME_CKPT}" && ! -f "${E2B_RESUME_CKPT}" ]]; then
+  echo "[ERROR] E2B_RESUME_CKPT does not exist: ${E2B_RESUME_CKPT}" >&2
   exit 1
 fi
 if [[ ! -d "${SD_MODEL}" || ! -d "${VAE_MODEL}" || ! -d "${CLIP_MODEL}" ]]; then
@@ -247,6 +253,9 @@ CMD=(
 if [[ -n "${WANDB_ENTITY}" ]]; then
   CMD+=(--wandb_entity "${WANDB_ENTITY}")
 fi
+if [[ -n "${E2B_RESUME_CKPT}" ]]; then
+  CMD+=(--resume_from_checkpoint "${E2B_RESUME_CKPT}")
+fi
 if [[ "${DEBUG_CHECKPOINT_LOAD}" == "1" ]]; then
   CMD+=(--debug_checkpoint_load)
 fi
@@ -263,8 +272,10 @@ echo "TRAIN_JSON=${TRAIN_JSON}"
 echo "DATA_ROOT_PATH=${DATA_ROOT_PATH}"
 echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
+echo "E2B_RESUME_CKPT=${E2B_RESUME_CKPT:-<none>}"
 echo "OUTPUT_DIR=${OUTPUT_DIR}"
 echo "NUM_GPUS=${NUM_GPUS}, MIXED_PRECISION=${MIXED_PRECISION}"
+echo "NUM_TRAIN_EPOCHS=${NUM_TRAIN_EPOCHS}, MAX_TRAIN_STEPS=${MAX_TRAIN_STEPS}"
 echo "WIDTH=${WIDTH}, HEIGHT=${HEIGHT}, BF_NUM_TOKENS=${BF_NUM_TOKENS}"
 echo "USE_TEXTURE_GATE=${USE_TEXTURE_GATE}, GATE_TYPE=${GATE_TYPE}, GATE_INIT=${GATE_INIT}, GATE_REG_WEIGHT=${GATE_REG_WEIGHT}"
 echo "FREEZE_EXCEPT_GATE=${FREEZE_EXCEPT_GATE}, LOG_GATE_STATS=${LOG_GATE_STATS}"
