@@ -389,11 +389,6 @@ def _write_progress(run_dir, rows):
 
 
 def _prepare_evaluation_images(rows, metrics_dir, resize_size):
-    if not resize_size:
-        for row in rows:
-            row["evaluation_protocol"] = "original_image_size"
-        return rows
-
     from PIL import Image
 
     generated_dir = os.path.join(metrics_dir, "generated")
@@ -407,24 +402,34 @@ def _prepare_evaluation_images(rows, metrics_dir, resize_size):
         row["source_gen_path"] = source_gen
         row["source_target_path"] = source_target
         filename = f"{row['mode']}_{row['sample_id']}.png"
-        resized_gen = os.path.join(generated_dir, filename)
-        resized_target = os.path.join(real_dir, filename)
+        evaluation_gen = os.path.join(generated_dir, filename)
+        evaluation_target = os.path.join(real_dir, filename)
 
-        if existing_file(source_gen):
-            image = Image.open(source_gen).convert("RGB")
-            image.resize((resize_size, resize_size), Image.BICUBIC).save(
-                resized_gen
-            )
-        if existing_file(source_target):
-            image = Image.open(source_target).convert("RGB")
-            image.resize((resize_size, resize_size), Image.BICUBIC).save(
-                resized_target
-            )
+        if existing_file(source_gen) and not existing_file(evaluation_gen):
+            with Image.open(source_gen) as source_image:
+                image = source_image.convert("RGB")
+            if resize_size:
+                image.resize((resize_size, resize_size), Image.BICUBIC).save(
+                    evaluation_gen
+                )
+            else:
+                image.save(evaluation_gen)
+        if existing_file(source_target) and not existing_file(evaluation_target):
+            with Image.open(source_target) as source_image:
+                image = source_image.convert("RGB")
+            if resize_size:
+                image.resize((resize_size, resize_size), Image.BICUBIC).save(
+                    evaluation_target
+                )
+            else:
+                image.save(evaluation_target)
 
-        row["gen_path"] = resized_gen
-        row["target_path"] = resized_target
+        row["gen_path"] = evaluation_gen
+        row["target_path"] = evaluation_target
         row["evaluation_protocol"] = (
             f"resize_generated_real_to_{resize_size}"
+            if resize_size
+            else "original_image_size"
         )
     return rows
 

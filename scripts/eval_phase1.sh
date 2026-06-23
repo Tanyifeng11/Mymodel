@@ -114,6 +114,15 @@ count_generated_images() {
   find "${dir}" -path '*/generated_*.png' -type f 2>/dev/null | wc -l
 }
 
+count_evaluation_images() {
+  local dir="$1"
+  if [[ ! -d "${dir}" ]]; then
+    echo 0
+    return
+  fi
+  find "${dir}" -maxdepth 1 -name '*.png' -type f 2>/dev/null | wc -l
+}
+
 run_benchmark_if_needed() {
   local run_name="$1"
   local gam_ckpt="$2"
@@ -126,12 +135,16 @@ run_benchmark_if_needed() {
   fi
   local existing_count=0
   existing_count="$(count_generated_images "${run_dir}")"
+  local generated_compare_count=0
+  local real_compare_count=0
+  generated_compare_count="$(count_evaluation_images "${run_dir}/generated")"
+  real_compare_count="$(count_evaluation_images "${run_dir}/real")"
   if [[ "${metrics_only}" == "1" && "${existing_count}" -lt "${EVAL_NUM_SAMPLES}" ]]; then
     echo "[WARN] ${run_name}: metrics-only requested but only ${existing_count}/${EVAL_NUM_SAMPLES} generated images found; generating missing samples."
     metrics_only=0
   fi
 
-  if [[ "${FORCE_EVAL:-0}" != "1" && "${force_metrics_only}" != "1" && "${metrics_only}" != "1" && "${existing_count}" -ge "${EVAL_NUM_SAMPLES}" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
+  if [[ "${FORCE_EVAL:-0}" != "1" && "${force_metrics_only}" != "1" && "${metrics_only}" != "1" && "${existing_count}" -ge "${EVAL_NUM_SAMPLES}" && "${generated_compare_count}" -ge "${EVAL_NUM_SAMPLES}" && "${real_compare_count}" -ge "${EVAL_NUM_SAMPLES}" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
     echo "[SKIP] Evaluation exists: ${run_dir}/metrics_summary.json"
     return
   fi
