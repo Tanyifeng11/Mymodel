@@ -41,8 +41,8 @@ E1_CKPT="${E1_CKPT:-}"
 E2A_CKPT="${E2A_CKPT:-}"
 E2B_CKPT="${E2B_CKPT:-${E2B_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
 
-EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_100_with_e2b}"
-OLD_EVAL_BASE="${OLD_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
+EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
+LEGACY_EVAL_BASE="${LEGACY_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_100_with_e2b}"
 REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report_normal}"
 SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/phase1_bf_val_split.json}"
 EVAL_NUM_SAMPLES="${EVAL_NUM_SAMPLES:-100}"
@@ -118,17 +118,20 @@ run_benchmark_if_needed() {
   local run_name="$1"
   local gam_ckpt="$2"
   local eval_device="${3:-${EVAL_DEVICE}}"
+  local force_metrics_only="${4:-0}"
   local run_dir="${EVAL_BASE}/${run_name}"
-  local reuse_dir="${OLD_EVAL_BASE}/${run_name}"
   local metrics_only="${EVAL_METRICS_ONLY}"
+  if [[ "${force_metrics_only}" == "1" ]]; then
+    metrics_only=1
+  fi
   local existing_count=0
-  existing_count=$(( $(count_generated_images "${run_dir}") + $(count_generated_images "${reuse_dir}") ))
+  existing_count="$(count_generated_images "${run_dir}")"
   if [[ "${metrics_only}" == "1" && "${existing_count}" -lt "${EVAL_NUM_SAMPLES}" ]]; then
     echo "[WARN] ${run_name}: metrics-only requested but only ${existing_count}/${EVAL_NUM_SAMPLES} generated images found; generating missing samples."
     metrics_only=0
   fi
 
-  if [[ "${FORCE_EVAL:-0}" != "1" && "${metrics_only}" != "1" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
+  if [[ "${FORCE_EVAL:-0}" != "1" && "${force_metrics_only}" != "1" && "${metrics_only}" != "1" && "${existing_count}" -ge "${EVAL_NUM_SAMPLES}" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
     echo "[SKIP] Evaluation exists: ${run_dir}/metrics_summary.json"
     return
   fi
@@ -146,7 +149,6 @@ run_benchmark_if_needed() {
     --resume_generation 1
     --skip_existing 1
     --overwrite 0
-    --reuse_from_dir "${reuse_dir}"
     --device "${eval_device}"
     --texture_preprocess_mode "${TEXTURE_PREPROCESS_MODE}"
     --real_images_dir "${REAL_IMG_DIR}"
@@ -181,6 +183,28 @@ run_benchmark_if_needed() {
   fi
 
   "${cmd[@]}"
+}
+
+migrate_legacy_e2b_results() {
+  local source_dir="${LEGACY_EVAL_BASE}/e2b_gate"
+  local target_dir="${EVAL_BASE}/e2b_gate"
+
+  E2B_RECOMPUTE_METRICS=0
+  if [[ ! -d "${source_dir}" ]]; then
+    return
+  fi
+
+  if [[ -e "${target_dir}" ]]; then
+    echo "[WARN] E2B target already exists; legacy directory was not moved: ${source_dir}"
+    echo "[WARN] Remove or merge it manually if the legacy directory still contains additional samples."
+    return
+  fi
+
+  echo "[MIGRATE] Moving E2B results:"
+  echo "          ${source_dir}"
+  echo "       -> ${target_dir}"
+  mv "${source_dir}" "${target_dir}"
+  E2B_RECOMPUTE_METRICS=1
 }
 
 if [[ ! -d "${PROJECT_ROOT}" ]]; then
@@ -240,7 +264,7 @@ echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
-echo "OLD_EVAL_BASE=${OLD_EVAL_BASE}"
+echo "LEGACY_EVAL_BASE=${LEGACY_EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
 echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"
@@ -250,6 +274,7 @@ echo "COMPUTE_FID=${COMPUTE_FID}, COMPUTE_CLIP_I=${COMPUTE_CLIP_I}, COMPUTE_LEAK
 echo "============================================"
 
 mkdir -p "${EVAL_BASE}" "${REPORT_DIR}"
+migrate_legacy_e2b_results
 
 if [[ "${RUN_EVAL:-1}" == "1" ]]; then
   if [[ "${EVAL_METRICS_ONLY}" != "1" && ! -f "${TEXTURE_ADAPTER_CKPT}" ]]; then
@@ -292,7 +317,7 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
       names+=("E2A")
     fi
     if [[ "${RUN_E2B}" == "1" ]]; then
-      run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}" &
+      run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}" "${E2B_RECOMPUTE_METRICS}" &
       pids+=("$!")
       names+=("E2B")
     fi
@@ -320,7 +345,7 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     fi
     if [[ "${RUN_E2B}" == "1" ]]; then
       echo "=== Fixed benchmark: E2B ==="
-      run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
+      run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}" "${E2B_RECOMPUTE_METRICS}"
     fi
   fi
 else
