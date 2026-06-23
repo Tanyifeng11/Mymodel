@@ -77,6 +77,39 @@ def mode_to_flags(mode_name):
     raise ValueError(f"Unsupported mode: {mode_name}")
 
 
+def experiment_to_flags(run_name, args):
+    configs = {
+        "e0_baseline": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 0,
+            "use_texture_gate": 0,
+        },
+        "e1_grouped": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+        },
+        "e2a_region": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+        },
+        "e2b_gate": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 1,
+            "gate_type": "layer",
+            "gate_init": "identity",
+        },
+    }
+    config = dict(configs.get(run_name, {}))
+    config.setdefault("use_texture_gate", args.use_texture_gate)
+    config.setdefault("layer_group_enabled", args.layer_group_enabled)
+    config.setdefault("gate_type", args.gate_type)
+    config.setdefault("gate_init", args.gate_init)
+    return config
+
+
 def _resolve_path(data_root, value, override_dir=None):
     if not value:
         return None
@@ -193,6 +226,10 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         return None, "missing_texture"
 
     flags = mode_to_flags(mode_name)
+    experiment_flags = experiment_to_flags(args.run_name, args)
+    texture_condition_mode = experiment_flags.get(
+        "texture_condition_mode", flags["texture_condition_mode"]
+    )
     src = os.path.join(sample_out, os.path.basename(paths["sketch_path"]))
     if existing_file(src) and not args.overwrite:
         shutil.move(src, dst)
@@ -217,13 +254,19 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         "--device",
         args.device,
         "--texture_condition_mode",
-        flags["texture_condition_mode"],
+        texture_condition_mode,
         "--fusion_type",
         flags["fusion_type"],
+        "--layer_group_enabled",
+        str(int(experiment_flags["layer_group_enabled"])),
         "--texture_preprocess_mode",
         args.texture_preprocess_mode,
         "--use_texture_gate",
-        str(int(args.use_texture_gate)),
+        str(int(experiment_flags["use_texture_gate"])),
+        "--gate_type",
+        experiment_flags["gate_type"],
+        "--gate_init",
+        experiment_flags["gate_init"],
         "--alpha1",
         str(args.alpha1),
         "--alpha2",
@@ -451,6 +494,7 @@ def run_benchmark(args):
         "texture_ckpt": args.texture_ckpt,
         "clip_model_path": args.clip_model_path,
         "texture_preprocess_mode": args.texture_preprocess_mode,
+        "experiment_flags": experiment_to_flags(args.run_name, args),
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
         "metrics_only": args.metrics_only,
         "resume_generation": bool(args.resume_generation),
@@ -479,6 +523,8 @@ def run_benchmark(args):
                     args, sample, mode, run_dir, paths=paths
                 )
             except Exception as exc:
+                if args.run_name == "e2b_gate" or args.use_texture_gate:
+                    raise
                 gen_path = None
                 generation_status = "failed"
                 reason = f"inference failed for {uid}: {exc}"
@@ -872,7 +918,10 @@ def build_argparser():
     )
     parser.add_argument("--gam_ckpt", required=True)
     parser.add_argument("--texture_ckpt", required=True)
+    parser.add_argument("--layer_group_enabled", type=int, choices=[0, 1], default=1)
     parser.add_argument("--use_texture_gate", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--gate_type", default="layer")
+    parser.add_argument("--gate_init", default="identity")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--modes", default="token,spatial,hybrid,spatial_bfm_like"

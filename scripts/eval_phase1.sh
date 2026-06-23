@@ -33,16 +33,17 @@ TEXTURE_OUTPUT_DIR="${TEXTURE_OUTPUT_DIR:-${OUTPUT_BASE}/texture_adapter_bf_e20}
 E0_OUTPUT_DIR="${E0_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e0_baseline_e5}"
 E1_OUTPUT_DIR="${E1_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e1_grouped_e5}"
 E2A_OUTPUT_DIR="${E2A_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2a_region_e5}"
-E2B_OUTPUT_DIR="${E2B_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_gate_e5}"
+E2B_OUTPUT_DIR="${E2B_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3}"
 
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-}"
 E0_CKPT="${E0_CKPT:-}"
 E1_CKPT="${E1_CKPT:-}"
 E2A_CKPT="${E2A_CKPT:-}"
-E2B_CKPT="${E2B_CKPT:-}"
+E2B_CKPT="${E2B_CKPT:-${E2B_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
 
-EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
-REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report}"
+EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_100_with_e2b}"
+OLD_EVAL_BASE="${OLD_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
+REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report_normal}"
 SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/phase1_bf_val_split.json}"
 EVAL_NUM_SAMPLES="${EVAL_NUM_SAMPLES:-100}"
 EVAL_SEED="${EVAL_SEED:-42}"
@@ -58,18 +59,13 @@ EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-1}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
 EVAL_MODES="${EVAL_MODES:-token}"
 TEXTURE_PREPROCESS_MODE="${TEXTURE_PREPROCESS_MODE:-plain_resize}"
-if [[ "${EVAL_METRICS_ONLY}" == "1" ]]; then
-  DEFAULT_RUN_E0=1
-  DEFAULT_RUN_E1=1
-else
-  DEFAULT_RUN_E0=0
-  DEFAULT_RUN_E1=0
-fi
+DEFAULT_RUN_E0=1
+DEFAULT_RUN_E1=1
 RUN_E0="${RUN_E0:-${DEFAULT_RUN_E0}}"
 RUN_E1="${RUN_E1:-${DEFAULT_RUN_E1}}"
 RUN_E2A="${RUN_E2A:-1}"
-RUN_E2B="${RUN_E2B:-0}"
-REPORT_EXPERIMENTS="${REPORT_EXPERIMENTS:-e0_baseline,e1_grouped,e2a_region}"
+RUN_E2B="${RUN_E2B:-1}"
+REPORT_EXPERIMENTS="${REPORT_EXPERIMENTS:-e0_baseline,e1_grouped,e2a_region,e2b_gate}"
 CLIP_MODEL_PATH="${CLIP_MODEL_PATH:-${PROJECT_ROOT}/models/clip}"
 COMPUTE_FID="${COMPUTE_FID:-1}"
 COMPUTE_CLIP_I="${COMPUTE_CLIP_I:-1}"
@@ -115,6 +111,7 @@ run_benchmark_if_needed() {
   local gam_ckpt="$2"
   local eval_device="${3:-${EVAL_DEVICE}}"
   local run_dir="${EVAL_BASE}/${run_name}"
+  local reuse_dir="${OLD_EVAL_BASE}/${run_name}"
 
   if [[ "${FORCE_EVAL:-0}" != "1" && "${EVAL_METRICS_ONLY}" != "1" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
     echo "[SKIP] Evaluation exists: ${run_dir}/metrics_summary.json"
@@ -131,6 +128,10 @@ run_benchmark_if_needed() {
     --modes "${EVAL_MODES}"
     --num_samples "${EVAL_NUM_SAMPLES}"
     --seed "${EVAL_SEED}"
+    --resume_generation 1
+    --skip_existing 1
+    --overwrite 0
+    --reuse_from_dir "${reuse_dir}"
     --device "${eval_device}"
     --texture_preprocess_mode "${TEXTURE_PREPROCESS_MODE}"
     --real_images_dir "${REAL_IMG_DIR}"
@@ -215,7 +216,7 @@ if [[ -z "${E2B_CKPT}" ]]; then
 fi
 
 echo "============================================"
-echo "Phase 1/2A evaluation"
+echo "Phase 1 E0/E1/E2A/E2B evaluation"
 echo "VAL_JSON=${VAL_JSON}"
 echo "VAL_ROOT_PATH=${VAL_ROOT_PATH}"
 echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
@@ -224,6 +225,7 @@ echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
+echo "OLD_EVAL_BASE=${OLD_EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
 echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"

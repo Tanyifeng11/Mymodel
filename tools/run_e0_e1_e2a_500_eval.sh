@@ -22,10 +22,11 @@ TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_
 E0_CKPT="${E0_CKPT:-${OUTPUT_BASE}/phase1_e0_baseline_e5/checkpoint-28365/joint_model.pt}"
 E1_CKPT="${E1_CKPT:-${OUTPUT_BASE}/phase1_e1_grouped_e5/checkpoint-final/joint_model.pt}"
 E2A_CKPT="${E2A_CKPT:-${OUTPUT_BASE}/phase1_e2a_region_e5/checkpoint-final/joint_model.pt}"
+E2B_CKPT="${E2B_CKPT:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3/checkpoint-final/joint_model.pt}"
 
-OLD_EVAL_BASE="${OLD_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
-EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500}"
-RESIZED_BASE="${RESIZED_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_resized256}"
+OLD_EVAL_BASE="${OLD_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500}"
+EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_with_e2b}"
+RESIZED_BASE="${RESIZED_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_with_e2b_resized256}"
 REPORT_NORMAL="${REPORT_NORMAL:-${EVAL_BASE}/report_normal}"
 REPORT_RESIZE256="${REPORT_RESIZE256:-${EVAL_BASE}/report_resize256}"
 
@@ -37,8 +38,9 @@ CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
 E0_DEVICE="${E0_DEVICE:-cuda:0}"
 E1_DEVICE="${E1_DEVICE:-cuda:0}"
 E2A_DEVICE="${E2A_DEVICE:-cuda:0}"
+E2B_DEVICE="${E2B_DEVICE:-cuda:0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda:0}"
-EXPERIMENT_NAMES="e0_baseline,e1_grouped,e2a_region"
+EXPERIMENT_NAMES="e0_baseline,e1_grouped,e2a_region,e2b_gate"
 
 find_latest_gam_ckpt() {
   local base_dir="$1"
@@ -62,6 +64,7 @@ resolve_checkpoint() {
 E0_CKPT="$(resolve_checkpoint "${E0_CKPT}" "${OUTPUT_BASE}/phase1_e0_baseline_e5")"
 E1_CKPT="$(resolve_checkpoint "${E1_CKPT}" "${OUTPUT_BASE}/phase1_e1_grouped_e5")"
 E2A_CKPT="$(resolve_checkpoint "${E2A_CKPT}" "${OUTPUT_BASE}/phase1_e2a_region_e5")"
+E2B_CKPT="$(resolve_checkpoint "${E2B_CKPT}" "${OUTPUT_BASE}/phase1_e2b_layer_gate_e3")"
 
 for required_path in \
   "${DATASET_JSON}" \
@@ -69,7 +72,8 @@ for required_path in \
   "${TEXTURE_ADAPTER_CKPT}" \
   "${E0_CKPT}" \
   "${E1_CKPT}" \
-  "${E2A_CKPT}"; do
+  "${E2A_CKPT}" \
+  "${E2B_CKPT}"; do
   if [[ ! -e "${required_path}" ]]; then
     echo "[ERROR] Required path does not exist: ${required_path}" >&2
     exit 1
@@ -138,7 +142,7 @@ run_resize256_benchmark() {
 }
 
 echo "============================================"
-echo "500-sample E0/E1/E2A evaluation"
+echo "500-sample E0/E1/E2A/E2B evaluation"
 echo "DATASET_JSON=${DATASET_JSON}"
 echo "SPLIT_PATH=${SPLIT_PATH}"
 echo "OLD_EVAL_BASE=${OLD_EVAL_BASE}"
@@ -147,24 +151,28 @@ echo "RESIZED_BASE=${RESIZED_BASE}"
 echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
+echo "E2B_CKPT=${E2B_CKPT}"
 echo "============================================"
 
-echo "=== 1/7 E0 resume generation and normal evaluation ==="
+echo "=== 1/8 E0 resume generation and normal evaluation ==="
 run_normal_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
 
-echo "=== 2/7 E1 resume generation and normal evaluation ==="
+echo "=== 2/8 E1 resume generation and normal evaluation ==="
 run_normal_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
 
-echo "=== 3/7 E2A resume generation and normal evaluation ==="
+echo "=== 3/8 E2A resume generation and normal evaluation ==="
 run_normal_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
 
-echo "=== 4/7 Validate normal evaluation inputs ==="
+echo "=== 4/8 E2B resume generation and normal evaluation ==="
+run_normal_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
+
+echo "=== 5/8 Validate normal evaluation inputs ==="
 python tools/validate_benchmark_outputs.py \
   --experiments_dir "${EVAL_BASE}" \
   --experiment_names "${EXPERIMENT_NAMES}" \
   --expected_count "${NUM_SAMPLES}"
 
-echo "=== 5/7 Build normal evaluation report ==="
+echo "=== 6/8 Build normal evaluation report ==="
 python -m eval.ablation_report \
   --experiments_dir "${EVAL_BASE}" \
   --output_dir "${REPORT_NORMAL}" \
@@ -175,10 +183,11 @@ python -m eval.ablation_report \
   --resume_generation 1 \
   --existing_samples_skipped 1
 
-echo "=== 6/7 Run resize256 evaluation ==="
+echo "=== 7/8 Run resize256 evaluation ==="
 run_resize256_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
 run_resize256_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
 run_resize256_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+run_resize256_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
 
 python tools/validate_benchmark_outputs.py \
   --experiments_dir "${RESIZED_BASE}" \
@@ -186,7 +195,7 @@ python tools/validate_benchmark_outputs.py \
   --expected_count "${NUM_SAMPLES}" \
   --required_size 256
 
-echo "=== 7/7 Build resize256 evaluation report ==="
+echo "=== 8/8 Build resize256 evaluation report ==="
 python -m eval.ablation_report \
   --experiments_dir "${RESIZED_BASE}" \
   --output_dir "${REPORT_RESIZE256}" \
@@ -201,6 +210,6 @@ echo "============================================"
 echo "Evaluation completed."
 echo "Normal report:    ${REPORT_NORMAL}"
 echo "Resize256 report: ${REPORT_RESIZE256}"
-echo "Generated images: ${EVAL_BASE}/{e0_baseline,e1_grouped,e2a_region}"
-echo "Resized images:   ${RESIZED_BASE}/{e0_baseline,e1_grouped,e2a_region}"
+echo "Generated images: ${EVAL_BASE}/{e0_baseline,e1_grouped,e2a_region,e2b_gate}"
+echo "Resized images:   ${RESIZED_BASE}/{e0_baseline,e1_grouped,e2a_region,e2b_gate}"
 echo "============================================"

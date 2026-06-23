@@ -28,6 +28,22 @@ infer_texture_num_tokens = _checkpoint_utils.infer_texture_num_tokens
 extract_texture_metadata = _checkpoint_utils.extract_texture_metadata
 
 
+def _get_layer_group(name: str) -> str:
+    if "down_blocks.2" in name or "down_blocks.3" in name:
+        return "semantic"
+    if "mid_block" in name:
+        return "semantic"
+    if "up_blocks.0" in name or "up_blocks.1" in name:
+        return "semantic"
+    return "detail"
+
+
+def _get_detail_text_scale(name: str) -> float:
+    if "up_blocks" in name:
+        return 0.15
+    return 0.05
+
+
 def load_image_encoder_flexible(image_encoder_path, device=None, dtype=None):
     try:
         image_encoder = CLIPVisionModelWithProjection.from_pretrained(image_encoder_path)
@@ -228,6 +244,10 @@ def prepare(args):
     print(f"[prepare] base model path: {args.base_model_path}")
     print(f"[prepare] vae model path: {args.vae_model_path}")
     print(f"[prepare] resolved image encoder path: {resolved_image_encoder_path}")
+    print(f"[prepare] layer_group_enabled = {bool(args.layer_group_enabled)}")
+    print(f"[prepare] use_texture_gate = {bool(args.use_texture_gate)}")
+    print(f"[prepare] gate_type = {args.gate_type}")
+    print(f"[prepare] gate_init = {args.gate_init}")
     
     # Keep inference base components aligned with training base components.
     vae = AutoencoderKL.from_pretrained(args.vae_model_path).to(dtype=torch.float16, device=args.device)
@@ -258,11 +278,21 @@ def prepare(args):
         if cross_attention_dim is None:
             attn_procs[name] = LogoRefSAttnProcessor2_0(name, hidden_size)
         else:
+            if args.layer_group_enabled:
+                layer_group = _get_layer_group(name)
+                detail_text_scale = _get_detail_text_scale(name)
+            else:
+                layer_group = "all"
+                detail_text_scale = 0.1
             attn_procs[name] = IPAttnProcessor2_0(
                 hidden_size=hidden_size,
                 cross_attention_dim=cross_attention_dim,
                 num_tokens=args.texture_num_tokens,
+                layer_group=layer_group,
+                detail_text_scale=detail_text_scale,
                 use_texture_gate=bool(args.use_texture_gate),
+                gate_type=args.gate_type,
+                gate_init=args.gate_init,
             )
 
     unet.set_attn_processor(attn_procs)
@@ -374,16 +404,29 @@ def prepare(args):
                          scheduler=noise_scheduler,
                          safety_checker=StableDiffusionSafetyChecker,
                          feature_extractor=CLIPImageProcessor)
+    pipe.set_layer_group_enabled(bool(args.layer_group_enabled))
 
     # IMAGGarment will load args.texture_ckpt in __init__, which can overwrite
     # adapter/BF states already loaded from GAM checkpoint. Restore GAM states here.
     gam_state = gam_info.get("state", {})
     if "texture_adapter" in gam_state:
+        adapter_sd = gam_state["texture_adapter"]
+        checkpoint_has_gate = any(
+            "texture_gate_delta" in key or ".gate" in key or key.startswith("gate")
+            for key in adapter_sd.keys()
+        )
         missing, unexpected = torch.nn.ModuleList(pipe.unet.attn_processors.values()).load_state_dict(
-            gam_state["texture_adapter"], strict=False
+            adapter_sd, strict=False
         )
         gate_unexpected = [k for k in unexpected if "texture_gate_delta" in k or "gate" in k]
+        gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
         if args.use_texture_gate:
+            if not checkpoint_has_gate:
+                print("[prepare] WARNING: use_texture_gate=1 but checkpoint has no texture gate parameters")
+                raise RuntimeError("E2b requires texture gate parameters in GAM checkpoint")
+            if gate_missing:
+                print(f"[prepare] WARNING: texture gate parameters were not loaded: {gate_missing[:16]}")
+                raise RuntimeError("E2b texture gate parameters are incomplete in GAM checkpoint")
             gate_keys = []
             for name, proc in pipe.unet.attn_processors.items():
                 if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
@@ -395,6 +438,9 @@ def prepare(args):
             "[prepare] restored texture_adapter from GAM checkpoint after pipe init "
             f"(missing={len(missing)}, unexpected={len(unexpected)})"
         )
+    elif args.use_texture_gate:
+        print("[prepare] WARNING: use_texture_gate=1 but checkpoint has no texture_adapter state")
+        raise RuntimeError("E2b requires texture_adapter gate parameters in GAM checkpoint")
 
     bf_state = gam_info.get("bf_state", None)
     if bf_state is not None and getattr(pipe, "bf_texture_conditioner", None) is not None:
@@ -431,7 +477,10 @@ if __name__ == "__main__":
     parser.add_argument('--texture_num_tokens', type=int, default=16)
     parser.add_argument('--texture_scale', type=float, default=1.0)
     parser.add_argument('--texture_condition_mode', type=str, default='spatial', choices=['token', 'spatial', 'hybrid'])
+    parser.add_argument('--layer_group_enabled', type=int, default=1, choices=[0, 1])
     parser.add_argument('--use_texture_gate', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--gate_type', type=str, default='layer')
+    parser.add_argument('--gate_init', type=str, default='identity')
     parser.add_argument(
         '--fusion_type',
         type=str,
