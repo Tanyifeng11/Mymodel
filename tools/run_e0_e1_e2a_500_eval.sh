@@ -24,9 +24,10 @@ E1_CKPT="${E1_CKPT:-${OUTPUT_BASE}/phase1_e1_grouped_e5/checkpoint-final/joint_m
 E2A_CKPT="${E2A_CKPT:-${OUTPUT_BASE}/phase1_e2a_region_e5/checkpoint-final/joint_model.pt}"
 E2B_CKPT="${E2B_CKPT:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3/checkpoint-final/joint_model.pt}"
 
-OLD_EVAL_BASE="${OLD_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500}"
-EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_with_e2b}"
-RESIZED_BASE="${RESIZED_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_with_e2b_resized256}"
+EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500}"
+LEGACY_EVAL_BASE="${LEGACY_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_with_e2b}"
+RESIZED_BASE="${RESIZED_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_resized256}"
+LEGACY_RESIZED_BASE="${LEGACY_RESIZED_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_with_e2b_resized256}"
 REPORT_NORMAL="${REPORT_NORMAL:-${EVAL_BASE}/report_normal}"
 REPORT_RESIZE256="${REPORT_RESIZE256:-${EVAL_BASE}/report_resize256}"
 
@@ -80,13 +81,33 @@ for required_path in \
   fi
 done
 
+migrate_legacy_e2b_dir() {
+  local source_base="$1"
+  local target_base="$2"
+  local source_dir="${source_base}/e2b_gate"
+  local target_dir="${target_base}/e2b_gate"
+
+  if [[ ! -d "${source_dir}" ]]; then
+    return
+  fi
+  if [[ -e "${target_dir}" ]]; then
+    echo "[WARN] E2B target already exists; legacy directory was not moved: ${source_dir}"
+    return
+  fi
+
+  mkdir -p "${target_base}"
+  echo "[MIGRATE] ${source_dir} -> ${target_dir}"
+  mv "${source_dir}" "${target_dir}"
+}
+
 mkdir -p "${EVAL_BASE}" "${RESIZED_BASE}" "${REPORT_NORMAL}" "${REPORT_RESIZE256}"
+migrate_legacy_e2b_dir "${LEGACY_EVAL_BASE}" "${EVAL_BASE}"
+migrate_legacy_e2b_dir "${LEGACY_RESIZED_BASE}" "${RESIZED_BASE}"
 
 run_normal_benchmark() {
   local run_name="$1"
   local gam_ckpt="$2"
   local device="$3"
-  local reuse_dir="${OLD_EVAL_BASE}/${run_name}"
 
   python tools/run_fixed_benchmark.py \
     --dataset_json "${DATASET_JSON}" \
@@ -99,7 +120,6 @@ run_normal_benchmark() {
     --resume_generation 1 \
     --skip_existing 1 \
     --overwrite 0 \
-    --reuse_from_dir "${reuse_dir}" \
     --gam_ckpt "${gam_ckpt}" \
     --texture_ckpt "${TEXTURE_ADAPTER_CKPT}" \
     --device "${device}" \
@@ -145,9 +165,10 @@ echo "============================================"
 echo "500-sample E0/E1/E2A/E2B evaluation"
 echo "DATASET_JSON=${DATASET_JSON}"
 echo "SPLIT_PATH=${SPLIT_PATH}"
-echo "OLD_EVAL_BASE=${OLD_EVAL_BASE}"
 echo "EVAL_BASE=${EVAL_BASE}"
+echo "LEGACY_EVAL_BASE=${LEGACY_EVAL_BASE}"
 echo "RESIZED_BASE=${RESIZED_BASE}"
+echo "LEGACY_RESIZED_BASE=${LEGACY_RESIZED_BASE}"
 echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
