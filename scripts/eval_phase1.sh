@@ -34,12 +34,16 @@ E0_OUTPUT_DIR="${E0_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e0_baseline_e5}"
 E1_OUTPUT_DIR="${E1_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e1_grouped_e5}"
 E2A_OUTPUT_DIR="${E2A_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2a_region_e5}"
 E2B_OUTPUT_DIR="${E2B_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3}"
+E2B_SAFE_OUTPUT_DIR="${E2B_SAFE_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_safe_gate_e3}"
+E2B_COLOR_SAFE_OUTPUT_DIR="${E2B_COLOR_SAFE_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3}"
 
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-}"
 E0_CKPT="${E0_CKPT:-}"
 E1_CKPT="${E1_CKPT:-}"
 E2A_CKPT="${E2A_CKPT:-}"
 E2B_CKPT="${E2B_CKPT:-${E2B_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
+E2B_SAFE_CKPT="${E2B_SAFE_CKPT:-${E2B_SAFE_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
+E2B_COLOR_SAFE_CKPT="${E2B_COLOR_SAFE_CKPT:-${E2B_COLOR_SAFE_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
 
 EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full}"
 LEGACY_EVAL_BASE="${LEGACY_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_100_with_e2b}"
@@ -64,6 +68,8 @@ RUN_E0="${RUN_E0:-${DEFAULT_RUN_E0}}"
 RUN_E1="${RUN_E1:-${DEFAULT_RUN_E1}}"
 RUN_E2A="${RUN_E2A:-1}"
 RUN_E2B="${RUN_E2B:-1}"
+RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
+RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
 REPORT_EXPERIMENTS="${REPORT_EXPERIMENTS:-e0_baseline,e1_grouped,e2a_region,e2b_gate}"
 CLIP_MODEL_PATH="${CLIP_MODEL_PATH:-${PROJECT_ROOT}/models/clip}"
 COMPUTE_FID="${COMPUTE_FID:-1}"
@@ -266,6 +272,12 @@ fi
 if [[ -z "${E2B_CKPT}" ]]; then
   E2B_CKPT="$(find_latest_gam_ckpt "${E2B_OUTPUT_DIR}")"
 fi
+if [[ -z "${E2B_SAFE_CKPT}" || ! -f "${E2B_SAFE_CKPT}" ]]; then
+  E2B_SAFE_CKPT="$(find_latest_gam_ckpt "${E2B_SAFE_OUTPUT_DIR}")"
+fi
+if [[ -z "${E2B_COLOR_SAFE_CKPT}" || ! -f "${E2B_COLOR_SAFE_CKPT}" ]]; then
+  E2B_COLOR_SAFE_CKPT="$(find_latest_gam_ckpt "${E2B_COLOR_SAFE_OUTPUT_DIR}")"
+fi
 
 echo "============================================"
 echo "Phase 1 E0/E1/E2A/E2B evaluation"
@@ -276,12 +288,14 @@ echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
+echo "E2B_SAFE_CKPT=${E2B_SAFE_CKPT}"
+echo "E2B_COLOR_SAFE_CKPT=${E2B_COLOR_SAFE_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
 echo "LEGACY_EVAL_BASE=${LEGACY_EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
 echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"
-echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E2B=${RUN_E2B}"
+echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
 echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}, E2B_DEVICE=${E2B_DEVICE}"
 echo "COMPUTE_FID=${COMPUTE_FID}, COMPUTE_CLIP_I=${COMPUTE_CLIP_I}, COMPUTE_LEAKAGE=${COMPUTE_LEAKAGE}, COMPUTE_STRUCTURE=${COMPUTE_STRUCTURE}"
 echo "============================================"
@@ -310,6 +324,14 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     echo "[ERROR] E2B_CKPT does not exist: ${E2B_CKPT}" >&2
     exit 1
   fi
+  if [[ "${RUN_E2B_SAFE}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E2B_SAFE_CKPT}" ]]; then
+    echo "[ERROR] E2B_SAFE_CKPT does not exist: ${E2B_SAFE_CKPT}" >&2
+    exit 1
+  fi
+  if [[ "${RUN_E2B_COLOR_SAFE}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E2B_COLOR_SAFE_CKPT}" ]]; then
+    echo "[ERROR] E2B_COLOR_SAFE_CKPT does not exist: ${E2B_COLOR_SAFE_CKPT}" >&2
+    exit 1
+  fi
 
   if [[ "${EVAL_PARALLEL}" == "1" ]]; then
     pids=()
@@ -333,6 +355,16 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
       run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}" "${E2B_RECOMPUTE_METRICS}" &
       pids+=("$!")
       names+=("E2B")
+    fi
+    if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
+      run_benchmark_if_needed "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_DEVICE}" &
+      pids+=("$!")
+      names+=("E2B-safe")
+    fi
+    if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
+      run_benchmark_if_needed "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_DEVICE}" &
+      pids+=("$!")
+      names+=("E2B-color-safe")
     fi
 
     for i in "${!pids[@]}"; do
@@ -359,6 +391,14 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     if [[ "${RUN_E2B}" == "1" ]]; then
       echo "=== Fixed benchmark: E2B ==="
       run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}" "${E2B_RECOMPUTE_METRICS}"
+    fi
+    if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
+      echo "=== Fixed benchmark: E2B-safe ==="
+      run_benchmark_if_needed "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_DEVICE}"
+    fi
+    if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
+      echo "=== Fixed benchmark: E2B-color-safe ==="
+      run_benchmark_if_needed "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_DEVICE}"
     fi
   fi
 else

@@ -22,6 +22,8 @@ E0_CKPT="${E0_CKPT:-${OUTPUT_BASE}/phase1_e0_baseline_e5/checkpoint-28365/joint_
 E1_CKPT="${E1_CKPT:-${OUTPUT_BASE}/phase1_e1_grouped_e5/checkpoint-final/joint_model.pt}"
 E2A_CKPT="${E2A_CKPT:-${OUTPUT_BASE}/phase1_e2a_region_e5/checkpoint-final/joint_model.pt}"
 E2B_CKPT="${E2B_CKPT:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3/checkpoint-final/joint_model.pt}"
+E2B_SAFE_CKPT="${E2B_SAFE_CKPT:-${OUTPUT_BASE}/phase1_e2b_safe_gate_e3/checkpoint-final/joint_model.pt}"
+E2B_COLOR_SAFE_CKPT="${E2B_COLOR_SAFE_CKPT:-${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3/checkpoint-final/joint_model.pt}"
 
 EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500}"
 LEGACY_EVAL_BASE="${LEGACY_EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_with_e2b}"
@@ -39,8 +41,13 @@ E0_DEVICE="${E0_DEVICE:-cuda:0}"
 E1_DEVICE="${E1_DEVICE:-cuda:0}"
 E2A_DEVICE="${E2A_DEVICE:-cuda:0}"
 E2B_DEVICE="${E2B_DEVICE:-cuda:0}"
+E2B_SAFE_DEVICE="${E2B_SAFE_DEVICE:-${E2B_DEVICE}}"
+E2B_COLOR_SAFE_DEVICE="${E2B_COLOR_SAFE_DEVICE:-${E2B_DEVICE}}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda:0}"
-EXPERIMENT_NAMES="e0_baseline,e1_grouped,e2a_region,e2b_gate"
+RUN_E2B="${RUN_E2B:-1}"
+RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
+RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
+EXPERIMENT_NAMES="${EXPERIMENT_NAMES:-}"
 
 find_latest_gam_ckpt() {
   local base_dir="$1"
@@ -65,6 +72,21 @@ E0_CKPT="$(resolve_checkpoint "${E0_CKPT}" "${OUTPUT_BASE}/phase1_e0_baseline_e5
 E1_CKPT="$(resolve_checkpoint "${E1_CKPT}" "${OUTPUT_BASE}/phase1_e1_grouped_e5")"
 E2A_CKPT="$(resolve_checkpoint "${E2A_CKPT}" "${OUTPUT_BASE}/phase1_e2a_region_e5")"
 E2B_CKPT="$(resolve_checkpoint "${E2B_CKPT}" "${OUTPUT_BASE}/phase1_e2b_layer_gate_e3")"
+E2B_SAFE_CKPT="$(resolve_checkpoint "${E2B_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2b_safe_gate_e3")"
+E2B_COLOR_SAFE_CKPT="$(resolve_checkpoint "${E2B_COLOR_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3")"
+
+if [[ -z "${EXPERIMENT_NAMES}" ]]; then
+  EXPERIMENT_NAMES="e0_baseline,e1_grouped,e2a_region"
+  if [[ "${RUN_E2B}" == "1" ]]; then
+    EXPERIMENT_NAMES+=",e2b_gate"
+  fi
+  if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
+    EXPERIMENT_NAMES+=",e2b_safe_gate"
+  fi
+  if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
+    EXPERIMENT_NAMES+=",e2b_color_safe_gate"
+  fi
+fi
 
 for required_path in \
   "${DATASET_JSON}" \
@@ -72,13 +94,24 @@ for required_path in \
   "${TEXTURE_ADAPTER_CKPT}" \
   "${E0_CKPT}" \
   "${E1_CKPT}" \
-  "${E2A_CKPT}" \
-  "${E2B_CKPT}"; do
+  "${E2A_CKPT}"; do
   if [[ ! -e "${required_path}" ]]; then
     echo "[ERROR] Required path does not exist: ${required_path}" >&2
     exit 1
   fi
 done
+if [[ "${RUN_E2B}" == "1" && ! -f "${E2B_CKPT}" ]]; then
+  echo "[ERROR] E2B_CKPT does not exist: ${E2B_CKPT}" >&2
+  exit 1
+fi
+if [[ "${RUN_E2B_SAFE}" == "1" && ! -f "${E2B_SAFE_CKPT}" ]]; then
+  echo "[ERROR] E2B_SAFE_CKPT does not exist: ${E2B_SAFE_CKPT}" >&2
+  exit 1
+fi
+if [[ "${RUN_E2B_COLOR_SAFE}" == "1" && ! -f "${E2B_COLOR_SAFE_CKPT}" ]]; then
+  echo "[ERROR] E2B_COLOR_SAFE_CKPT does not exist: ${E2B_COLOR_SAFE_CKPT}" >&2
+  exit 1
+fi
 
 migrate_legacy_e2b_dir() {
   local source_base="$1"
@@ -172,6 +205,10 @@ echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
+echo "E2B_SAFE_CKPT=${E2B_SAFE_CKPT}"
+echo "E2B_COLOR_SAFE_CKPT=${E2B_COLOR_SAFE_CKPT}"
+echo "RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
+echo "EXPERIMENT_NAMES=${EXPERIMENT_NAMES}"
 echo "============================================"
 
 echo "=== 1/8 E0 resume generation and normal evaluation ==="
@@ -184,7 +221,15 @@ echo "=== 3/8 E2A resume generation and normal evaluation ==="
 run_normal_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
 
 echo "=== 4/8 E2B resume generation and normal evaluation ==="
-run_normal_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
+if [[ "${RUN_E2B}" == "1" ]]; then
+  run_normal_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
+fi
+if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
+  run_normal_benchmark "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_SAFE_DEVICE}"
+fi
+if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
+  run_normal_benchmark "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_COLOR_SAFE_DEVICE}"
+fi
 
 echo "=== 5/8 Validate normal evaluation inputs ==="
 python tools/validate_benchmark_outputs.py \
@@ -207,7 +252,15 @@ echo "=== 7/8 Run resize256 evaluation ==="
 run_resize256_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
 run_resize256_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
 run_resize256_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
-run_resize256_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
+if [[ "${RUN_E2B}" == "1" ]]; then
+  run_resize256_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
+fi
+if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
+  run_resize256_benchmark "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_SAFE_DEVICE}"
+fi
+if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
+  run_resize256_benchmark "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_COLOR_SAFE_DEVICE}"
+fi
 
 python tools/validate_benchmark_outputs.py \
   --experiments_dir "${RESIZED_BASE}" \
@@ -230,6 +283,6 @@ echo "============================================"
 echo "Evaluation completed."
 echo "Normal report:    ${REPORT_NORMAL}"
 echo "Resize256 report: ${REPORT_RESIZE256}"
-echo "Generated images: ${EVAL_BASE}/{e0_baseline,e1_grouped,e2a_region,e2b_gate}"
-echo "Resized images:   ${RESIZED_BASE}/{e0_baseline,e1_grouped,e2a_region,e2b_gate}"
+echo "Generated images: ${EVAL_BASE}/(${EXPERIMENT_NAMES})"
+echo "Resized images:   ${RESIZED_BASE}/(${EXPERIMENT_NAMES})"
 echo "============================================"

@@ -248,6 +248,7 @@ def prepare(args):
     print(f"[prepare] use_texture_gate = {bool(args.use_texture_gate)}")
     print(f"[prepare] gate_type = {args.gate_type}")
     print(f"[prepare] gate_init = {args.gate_init}")
+    print(f"[prepare] gate_min = {args.gate_min}, gate_max = {args.gate_max}")
     
     # Keep inference base components aligned with training base components.
     vae = AutoencoderKL.from_pretrained(args.vae_model_path).to(dtype=torch.float16, device=args.device)
@@ -293,6 +294,8 @@ def prepare(args):
                 use_texture_gate=bool(args.use_texture_gate),
                 gate_type=args.gate_type,
                 gate_init=args.gate_init,
+                gate_min=args.gate_min,
+                gate_max=args.gate_max,
             )
 
     unet.set_attn_processor(attn_procs)
@@ -481,6 +484,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_texture_gate', type=int, default=0, choices=[0, 1])
     parser.add_argument('--gate_type', type=str, default='layer')
     parser.add_argument('--gate_init', type=str, default='identity')
+    parser.add_argument('--gate_min', type=float, default=0.7)
+    parser.add_argument('--gate_max', type=float, default=1.3)
     parser.add_argument(
         '--fusion_type',
         type=str,

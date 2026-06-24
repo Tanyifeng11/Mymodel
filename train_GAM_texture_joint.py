@@ -323,10 +323,13 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "lambda_texture_color": args.lambda_texture_color,
         "lambda_texture_gram": args.lambda_texture_gram,
         "lambda_region_texture": args.lambda_region_texture,
+        "lambda_region_color_lab": args.lambda_region_color_lab,
         "lambda_boundary": args.lambda_boundary,
         "lambda_leak": args.lambda_leak,
         "region_kernel_size": args.region_kernel_size,
-            "layer_group_enabled": args.layer_group_enabled,
+        "layer_group_enabled": args.layer_group_enabled,
+        "gate_min": args.gate_min,
+        "gate_max": args.gate_max,
         "joint_t_drop_rate": args.joint_t_drop_rate,
         "joint_i_drop_rate": args.joint_i_drop_rate,
         "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -568,6 +571,7 @@ def save_training_checkpoint(
             "lambda_texture_color": args.lambda_texture_color,
             "lambda_texture_gram": args.lambda_texture_gram,
             "lambda_region_texture": args.lambda_region_texture,
+            "lambda_region_color_lab": args.lambda_region_color_lab,
             "lambda_boundary": args.lambda_boundary,
             "lambda_leak": args.lambda_leak,
             "region_kernel_size": args.region_kernel_size,
@@ -576,6 +580,8 @@ def save_training_checkpoint(
             "gate_type": args.gate_type,
             "gate_init": args.gate_init,
             "gate_reg_weight": args.gate_reg_weight,
+            "gate_min": args.gate_min,
+            "gate_max": args.gate_max,
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -619,28 +625,37 @@ def _collect_gate_stats(unet):
         if not hasattr(proc, "texture_gate_delta") or proc.texture_gate_delta is None:
             continue
         delta = float(proc.texture_gate_delta.detach().float().cpu().item())
-        value = float(math.exp(delta))
+        raw_value = float(math.exp(delta))
+        gate_min = float(getattr(proc, "gate_min", 0.7))
+        gate_max = float(getattr(proc, "gate_max", 1.3))
+        value = float(min(max(raw_value, gate_min), gate_max))
         layer_group = getattr(proc, "layer_group", "all")
         rows.append(
             {
                 "layer_name": name,
                 "layer_group": layer_group,
                 "gate_delta": delta,
+                "gate_raw_value": raw_value,
                 "gate_value": value,
             }
         )
-        gate_values.append((layer_group, value))
+        gate_values.append((layer_group, raw_value, value))
     if not gate_values:
         return rows, {}
-    values = np.array([v for _, v in gate_values], dtype=np.float32)
+    raw_values = np.array([raw for _, raw, _ in gate_values], dtype=np.float32)
+    values = np.array([v for _, _, v in gate_values], dtype=np.float32)
     summary = {
+        "gate_raw_mean": float(raw_values.mean()),
+        "gate_raw_std": float(raw_values.std()),
+        "gate_raw_min": float(raw_values.min()),
+        "gate_raw_max": float(raw_values.max()),
         "gate_mean": float(values.mean()),
         "gate_std": float(values.std()),
         "gate_min": float(values.min()),
         "gate_max": float(values.max()),
     }
     for group in ("semantic", "detail", "all"):
-        group_values = [v for g, v in gate_values if g == group]
+        group_values = [v for g, _, v in gate_values if g == group]
         if group_values:
             summary[f"{group}_gate_mean"] = float(np.mean(group_values))
     return rows, summary
@@ -838,6 +853,51 @@ def texture_color_stat_loss(pred, texture, garment_mask=None, sample_weight=None
     mean_loss = F.smooth_l1_loss(pred_mean, texture_mean, reduction="none").mean(dim=1)
     std_loss = F.smooth_l1_loss(pred_std, texture_std, reduction="none").mean(dim=1)
     return _weighted_mean_per_sample(mean_loss + std_loss, sample_weight=sample_weight)
+
+
+def rgb_to_lab_normalized(x):
+    x = x.float().contiguous()
+    x = ((x + 1.0) * 0.5).clamp(0.0, 1.0)
+    rgb = torch.where(
+        x > 0.04045,
+        torch.pow((x + 0.055) / 1.055, 2.4),
+        x / 12.92,
+    )
+    r, g, b = rgb[:, 0:1], rgb[:, 1:2], rgb[:, 2:3]
+    xyz_x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047
+    xyz_y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b
+    xyz_z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883
+    epsilon = 0.008856
+    kappa = 903.3
+
+    def lab_f(t):
+        return torch.where(t > epsilon, torch.pow(t.clamp_min(1e-6), 1.0 / 3.0), (kappa * t + 16.0) / 116.0)
+
+    fx = lab_f(xyz_x)
+    fy = lab_f(xyz_y)
+    fz = lab_f(xyz_z)
+    lab_l = (116.0 * fy - 16.0) / 100.0
+    lab_a = 500.0 * (fx - fy) / 128.0
+    lab_b = 200.0 * (fy - fz) / 128.0
+    return torch.cat([lab_l, lab_a, lab_b], dim=1).contiguous()
+
+
+def masked_lab_mean(x, mask=None):
+    lab = rgb_to_lab_normalized(x)
+    if mask is None:
+        return lab.mean(dim=(2, 3))
+    mask = mask.float().contiguous()
+    mask = F.interpolate(mask, size=lab.shape[-2:], mode="nearest").contiguous()
+    mask = mask.to(device=lab.device, dtype=lab.dtype).contiguous()
+    denom = mask.sum(dim=(2, 3)).clamp_min(1.0)
+    return (lab * mask).sum(dim=(2, 3)) / denom
+
+
+def region_color_lab_loss(pred, texture, garment_mask=None, sample_weight=None):
+    pred_mean = masked_lab_mean(pred, garment_mask)
+    texture_mean = masked_lab_mean(texture, None)
+    loss_per_sample = F.smooth_l1_loss(pred_mean, texture_mean, reduction="none").mean(dim=1)
+    return _weighted_mean_per_sample(loss_per_sample, sample_weight=sample_weight)
 
 
 def build_region_masks(mask, kernel_size=9):
@@ -1074,6 +1134,8 @@ def main():
     ap.add_argument("--gate_type", type=str, default="layer")
     ap.add_argument("--gate_init", type=str, default="identity")
     ap.add_argument("--gate_reg_weight", type=float, default=0.0)
+    ap.add_argument("--gate_min", type=float, default=0.7)
+    ap.add_argument("--gate_max", type=float, default=1.3)
     ap.add_argument("--freeze_except_gate", type=int, default=0, choices=[0, 1])
     ap.add_argument("--log_gate_stats", type=int, default=0, choices=[0, 1])
     ap.add_argument("--ddp_find_unused_parameters", type=int, default=-1, choices=[-1, 0, 1])
@@ -1100,6 +1162,12 @@ def main():
         type=float,
         default=0.0,
         help="Extra texture color-stat loss on the eroded garment body region.",
+    )
+    ap.add_argument(
+        "--lambda_region_color_lab",
+        type=float,
+        default=0.0,
+        help="LAB mean color consistency loss between garment/body region and texture reference.",
     )
     ap.add_argument(
         "--lambda_boundary",
@@ -1245,6 +1313,8 @@ def main():
                 gate_type=args.gate_type,
                 gate_init=args.gate_init,
                 gate_reg_weight=args.gate_reg_weight,
+                gate_min=args.gate_min,
+                gate_max=args.gate_max,
             )
     unet.set_attn_processor(attn_procs)
     if args.disable_gradient_checkpointing and hasattr(unet, "disable_gradient_checkpointing"):
@@ -1599,13 +1669,15 @@ def main():
         )
         print(f"[info] use_texture_gate = {bool(args.use_texture_gate)}")
         print(f"[info] gate_type = {args.gate_type}")
+        print(f"[info] gate_min = {args.gate_min}, gate_max = {args.gate_max}")
         gate_rows, gate_summary = _collect_gate_stats(unet)
         print(f"[info] number_of_gate_params = {len(gate_rows)}")
         if gate_rows:
             for row in gate_rows[:32]:
                 print(
                     f"[gate] {row['layer_name']} | group={row['layer_group']} | "
-                    f"delta={row['gate_delta']:.6f} | gate={row['gate_value']:.6f}"
+                    f"delta={row['gate_delta']:.6f} | "
+                    f"raw={row['gate_raw_value']:.6f} | gate={row['gate_value']:.6f}"
                 )
             print(f"[gate] summary = {gate_summary}")
 
@@ -1767,11 +1839,13 @@ def main():
                 loss_texture_color = zero_aux_loss
                 loss_texture_gram = zero_aux_loss
                 loss_region_texture = zero_aux_loss
+                loss_region_color_lab = zero_aux_loss
                 loss_boundary = zero_aux_loss
                 loss_leak = zero_aux_loss
 
                 use_region_losses = (
                     args.lambda_region_texture > 0
+                    or args.lambda_region_color_lab > 0
                     or args.lambda_boundary > 0
                     or args.lambda_leak > 0
                 )
@@ -1791,6 +1865,7 @@ def main():
                             args.lambda_texture_color > 0
                             or args.lambda_texture_gram > 0
                             or args.lambda_region_texture > 0
+                            or args.lambda_region_color_lab > 0
                         )
                     )
                     or args.lambda_boundary > 0
@@ -1868,6 +1943,13 @@ def main():
                                     garment_mask=body_mask,
                                     sample_weight=texture_condition_weight,
                                 )
+                            if args.lambda_region_color_lab > 0:
+                                loss_region_color_lab = region_color_lab_loss(
+                                    decoded_loss,
+                                    texture_target_loss,
+                                    garment_mask=body_mask,
+                                    sample_weight=texture_condition_weight,
+                                )
 
                         if args.lambda_boundary > 0:
                             loss_boundary = masked_l1_loss(
@@ -1892,6 +1974,7 @@ def main():
                 loss = loss + args.lambda_texture_color * loss_texture_color
                 loss = loss + args.lambda_texture_gram * loss_texture_gram
                 loss = loss + args.lambda_region_texture * loss_region_texture
+                loss = loss + args.lambda_region_color_lab * loss_region_color_lab
                 loss = loss + args.lambda_boundary * loss_boundary
                 loss = loss + args.lambda_leak * loss_leak
                 loss_gate = _detached_gate_l2(unet, loss.device) if args.use_texture_gate else loss.new_tensor(0.0)
@@ -1906,6 +1989,7 @@ def main():
                         "loss_texture_color": loss_texture_color,
                         "loss_texture_gram": loss_texture_gram,
                         "loss_region_texture": loss_region_texture,
+                        "loss_region_color_lab": loss_region_color_lab,
                         "loss_boundary": loss_boundary,
                         "loss_leak": loss_leak,
                         "loss_gate": loss_gate,
@@ -1957,6 +2041,7 @@ def main():
                             "train/loss_texture_color": loss_texture_color.detach().float().item(),
                             "train/loss_texture_gram": loss_texture_gram.detach().float().item(),
                             "train/loss_region_texture": loss_region_texture.detach().float().item(),
+                            "train/loss_region_color_lab": loss_region_color_lab.detach().float().item(),
                             "train/loss_boundary": loss_boundary.detach().float().item(),
                             "train/loss_leak": loss_leak.detach().float().item(),
                             "train/loss_gate": loss_gate.detach().float().item(),
@@ -1998,6 +2083,7 @@ def main():
                         f"loss_tex_color={loss_texture_color.item():.6f}, "
                         f"loss_tex_gram={loss_texture_gram.item():.6f}, "
                         f"loss_region_tex={loss_region_texture.item():.6f}, "
+                        f"loss_region_color_lab={loss_region_color_lab.item():.6f}, "
                         f"loss_boundary={loss_boundary.item():.6f}, "
                         f"loss_leak={loss_leak.item():.6f}, "
                         f"loss_gate={loss_gate.item():.6f}, "
@@ -2025,7 +2111,14 @@ def main():
                         with open(gate_csv, "a", newline="", encoding="utf-8") as f:
                             writer = csv.DictWriter(
                                 f,
-                                fieldnames=["global_step", "layer_name", "layer_group", "gate_delta", "gate_value"],
+                                fieldnames=[
+                                    "global_step",
+                                    "layer_name",
+                                    "layer_group",
+                                    "gate_delta",
+                                    "gate_raw_value",
+                                    "gate_value",
+                                ],
                             )
                             if write_header:
                                 writer.writeheader()

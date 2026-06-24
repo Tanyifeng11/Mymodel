@@ -334,6 +334,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         gate_type: str = "layer",
         gate_init: str = "identity",
         gate_reg_weight: float = 0.0,
+        gate_min: float = 0.7,
+        gate_max: float = 1.3,
     ):
         super().__init__()
 
@@ -351,6 +353,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.gate_type = gate_type
         self.gate_init = gate_init
         self.gate_reg_weight = gate_reg_weight
+        self.gate_min = float(gate_min)
+        self.gate_max = float(gate_max)
 
         if self.gate_type != "layer":
             raise NotImplementedError("E2b-lite 目前只支持 gate_type='layer'.")
@@ -491,7 +495,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
             gate = 1.0
             if self.use_texture_gate and self.texture_gate_delta is not None:
-                gate = torch.exp(self.texture_gate_delta).to(dtype=hidden_states.dtype, device=hidden_states.device)
+                gate_raw = torch.exp(self.texture_gate_delta).to(dtype=hidden_states.dtype, device=hidden_states.device)
+                gate = torch.clamp(gate_raw, min=self.gate_min, max=self.gate_max)
             hidden_states = hidden_states + self.scale * gate * ip_hidden_states
 
         # linear proj

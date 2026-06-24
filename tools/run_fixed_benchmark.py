@@ -100,6 +100,26 @@ def experiment_to_flags(run_name, args):
             "use_texture_gate": 1,
             "gate_type": "layer",
             "gate_init": "identity",
+            "gate_min": 0.7,
+            "gate_max": 1.3,
+        },
+        "e2b_safe_gate": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 1,
+            "gate_type": "layer",
+            "gate_init": "identity",
+            "gate_min": 0.7,
+            "gate_max": 1.3,
+        },
+        "e2b_color_safe_gate": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 1,
+            "gate_type": "layer",
+            "gate_init": "identity",
+            "gate_min": 0.7,
+            "gate_max": 1.3,
         },
     }
     config = dict(configs.get(run_name, {}))
@@ -107,6 +127,8 @@ def experiment_to_flags(run_name, args):
     config.setdefault("layer_group_enabled", args.layer_group_enabled)
     config.setdefault("gate_type", args.gate_type)
     config.setdefault("gate_init", args.gate_init)
+    config.setdefault("gate_min", args.gate_min)
+    config.setdefault("gate_max", args.gate_max)
     return config
 
 
@@ -267,6 +289,10 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         experiment_flags["gate_type"],
         "--gate_init",
         experiment_flags["gate_init"],
+        "--gate_min",
+        str(experiment_flags["gate_min"]),
+        "--gate_max",
+        str(experiment_flags["gate_max"]),
         "--alpha1",
         str(args.alpha1),
         "--alpha2",
@@ -927,6 +953,8 @@ def build_argparser():
     parser.add_argument("--use_texture_gate", type=int, choices=[0, 1], default=0)
     parser.add_argument("--gate_type", default="layer")
     parser.add_argument("--gate_init", default="identity")
+    parser.add_argument("--gate_min", type=float, default=0.7)
+    parser.add_argument("--gate_max", type=float, default=1.3)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--modes", default="token,spatial,hybrid,spatial_bfm_like"
