@@ -183,6 +183,84 @@ def _sample_output_paths(out_dir, mode_name, sample):
     }
 
 
+def _sidecar_text_path(image_path):
+    stem, _ = os.path.splitext(image_path)
+    return f"{stem}.txt"
+
+
+def _inference_mask_path(sample_out, paths):
+    sketch_path = paths.get("sketch_path")
+    if not sketch_path:
+        return None
+    stem = os.path.splitext(os.path.basename(sketch_path))[0]
+    return os.path.join(sample_out, f"{stem}_mask.png")
+
+
+def _sample_text_description(args, sample, mode_name, paths, role, image_path, status):
+    flags = mode_to_flags(mode_name)
+    experiment_flags = experiment_to_flags(args.run_name, args)
+    texture_condition_mode = experiment_flags.get(
+        "texture_condition_mode", flags["texture_condition_mode"]
+    )
+    lines = [
+        f"role: {role}",
+        f"run_name: {args.run_name}",
+        f"mode: {mode_name}",
+        f"sample_id: {sample['sample_id']}",
+        f"dataset_index: {sample.get('idx')}",
+        f"uid: {sample_uid(sample)}",
+        f"generation_status: {status}",
+        f"prompt: {sample.get('prompt', '')}",
+        f"image_path: {image_path}",
+        f"target_path: {paths.get('target_path')}",
+        f"sketch_path: {paths.get('sketch_path')}",
+        f"texture_path: {paths.get('texture_path')}",
+        f"mask_path: {paths.get('mask_path')}",
+        f"texture_condition_mode: {texture_condition_mode}",
+        f"texture_preprocess_mode: {args.texture_preprocess_mode}",
+        f"fusion_type: {flags['fusion_type']}",
+        f"layer_group_enabled: {int(experiment_flags['layer_group_enabled'])}",
+        f"use_texture_gate: {int(experiment_flags['use_texture_gate'])}",
+        f"gate_type: {experiment_flags['gate_type']}",
+        f"gate_init: {experiment_flags['gate_init']}",
+        f"gate_min: {experiment_flags['gate_min']}",
+        f"gate_max: {experiment_flags['gate_max']}",
+        f"alpha1: {args.alpha1}",
+        f"alpha2: {args.alpha2}",
+        f"alpha3: {args.alpha3}",
+        f"alpha4: {args.alpha4}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _write_image_sidecar(image_path, description):
+    if not image_path or not existing_file(image_path):
+        return None
+    text_path = _sidecar_text_path(image_path)
+    ensure_dir(os.path.dirname(text_path) or ".")
+    with open(text_path, "w", encoding="utf-8") as f:
+        f.write(description)
+    return text_path
+
+
+def _write_sample_image_sidecars(
+    args, sample, mode_name, paths, output_paths, status
+):
+    if not args.write_text_sidecars:
+        return
+    sample_out = output_paths["sample_out"]
+    image_roles = [
+        ("generated", output_paths["generated"]),
+        ("comparison", output_paths["comparison"]),
+        ("inference_mask", _inference_mask_path(sample_out, paths)),
+    ]
+    for role, image_path in image_roles:
+        description = _sample_text_description(
+            args, sample, mode_name, paths, role, image_path, status
+        )
+        _write_image_sidecar(image_path, description)
+
+
 def _existing_generation_candidates(args, sample, mode_name, out_dir):
     current = _sample_output_paths(out_dir, mode_name, sample)
     uid = current["uid"]
@@ -238,6 +316,9 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         else:
             status = "skipped_existing"
         extract_generated_panel(dst, comparison_path=comparison_path)
+        _write_sample_image_sidecars(
+            args, sample, mode_name, paths, output_paths, status
+        )
         return dst, status
 
     if args.metrics_only:
@@ -256,6 +337,9 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
     if existing_file(src) and not args.overwrite:
         shutil.move(src, dst)
         extract_generated_panel(dst, comparison_path=comparison_path)
+        _write_sample_image_sidecars(
+            args, sample, mode_name, paths, output_paths, "reused_existing"
+        )
         return dst, "reused_existing"
 
     cmd = [
@@ -308,6 +392,9 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
     if not existing_file(dst):
         return None, "generation_missing_output"
     extract_generated_panel(dst, comparison_path=comparison_path)
+    _write_sample_image_sidecars(
+        args, sample, mode_name, paths, output_paths, "generated"
+    )
     return dst, "generated"
 
 
@@ -414,7 +501,43 @@ def _write_progress(run_dir, rows):
     write_json(os.path.join(run_dir, "per_image_metrics.json"), rows)
 
 
-def _prepare_evaluation_images(rows, metrics_dir, resize_size):
+def _evaluation_text_description(row, role, image_path):
+    lines = [
+        f"role: {role}",
+        f"run_name: {row.get('run_name')}",
+        f"mode: {row.get('mode')}",
+        f"sample_id: {row.get('sample_id')}",
+        f"dataset_index: {row.get('dataset_index')}",
+        f"uid: {row.get('uid')}",
+        f"prompt: {row.get('prompt', '')}",
+        f"image_path: {image_path}",
+        f"source_gen_path: {row.get('source_gen_path')}",
+        f"source_target_path: {row.get('source_target_path')}",
+        f"texture_path: {row.get('texture_path')}",
+        f"sketch_path: {row.get('sketch_path')}",
+        f"evaluation_protocol: {row.get('evaluation_protocol')}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _grid_text_description(rows, mode, grid_path):
+    lines = [
+        "role: generated_grid",
+        f"run_name: {rows[0].get('run_name') if rows else ''}",
+        f"mode: {mode}",
+        f"image_path: {grid_path}",
+        f"num_images: {len(rows)}",
+        "samples:",
+    ]
+    for row in rows:
+        lines.append(
+            f"- sample_id={row.get('sample_id')} uid={row.get('uid')} "
+            f"prompt={row.get('prompt', '')}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _prepare_evaluation_images(rows, metrics_dir, resize_size, write_text_sidecars=True):
     from PIL import Image
 
     generated_dir = os.path.join(metrics_dir, "generated")
@@ -457,6 +580,17 @@ def _prepare_evaluation_images(rows, metrics_dir, resize_size):
             if resize_size
             else "original_image_size"
         )
+        if write_text_sidecars:
+            _write_image_sidecar(
+                evaluation_gen,
+                _evaluation_text_description(
+                    row, "evaluation_generated", evaluation_gen
+                ),
+            )
+            _write_image_sidecar(
+                evaluation_target,
+                _evaluation_text_description(row, "evaluation_real", evaluation_target),
+            )
     return rows
 
 
@@ -565,9 +699,11 @@ def run_benchmark(args):
             output_paths = _sample_output_paths(run_dir, mode, sample)
             row = {
                 "mode": mode,
+                "run_name": args.run_name,
                 "sample_id": sample["sample_id"],
                 "dataset_index": sample["idx"],
                 "uid": uid,
+                "prompt": sample["prompt"],
                 "gen_path": gen_path
                 or output_paths["generated"],
                 "generation_status": generation_status,
@@ -577,15 +713,17 @@ def run_benchmark(args):
                 row[metric] = float("nan")
             rows.append(row)
 
-        make_grid(
-            [
-                row["gen_path"]
-                for row in rows
-                if row["mode"] == mode and existing_file(row["gen_path"])
-            ][: args.grid_max_images],
-            os.path.join(run_dir, f"grid_{mode}.png"),
-            cols=4,
-        )
+        grid_rows = [
+            row
+            for row in rows
+            if row["mode"] == mode and existing_file(row["gen_path"])
+        ][: args.grid_max_images]
+        grid_path = os.path.join(run_dir, f"grid_{mode}.png")
+        make_grid([row["gen_path"] for row in grid_rows], grid_path, cols=4)
+        if args.write_text_sidecars:
+            _write_image_sidecar(
+                grid_path, _grid_text_description(grid_rows, mode, grid_path)
+            )
 
     final_generated_count = sum(
         existing_file(row["gen_path"]) for row in rows
@@ -697,7 +835,7 @@ def run_benchmark(args):
         )
 
     rows = _prepare_evaluation_images(
-        rows, metrics_dir, args.evaluation_resize
+        rows, metrics_dir, args.evaluation_resize, bool(args.write_text_sidecars)
     )
     diagnostics["evaluation_resize"] = args.evaluation_resize or None
     diagnostics["evaluation_protocol"] = (
@@ -789,6 +927,15 @@ def run_benchmark(args):
             )
         if row_index <= args.debug_save_masks:
             save_mask_debug(mask_bundle, debug_dir, row["uid"])
+            if args.write_text_sidecars:
+                for name in ("garment", "outside", "boundary"):
+                    debug_path = os.path.join(debug_dir, f"{row['uid']}_{name}.png")
+                    _write_image_sidecar(
+                        debug_path,
+                        _evaluation_text_description(
+                            row, f"debug_mask_{name}", debug_path
+                        ),
+                    )
 
         metrics = evaluate_full(
             row["gen_path"],
@@ -1008,6 +1155,7 @@ def build_argparser():
     parser.add_argument("--clip_batch_size", type=int, default=16)
     parser.add_argument("--fid_batch_size", type=int, default=16)
     parser.add_argument("--grid_max_images", type=int, default=100)
+    parser.add_argument("--write_text_sidecars", type=int, choices=[0, 1], default=1)
     parser.add_argument(
         "--metrics_only",
         action="store_true",

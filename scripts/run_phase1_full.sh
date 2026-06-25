@@ -201,6 +201,7 @@ echo "=== Step 4/4: 评估全部实验，生成论文表格 ==="
 
 E0_CKPT="${E0_DIR}/checkpoint-epoch-5/joint_model.pt"
 E1_CKPT="${E1_DIR}/checkpoint-epoch-5/joint_model.pt"
+WRITE_TEXT_SIDECARS="${WRITE_TEXT_SIDECARS:-1}"
 
 # 4a. 每个实验独立跑 fixed benchmark
 for EXP in e0_baseline e1_grouped; do
@@ -210,7 +211,8 @@ for EXP in e0_baseline e1_grouped; do
         CKPT_PATH="${E1_CKPT}"
     fi
 
-    if [ ! -f "${EVAL_BASE}/${EXP}/summary_metrics.json" ]; then
+    GENERATED_TEXT_COUNT="$(find "${EVAL_BASE}/${EXP}" -path '*/generated_*.txt' -type f 2>/dev/null | wc -l)"
+    if [ ! -f "${EVAL_BASE}/${EXP}/summary_metrics.json" ] || { [ "${WRITE_TEXT_SIDECARS}" = "1" ] && [ "${GENERATED_TEXT_COUNT}" -lt 100 ]; }; then
         echo "  评估 ${EXP} ..."
         python tools/run_fixed_benchmark.py \
             --dataset_json ${VAL_JSON} \
@@ -221,6 +223,7 @@ for EXP in e0_baseline e1_grouped; do
             --num_samples 100 \
             --seed 42 \
             --texture_preprocess_mode plain_resize \
+            --write_text_sidecars ${WRITE_TEXT_SIDECARS} \
             --output_dir ${EVAL_BASE} \
             --run_name ${EXP}
     else

@@ -47,6 +47,7 @@ REPORT_DEVICE="${REPORT_DEVICE:-cuda:0}"
 RUN_E2B="${RUN_E2B:-1}"
 RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
 RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
+WRITE_TEXT_SIDECARS="${WRITE_TEXT_SIDECARS:-1}"
 EXPERIMENT_NAMES="${EXPERIMENT_NAMES:-}"
 
 find_latest_gam_ckpt() {
@@ -158,6 +159,7 @@ run_normal_benchmark() {
     --modes "${EVAL_MODES}" \
     --texture_preprocess_mode "${TEXTURE_PREPROCESS_MODE}" \
     --clip_model_path "${CLIP_MODEL}" \
+    --write_text_sidecars "${WRITE_TEXT_SIDECARS}" \
     --output_dir "${EVAL_BASE}" \
     --run_name "${run_name}" \
     --evaluation_protocol original_image_size
@@ -185,6 +187,7 @@ run_resize256_benchmark() {
     --modes "${EVAL_MODES}" \
     --texture_preprocess_mode "${TEXTURE_PREPROCESS_MODE}" \
     --clip_model_path "${CLIP_MODEL}" \
+    --write_text_sidecars "${WRITE_TEXT_SIDECARS}" \
     --output_dir "${EVAL_BASE}" \
     --run_name "${run_name}" \
     --metrics_output_dir "${RESIZED_BASE}/${run_name}" \

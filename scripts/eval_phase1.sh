@@ -79,6 +79,7 @@ COMPUTE_STRUCTURE="${COMPUTE_STRUCTURE:-1}"
 DEBUG_SAVE_MASKS="${DEBUG_SAVE_MASKS:-20}"
 FAIL_ON_EMPTY_MASKS="${FAIL_ON_EMPTY_MASKS:-0}"
 MIN_VALID_PIXELS="${MIN_VALID_PIXELS:-50}"
+WRITE_TEXT_SIDECARS="${WRITE_TEXT_SIDECARS:-1}"
 TEXTURE_IMAGES_DIR="${TEXTURE_IMAGES_DIR:-}"
 SKETCH_IMAGES_DIR="${SKETCH_IMAGES_DIR:-}"
 MASK_DIR="${MASK_DIR:-}"
@@ -120,6 +121,15 @@ count_generated_images() {
   find "${dir}" -path '*/generated_*.png' -type f 2>/dev/null | wc -l
 }
 
+count_generated_text_sidecars() {
+  local dir="$1"
+  if [[ ! -d "${dir}" ]]; then
+    echo 0
+    return
+  fi
+  find "${dir}" -path '*/generated_*.txt' -type f 2>/dev/null | wc -l
+}
+
 count_evaluation_images() {
   local dir="$1"
   if [[ ! -d "${dir}" ]]; then
@@ -141,6 +151,12 @@ run_benchmark_if_needed() {
   fi
   local existing_count=0
   existing_count="$(count_generated_images "${run_dir}")"
+  local generated_text_count=0
+  local text_sidecars_ready=1
+  generated_text_count="$(count_generated_text_sidecars "${run_dir}")"
+  if [[ "${WRITE_TEXT_SIDECARS}" == "1" && "${generated_text_count}" -lt "${EVAL_NUM_SAMPLES}" ]]; then
+    text_sidecars_ready=0
+  fi
   local generated_compare_count=0
   local real_compare_count=0
   generated_compare_count="$(count_evaluation_images "${run_dir}/generated")"
@@ -150,7 +166,7 @@ run_benchmark_if_needed() {
     metrics_only=0
   fi
 
-  if [[ "${FORCE_EVAL:-0}" != "1" && "${force_metrics_only}" != "1" && "${metrics_only}" != "1" && "${existing_count}" -ge "${EVAL_NUM_SAMPLES}" && "${generated_compare_count}" -ge "${EVAL_NUM_SAMPLES}" && "${real_compare_count}" -ge "${EVAL_NUM_SAMPLES}" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
+  if [[ "${FORCE_EVAL:-0}" != "1" && "${force_metrics_only}" != "1" && "${metrics_only}" != "1" && "${existing_count}" -ge "${EVAL_NUM_SAMPLES}" && "${generated_compare_count}" -ge "${EVAL_NUM_SAMPLES}" && "${real_compare_count}" -ge "${EVAL_NUM_SAMPLES}" && "${text_sidecars_ready}" == "1" && -f "${run_dir}/metrics_summary.json" && -f "${run_dir}/diagnostics.json" ]]; then
     echo "[SKIP] Evaluation exists: ${run_dir}/metrics_summary.json"
     return
   fi
@@ -179,6 +195,7 @@ run_benchmark_if_needed() {
     --debug_save_masks "${DEBUG_SAVE_MASKS}"
     --fail_on_empty_masks "${FAIL_ON_EMPTY_MASKS}"
     --min_valid_pixels "${MIN_VALID_PIXELS}"
+    --write_text_sidecars "${WRITE_TEXT_SIDECARS}"
     --output_dir "${EVAL_BASE}"
     --run_name "${run_name}"
   )
