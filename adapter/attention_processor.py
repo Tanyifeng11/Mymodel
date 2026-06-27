@@ -336,6 +336,9 @@ class IPAttnProcessor2_0(torch.nn.Module):
         gate_reg_weight: float = 0.0,
         gate_min: float = 0.7,
         gate_max: float = 1.3,
+        use_palette_tokens: bool = False,
+        num_palette_tokens: int = 4,
+        palette_branch_scale_init: float = 0.0,
     ):
         super().__init__()
 
@@ -355,6 +358,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.gate_reg_weight = gate_reg_weight
         self.gate_min = float(gate_min)
         self.gate_max = float(gate_max)
+        self.use_palette_tokens = bool(use_palette_tokens)
+        self.num_palette_tokens = int(num_palette_tokens) if self.use_palette_tokens else 0
 
         if self.gate_type != "layer":
             raise NotImplementedError("E2b-lite 目前只支持 gate_type='layer'.")
@@ -368,6 +373,9 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
+        self.to_k_palette = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
+        self.to_v_palette = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
+        self.palette_branch_scale = nn.Parameter(torch.tensor(float(palette_branch_scale_init)))
 
     def __call__(
         self,
@@ -411,28 +419,35 @@ class IPAttnProcessor2_0(torch.nn.Module):
             encoder_hidden_states = cond_hidden_states
 
         use_ip_adapter = self.use_ip_adapter and self.num_tokens > 0
+        use_palette_adapter = self.use_palette_tokens and self.num_palette_tokens > 0
         ip_hidden_states = None
+        palette_hidden_states = None
 
         if encoder_hidden_states is None:
             raise ValueError("IPAttnProcessor2_0 expects encoder_hidden_states with appended texture tokens.")
-        elif use_ip_adapter:
-            if encoder_hidden_states.shape[1] < self.num_tokens:
+        elif use_ip_adapter or use_palette_adapter:
+            condition_tokens = self.num_tokens + self.num_palette_tokens
+            if encoder_hidden_states.shape[1] < condition_tokens:
                 raise ValueError(
-                    f"encoder_hidden_states has {encoder_hidden_states.shape[1]} tokens, expected at least {self.num_tokens}."
+                    f"encoder_hidden_states has {encoder_hidden_states.shape[1]} tokens, expected at least {condition_tokens}."
                 )
-            end_pos = encoder_hidden_states.shape[1] - self.num_tokens
+            end_pos = encoder_hidden_states.shape[1] - condition_tokens
             text_token_count = end_pos
-            texture_token_count = encoder_hidden_states.shape[1] - end_pos
+            texture_start = end_pos
+            texture_end = texture_start + self.num_tokens
+            palette_start = texture_end
             if kwargs.get("debug_texture_tokens", False):
                 print(
                     f"[IPAttnProcessor2_0] encoder_hidden_states={tuple(encoder_hidden_states.shape)}, "
-                    f"text_tokens={text_token_count}, texture_tokens={texture_token_count}, "
-                    f"expected_texture_tokens={self.num_tokens}, layer_group={self.layer_group}"
+                    f"text_tokens={text_token_count}, texture_tokens={self.num_tokens}, "
+                    f"palette_tokens={self.num_palette_tokens}, layer_group={self.layer_group}"
                 )
-            encoder_hidden_states, ip_hidden_states = (
-                encoder_hidden_states[:, :end_pos, :].contiguous(),
-                encoder_hidden_states[:, end_pos:, :].contiguous(),
-            )
+            text_states = encoder_hidden_states[:, :end_pos, :].contiguous()
+            if use_ip_adapter:
+                ip_hidden_states = encoder_hidden_states[:, texture_start:texture_end, :].contiguous()
+            if use_palette_adapter:
+                palette_hidden_states = encoder_hidden_states[:, palette_start:, :].contiguous()
+            encoder_hidden_states = text_states
 
             # === Phase 1: Ti-MGD layer-grouped frequency routing ===
             if self.layer_group == "semantic":
@@ -498,6 +513,21 @@ class IPAttnProcessor2_0(torch.nn.Module):
                 gate_raw = torch.exp(self.texture_gate_delta).to(dtype=hidden_states.dtype, device=hidden_states.device)
                 gate = torch.clamp(gate_raw, min=self.gate_min, max=self.gate_max)
             hidden_states = hidden_states + self.scale * gate * ip_hidden_states
+
+        if use_palette_adapter and palette_hidden_states is not None:
+            palette_key = self.to_k_palette(palette_hidden_states)
+            palette_value = self.to_v_palette(palette_hidden_states)
+            palette_key = palette_key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+            palette_value = palette_value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+            palette_out = F.scaled_dot_product_attention(
+                query, palette_key, palette_value, attn_mask=None, dropout_p=0.0, is_causal=False
+            )
+            palette_out = palette_out.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
+            palette_out = palette_out.to(query.dtype)
+            palette_scale = self.palette_branch_scale.to(
+                dtype=hidden_states.dtype, device=hidden_states.device
+            )
+            hidden_states = hidden_states + palette_scale * palette_out
 
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)

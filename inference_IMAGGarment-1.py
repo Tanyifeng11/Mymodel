@@ -14,6 +14,7 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
 from adapter.attention_processor import LogoCacheSAttnProcessor2_0, LogoRefSAttnProcessor2_0, LogoCacheCAttnProcessor2_0 , CAttnProcessor2_0,IPAttnProcessor2_0
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder
+from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 import argparse
 
@@ -246,6 +247,8 @@ def prepare(args):
     print(f"[prepare] resolved image encoder path: {resolved_image_encoder_path}")
     print(f"[prepare] layer_group_enabled = {bool(args.layer_group_enabled)}")
     print(f"[prepare] use_texture_gate = {bool(args.use_texture_gate)}")
+    print(f"[prepare] use_palette_tokens = {bool(args.use_palette_tokens)}")
+    print(f"[prepare] num_palette_tokens = {args.num_palette_tokens}")
     print(f"[prepare] gate_type = {args.gate_type}")
     print(f"[prepare] gate_init = {args.gate_init}")
     print(f"[prepare] gate_min = {args.gate_min}, gate_max = {args.gate_max}")
@@ -296,6 +299,9 @@ def prepare(args):
                 gate_init=args.gate_init,
                 gate_min=args.gate_min,
                 gate_max=args.gate_max,
+                use_palette_tokens=bool(args.use_palette_tokens),
+                num_palette_tokens=args.num_palette_tokens,
+                palette_branch_scale_init=args.palette_branch_scale_init,
             )
 
     unet.set_attn_processor(attn_procs)
@@ -423,6 +429,10 @@ def prepare(args):
         )
         gate_unexpected = [k for k in unexpected if "texture_gate_delta" in k or "gate" in k]
         gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
+        palette_missing = [
+            k for k in missing
+            if "palette_branch_scale" in k or "to_k_palette" in k or "to_v_palette" in k
+        ]
         if args.use_texture_gate:
             if not checkpoint_has_gate:
                 print("[prepare] WARNING: use_texture_gate=1 but checkpoint has no texture gate parameters")
@@ -437,6 +447,8 @@ def prepare(args):
             print(f"[prepare] Loaded texture gate parameters, count={len(gate_keys)}")
         elif gate_unexpected:
             print("[prepare] WARNING: checkpoint contains gate parameters but use_texture_gate=0")
+        if palette_missing:
+            print(f"[prepare] expected missing palette keys: {palette_missing[:16]}")
         print(
             "[prepare] restored texture_adapter from GAM checkpoint after pipe init "
             f"(missing={len(missing)}, unexpected={len(unexpected)})"
@@ -452,6 +464,22 @@ def prepare(args):
             "[prepare] restored bf_texture_conditioner from GAM checkpoint after pipe init "
             f"(missing={len(missing)}, unexpected={len(unexpected)})"
         )
+
+    palette_state = gam_state.get("palette_token_mlp", None)
+    if palette_state and getattr(pipe, "palette_token_mlp", None) is None:
+        pipe.palette_token_mlp = PaletteTokenMLP(
+            cross_attention_dim=pipe.unet.config.cross_attention_dim,
+            num_palette_tokens=args.num_palette_tokens,
+        ).to(device=args.device, dtype=torch.float16)
+    if palette_state and getattr(pipe, "palette_token_mlp", None) is not None:
+        missing, unexpected = pipe.palette_token_mlp.load_state_dict(palette_state, strict=False)
+        pipe.use_palette_tokens = bool(args.use_palette_tokens)
+        print(
+            "[prepare] restored palette_token_mlp from GAM checkpoint after pipe init "
+            f"(missing={len(missing)}, unexpected={len(unexpected)})"
+        )
+    elif args.use_palette_tokens and not palette_state:
+        print("[prepare] WARNING: use_palette_tokens=1 but checkpoint has no palette_token_mlp state")
 
     pipe.effective_texture_num_tokens = args.texture_num_tokens
     if isinstance(pipe.texture_meta, dict):
@@ -482,6 +510,9 @@ if __name__ == "__main__":
     parser.add_argument('--texture_condition_mode', type=str, default='spatial', choices=['token', 'spatial', 'hybrid'])
     parser.add_argument('--layer_group_enabled', type=int, default=1, choices=[0, 1])
     parser.add_argument('--use_texture_gate', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--use_palette_tokens', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--num_palette_tokens', type=int, default=4)
+    parser.add_argument('--palette_branch_scale_init', type=float, default=0.0)
     parser.add_argument('--gate_type', type=str, default='layer')
     parser.add_argument('--gate_init', type=str, default='identity')
     parser.add_argument('--gate_min', type=float, default=0.7)
@@ -597,6 +628,8 @@ if __name__ == "__main__":
         texture_num_tokens=args.texture_num_tokens,
         texture_scale=args.texture_scale,
         texture_condition_mode=args.texture_condition_mode,
+        use_palette_tokens=bool(args.use_palette_tokens),
+        num_palette_tokens=args.num_palette_tokens,
         fusion_type=args.fusion_type,
         texture_preprocess_mode=args.texture_preprocess_mode,
         alpha1=args.alpha1,

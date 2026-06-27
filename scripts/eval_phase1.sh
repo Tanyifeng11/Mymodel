@@ -33,6 +33,7 @@ TEXTURE_OUTPUT_DIR="${TEXTURE_OUTPUT_DIR:-${OUTPUT_BASE}/texture_adapter_bf_e20}
 E0_OUTPUT_DIR="${E0_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e0_baseline_e5}"
 E1_OUTPUT_DIR="${E1_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e1_grouped_e5}"
 E2A_OUTPUT_DIR="${E2A_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2a_region_e5}"
+E3A_OUTPUT_DIR="${E3A_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e3a_palette_token_e3}"
 E2B_OUTPUT_DIR="${E2B_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3}"
 E2B_SAFE_OUTPUT_DIR="${E2B_SAFE_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_safe_gate_e3}"
 E2B_COLOR_SAFE_OUTPUT_DIR="${E2B_COLOR_SAFE_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3}"
@@ -41,6 +42,7 @@ TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-}"
 E0_CKPT="${E0_CKPT:-}"
 E1_CKPT="${E1_CKPT:-}"
 E2A_CKPT="${E2A_CKPT:-}"
+E3A_CKPT="${E3A_CKPT:-${E3A_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
 E2B_CKPT="${E2B_CKPT:-${E2B_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
 E2B_SAFE_CKPT="${E2B_SAFE_CKPT:-${E2B_SAFE_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
 E2B_COLOR_SAFE_CKPT="${E2B_COLOR_SAFE_CKPT:-${E2B_COLOR_SAFE_OUTPUT_DIR}/checkpoint-final/joint_model.pt}"
@@ -56,6 +58,7 @@ EVAL_PARALLEL="${EVAL_PARALLEL:-0}"
 E0_DEVICE="${E0_DEVICE:-${EVAL_DEVICE}}"
 E1_DEVICE="${E1_DEVICE:-${EVAL_DEVICE}}"
 E2A_DEVICE="${E2A_DEVICE:-${EVAL_DEVICE}}"
+E3A_DEVICE="${E3A_DEVICE:-${E2A_DEVICE}}"
 E2B_DEVICE="${E2B_DEVICE:-${EVAL_DEVICE}}"
 # Default to generating only missing samples.
 EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-0}"
@@ -67,10 +70,34 @@ DEFAULT_RUN_E1=1
 RUN_E0="${RUN_E0:-${DEFAULT_RUN_E0}}"
 RUN_E1="${RUN_E1:-${DEFAULT_RUN_E1}}"
 RUN_E2A="${RUN_E2A:-1}"
+RUN_E3A="${RUN_E3A:-0}"
 RUN_E2B="${RUN_E2B:-1}"
 RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
 RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
-REPORT_EXPERIMENTS="${REPORT_EXPERIMENTS:-e0_baseline,e1_grouped,e2a_region,e2b_gate}"
+if [[ -z "${REPORT_EXPERIMENTS:-}" ]]; then
+  REPORT_EXPERIMENTS=""
+  if [[ "${RUN_E0}" == "1" ]]; then
+    REPORT_EXPERIMENTS+="${REPORT_EXPERIMENTS:+,}e0_baseline"
+  fi
+  if [[ "${RUN_E1}" == "1" ]]; then
+    REPORT_EXPERIMENTS+="${REPORT_EXPERIMENTS:+,}e1_grouped"
+  fi
+  if [[ "${RUN_E2A}" == "1" ]]; then
+    REPORT_EXPERIMENTS+="${REPORT_EXPERIMENTS:+,}e2a_region"
+  fi
+  if [[ "${RUN_E3A}" == "1" ]]; then
+    REPORT_EXPERIMENTS+="${REPORT_EXPERIMENTS:+,}e3a_palette_token"
+  fi
+  if [[ "${RUN_E2B}" == "1" ]]; then
+    REPORT_EXPERIMENTS+="${REPORT_EXPERIMENTS:+,}e2b_gate"
+  fi
+  if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
+    REPORT_EXPERIMENTS+="${REPORT_EXPERIMENTS:+,}e2b_safe_gate"
+  fi
+  if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
+    REPORT_EXPERIMENTS+="${REPORT_EXPERIMENTS:+,}e2b_color_safe_gate"
+  fi
+fi
 CLIP_MODEL_PATH="${CLIP_MODEL_PATH:-${PROJECT_ROOT}/models/clip}"
 COMPUTE_FID="${COMPUTE_FID:-1}"
 COMPUTE_CLIP_I="${COMPUTE_CLIP_I:-1}"
@@ -286,6 +313,9 @@ fi
 if [[ -z "${E2A_CKPT}" ]]; then
   E2A_CKPT="$(find_latest_gam_ckpt "${E2A_OUTPUT_DIR}")"
 fi
+if [[ -z "${E3A_CKPT}" || ! -f "${E3A_CKPT}" ]]; then
+  E3A_CKPT="$(find_latest_gam_ckpt "${E3A_OUTPUT_DIR}")"
+fi
 if [[ -z "${E2B_CKPT}" ]]; then
   E2B_CKPT="$(find_latest_gam_ckpt "${E2B_OUTPUT_DIR}")"
 fi
@@ -304,6 +334,7 @@ echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
 echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
+echo "E3A_CKPT=${E3A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
 echo "E2B_SAFE_CKPT=${E2B_SAFE_CKPT}"
 echo "E2B_COLOR_SAFE_CKPT=${E2B_COLOR_SAFE_CKPT}"
@@ -312,8 +343,8 @@ echo "LEGACY_EVAL_BASE=${LEGACY_EVAL_BASE}"
 echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
 echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"
-echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
-echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}, E2B_DEVICE=${E2B_DEVICE}"
+echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E3A=${RUN_E3A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
+echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}, E3A_DEVICE=${E3A_DEVICE}, E2B_DEVICE=${E2B_DEVICE}"
 echo "COMPUTE_FID=${COMPUTE_FID}, COMPUTE_CLIP_I=${COMPUTE_CLIP_I}, COMPUTE_LEAKAGE=${COMPUTE_LEAKAGE}, COMPUTE_STRUCTURE=${COMPUTE_STRUCTURE}"
 echo "============================================"
 
@@ -335,6 +366,11 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
   fi
   if [[ "${RUN_E2A}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E2A_CKPT}" ]]; then
     echo "[ERROR] E2A_CKPT does not exist: ${E2A_CKPT}" >&2
+    exit 1
+  fi
+  if [[ "${RUN_E3A}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E3A_CKPT}" ]]; then
+    echo "[ERROR] E3A_CKPT does not exist: ${E3A_CKPT}" >&2
+    echo "[ERROR] Train it first with: bash scripts/train_phase1_e3a.sh" >&2
     exit 1
   fi
   if [[ "${RUN_E2B}" == "1" && "${EVAL_METRICS_ONLY}" != "1" && ! -f "${E2B_CKPT}" ]]; then
@@ -367,6 +403,11 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
       run_benchmark_if_needed "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}" &
       pids+=("$!")
       names+=("E2A")
+    fi
+    if [[ "${RUN_E3A}" == "1" ]]; then
+      run_benchmark_if_needed "e3a_palette_token" "${E3A_CKPT}" "${E3A_DEVICE}" &
+      pids+=("$!")
+      names+=("E3A")
     fi
     if [[ "${RUN_E2B}" == "1" ]]; then
       run_benchmark_if_needed "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}" "${E2B_RECOMPUTE_METRICS}" &
@@ -404,6 +445,10 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     if [[ "${RUN_E2A}" == "1" ]]; then
       echo "=== Fixed benchmark: E2A ==="
       run_benchmark_if_needed "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+    fi
+    if [[ "${RUN_E3A}" == "1" ]]; then
+      echo "=== Fixed benchmark: E3A palette token ==="
+      run_benchmark_if_needed "e3a_palette_token" "${E3A_CKPT}" "${E3A_DEVICE}"
     fi
     if [[ "${RUN_E2B}" == "1" ]]; then
       echo "=== Fixed benchmark: E2B ==="

@@ -21,6 +21,7 @@ TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_
 E0_CKPT="${E0_CKPT:-${OUTPUT_BASE}/phase1_e0_baseline_e5/checkpoint-28365/joint_model.pt}"
 E1_CKPT="${E1_CKPT:-${OUTPUT_BASE}/phase1_e1_grouped_e5/checkpoint-final/joint_model.pt}"
 E2A_CKPT="${E2A_CKPT:-${OUTPUT_BASE}/phase1_e2a_region_e5/checkpoint-final/joint_model.pt}"
+E3A_CKPT="${E3A_CKPT:-${OUTPUT_BASE}/phase1_e3a_palette_token_e3/checkpoint-final/joint_model.pt}"
 E2B_CKPT="${E2B_CKPT:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3/checkpoint-final/joint_model.pt}"
 E2B_SAFE_CKPT="${E2B_SAFE_CKPT:-${OUTPUT_BASE}/phase1_e2b_safe_gate_e3/checkpoint-final/joint_model.pt}"
 E2B_COLOR_SAFE_CKPT="${E2B_COLOR_SAFE_CKPT:-${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3/checkpoint-final/joint_model.pt}"
@@ -40,10 +41,12 @@ CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
 E0_DEVICE="${E0_DEVICE:-cuda:0}"
 E1_DEVICE="${E1_DEVICE:-cuda:0}"
 E2A_DEVICE="${E2A_DEVICE:-cuda:0}"
+E3A_DEVICE="${E3A_DEVICE:-${E2A_DEVICE}}"
 E2B_DEVICE="${E2B_DEVICE:-cuda:0}"
 E2B_SAFE_DEVICE="${E2B_SAFE_DEVICE:-${E2B_DEVICE}}"
 E2B_COLOR_SAFE_DEVICE="${E2B_COLOR_SAFE_DEVICE:-${E2B_DEVICE}}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda:0}"
+RUN_E3A="${RUN_E3A:-0}"
 RUN_E2B="${RUN_E2B:-1}"
 RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
 RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
@@ -72,12 +75,16 @@ resolve_checkpoint() {
 E0_CKPT="$(resolve_checkpoint "${E0_CKPT}" "${OUTPUT_BASE}/phase1_e0_baseline_e5")"
 E1_CKPT="$(resolve_checkpoint "${E1_CKPT}" "${OUTPUT_BASE}/phase1_e1_grouped_e5")"
 E2A_CKPT="$(resolve_checkpoint "${E2A_CKPT}" "${OUTPUT_BASE}/phase1_e2a_region_e5")"
+E3A_CKPT="$(resolve_checkpoint "${E3A_CKPT}" "${OUTPUT_BASE}/phase1_e3a_palette_token_e3")"
 E2B_CKPT="$(resolve_checkpoint "${E2B_CKPT}" "${OUTPUT_BASE}/phase1_e2b_layer_gate_e3")"
 E2B_SAFE_CKPT="$(resolve_checkpoint "${E2B_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2b_safe_gate_e3")"
 E2B_COLOR_SAFE_CKPT="$(resolve_checkpoint "${E2B_COLOR_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3")"
 
 if [[ -z "${EXPERIMENT_NAMES}" ]]; then
   EXPERIMENT_NAMES="e0_baseline,e1_grouped,e2a_region"
+  if [[ "${RUN_E3A}" == "1" ]]; then
+    EXPERIMENT_NAMES+=",e3a_palette_token"
+  fi
   if [[ "${RUN_E2B}" == "1" ]]; then
     EXPERIMENT_NAMES+=",e2b_gate"
   fi
@@ -101,6 +108,11 @@ for required_path in \
     exit 1
   fi
 done
+if [[ "${RUN_E3A}" == "1" && ! -f "${E3A_CKPT}" ]]; then
+  echo "[ERROR] E3A_CKPT does not exist: ${E3A_CKPT}" >&2
+  echo "[ERROR] Train it first with: bash scripts/train_phase1_e3a.sh" >&2
+  exit 1
+fi
 if [[ "${RUN_E2B}" == "1" && ! -f "${E2B_CKPT}" ]]; then
   echo "[ERROR] E2B_CKPT does not exist: ${E2B_CKPT}" >&2
   exit 1
@@ -207,10 +219,11 @@ echo "LEGACY_RESIZED_BASE=${LEGACY_RESIZED_BASE}"
 echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
+echo "E3A_CKPT=${E3A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
 echo "E2B_SAFE_CKPT=${E2B_SAFE_CKPT}"
 echo "E2B_COLOR_SAFE_CKPT=${E2B_COLOR_SAFE_CKPT}"
-echo "RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
+echo "RUN_E3A=${RUN_E3A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
 echo "EXPERIMENT_NAMES=${EXPERIMENT_NAMES}"
 echo "============================================"
 
@@ -224,6 +237,9 @@ echo "=== 3/8 E2A resume generation and normal evaluation ==="
 run_normal_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
 
 echo "=== 4/8 E2B resume generation and normal evaluation ==="
+if [[ "${RUN_E3A}" == "1" ]]; then
+  run_normal_benchmark "e3a_palette_token" "${E3A_CKPT}" "${E3A_DEVICE}"
+fi
 if [[ "${RUN_E2B}" == "1" ]]; then
   run_normal_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
 fi
@@ -255,6 +271,9 @@ echo "=== 7/8 Run resize256 evaluation ==="
 run_resize256_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
 run_resize256_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
 run_resize256_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+if [[ "${RUN_E3A}" == "1" ]]; then
+  run_resize256_benchmark "e3a_palette_token" "${E3A_CKPT}" "${E3A_DEVICE}"
+fi
 if [[ "${RUN_E2B}" == "1" ]]; then
   run_resize256_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
 fi

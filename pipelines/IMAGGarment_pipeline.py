@@ -23,6 +23,7 @@ from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
+from models.palette_tokenizer import PaletteTokenMLP
 from texture_preprocess import preprocess_texture_image
 from checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 
@@ -115,6 +116,9 @@ class IMAGGarment(StableDiffusionPipeline):
         self.default_texture_condition_mode = "token"
         self.layer_group_enabled = True  # Phase 1: Ti-MGD routing enabled by default
         self.use_texture_gate = bool(use_texture_gate)
+        self.use_palette_tokens = False
+        self.num_palette_tokens = 4
+        self.palette_token_mlp = None
         self.load_texture_adapter()
 
     def _setup_layer_groups(self):
@@ -306,7 +310,11 @@ class IMAGGarment(StableDiffusionPipeline):
         ip_layers = torch.nn.ModuleList(self.unet.attn_processors.values())
         missing, unexpected = ip_layers.load_state_dict(adapter_sd, strict=False)
         gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
-        nongate_missing = [k for k in missing if k not in gate_missing]
+        palette_missing = [
+            k for k in missing
+            if "palette_branch_scale" in k or "to_k_palette" in k or "to_v_palette" in k
+        ]
+        nongate_missing = [k for k in missing if k not in gate_missing and k not in palette_missing]
         if self.use_texture_gate:
             if gate_missing:
                 print(f"[load_texture_adapter] expected missing gate keys: {gate_missing[:16]}")
@@ -318,10 +326,28 @@ class IMAGGarment(StableDiffusionPipeline):
         print(f"[load_texture_adapter] loaded adapter branch: {adapter_name}")
         if len(missing) > 0:
             print(f"[load_texture_adapter] missing keys: {len(missing)}")
+        if palette_missing:
+            print(f"[load_texture_adapter] expected missing palette keys: {palette_missing[:16]}")
         if nongate_missing:
             print(f"[load_texture_adapter] WARNING non-gate missing keys: {nongate_missing[:16]}")
         if len(unexpected) > 0:
             print(f"[load_texture_adapter] unexpected keys: {len(unexpected)}")
+
+        meta = state_dict.get("meta", {}) if isinstance(state_dict.get("meta", {}), dict) else {}
+        self.use_palette_tokens = bool(meta.get("use_palette_tokens", False))
+        self.num_palette_tokens = int(meta.get("num_palette_tokens", 4))
+        if "palette_token_mlp" in state_dict and state_dict["palette_token_mlp"]:
+            self.palette_token_mlp = PaletteTokenMLP(
+                cross_attention_dim=self.unet.config.cross_attention_dim,
+                num_palette_tokens=self.num_palette_tokens,
+            ).to(self.device, dtype=torch.float16)
+            missing_pal, unexpected_pal = self.palette_token_mlp.load_state_dict(
+                state_dict["palette_token_mlp"], strict=False
+            )
+            print(
+                f"[load_texture_adapter] loaded palette_token_mlp: "
+                f"missing={len(missing_pal)} unexpected={len(unexpected_pal)}"
+            )
 
         # Phase 1: Apply layer-group routing after adapter weights are loaded
         self._setup_layer_groups()
@@ -602,6 +628,17 @@ class IMAGGarment(StableDiffusionPipeline):
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
         return image_prompt_embeds, uncond_image_prompt_embeds
 
+    def get_palette_embeds(self, pil_image, width, height):
+        if self.palette_token_mlp is None:
+            raise ValueError("palette_token_mlp is not loaded but palette tokens were requested.")
+        texture_tensor = self.cond_image_processor.preprocess(
+            pil_image, height=height, width=width
+        ).to(self.device, dtype=torch.float16)
+        texture_tensor = texture_tensor * 2.0 - 1.0
+        palette_tokens = self.palette_token_mlp(texture_tensor)
+        zero_palette_tokens = torch.zeros_like(palette_tokens)
+        return palette_tokens, zero_palette_tokens
+
     def set_scale(self, sketch_scale):
         for attn_processor in self.unet.attn_processors.values():
             if isinstance(attn_processor, LogoRefSAttnProcessor2_0):
@@ -616,6 +653,12 @@ class IMAGGarment(StableDiffusionPipeline):
         for attn_processor in self.unet.attn_processors.values():
             if isinstance(attn_processor, IPAttnProcessor2_0):
                 attn_processor.use_ip_adapter = bool(enabled)
+
+    def set_palette_token_enabled(self, enabled: bool):
+        for attn_processor in self.unet.attn_processors.values():
+            if isinstance(attn_processor, IPAttnProcessor2_0):
+                attn_processor.use_palette_tokens = bool(enabled)
+                attn_processor.num_palette_tokens = self.num_palette_tokens if enabled else 0
 
     def set_layer_group_enabled(self, enabled: bool):
         """
@@ -656,6 +699,8 @@ class IMAGGarment(StableDiffusionPipeline):
         texture_preprocess_mode="crop_tile",
         texture_num_tokens=16,
         texture_scale=1.0,
+        use_palette_tokens=False,
+        num_palette_tokens=4,
         ref_clip_image=None,
         num_images_per_prompt=1,
         sketch_scale=1.0,
@@ -711,6 +756,7 @@ class IMAGGarment(StableDiffusionPipeline):
         spatial_mask = None
         spatial_active = False
         self.set_texture_token_enabled(False)
+        self.set_palette_token_enabled(False)
 
         if texture_clip_image is not None or texture_embeds is not None:
             force_override = kwargs.get("force_texture_num_tokens_override", False)
@@ -728,13 +774,18 @@ class IMAGGarment(StableDiffusionPipeline):
                 for attn_processor in self.unet.attn_processors.values():
                     if isinstance(attn_processor, IPAttnProcessor2_0):
                         attn_processor.num_tokens = texture_num_tokens
+                        attn_processor.num_palette_tokens = int(num_palette_tokens) if use_palette_tokens else 0
+                        attn_processor.use_palette_tokens = bool(use_palette_tokens)
             self.set_texture_token_enabled(use_token)
+            self.set_palette_token_enabled(use_token and bool(use_palette_tokens))
             print(f"[IMAGGarment] checkpoint format: {self.texture_meta.get('checkpoint_format', 'texture_adapter')}")
             print(f"[IMAGGarment] texture mode: {texture_mode}")
             print(f"[IMAGGarment] texture condition mode: {texture_condition_mode}")
             print(f"[IMAGGarment] texture ckpt path: {self.texture_ckpt}")
             if use_token:
                 print(f"[IMAGGarment] texture token count: {texture_num_tokens}")
+                if use_palette_tokens:
+                    print(f"[IMAGGarment] palette token count: {num_palette_tokens}")
                 image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
                     pil_image=texture_clip_image,
                     clip_image_embeds=texture_embeds,
@@ -753,12 +804,31 @@ class IMAGGarment(StableDiffusionPipeline):
                 uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
 
                 prompt_embeds = torch.cat([prompt_embeds, image_prompt_embeds], dim=1)
+                if use_palette_tokens:
+                    palette_embeds, uncond_palette_embeds = self.get_palette_embeds(
+                        texture_clip_image,
+                        width=width,
+                        height=height,
+                    )
+                    palette_embeds = palette_embeds.repeat(1, num_samples, 1)
+                    palette_embeds = palette_embeds.view(
+                        bs_embed * num_samples, palette_embeds.shape[1], -1
+                    )
+                    uncond_palette_embeds = uncond_palette_embeds.repeat(1, num_samples, 1)
+                    uncond_palette_embeds = uncond_palette_embeds.view(
+                        bs_embed * num_samples, uncond_palette_embeds.shape[1], -1
+                    )
+                    prompt_embeds = torch.cat([prompt_embeds, palette_embeds], dim=1)
                 print(f"[IMAGGarment] final encoder_hidden_states shape: {tuple(prompt_embeds.shape)}")
 
                 if do_classifier_free_guidance:
                     negative_prompt_embeds = torch.cat(
                         [negative_prompt_embeds, uncond_image_prompt_embeds], dim=1
                     )
+                    if use_palette_tokens:
+                        negative_prompt_embeds = torch.cat(
+                            [negative_prompt_embeds, uncond_palette_embeds], dim=1
+                        )
 
             if use_spatial and all(
                 m is not None

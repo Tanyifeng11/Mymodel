@@ -40,6 +40,7 @@ from adapter.attention_processor import (
 )
 from models.bf_texture_module import BFTextureConditioner
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder
+from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 from texture_preprocess import preprocess_texture_image
 
@@ -328,6 +329,10 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "lambda_leak": args.lambda_leak,
         "region_kernel_size": args.region_kernel_size,
         "layer_group_enabled": args.layer_group_enabled,
+        "use_palette_tokens": args.use_palette_tokens,
+        "num_palette_tokens": args.num_palette_tokens,
+        "palette_branch_scale_init": args.palette_branch_scale_init,
+        "palette_mlp_lr": args.palette_mlp_lr,
         "gate_min": args.gate_min,
         "gate_max": args.gate_max,
         "joint_t_drop_rate": args.joint_t_drop_rate,
@@ -372,6 +377,41 @@ def set_texture_token_enabled(unet, enabled):
             proc.use_ip_adapter = bool(enabled)
 
 
+def set_palette_token_enabled(unet, enabled):
+    if hasattr(unet, "module"):
+        unet = unet.module
+    for proc in unet.attn_processors.values():
+        if isinstance(proc, IPAttnProcessor2_0):
+            proc.use_palette_tokens = bool(enabled)
+
+
+def _is_palette_key(key):
+    return (
+        "palette_branch_scale" in key
+        or "to_k_palette" in key
+        or "to_v_palette" in key
+        or "palette" in key
+    )
+
+
+def _collect_palette_summary(unet, palette_tokens=None):
+    if hasattr(unet, "module"):
+        unet = unet.module
+    scales = []
+    for proc in unet.attn_processors.values():
+        if isinstance(proc, IPAttnProcessor2_0) and hasattr(proc, "palette_branch_scale"):
+            scales.append(float(proc.palette_branch_scale.detach().float().cpu().item()))
+    summary = {
+        "palette_branch_scale": float(np.mean(scales)) if scales else 0.0,
+        "palette_token_norm": 0.0,
+    }
+    if palette_tokens is not None:
+        summary["palette_token_norm"] = float(
+            palette_tokens.detach().float().norm(dim=-1).mean().cpu().item()
+        )
+    return summary
+
+
 def load_partial_state(module, state_dict, key, name, strict=False):
     if key not in state_dict:
         print(f"[load] {name}: key '{key}' not found, keep init.")
@@ -398,6 +438,7 @@ def load_joint_checkpoint_into_models(
     bf,
     spatial_texture_encoder,
     spatial_injection,
+    palette_token_mlp=None,
     accelerator=None,
 ):
     if not isinstance(state_dict, dict):
@@ -422,17 +463,28 @@ def load_joint_checkpoint_into_models(
         "spatial_injection",
         strict=False,
     )
+    if palette_token_mlp is not None:
+        load_partial_state(
+            palette_token_mlp,
+            state_dict,
+            "palette_token_mlp",
+            "palette_token_mlp",
+            strict=False,
+        )
 
     if "texture_adapter" in state_dict:
         unet_raw = accelerator.unwrap_model(unet) if accelerator is not None else (unet.module if hasattr(unet, "module") else unet)
         attn_module_list = nn.ModuleList(unet_raw.attn_processors.values())
         missing, unexpected = attn_module_list.load_state_dict(state_dict["texture_adapter"], strict=False)
         gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
-        nongate_missing = [k for k in missing if k not in gate_missing]
-        nongate_unexpected = [k for k in unexpected if "texture_gate_delta" not in k and "gate" not in k]
+        palette_missing = [k for k in missing if _is_palette_key(k)]
+        nongate_missing = [k for k in missing if k not in gate_missing and k not in palette_missing]
+        nongate_unexpected = [k for k in unexpected if "texture_gate_delta" not in k and "gate" not in k and not _is_palette_key(k)]
         print(f"[load] texture_adapter(attn processors): missing={len(missing)} unexpected={len(unexpected)}")
         if gate_missing:
             print(f"[Expected missing gate keys] {gate_missing[:16]}")
+        if palette_missing:
+            print(f"[Expected missing palette keys] {palette_missing[:16]}")
         if nongate_missing:
             print(f"[Unexpected non-gate missing keys] {nongate_missing[:16]}")
         if unexpected:
@@ -474,10 +526,19 @@ def load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]", de
         missing, unexpected = adapter_modules.load_state_dict(
             texture_state["texture_adapter"], strict=False
         )
+        palette_missing = [k for k in missing if _is_palette_key(k)]
+        nonpalette_missing = [k for k in missing if not _is_palette_key(k)]
+        nonpalette_unexpected = [k for k in unexpected if not _is_palette_key(k)]
         print(
             f"{log_prefix} texture_adapter -> unet.attn_processors: "
             f"missing={len(missing)} unexpected={len(unexpected)}"
         )
+        if palette_missing:
+            print(f"{log_prefix} expected missing palette keys: {palette_missing[:16]}")
+        if nonpalette_missing:
+            print(f"{log_prefix} WARNING non-palette missing keys: {nonpalette_missing[:16]}")
+        if nonpalette_unexpected:
+            print(f"{log_prefix} WARNING non-palette unexpected keys: {nonpalette_unexpected[:16]}")
         if debug:
             print(
                 f"{log_prefix} texture_adapter key counts: "
@@ -529,6 +590,7 @@ def save_training_checkpoint(
     bf,
     spatial_texture_encoder,
     spatial_injection,
+    palette_token_mlp,
     output_dir,
     global_step,
     args,
@@ -548,6 +610,7 @@ def save_training_checkpoint(
     bf_raw = unwrap(bf)
     spatial_texture_encoder_raw = unwrap(spatial_texture_encoder)
     spatial_injection_raw = unwrap(spatial_injection)
+    palette_token_mlp_raw = unwrap(palette_token_mlp) if palette_token_mlp is not None else None
     texture_adapter_raw = nn.ModuleList(unet_raw.attn_processors.values())
 
     payload = {
@@ -558,6 +621,9 @@ def save_training_checkpoint(
         "bf_texture_conditioner": bf_raw.state_dict(),
         "spatial_texture_encoder": spatial_texture_encoder_raw.state_dict(),
         "spatial_injection": spatial_injection_raw.state_dict(),
+        "palette_token_mlp": (
+            palette_token_mlp_raw.state_dict() if palette_token_mlp_raw is not None else {}
+        ),
         "meta": {
             "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
             "pretrained_vae_model_path": args.pretrained_vae_model_path,
@@ -576,6 +642,10 @@ def save_training_checkpoint(
             "lambda_leak": args.lambda_leak,
             "region_kernel_size": args.region_kernel_size,
             "layer_group_enabled": args.layer_group_enabled,
+            "use_palette_tokens": args.use_palette_tokens,
+            "num_palette_tokens": args.num_palette_tokens,
+            "palette_branch_scale_init": args.palette_branch_scale_init,
+            "palette_mlp_lr": args.palette_mlp_lr,
             "use_texture_gate": args.use_texture_gate,
             "gate_type": args.gate_type,
             "gate_init": args.gate_init,
@@ -946,6 +1016,7 @@ def run_mode_validation_vis(
     bf,
     spatial_texture_encoder,
     spatial_injection,
+    palette_token_mlp,
     image_encoder,
     text_encoder,
     vae,
@@ -989,6 +1060,9 @@ def run_mode_validation_vis(
                 texture_mode=args.texture_mode,
             )
             enc_h = torch.cat([enc_h, tex_tokens], dim=1)
+            if args.use_palette_tokens:
+                palette_tokens = palette_token_mlp(batch["texture_image"])
+                enc_h = torch.cat([enc_h, palette_tokens], dim=1)
 
         if mode in ("spatial", "hybrid"):
             texture_feats = spatial_texture_encoder(batch["texture_image"])
@@ -997,6 +1071,7 @@ def run_mode_validation_vis(
         else:
             spatial_injection.clear_features()
         set_texture_token_enabled(unet, mode in ("token", "hybrid"))
+        set_palette_token_enabled(unet, args.use_palette_tokens and mode in ("token", "hybrid"))
 
         noise_pred = unet(
             latents,
@@ -1131,6 +1206,10 @@ def main():
         help="Enable Ti-MGD-style layer-grouped texture routing for token mode.",
     )
     ap.add_argument("--use_texture_gate", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--use_palette_tokens", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--num_palette_tokens", type=int, default=4)
+    ap.add_argument("--palette_branch_scale_init", type=float, default=0.0)
+    ap.add_argument("--palette_mlp_lr", type=float, default=5e-5)
     ap.add_argument("--gate_type", type=str, default="layer")
     ap.add_argument("--gate_init", type=str, default="identity")
     ap.add_argument("--gate_reg_weight", type=float, default=0.0)
@@ -1315,6 +1394,9 @@ def main():
                 gate_reg_weight=args.gate_reg_weight,
                 gate_min=args.gate_min,
                 gate_max=args.gate_max,
+                use_palette_tokens=bool(args.use_palette_tokens),
+                num_palette_tokens=args.num_palette_tokens,
+                palette_branch_scale_init=args.palette_branch_scale_init,
             )
     unet.set_attn_processor(attn_procs)
     if args.disable_gradient_checkpointing and hasattr(unet, "disable_gradient_checkpointing"):
@@ -1372,6 +1454,10 @@ def main():
         cross_attention_dim=unet.config.cross_attention_dim,
         num_tokens=args.bf_num_tokens,
     )
+    palette_token_mlp = PaletteTokenMLP(
+        cross_attention_dim=unet.config.cross_attention_dim,
+        num_palette_tokens=args.num_palette_tokens,
+    )
 
     # 旧 token 路线初始化
     if accelerator.is_main_process:
@@ -1410,6 +1496,7 @@ def main():
             bf,
             spatial_texture_encoder,
             spatial_injection,
+            palette_token_mlp,
             accelerator=accelerator,
         )
         if args.reload_texture_adapter_after_gam_init:
@@ -1438,6 +1525,7 @@ def main():
             bf,
             spatial_texture_encoder,
             spatial_injection,
+            palette_token_mlp,
             accelerator=accelerator,
         )
 
@@ -1449,10 +1537,16 @@ def main():
             p.requires_grad = False
         for p in bf.parameters():
             p.requires_grad = False
+        if palette_token_mlp is not None:
+            for p in palette_token_mlp.parameters():
+                p.requires_grad = False
         use_spatial_train = is_spatial_mode
     else:
         for p in bf.parameters():
             p.requires_grad = is_token_mode
+        if palette_token_mlp is not None:
+            for p in palette_token_mlp.parameters():
+                p.requires_grad = is_token_mode and bool(args.use_palette_tokens)
         use_spatial_train = is_spatial_mode
 
     for p in spatial_texture_encoder.parameters():
@@ -1468,6 +1562,9 @@ def main():
                 proc.texture_gate_delta.requires_grad = True
         for p in bf.parameters():
             p.requires_grad = False
+        if palette_token_mlp is not None:
+            for p in palette_token_mlp.parameters():
+                p.requires_grad = False
         for p in spatial_texture_encoder.parameters():
             p.requires_grad = False
         for p in spatial_injection.parameters():
@@ -1480,7 +1577,7 @@ def main():
     trainable_params = []
     seen = set()
 
-    def add_params(params):
+    def add_params(params, lr=None):
         unique = []
         for p in params:
             if p.requires_grad and id(p) not in seen:
@@ -1489,7 +1586,7 @@ def main():
         if unique:
             trainable_param_groups.append({
                 "params": unique,
-                "lr": args.learning_rate,
+                "lr": args.learning_rate if lr is None else lr,
             })
             trainable_params.extend(unique)
 
@@ -1499,6 +1596,8 @@ def main():
 
     # 2. BF token conditioner
     add_params(bf.parameters())
+    if palette_token_mlp is not None:
+        add_params(palette_token_mlp.parameters(), lr=args.palette_mlp_lr)
 
     # 3. spatial 分支
     if use_spatial_train:
@@ -1587,6 +1686,7 @@ def main():
         bf,
         spatial_texture_encoder,
         spatial_injection,
+        palette_token_mlp,
         optimizer,
         dl,
         lr_scheduler,
@@ -1596,6 +1696,7 @@ def main():
         bf,
         spatial_texture_encoder,
         spatial_injection,
+        palette_token_mlp,
         optimizer,
         dl,
         lr_scheduler,
@@ -1668,6 +1769,8 @@ def main():
             f"(~{checkpoint_interval_steps // max(1, steps_per_epoch)} epoch(s))"
         )
         print(f"[info] use_texture_gate = {bool(args.use_texture_gate)}")
+        print(f"[info] use_palette_tokens = {bool(args.use_palette_tokens)}")
+        print(f"[info] num_palette_tokens = {args.num_palette_tokens}")
         print(f"[info] gate_type = {args.gate_type}")
         print(f"[info] gate_min = {args.gate_min}, gate_max = {args.gate_max}")
         gate_rows, gate_summary = _collect_gate_stats(unet)
@@ -1776,6 +1879,7 @@ def main():
                 )
 
                 enc_h = text_h
+                palette_tokens = None
                 if use_token:
                     tex_tokens, _ = bf(
                         clip_image_embeds=clip_out.image_embeds,
@@ -1792,6 +1896,12 @@ def main():
                             "Check texture checkpoint metadata and --force_bf_num_tokens_override."
                         )
                     enc_h = torch.cat([enc_h, tex_tokens], dim=1)
+                    if args.use_palette_tokens:
+                        palette_tokens = palette_token_mlp(texture_image)
+                        palette_tokens = palette_tokens * texture_condition_weight.view(-1, 1, 1).to(
+                            device=palette_tokens.device, dtype=palette_tokens.dtype
+                        )
+                        enc_h = torch.cat([enc_h, palette_tokens], dim=1)
 
                 if use_spatial:
                     texture_feats = spatial_texture_encoder(texture_image)
@@ -1800,6 +1910,7 @@ def main():
                 else:
                     spatial_injection_module.clear_features()
                 set_texture_token_enabled(unet, use_token)
+                set_palette_token_enabled(unet, use_token and bool(args.use_palette_tokens))
 
                 # ---- diffusion 前向 ----
                 noise = torch.randn_like(latents)
@@ -2024,6 +2135,7 @@ def main():
                     total_steps_done += 1
 
                 if accelerator.sync_gradients and args.report_to != "none":
+                    palette_summary = _collect_palette_summary(unet, palette_tokens)
                     grad_norm_log = None
                     if grad_norm is not None:
                         grad_norm_log = (
@@ -2045,6 +2157,8 @@ def main():
                             "train/loss_boundary": loss_boundary.detach().float().item(),
                             "train/loss_leak": loss_leak.detach().float().item(),
                             "train/loss_gate": loss_gate.detach().float().item(),
+                            "train/palette_branch_scale": palette_summary["palette_branch_scale"],
+                            "train/palette_token_norm": palette_summary["palette_token_norm"],
                             "train/lr": optimizer.param_groups[0]["lr"],
                             "train/grad_norm": grad_norm_log,
                             "train/drop_t_rate": drop_counts["t"] / max(1, drop_counts["total"]),
@@ -2068,6 +2182,7 @@ def main():
                     and accelerator.is_main_process
                     and (global_step == 1 or global_step % 100 == 0)
                 ):
+                    palette_summary = _collect_palette_summary(unet, palette_tokens)
                     grad_norm_val = (
                         float(grad_norm.item())
                         if grad_norm is not None and not isinstance(grad_norm, float)
@@ -2087,6 +2202,8 @@ def main():
                         f"loss_boundary={loss_boundary.item():.6f}, "
                         f"loss_leak={loss_leak.item():.6f}, "
                         f"loss_gate={loss_gate.item():.6f}, "
+                        f"palette_scale={palette_summary['palette_branch_scale']:.6f}, "
+                        f"palette_token_norm={palette_summary['palette_token_norm']:.6f}, "
                         f"grad_norm={grad_norm_val}, "
                         f"drop_t={drop_counts['t'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_i={drop_counts['i'] / max(1, drop_counts['total']):.3f}, "
@@ -2156,6 +2273,7 @@ def main():
                         bf=bf,
                         spatial_texture_encoder=spatial_texture_encoder,
                         spatial_injection=spatial_injection_module,
+                        palette_token_mlp=palette_token_mlp,
                         image_encoder=image_encoder,
                         text_encoder=text_encoder,
                         vae=vae,
@@ -2190,6 +2308,7 @@ def main():
                         bf=bf,
                         spatial_texture_encoder=spatial_texture_encoder,
                         spatial_injection=spatial_injection_module,
+                        palette_token_mlp=palette_token_mlp,
                         image_encoder=image_encoder,
                         text_encoder=text_encoder,
                         vae=vae,
@@ -2217,6 +2336,7 @@ def main():
                         bf,
                         spatial_texture_encoder,
                         spatial_injection,
+                        palette_token_mlp,
                         args.output_dir,
                         global_step,
                         args,
@@ -2241,6 +2361,7 @@ def main():
             bf,
             spatial_texture_encoder,
             spatial_injection,
+            palette_token_mlp,
             args.output_dir,
             global_step,
             args,

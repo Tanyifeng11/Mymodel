@@ -93,11 +93,20 @@ def experiment_to_flags(run_name, args):
             "texture_condition_mode": "token",
             "layer_group_enabled": 1,
             "use_texture_gate": 0,
+            "use_palette_tokens": 0,
+        },
+        "e3a_palette_token": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
         },
         "e2b_gate": {
             "texture_condition_mode": "token",
             "layer_group_enabled": 1,
             "use_texture_gate": 1,
+            "use_palette_tokens": 0,
             "gate_type": "layer",
             "gate_init": "identity",
             "gate_min": 0.7,
@@ -124,6 +133,8 @@ def experiment_to_flags(run_name, args):
     }
     config = dict(configs.get(run_name, {}))
     config.setdefault("use_texture_gate", args.use_texture_gate)
+    config.setdefault("use_palette_tokens", args.use_palette_tokens)
+    config.setdefault("num_palette_tokens", args.num_palette_tokens)
     config.setdefault("layer_group_enabled", args.layer_group_enabled)
     config.setdefault("gate_type", args.gate_type)
     config.setdefault("gate_init", args.gate_init)
@@ -221,6 +232,8 @@ def _sample_text_description(args, sample, mode_name, paths, role, image_path, s
         f"fusion_type: {flags['fusion_type']}",
         f"layer_group_enabled: {int(experiment_flags['layer_group_enabled'])}",
         f"use_texture_gate: {int(experiment_flags['use_texture_gate'])}",
+        f"use_palette_tokens: {int(experiment_flags['use_palette_tokens'])}",
+        f"num_palette_tokens: {int(experiment_flags['num_palette_tokens'])}",
         f"gate_type: {experiment_flags['gate_type']}",
         f"gate_init: {experiment_flags['gate_init']}",
         f"gate_min: {experiment_flags['gate_min']}",
@@ -369,6 +382,10 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         args.texture_preprocess_mode,
         "--use_texture_gate",
         str(int(experiment_flags["use_texture_gate"])),
+        "--use_palette_tokens",
+        str(int(experiment_flags["use_palette_tokens"])),
+        "--num_palette_tokens",
+        str(int(experiment_flags["num_palette_tokens"])),
         "--gate_type",
         experiment_flags["gate_type"],
         "--gate_init",
@@ -1098,6 +1115,8 @@ def build_argparser():
     parser.add_argument("--texture_ckpt", required=True)
     parser.add_argument("--layer_group_enabled", type=int, choices=[0, 1], default=1)
     parser.add_argument("--use_texture_gate", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--use_palette_tokens", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--num_palette_tokens", type=int, default=4)
     parser.add_argument("--gate_type", default="layer")
     parser.add_argument("--gate_init", default="identity")
     parser.add_argument("--gate_min", type=float, default=0.7)
