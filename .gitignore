@@ -18,7 +18,8 @@ data/
 datasets/
 
 # 屏蔽下载的本地大模型权重
-models/
+models/*
+!models/*.py
 *.safetensors
 *.bin
 *.pth
