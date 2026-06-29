@@ -102,6 +102,20 @@ def experiment_to_flags(run_name, args):
             "use_palette_tokens": 1,
             "num_palette_tokens": 4,
         },
+        "e3": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
+        },
+        "e3_palette_token": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
+        },
         "e2b_gate": {
             "texture_condition_mode": "token",
             "layer_group_enabled": 1,

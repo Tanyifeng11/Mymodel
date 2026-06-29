@@ -60,6 +60,8 @@ E1_DEVICE="${E1_DEVICE:-${EVAL_DEVICE}}"
 E2A_DEVICE="${E2A_DEVICE:-${EVAL_DEVICE}}"
 E3A_DEVICE="${E3A_DEVICE:-${E2A_DEVICE}}"
 E2B_DEVICE="${E2B_DEVICE:-${EVAL_DEVICE}}"
+E2B_SAFE_DEVICE="${E2B_SAFE_DEVICE:-${E2B_DEVICE}}"
+E2B_COLOR_SAFE_DEVICE="${E2B_COLOR_SAFE_DEVICE:-${E2B_DEVICE}}"
 # Default to generating only missing samples.
 EVAL_METRICS_ONLY="${EVAL_METRICS_ONLY:-0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda}"
@@ -71,6 +73,9 @@ RUN_E0="${RUN_E0:-${DEFAULT_RUN_E0}}"
 RUN_E1="${RUN_E1:-${DEFAULT_RUN_E1}}"
 RUN_E2A="${RUN_E2A:-1}"
 RUN_E3A="${RUN_E3A:-0}"
+if [[ "${RUN_E3:-0}" == "1" ]]; then
+  RUN_E3A=1
+fi
 RUN_E2B="${RUN_E2B:-1}"
 RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
 RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
@@ -344,7 +349,7 @@ echo "REPORT_DIR=${REPORT_DIR}"
 echo "EVAL_PARALLEL=${EVAL_PARALLEL}"
 echo "EVAL_METRICS_ONLY=${EVAL_METRICS_ONLY}"
 echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E3A=${RUN_E3A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
-echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}, E3A_DEVICE=${E3A_DEVICE}, E2B_DEVICE=${E2B_DEVICE}"
+echo "E0_DEVICE=${E0_DEVICE}, E1_DEVICE=${E1_DEVICE}, E2A_DEVICE=${E2A_DEVICE}, E3A_DEVICE=${E3A_DEVICE}, E2B_DEVICE=${E2B_DEVICE}, E2B_SAFE_DEVICE=${E2B_SAFE_DEVICE}, E2B_COLOR_SAFE_DEVICE=${E2B_COLOR_SAFE_DEVICE}"
 echo "COMPUTE_FID=${COMPUTE_FID}, COMPUTE_CLIP_I=${COMPUTE_CLIP_I}, COMPUTE_LEAKAGE=${COMPUTE_LEAKAGE}, COMPUTE_STRUCTURE=${COMPUTE_STRUCTURE}"
 echo "============================================"
 
@@ -415,12 +420,12 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
       names+=("E2B")
     fi
     if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
-      run_benchmark_if_needed "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_DEVICE}" &
+      run_benchmark_if_needed "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_SAFE_DEVICE}" &
       pids+=("$!")
       names+=("E2B-safe")
     fi
     if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
-      run_benchmark_if_needed "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_DEVICE}" &
+      run_benchmark_if_needed "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_COLOR_SAFE_DEVICE}" &
       pids+=("$!")
       names+=("E2B-color-safe")
     fi
@@ -456,11 +461,11 @@ if [[ "${RUN_EVAL:-1}" == "1" ]]; then
     fi
     if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
       echo "=== Fixed benchmark: E2B-safe ==="
-      run_benchmark_if_needed "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_DEVICE}"
+      run_benchmark_if_needed "e2b_safe_gate" "${E2B_SAFE_CKPT}" "${E2B_SAFE_DEVICE}"
     fi
     if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
       echo "=== Fixed benchmark: E2B-color-safe ==="
-      run_benchmark_if_needed "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_DEVICE}"
+      run_benchmark_if_needed "e2b_color_safe_gate" "${E2B_COLOR_SAFE_CKPT}" "${E2B_COLOR_SAFE_DEVICE}"
     fi
   fi
 else
