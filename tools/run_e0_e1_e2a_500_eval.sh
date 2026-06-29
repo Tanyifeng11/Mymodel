@@ -46,7 +46,13 @@ E2B_DEVICE="${E2B_DEVICE:-cuda:0}"
 E2B_SAFE_DEVICE="${E2B_SAFE_DEVICE:-${E2B_DEVICE}}"
 E2B_COLOR_SAFE_DEVICE="${E2B_COLOR_SAFE_DEVICE:-${E2B_DEVICE}}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda:0}"
+RUN_E0="${RUN_E0:-1}"
+RUN_E1="${RUN_E1:-1}"
+RUN_E2A="${RUN_E2A:-1}"
 RUN_E3A="${RUN_E3A:-0}"
+if [[ "${RUN_E3:-0}" == "1" ]]; then
+  RUN_E3A=1
+fi
 RUN_E2B="${RUN_E2B:-1}"
 RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
 RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
@@ -81,33 +87,51 @@ E2B_SAFE_CKPT="$(resolve_checkpoint "${E2B_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2
 E2B_COLOR_SAFE_CKPT="$(resolve_checkpoint "${E2B_COLOR_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3")"
 
 if [[ -z "${EXPERIMENT_NAMES}" ]]; then
-  EXPERIMENT_NAMES="e0_baseline,e1_grouped,e2a_region"
+  EXPERIMENT_NAMES=""
+  if [[ "${RUN_E0}" == "1" ]]; then
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e0_baseline"
+  fi
+  if [[ "${RUN_E1}" == "1" ]]; then
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e1_grouped"
+  fi
+  if [[ "${RUN_E2A}" == "1" ]]; then
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e2a_region"
+  fi
   if [[ "${RUN_E3A}" == "1" ]]; then
-    EXPERIMENT_NAMES+=",e3a_palette_token"
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e3a_palette_token"
   fi
   if [[ "${RUN_E2B}" == "1" ]]; then
-    EXPERIMENT_NAMES+=",e2b_gate"
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e2b_gate"
   fi
   if [[ "${RUN_E2B_SAFE}" == "1" ]]; then
-    EXPERIMENT_NAMES+=",e2b_safe_gate"
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e2b_safe_gate"
   fi
   if [[ "${RUN_E2B_COLOR_SAFE}" == "1" ]]; then
-    EXPERIMENT_NAMES+=",e2b_color_safe_gate"
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e2b_color_safe_gate"
   fi
 fi
 
 for required_path in \
   "${DATASET_JSON}" \
   "${DATA_ROOT_PATH}" \
-  "${TEXTURE_ADAPTER_CKPT}" \
-  "${E0_CKPT}" \
-  "${E1_CKPT}" \
-  "${E2A_CKPT}"; do
+  "${TEXTURE_ADAPTER_CKPT}"; do
   if [[ ! -e "${required_path}" ]]; then
     echo "[ERROR] Required path does not exist: ${required_path}" >&2
     exit 1
   fi
 done
+if [[ "${RUN_E0}" == "1" && ! -f "${E0_CKPT}" ]]; then
+  echo "[ERROR] E0_CKPT does not exist: ${E0_CKPT}" >&2
+  exit 1
+fi
+if [[ "${RUN_E1}" == "1" && ! -f "${E1_CKPT}" ]]; then
+  echo "[ERROR] E1_CKPT does not exist: ${E1_CKPT}" >&2
+  exit 1
+fi
+if [[ "${RUN_E2A}" == "1" && ! -f "${E2A_CKPT}" ]]; then
+  echo "[ERROR] E2A_CKPT does not exist: ${E2A_CKPT}" >&2
+  exit 1
+fi
 if [[ "${RUN_E3A}" == "1" && ! -f "${E3A_CKPT}" ]]; then
   echo "[ERROR] E3A_CKPT does not exist: ${E3A_CKPT}" >&2
   echo "[ERROR] Train it first with: bash scripts/train_phase1_e3a.sh" >&2
@@ -223,18 +247,30 @@ echo "E3A_CKPT=${E3A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
 echo "E2B_SAFE_CKPT=${E2B_SAFE_CKPT}"
 echo "E2B_COLOR_SAFE_CKPT=${E2B_COLOR_SAFE_CKPT}"
-echo "RUN_E3A=${RUN_E3A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
+echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E3A=${RUN_E3A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
 echo "EXPERIMENT_NAMES=${EXPERIMENT_NAMES}"
 echo "============================================"
 
 echo "=== 1/8 E0 resume generation and normal evaluation ==="
-run_normal_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
+if [[ "${RUN_E0}" == "1" ]]; then
+  run_normal_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
+else
+  echo "[SKIP] E0"
+fi
 
 echo "=== 2/8 E1 resume generation and normal evaluation ==="
-run_normal_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
+if [[ "${RUN_E1}" == "1" ]]; then
+  run_normal_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
+else
+  echo "[SKIP] E1"
+fi
 
 echo "=== 3/8 E2A resume generation and normal evaluation ==="
-run_normal_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+if [[ "${RUN_E2A}" == "1" ]]; then
+  run_normal_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+else
+  echo "[SKIP] E2A"
+fi
 
 echo "=== 4/8 E2B resume generation and normal evaluation ==="
 if [[ "${RUN_E3A}" == "1" ]]; then
@@ -268,9 +304,15 @@ python -m eval.ablation_report \
   --existing_samples_skipped 1
 
 echo "=== 7/8 Run resize256 evaluation ==="
-run_resize256_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
-run_resize256_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
-run_resize256_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+if [[ "${RUN_E0}" == "1" ]]; then
+  run_resize256_benchmark "e0_baseline" "${E0_CKPT}" "${E0_DEVICE}"
+fi
+if [[ "${RUN_E1}" == "1" ]]; then
+  run_resize256_benchmark "e1_grouped" "${E1_CKPT}" "${E1_DEVICE}"
+fi
+if [[ "${RUN_E2A}" == "1" ]]; then
+  run_resize256_benchmark "e2a_region" "${E2A_CKPT}" "${E2A_DEVICE}"
+fi
 if [[ "${RUN_E3A}" == "1" ]]; then
   run_resize256_benchmark "e3a_palette_token" "${E3A_CKPT}" "${E3A_DEVICE}"
 fi
