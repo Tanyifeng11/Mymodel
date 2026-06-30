@@ -30,6 +30,7 @@ class AttnProcessor2_0(torch.nn.Module):
         temb=None,
         cond_hidden_states=None,
         sa_hidden_states=None,
+        balanced_gate_timestep=None,
         *args,
         **kwargs,
     ):
@@ -125,6 +126,7 @@ class SAttnProcessor2_0(torch.nn.Module):
             scale: float = 1.0,
             cond_hidden_states=None,
             sa_hidden_states=None,
+            balanced_gate_timestep=None,
     ) -> torch.FloatTensor:
         residual = hidden_states
         if attn.spatial_norm is not None:
@@ -226,6 +228,7 @@ class CAttnProcessor2_0(torch.nn.Module):
             scale: float = 1.0,
             cond_hidden_states=None,
             sa_hidden_states=None,
+            balanced_gate_timestep=None,
     ) -> torch.FloatTensor:
         residual = hidden_states
         if attn.spatial_norm is not None:
@@ -468,6 +471,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         temb=None,
         cond_hidden_states=None,
         sa_hidden_states=None,
+        balanced_gate_timestep=None,
         *args,
         **kwargs,
     ):
@@ -599,7 +603,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
                 gate_text_states,
                 gate_texture_states,
                 palette_hidden_states,
-                kwargs.get("balanced_gate_timestep", None),
+                balanced_gate_timestep,
                 hidden_states.dtype,
                 hidden_states.device,
             )
@@ -616,7 +620,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
                     gate_text_states,
                     gate_texture_states,
                     palette_hidden_states,
-                    kwargs.get("balanced_gate_timestep", None),
+                    balanced_gate_timestep,
                     hidden_states.dtype,
                     hidden_states.device,
                 )
@@ -683,6 +687,7 @@ class LogoRefSAttnProcessor2_0(torch.nn.Module):
             num_images_per_prompt=1,
             cond_hidden_states=None,
             sa_hidden_states=None,
+            balanced_gate_timestep=None,
 
     ) -> torch.FloatTensor:
         residual = hidden_states
@@ -896,6 +901,7 @@ class LogoCacheCAttnProcessor2_0(torch.nn.Module):
             scale: float = 1.0,
             cond_hidden_states=None,
             sa_hidden_states=None,
+            balanced_gate_timestep=None,
     ) -> torch.FloatTensor:
         
 
