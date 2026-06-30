@@ -339,6 +339,11 @@ class IPAttnProcessor2_0(torch.nn.Module):
         use_palette_tokens: bool = False,
         num_palette_tokens: int = 4,
         palette_branch_scale_init: float = 0.0,
+        use_balanced_fusion_gate: bool = False,
+        balanced_gate_hidden_dim: int = 64,
+        balanced_gate_scale: float = 0.2,
+        balanced_gate_min: float = 0.8,
+        balanced_gate_max: float = 1.2,
     ):
         super().__init__()
 
@@ -360,6 +365,10 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.gate_max = float(gate_max)
         self.use_palette_tokens = bool(use_palette_tokens)
         self.num_palette_tokens = int(num_palette_tokens) if self.use_palette_tokens else 0
+        self.use_balanced_fusion_gate = bool(use_balanced_fusion_gate)
+        self.balanced_gate_scale = float(balanced_gate_scale)
+        self.balanced_gate_min = float(balanced_gate_min)
+        self.balanced_gate_max = float(balanced_gate_max)
 
         if self.gate_type != "layer":
             raise NotImplementedError("E2b-lite 目前只支持 gate_type='layer'.")
@@ -376,6 +385,79 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.to_k_palette = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_palette = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.palette_branch_scale = nn.Parameter(torch.tensor(float(palette_branch_scale_init)))
+
+        gate_dim = cross_attention_dim or hidden_size
+        group_map = {"all": 0, "semantic": 1, "detail": 2}
+        self.register_buffer(
+            "balanced_gate_group_id",
+            torch.tensor(group_map.get(layer_group, 0), dtype=torch.long),
+            persistent=False,
+        )
+        if self.use_balanced_fusion_gate:
+            gate_input_dim = gate_dim * 4 + 4
+            gate_hidden_dim = int(balanced_gate_hidden_dim)
+            self.balanced_gate_norm = nn.LayerNorm(gate_input_dim)
+            self.balanced_gate_mlp = nn.Sequential(
+                nn.Linear(gate_input_dim, gate_hidden_dim),
+                nn.SiLU(),
+                nn.Linear(gate_hidden_dim, 2),
+            )
+            nn.init.zeros_(self.balanced_gate_mlp[-1].weight)
+            nn.init.zeros_(self.balanced_gate_mlp[-1].bias)
+        else:
+            self.balanced_gate_norm = None
+            self.balanced_gate_mlp = None
+
+    def _balanced_branch_gates(
+        self,
+        text_states,
+        ip_hidden_states,
+        palette_hidden_states,
+        timestep,
+        hidden_dtype,
+        hidden_device,
+    ):
+        if (
+            not self.use_balanced_fusion_gate
+            or self.balanced_gate_mlp is None
+            or ip_hidden_states is None
+            or palette_hidden_states is None
+        ):
+            return None, None
+
+        batch_size = text_states.shape[0]
+        text_pool = text_states.float().mean(dim=1)
+        texture_pool = ip_hidden_states.float().mean(dim=1)
+        palette_pool = palette_hidden_states.float().mean(dim=1)
+        consistency = (text_pool - palette_pool).abs()
+
+        if timestep is None:
+            t = torch.zeros(batch_size, 1, device=text_pool.device, dtype=text_pool.dtype)
+        else:
+            t = timestep
+            if not torch.is_tensor(t):
+                t = torch.tensor(t, device=text_pool.device)
+            t = t.to(device=text_pool.device, dtype=text_pool.dtype)
+            if t.ndim == 0:
+                t = t.view(1).expand(batch_size)
+            if t.ndim > 1:
+                t = t.view(batch_size, -1)[:, 0]
+            t = t.view(batch_size, 1)
+
+        group = F.one_hot(
+            self.balanced_gate_group_id.to(device=text_pool.device).expand(batch_size),
+            num_classes=3,
+        ).to(dtype=text_pool.dtype)
+        gate_input = torch.cat([text_pool, texture_pool, palette_pool, consistency, t, group], dim=1)
+        gate_input = gate_input.to(dtype=self.balanced_gate_norm.weight.dtype)
+        delta = torch.tanh(self.balanced_gate_mlp(self.balanced_gate_norm(gate_input)))
+        gates = 1.0 + self.balanced_gate_scale * delta
+        gates = torch.clamp(gates, min=self.balanced_gate_min, max=self.balanced_gate_max)
+        gates = gates.to(device=hidden_device, dtype=hidden_dtype)
+
+        self.last_balanced_texture_gate = gates[:, 0].detach().float().mean()
+        self.last_balanced_palette_gate = gates[:, 1].detach().float().mean()
+        return gates[:, 0].view(batch_size, 1, 1), gates[:, 1].view(batch_size, 1, 1)
 
     def __call__(
         self,
@@ -422,6 +504,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         use_palette_adapter = self.use_palette_tokens and self.num_palette_tokens > 0
         ip_hidden_states = None
         palette_hidden_states = None
+        gate_text_states = None
+        gate_texture_states = None
 
         if encoder_hidden_states is None:
             raise ValueError("IPAttnProcessor2_0 expects encoder_hidden_states with appended texture tokens.")
@@ -445,9 +529,11 @@ class IPAttnProcessor2_0(torch.nn.Module):
             text_states = encoder_hidden_states[:, :end_pos, :].contiguous()
             if use_ip_adapter:
                 ip_hidden_states = encoder_hidden_states[:, texture_start:texture_end, :].contiguous()
+                gate_texture_states = ip_hidden_states
             if use_palette_adapter:
                 palette_hidden_states = encoder_hidden_states[:, palette_start:, :].contiguous()
             encoder_hidden_states = text_states
+            gate_text_states = text_states
 
             # === Phase 1: Ti-MGD layer-grouped frequency routing ===
             if self.layer_group == "semantic":
@@ -509,12 +595,31 @@ class IPAttnProcessor2_0(torch.nn.Module):
             ip_hidden_states = ip_hidden_states.to(query.dtype)
 
             gate = 1.0
+            balanced_texture_gate, balanced_palette_gate = self._balanced_branch_gates(
+                gate_text_states,
+                gate_texture_states,
+                palette_hidden_states,
+                kwargs.get("balanced_gate_timestep", None),
+                hidden_states.dtype,
+                hidden_states.device,
+            )
             if self.use_texture_gate and self.texture_gate_delta is not None:
                 gate_raw = torch.exp(self.texture_gate_delta).to(dtype=hidden_states.dtype, device=hidden_states.device)
                 gate = torch.clamp(gate_raw, min=self.gate_min, max=self.gate_max)
+            if balanced_texture_gate is not None:
+                gate = gate * balanced_texture_gate
             hidden_states = hidden_states + self.scale * gate * ip_hidden_states
 
         if use_palette_adapter and palette_hidden_states is not None:
+            if "balanced_palette_gate" not in locals():
+                _, balanced_palette_gate = self._balanced_branch_gates(
+                    gate_text_states,
+                    gate_texture_states,
+                    palette_hidden_states,
+                    kwargs.get("balanced_gate_timestep", None),
+                    hidden_states.dtype,
+                    hidden_states.device,
+                )
             palette_key = self.to_k_palette(palette_hidden_states)
             palette_value = self.to_v_palette(palette_hidden_states)
             palette_key = palette_key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
@@ -527,6 +632,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
             palette_scale = self.palette_branch_scale.to(
                 dtype=hidden_states.dtype, device=hidden_states.device
             )
+            if balanced_palette_gate is not None:
+                palette_scale = palette_scale * balanced_palette_gate
             hidden_states = hidden_states + palette_scale * palette_out
 
         # linear proj

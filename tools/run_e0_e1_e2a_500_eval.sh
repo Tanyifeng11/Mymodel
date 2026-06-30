@@ -22,6 +22,7 @@ E0_CKPT="${E0_CKPT:-${OUTPUT_BASE}/phase1_e0_baseline_e5/checkpoint-28365/joint_
 E1_CKPT="${E1_CKPT:-${OUTPUT_BASE}/phase1_e1_grouped_e5/checkpoint-final/joint_model.pt}"
 E2A_CKPT="${E2A_CKPT:-${OUTPUT_BASE}/phase1_e2a_region_e5/checkpoint-final/joint_model.pt}"
 E3A_CKPT="${E3A_CKPT:-${OUTPUT_BASE}/phase1_e3a_palette_token_e3/checkpoint-final/joint_model.pt}"
+E4A_CKPT="${E4A_CKPT:-${OUTPUT_BASE}/phase1_e4a_balanced_gate_e3/checkpoint-final/joint_model.pt}"
 E2B_CKPT="${E2B_CKPT:-${OUTPUT_BASE}/phase1_e2b_layer_gate_e3/checkpoint-final/joint_model.pt}"
 E2B_SAFE_CKPT="${E2B_SAFE_CKPT:-${OUTPUT_BASE}/phase1_e2b_safe_gate_e3/checkpoint-final/joint_model.pt}"
 E2B_COLOR_SAFE_CKPT="${E2B_COLOR_SAFE_CKPT:-${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3/checkpoint-final/joint_model.pt}"
@@ -42,6 +43,7 @@ E0_DEVICE="${E0_DEVICE:-cuda:0}"
 E1_DEVICE="${E1_DEVICE:-cuda:0}"
 E2A_DEVICE="${E2A_DEVICE:-cuda:0}"
 E3A_DEVICE="${E3A_DEVICE:-${E2A_DEVICE}}"
+E4A_DEVICE="${E4A_DEVICE:-${E3A_DEVICE}}"
 E2B_DEVICE="${E2B_DEVICE:-cuda:0}"
 E2B_SAFE_DEVICE="${E2B_SAFE_DEVICE:-${E2B_DEVICE}}"
 E2B_COLOR_SAFE_DEVICE="${E2B_COLOR_SAFE_DEVICE:-${E2B_DEVICE}}"
@@ -53,6 +55,7 @@ RUN_E3A="${RUN_E3A:-0}"
 if [[ "${RUN_E3:-0}" == "1" ]]; then
   RUN_E3A=1
 fi
+RUN_E4A="${RUN_E4A:-0}"
 RUN_E2B="${RUN_E2B:-1}"
 RUN_E2B_SAFE="${RUN_E2B_SAFE:-0}"
 RUN_E2B_COLOR_SAFE="${RUN_E2B_COLOR_SAFE:-0}"
@@ -82,6 +85,7 @@ E0_CKPT="$(resolve_checkpoint "${E0_CKPT}" "${OUTPUT_BASE}/phase1_e0_baseline_e5
 E1_CKPT="$(resolve_checkpoint "${E1_CKPT}" "${OUTPUT_BASE}/phase1_e1_grouped_e5")"
 E2A_CKPT="$(resolve_checkpoint "${E2A_CKPT}" "${OUTPUT_BASE}/phase1_e2a_region_e5")"
 E3A_CKPT="$(resolve_checkpoint "${E3A_CKPT}" "${OUTPUT_BASE}/phase1_e3a_palette_token_e3")"
+E4A_CKPT="$(resolve_checkpoint "${E4A_CKPT}" "${OUTPUT_BASE}/phase1_e4a_balanced_gate_e3")"
 E2B_CKPT="$(resolve_checkpoint "${E2B_CKPT}" "${OUTPUT_BASE}/phase1_e2b_layer_gate_e3")"
 E2B_SAFE_CKPT="$(resolve_checkpoint "${E2B_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2b_safe_gate_e3")"
 E2B_COLOR_SAFE_CKPT="$(resolve_checkpoint "${E2B_COLOR_SAFE_CKPT}" "${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3")"
@@ -99,6 +103,9 @@ if [[ -z "${EXPERIMENT_NAMES}" ]]; then
   fi
   if [[ "${RUN_E3A}" == "1" ]]; then
     EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e3a_palette_token"
+  fi
+  if [[ "${RUN_E4A}" == "1" ]]; then
+    EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e4a_balanced_gate"
   fi
   if [[ "${RUN_E2B}" == "1" ]]; then
     EXPERIMENT_NAMES+="${EXPERIMENT_NAMES:+,}e2b_gate"
@@ -135,6 +142,11 @@ fi
 if [[ "${RUN_E3A}" == "1" && ! -f "${E3A_CKPT}" ]]; then
   echo "[ERROR] E3A_CKPT does not exist: ${E3A_CKPT}" >&2
   echo "[ERROR] Train it first with: bash scripts/train_phase1_e3a.sh" >&2
+  exit 1
+fi
+if [[ "${RUN_E4A}" == "1" && ! -f "${E4A_CKPT}" ]]; then
+  echo "[ERROR] E4A_CKPT does not exist: ${E4A_CKPT}" >&2
+  echo "[ERROR] Train it first with: bash scripts/train_phase1_e4a.sh" >&2
   exit 1
 fi
 if [[ "${RUN_E2B}" == "1" && ! -f "${E2B_CKPT}" ]]; then
@@ -244,10 +256,11 @@ echo "E0_CKPT=${E0_CKPT}"
 echo "E1_CKPT=${E1_CKPT}"
 echo "E2A_CKPT=${E2A_CKPT}"
 echo "E3A_CKPT=${E3A_CKPT}"
+echo "E4A_CKPT=${E4A_CKPT}"
 echo "E2B_CKPT=${E2B_CKPT}"
 echo "E2B_SAFE_CKPT=${E2B_SAFE_CKPT}"
 echo "E2B_COLOR_SAFE_CKPT=${E2B_COLOR_SAFE_CKPT}"
-echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E3A=${RUN_E3A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
+echo "RUN_E0=${RUN_E0}, RUN_E1=${RUN_E1}, RUN_E2A=${RUN_E2A}, RUN_E3A=${RUN_E3A}, RUN_E4A=${RUN_E4A}, RUN_E2B=${RUN_E2B}, RUN_E2B_SAFE=${RUN_E2B_SAFE}, RUN_E2B_COLOR_SAFE=${RUN_E2B_COLOR_SAFE}"
 echo "EXPERIMENT_NAMES=${EXPERIMENT_NAMES}"
 echo "============================================"
 
@@ -275,6 +288,9 @@ fi
 echo "=== 4/8 E2B resume generation and normal evaluation ==="
 if [[ "${RUN_E3A}" == "1" ]]; then
   run_normal_benchmark "e3a_palette_token" "${E3A_CKPT}" "${E3A_DEVICE}"
+fi
+if [[ "${RUN_E4A}" == "1" ]]; then
+  run_normal_benchmark "e4a_balanced_gate" "${E4A_CKPT}" "${E4A_DEVICE}"
 fi
 if [[ "${RUN_E2B}" == "1" ]]; then
   run_normal_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"
@@ -315,6 +331,9 @@ if [[ "${RUN_E2A}" == "1" ]]; then
 fi
 if [[ "${RUN_E3A}" == "1" ]]; then
   run_resize256_benchmark "e3a_palette_token" "${E3A_CKPT}" "${E3A_DEVICE}"
+fi
+if [[ "${RUN_E4A}" == "1" ]]; then
+  run_resize256_benchmark "e4a_balanced_gate" "${E4A_CKPT}" "${E4A_DEVICE}"
 fi
 if [[ "${RUN_E2B}" == "1" ]]; then
   run_resize256_benchmark "e2b_gate" "${E2B_CKPT}" "${E2B_DEVICE}"

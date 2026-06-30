@@ -116,6 +116,18 @@ def experiment_to_flags(run_name, args):
             "use_palette_tokens": 1,
             "num_palette_tokens": 4,
         },
+        "e4a_balanced_gate": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
+            "use_balanced_fusion_gate": 1,
+            "balanced_gate_hidden_dim": 64,
+            "balanced_gate_scale": 0.2,
+            "balanced_gate_min": 0.8,
+            "balanced_gate_max": 1.2,
+        },
         "e2b_gate": {
             "texture_condition_mode": "token",
             "layer_group_enabled": 1,
@@ -154,6 +166,11 @@ def experiment_to_flags(run_name, args):
     config.setdefault("gate_init", args.gate_init)
     config.setdefault("gate_min", args.gate_min)
     config.setdefault("gate_max", args.gate_max)
+    config.setdefault("use_balanced_fusion_gate", args.use_balanced_fusion_gate)
+    config.setdefault("balanced_gate_hidden_dim", args.balanced_gate_hidden_dim)
+    config.setdefault("balanced_gate_scale", args.balanced_gate_scale)
+    config.setdefault("balanced_gate_min", args.balanced_gate_min)
+    config.setdefault("balanced_gate_max", args.balanced_gate_max)
     return config
 
 
@@ -252,6 +269,8 @@ def _sample_text_description(args, sample, mode_name, paths, role, image_path, s
         f"gate_init: {experiment_flags['gate_init']}",
         f"gate_min: {experiment_flags['gate_min']}",
         f"gate_max: {experiment_flags['gate_max']}",
+        f"use_balanced_fusion_gate: {int(experiment_flags['use_balanced_fusion_gate'])}",
+        f"balanced_gate_scale: {experiment_flags['balanced_gate_scale']}",
         f"alpha1: {args.alpha1}",
         f"alpha2: {args.alpha2}",
         f"alpha3: {args.alpha3}",
@@ -408,6 +427,16 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         str(experiment_flags["gate_min"]),
         "--gate_max",
         str(experiment_flags["gate_max"]),
+        "--use_balanced_fusion_gate",
+        str(int(experiment_flags["use_balanced_fusion_gate"])),
+        "--balanced_gate_hidden_dim",
+        str(int(experiment_flags["balanced_gate_hidden_dim"])),
+        "--balanced_gate_scale",
+        str(experiment_flags["balanced_gate_scale"]),
+        "--balanced_gate_min",
+        str(experiment_flags["balanced_gate_min"]),
+        "--balanced_gate_max",
+        str(experiment_flags["balanced_gate_max"]),
         "--alpha1",
         str(args.alpha1),
         "--alpha2",
@@ -1135,6 +1164,11 @@ def build_argparser():
     parser.add_argument("--gate_init", default="identity")
     parser.add_argument("--gate_min", type=float, default=0.7)
     parser.add_argument("--gate_max", type=float, default=1.3)
+    parser.add_argument("--use_balanced_fusion_gate", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--balanced_gate_hidden_dim", type=int, default=64)
+    parser.add_argument("--balanced_gate_scale", type=float, default=0.2)
+    parser.add_argument("--balanced_gate_min", type=float, default=0.8)
+    parser.add_argument("--balanced_gate_max", type=float, default=1.2)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--modes", default="token,spatial,hybrid,spatial_bfm_like"

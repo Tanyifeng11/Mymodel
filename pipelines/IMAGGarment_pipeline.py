@@ -912,11 +912,19 @@ class IMAGGarment(StableDiffusionPipeline):
                     self.spatial_injection.set_features(spatial_feats)
                     self.spatial_injection.set_mask(spatial_mask)
 
+                balanced_gate_timestep = (
+                    t.float().view(1) / float(getattr(self.scheduler.config, "num_train_timesteps", 1000))
+                ).to(device=device)
+                cond_cross_attention_kwargs = {
+                    "sa_hidden_states": sa_hidden_states,
+                    "balanced_gate_timestep": balanced_gate_timestep,
+                }
+
                 noise_pred = self.unet(
                     latent_model_input[0].unsqueeze(0),
                     t,
                     encoder_hidden_states=prompt_embeds,
-                    cross_attention_kwargs={"sa_hidden_states": sa_hidden_states},
+                    cross_attention_kwargs=cond_cross_attention_kwargs,
                     timestep_cond=timestep_cond,
                     added_cond_kwargs=None,
                     return_dict=False,
@@ -929,6 +937,9 @@ class IMAGGarment(StableDiffusionPipeline):
                         latent_model_input[1].unsqueeze(0),
                         t,
                         encoder_hidden_states=negative_prompt_embeds,
+                        cross_attention_kwargs={
+                            "balanced_gate_timestep": balanced_gate_timestep,
+                        },
                         timestep_cond=timestep_cond,
                         added_cond_kwargs=None,
                         return_dict=False,

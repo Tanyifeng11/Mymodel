@@ -394,6 +394,10 @@ def _is_palette_key(key):
     )
 
 
+def _is_balanced_gate_key(key):
+    return "balanced_gate" in key
+
+
 def _collect_palette_summary(unet, palette_tokens=None):
     if hasattr(unet, "module"):
         unet = unet.module
@@ -410,6 +414,46 @@ def _collect_palette_summary(unet, palette_tokens=None):
             palette_tokens.detach().float().norm(dim=-1).mean().cpu().item()
         )
     return summary
+
+
+def _collect_balanced_gate_summary(unet):
+    texture_values = []
+    palette_values = []
+    for _, proc in _iter_unet_processors(unet):
+        if not isinstance(proc, IPAttnProcessor2_0):
+            continue
+        if getattr(proc, "last_balanced_texture_gate", None) is not None:
+            texture_values.append(float(proc.last_balanced_texture_gate.detach().cpu().item()))
+        if getattr(proc, "last_balanced_palette_gate", None) is not None:
+            palette_values.append(float(proc.last_balanced_palette_gate.detach().cpu().item()))
+    return {
+        "balanced_texture_gate": float(np.mean(texture_values)) if texture_values else 1.0,
+        "balanced_palette_gate": float(np.mean(palette_values)) if palette_values else 1.0,
+    }
+
+
+def _get_balanced_gate_params(unet, only_trainable=False):
+    params = []
+    for _, proc in _iter_unet_processors(unet):
+        if not isinstance(proc, IPAttnProcessor2_0):
+            continue
+        if not getattr(proc, "use_balanced_fusion_gate", False):
+            continue
+        for name, p in proc.named_parameters():
+            if not name.startswith("balanced_gate_"):
+                continue
+            if only_trainable and not p.requires_grad:
+                continue
+            params.append(p)
+    return params
+
+
+def _balanced_gate_l2(unet, device):
+    params = _get_balanced_gate_params(unet, only_trainable=True)
+    if not params:
+        return torch.zeros((), device=device)
+    values = [(p.float() * p.float()).mean() for p in params]
+    return torch.stack(values).mean().to(device)
 
 
 def load_partial_state(module, state_dict, key, name, strict=False):
@@ -478,13 +522,16 @@ def load_joint_checkpoint_into_models(
         missing, unexpected = attn_module_list.load_state_dict(state_dict["texture_adapter"], strict=False)
         gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
         palette_missing = [k for k in missing if _is_palette_key(k)]
-        nongate_missing = [k for k in missing if k not in gate_missing and k not in palette_missing]
-        nongate_unexpected = [k for k in unexpected if "texture_gate_delta" not in k and "gate" not in k and not _is_palette_key(k)]
+        balanced_missing = [k for k in missing if _is_balanced_gate_key(k)]
+        nongate_missing = [k for k in missing if k not in gate_missing and k not in palette_missing and k not in balanced_missing]
+        nongate_unexpected = [k for k in unexpected if "texture_gate_delta" not in k and "gate" not in k and not _is_palette_key(k) and not _is_balanced_gate_key(k)]
         print(f"[load] texture_adapter(attn processors): missing={len(missing)} unexpected={len(unexpected)}")
         if gate_missing:
             print(f"[Expected missing gate keys] {gate_missing[:16]}")
         if palette_missing:
             print(f"[Expected missing palette keys] {palette_missing[:16]}")
+        if balanced_missing:
+            print(f"[Expected missing balanced gate keys] {balanced_missing[:16]}")
         if nongate_missing:
             print(f"[Unexpected non-gate missing keys] {nongate_missing[:16]}")
         if unexpected:
@@ -527,14 +574,17 @@ def load_texture_adapter_branch(texture_state, unet, bf, log_prefix="[load]", de
             texture_state["texture_adapter"], strict=False
         )
         palette_missing = [k for k in missing if _is_palette_key(k)]
-        nonpalette_missing = [k for k in missing if not _is_palette_key(k)]
-        nonpalette_unexpected = [k for k in unexpected if not _is_palette_key(k)]
+        balanced_missing = [k for k in missing if _is_balanced_gate_key(k)]
+        nonpalette_missing = [k for k in missing if not _is_palette_key(k) and not _is_balanced_gate_key(k)]
+        nonpalette_unexpected = [k for k in unexpected if not _is_palette_key(k) and not _is_balanced_gate_key(k)]
         print(
             f"{log_prefix} texture_adapter -> unet.attn_processors: "
             f"missing={len(missing)} unexpected={len(unexpected)}"
         )
         if palette_missing:
             print(f"{log_prefix} expected missing palette keys: {palette_missing[:16]}")
+        if balanced_missing:
+            print(f"{log_prefix} expected missing balanced gate keys: {balanced_missing[:16]}")
         if nonpalette_missing:
             print(f"{log_prefix} WARNING non-palette missing keys: {nonpalette_missing[:16]}")
         if nonpalette_unexpected:
@@ -652,6 +702,12 @@ def save_training_checkpoint(
             "gate_reg_weight": args.gate_reg_weight,
             "gate_min": args.gate_min,
             "gate_max": args.gate_max,
+            "use_balanced_fusion_gate": args.use_balanced_fusion_gate,
+            "balanced_gate_hidden_dim": args.balanced_gate_hidden_dim,
+            "balanced_gate_scale": args.balanced_gate_scale,
+            "balanced_gate_min": args.balanced_gate_min,
+            "balanced_gate_max": args.balanced_gate_max,
+            "balanced_gate_reg_weight": args.balanced_gate_reg_weight,
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -1073,11 +1129,17 @@ def run_mode_validation_vis(
         set_texture_token_enabled(unet, mode in ("token", "hybrid"))
         set_palette_token_enabled(unet, args.use_palette_tokens and mode in ("token", "hybrid"))
 
+        cross_attention_kwargs = {"sa_hidden_states": sa}
+        if args.use_balanced_fusion_gate:
+            cross_attention_kwargs["balanced_gate_timestep"] = (
+                t.float() / float(noise_scheduler.config.num_train_timesteps)
+            )
+
         noise_pred = unet(
             latents,
             t,
             encoder_hidden_states=enc_h,
-            cross_attention_kwargs={"sa_hidden_states": sa},
+            cross_attention_kwargs=cross_attention_kwargs,
         ).sample
 
         x0_hat = reconstruct_x0(latents, noise_pred, t, noise_scheduler)
@@ -1217,6 +1279,12 @@ def main():
     ap.add_argument("--gate_max", type=float, default=1.3)
     ap.add_argument("--freeze_except_gate", type=int, default=0, choices=[0, 1])
     ap.add_argument("--log_gate_stats", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--use_balanced_fusion_gate", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--balanced_gate_hidden_dim", type=int, default=64)
+    ap.add_argument("--balanced_gate_scale", type=float, default=0.2)
+    ap.add_argument("--balanced_gate_min", type=float, default=0.8)
+    ap.add_argument("--balanced_gate_max", type=float, default=1.2)
+    ap.add_argument("--balanced_gate_reg_weight", type=float, default=1e-4)
     ap.add_argument("--ddp_find_unused_parameters", type=int, default=-1, choices=[-1, 0, 1])
     ap.add_argument("--disable_gradient_checkpointing", type=int, default=1, choices=[0, 1])
     ap.add_argument("--alpha1", type=float, default=1.0)
@@ -1397,6 +1465,11 @@ def main():
                 use_palette_tokens=bool(args.use_palette_tokens),
                 num_palette_tokens=args.num_palette_tokens,
                 palette_branch_scale_init=args.palette_branch_scale_init,
+                use_balanced_fusion_gate=bool(args.use_balanced_fusion_gate),
+                balanced_gate_hidden_dim=args.balanced_gate_hidden_dim,
+                balanced_gate_scale=args.balanced_gate_scale,
+                balanced_gate_min=args.balanced_gate_min,
+                balanced_gate_max=args.balanced_gate_max,
             )
     unet.set_attn_processor(attn_procs)
     if args.disable_gradient_checkpointing and hasattr(unet, "disable_gradient_checkpointing"):
@@ -1770,6 +1843,7 @@ def main():
         )
         print(f"[info] use_texture_gate = {bool(args.use_texture_gate)}")
         print(f"[info] use_palette_tokens = {bool(args.use_palette_tokens)}")
+        print(f"[info] use_balanced_fusion_gate = {bool(args.use_balanced_fusion_gate)}")
         print(f"[info] num_palette_tokens = {args.num_palette_tokens}")
         print(f"[info] gate_type = {args.gate_type}")
         print(f"[info] gate_min = {args.gate_min}, gate_max = {args.gate_max}")
@@ -1932,11 +2006,17 @@ def main():
                     if "attn1" in n and hasattr(ref_unet.attn_processors[n], "cache")
                 }
 
+                cross_attention_kwargs = {"sa_hidden_states": sa}
+                if args.use_balanced_fusion_gate:
+                    cross_attention_kwargs["balanced_gate_timestep"] = (
+                        timesteps.float() / float(noise_scheduler.config.num_train_timesteps)
+                    )
+
                 noise_pred = unet(
                     noisy_latents,
                     timesteps,
                     encoder_hidden_states=enc_h,
-                    cross_attention_kwargs={"sa_hidden_states": sa},
+                    cross_attention_kwargs=cross_attention_kwargs,
                 ).sample
 
                 loss_denoise = F.mse_loss(
@@ -2089,6 +2169,13 @@ def main():
                 loss = loss + args.lambda_boundary * loss_boundary
                 loss = loss + args.lambda_leak * loss_leak
                 loss_gate = _detached_gate_l2(unet, loss.device) if args.use_texture_gate else loss.new_tensor(0.0)
+                loss_balanced_gate = (
+                    _balanced_gate_l2(unet, loss.device)
+                    if args.use_balanced_fusion_gate
+                    else loss.new_tensor(0.0)
+                )
+                if args.use_balanced_fusion_gate and args.balanced_gate_reg_weight > 0:
+                    loss = loss + args.balanced_gate_reg_weight * loss_balanced_gate
 
                 if not torch.isfinite(loss.detach()).all():
                     loss_items = {
@@ -2104,6 +2191,7 @@ def main():
                         "loss_boundary": loss_boundary,
                         "loss_leak": loss_leak,
                         "loss_gate": loss_gate,
+                        "loss_balanced_gate": loss_balanced_gate,
                     }
                     print("[train_GAM_texture_joint] non-finite loss detected")
                     for loss_name, loss_value in loss_items.items():
@@ -2136,6 +2224,7 @@ def main():
 
                 if accelerator.sync_gradients and args.report_to != "none":
                     palette_summary = _collect_palette_summary(unet, palette_tokens)
+                    balanced_summary = _collect_balanced_gate_summary(unet)
                     grad_norm_log = None
                     if grad_norm is not None:
                         grad_norm_log = (
@@ -2157,8 +2246,11 @@ def main():
                             "train/loss_boundary": loss_boundary.detach().float().item(),
                             "train/loss_leak": loss_leak.detach().float().item(),
                             "train/loss_gate": loss_gate.detach().float().item(),
+                            "train/loss_balanced_gate": loss_balanced_gate.detach().float().item(),
                             "train/palette_branch_scale": palette_summary["palette_branch_scale"],
                             "train/palette_token_norm": palette_summary["palette_token_norm"],
+                            "train/balanced_texture_gate": balanced_summary["balanced_texture_gate"],
+                            "train/balanced_palette_gate": balanced_summary["balanced_palette_gate"],
                             "train/lr": optimizer.param_groups[0]["lr"],
                             "train/grad_norm": grad_norm_log,
                             "train/drop_t_rate": drop_counts["t"] / max(1, drop_counts["total"]),
@@ -2183,6 +2275,7 @@ def main():
                     and (global_step == 1 or global_step % 100 == 0)
                 ):
                     palette_summary = _collect_palette_summary(unet, palette_tokens)
+                    balanced_summary = _collect_balanced_gate_summary(unet)
                     grad_norm_val = (
                         float(grad_norm.item())
                         if grad_norm is not None and not isinstance(grad_norm, float)
@@ -2202,8 +2295,11 @@ def main():
                         f"loss_boundary={loss_boundary.item():.6f}, "
                         f"loss_leak={loss_leak.item():.6f}, "
                         f"loss_gate={loss_gate.item():.6f}, "
+                        f"loss_balanced_gate={loss_balanced_gate.item():.6f}, "
                         f"palette_scale={palette_summary['palette_branch_scale']:.6f}, "
                         f"palette_token_norm={palette_summary['palette_token_norm']:.6f}, "
+                        f"balanced_texture_gate={balanced_summary['balanced_texture_gate']:.6f}, "
+                        f"balanced_palette_gate={balanced_summary['balanced_palette_gate']:.6f}, "
                         f"grad_norm={grad_norm_val}, "
                         f"drop_t={drop_counts['t'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_i={drop_counts['i'] / max(1, drop_counts['total']):.3f}, "

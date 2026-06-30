@@ -248,6 +248,7 @@ def prepare(args):
     print(f"[prepare] layer_group_enabled = {bool(args.layer_group_enabled)}")
     print(f"[prepare] use_texture_gate = {bool(args.use_texture_gate)}")
     print(f"[prepare] use_palette_tokens = {bool(args.use_palette_tokens)}")
+    print(f"[prepare] use_balanced_fusion_gate = {bool(args.use_balanced_fusion_gate)}")
     print(f"[prepare] num_palette_tokens = {args.num_palette_tokens}")
     print(f"[prepare] gate_type = {args.gate_type}")
     print(f"[prepare] gate_init = {args.gate_init}")
@@ -302,6 +303,11 @@ def prepare(args):
                 use_palette_tokens=bool(args.use_palette_tokens),
                 num_palette_tokens=args.num_palette_tokens,
                 palette_branch_scale_init=args.palette_branch_scale_init,
+                use_balanced_fusion_gate=bool(args.use_balanced_fusion_gate),
+                balanced_gate_hidden_dim=args.balanced_gate_hidden_dim,
+                balanced_gate_scale=args.balanced_gate_scale,
+                balanced_gate_min=args.balanced_gate_min,
+                balanced_gate_max=args.balanced_gate_max,
             )
 
     unet.set_attn_processor(attn_procs)
@@ -517,6 +523,11 @@ if __name__ == "__main__":
     parser.add_argument('--gate_init', type=str, default='identity')
     parser.add_argument('--gate_min', type=float, default=0.7)
     parser.add_argument('--gate_max', type=float, default=1.3)
+    parser.add_argument('--use_balanced_fusion_gate', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--balanced_gate_hidden_dim', type=int, default=64)
+    parser.add_argument('--balanced_gate_scale', type=float, default=0.2)
+    parser.add_argument('--balanced_gate_min', type=float, default=0.8)
+    parser.add_argument('--balanced_gate_max', type=float, default=1.2)
     parser.add_argument(
         '--fusion_type',
         type=str,
