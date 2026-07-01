@@ -372,6 +372,8 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.balanced_gate_scale = float(balanced_gate_scale)
         self.balanced_gate_min = float(balanced_gate_min)
         self.balanced_gate_max = float(balanced_gate_max)
+        self.balanced_gate_trace_enabled = False
+        self.balanced_gate_trace = []
 
         if self.gate_type != "layer":
             raise NotImplementedError("E2b-lite 目前只支持 gate_type='layer'.")
@@ -460,6 +462,19 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
         self.last_balanced_texture_gate = gates[:, 0].detach().float().mean()
         self.last_balanced_palette_gate = gates[:, 1].detach().float().mean()
+        if self.balanced_gate_trace_enabled:
+            timestep_value = None
+            if timestep is not None:
+                timestep_value = float(t.detach().float().mean().cpu().item())
+            self.balanced_gate_trace.append(
+                {
+                    "layer_name": getattr(self, "processor_name", ""),
+                    "layer_group": self.layer_group,
+                    "timestep": timestep_value,
+                    "g_texture": float(gates[:, 0].detach().float().mean().cpu().item()),
+                    "g_palette": float(gates[:, 1].detach().float().mean().cpu().item()),
+                }
+            )
         return gates[:, 0].view(batch_size, 1, 1), gates[:, 1].view(batch_size, 1, 1)
 
     def __call__(

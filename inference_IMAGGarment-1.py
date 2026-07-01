@@ -1,5 +1,6 @@
 from pipelines.IMAGGarment_pipeline import IMAGGarment
 import os
+import json
 import importlib
 import importlib.util
 from collections import deque
@@ -43,6 +44,32 @@ def _get_detail_text_scale(name: str) -> float:
     if "up_blocks" in name:
         return 0.15
     return 0.05
+
+
+def _set_balanced_gate_trace(pipe, enabled: bool):
+    for name, proc in pipe.unet.attn_processors.items():
+        if isinstance(proc, IPAttnProcessor2_0):
+            proc.processor_name = name
+            proc.balanced_gate_trace_enabled = bool(enabled)
+            proc.balanced_gate_trace = []
+
+
+def _save_balanced_gate_trace(pipe, trace_path: str, sample_id: str = ""):
+    if not trace_path:
+        return
+    rows = []
+    for name, proc in pipe.unet.attn_processors.items():
+        if not isinstance(proc, IPAttnProcessor2_0):
+            continue
+        for row in getattr(proc, "balanced_gate_trace", []):
+            out = {"sample_id": sample_id, **row}
+            if not out.get("layer_name"):
+                out["layer_name"] = name
+            rows.append(out)
+    os.makedirs(os.path.dirname(trace_path) or ".", exist_ok=True)
+    with open(trace_path, "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def load_image_encoder_flexible(image_encoder_path, device=None, dtype=None):
@@ -528,6 +555,8 @@ if __name__ == "__main__":
     parser.add_argument('--balanced_gate_scale', type=float, default=0.2)
     parser.add_argument('--balanced_gate_min', type=float, default=0.8)
     parser.add_argument('--balanced_gate_max', type=float, default=1.2)
+    parser.add_argument('--balanced_gate_trace_path', type=str, default="")
+    parser.add_argument('--balanced_gate_trace_sample_id', type=str, default="")
     parser.add_argument(
         '--fusion_type',
         type=str,
@@ -589,6 +618,7 @@ if __name__ == "__main__":
 
     pipe, generator = prepare(args)
     print('====================== pipe load finish ===================')
+    _set_balanced_gate_trace(pipe, bool(args.balanced_gate_trace_path))
 
     num_samples = 1
     clip_image_processor = CLIPImageProcessor()
@@ -650,6 +680,11 @@ if __name__ == "__main__":
         spatial_mask=spatial_mask,
         debug_spatial=args.debug_spatial,
         force_texture_num_tokens_override=args.force_texture_num_tokens_override,
+    )
+    _save_balanced_gate_trace(
+        pipe,
+        args.balanced_gate_trace_path,
+        sample_id=args.balanced_gate_trace_sample_id,
     )
 
     save_output = []

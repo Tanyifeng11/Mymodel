@@ -446,6 +446,16 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         "--alpha4",
         str(args.alpha4),
     ]
+    if args.save_balanced_gate_trace:
+        trace_path = os.path.join(sample_out, "gate_trace.jsonl")
+        cmd.extend(
+            [
+                "--balanced_gate_trace_path",
+                trace_path,
+                "--balanced_gate_trace_sample_id",
+                sample["sample_id"],
+            ]
+        )
     subprocess.run(cmd, check=True)
     if existing_file(src):
         shutil.move(src, dst)
@@ -1169,6 +1179,7 @@ def build_argparser():
     parser.add_argument("--balanced_gate_scale", type=float, default=0.2)
     parser.add_argument("--balanced_gate_min", type=float, default=0.8)
     parser.add_argument("--balanced_gate_max", type=float, default=1.2)
+    parser.add_argument("--save_balanced_gate_trace", type=int, choices=[0, 1], default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--modes", default="token,spatial,hybrid,spatial_bfm_like"
