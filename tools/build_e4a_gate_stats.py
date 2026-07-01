@@ -66,6 +66,13 @@ def _normal_layer_group(value):
 def _timestep_bin(timestep):
     if timestep is None:
         return "unknown"
+    if 0.0 <= timestep <= 1.5:
+        # E4a records normalized timestep as t / num_train_timesteps.
+        if timestep >= 0.667:
+            return "early"
+        if timestep >= 0.334:
+            return "middle"
+        return "late"
     # Diffusion timesteps are usually high -> early denoising, low -> late denoising.
     if timestep >= 667:
         return "early"
@@ -217,6 +224,9 @@ def _find_sources(root):
         if any(token in lower for token in ("gate", "trace", "debug", "attn")):
             if path.suffix.lower() in {".csv", ".json", ".jsonl", ".log", ".txt"}:
                 candidates.append(path)
+    has_per_sample_trace = any(path.name == "gate_trace.jsonl" for path in candidates)
+    if has_per_sample_trace:
+        candidates = [path for path in candidates if path.name != "gate_trace_all.jsonl"]
     return candidates
 
 

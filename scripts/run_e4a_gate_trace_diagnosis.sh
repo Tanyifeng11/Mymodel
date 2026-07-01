@@ -17,6 +17,8 @@ TEXTURE_CKPT="${TEXTURE_CKPT:-${PROJECT_ROOT}/output/texture_adapter_bf_e20/chec
 
 TRACE_OUTPUT_DIR="${TRACE_OUTPUT_DIR:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_gate_trace}"
 DIAG_OUT_DIR="${DIAG_OUT_DIR:-${PROJECT_ROOT}/eval_outputs/e4a_diagnosis}"
+MERGED_VIEW_DIR="${MERGED_VIEW_DIR:-${TRACE_OUTPUT_DIR}/e4a_balanced_gate_merged}"
+MERGE_VIEW="${MERGE_VIEW:-1}"
 
 DEVICE="${DEVICE:-cuda:0}"
 DEVICES="${DEVICES:-cuda:0,cuda:1,cuda:2}"
@@ -103,6 +105,47 @@ STATS_CMD=(
   --out_dir "${DIAG_OUT_DIR}"
 )
 
+link_or_copy() {
+  local src="$1"
+  local dst="$2"
+  if [[ -e "${dst}" || -L "${dst}" ]]; then
+    return 0
+  fi
+  ln -s "${src}" "${dst}" 2>/dev/null || cp -R "${src}" "${dst}"
+}
+
+merge_shard_view() {
+  if [[ "${MERGE_VIEW}" != "1" ]]; then
+    return 0
+  fi
+  mkdir -p "${MERGED_VIEW_DIR}/generated" "${MERGED_VIEW_DIR}/real" "${MERGED_VIEW_DIR}/token"
+  : > "${MERGED_VIEW_DIR}/gate_trace_all.jsonl"
+  for i in "${!DEVICE_LIST[@]}"; do
+    shard_dir="${TRACE_OUTPUT_DIR}/shard_$(printf '%02d' "${i}")/e4a_balanced_gate"
+    if [[ ! -d "${shard_dir}" ]]; then
+      continue
+    fi
+    if [[ -d "${shard_dir}/generated" ]]; then
+      find "${shard_dir}/generated" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d '' item; do
+        link_or_copy "${item}" "${MERGED_VIEW_DIR}/generated/$(basename "${item}")"
+      done
+    fi
+    if [[ -d "${shard_dir}/real" ]]; then
+      find "${shard_dir}/real" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d '' item; do
+        link_or_copy "${item}" "${MERGED_VIEW_DIR}/real/$(basename "${item}")"
+      done
+    fi
+    if [[ -d "${shard_dir}/token" ]]; then
+      find "${shard_dir}/token" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d '' item; do
+        link_or_copy "${item}" "${MERGED_VIEW_DIR}/token/$(basename "${item}")"
+      done
+      find "${shard_dir}/token" -name gate_trace.jsonl -print0 | while IFS= read -r -d '' trace_file; do
+        cat "${trace_file}" >> "${MERGED_VIEW_DIR}/gate_trace_all.jsonl"
+      done
+    fi
+  done
+}
+
 echo "============================================"
 echo "E4a gate trace diagnosis"
 echo "PROJECT_ROOT=${PROJECT_ROOT}"
@@ -110,6 +153,7 @@ echo "E4A_CKPT=${E4A_CKPT}"
 echo "TEXTURE_CKPT=${TEXTURE_CKPT}"
 echo "TRACE_OUTPUT_DIR=${TRACE_OUTPUT_DIR}"
 echo "DIAG_OUT_DIR=${DIAG_OUT_DIR}"
+echo "MERGED_VIEW_DIR=${MERGED_VIEW_DIR}"
 echo "NUM_SAMPLES=${NUM_SAMPLES}, SAMPLE_ID_RANGE=[${SAMPLE_ID_START}, ${SAMPLE_ID_END})"
 echo "DEVICES=${DEVICES}"
 echo "============================================"
@@ -157,9 +201,14 @@ for i in "${!pids[@]}"; do
   fi
 done
 
+merge_shard_view
 "${STATS_CMD[@]}"
 
 echo "Done."
+if [[ "${MERGE_VIEW}" == "1" ]]; then
+  echo "Merged view:"
+  echo "  ${MERGED_VIEW_DIR}"
+fi
 echo "Gate stats:"
 echo "  ${DIAG_OUT_DIR}/gate_stats_e4a.json"
 echo "  ${DIAG_OUT_DIR}/gate_stats_e4a.csv"
