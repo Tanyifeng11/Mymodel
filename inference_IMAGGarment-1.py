@@ -335,6 +335,9 @@ def prepare(args):
                 balanced_gate_scale=args.balanced_gate_scale,
                 balanced_gate_min=args.balanced_gate_min,
                 balanced_gate_max=args.balanced_gate_max,
+                use_conflict_aware_gate=bool(args.use_conflict_aware_gate),
+                conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
+                conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
             )
 
     unet.set_attn_processor(attn_procs)
@@ -555,6 +558,11 @@ if __name__ == "__main__":
     parser.add_argument('--balanced_gate_scale', type=float, default=0.2)
     parser.add_argument('--balanced_gate_min', type=float, default=0.8)
     parser.add_argument('--balanced_gate_max', type=float, default=1.2)
+    parser.add_argument('--use_conflict_aware_gate', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.3)
+    parser.add_argument('--conflict_palette_suppress_strength', type=float, default=1.0)
+    parser.add_argument('--conflict_deltae_norm', type=float, default=50.0)
+    parser.add_argument('--conflict_threshold', type=float, default=0.55)
     parser.add_argument('--balanced_gate_trace_path', type=str, default="")
     parser.add_argument('--balanced_gate_trace_sample_id', type=str, default="")
     parser.add_argument(
@@ -671,6 +679,10 @@ if __name__ == "__main__":
         texture_condition_mode=args.texture_condition_mode,
         use_palette_tokens=bool(args.use_palette_tokens),
         num_palette_tokens=args.num_palette_tokens,
+        use_conflict_aware_gate=bool(args.use_conflict_aware_gate),
+        conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
+        conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
+        conflict_deltae_norm=args.conflict_deltae_norm,
         fusion_type=args.fusion_type,
         texture_preprocess_mode=args.texture_preprocess_mode,
         alpha1=args.alpha1,

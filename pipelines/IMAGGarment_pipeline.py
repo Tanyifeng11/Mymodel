@@ -26,6 +26,7 @@ from models.bf_texture_module import BFTextureConditioner
 from models.palette_tokenizer import PaletteTokenMLP
 from texture_preprocess import preprocess_texture_image
 from checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
+from color_conflict_utils import compute_color_conflict
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -701,6 +702,10 @@ class IMAGGarment(StableDiffusionPipeline):
         texture_scale=1.0,
         use_palette_tokens=False,
         num_palette_tokens=4,
+        use_conflict_aware_gate=False,
+        conflict_texture_suppress_strength=0.3,
+        conflict_palette_suppress_strength=1.0,
+        conflict_deltae_norm=50.0,
         ref_clip_image=None,
         num_images_per_prompt=1,
         sketch_scale=1.0,
@@ -755,6 +760,7 @@ class IMAGGarment(StableDiffusionPipeline):
         spatial_feats = None
         spatial_mask = None
         spatial_active = False
+        color_conflict_score = None
         self.set_texture_token_enabled(False)
         self.set_palette_token_enabled(False)
 
@@ -776,6 +782,9 @@ class IMAGGarment(StableDiffusionPipeline):
                         attn_processor.num_tokens = texture_num_tokens
                         attn_processor.num_palette_tokens = int(num_palette_tokens) if use_palette_tokens else 0
                         attn_processor.use_palette_tokens = bool(use_palette_tokens)
+                        attn_processor.use_conflict_aware_gate = bool(use_conflict_aware_gate)
+                        attn_processor.conflict_texture_suppress_strength = float(conflict_texture_suppress_strength)
+                        attn_processor.conflict_palette_suppress_strength = float(conflict_palette_suppress_strength)
             self.set_texture_token_enabled(use_token)
             self.set_palette_token_enabled(use_token and bool(use_palette_tokens))
             print(f"[IMAGGarment] checkpoint format: {self.texture_meta.get('checkpoint_format', 'texture_adapter')}")
@@ -786,6 +795,24 @@ class IMAGGarment(StableDiffusionPipeline):
                 print(f"[IMAGGarment] texture token count: {texture_num_tokens}")
                 if use_palette_tokens:
                     print(f"[IMAGGarment] palette token count: {num_palette_tokens}")
+                if use_conflict_aware_gate:
+                    conflict_info = compute_color_conflict(
+                        prompt if isinstance(prompt, str) else prompt[0],
+                        ref_image=texture_clip_image if isinstance(texture_clip_image, Image.Image) else texture_clip_image[0],
+                        deltae_norm=conflict_deltae_norm,
+                    )
+                    color_conflict_score = torch.tensor(
+                        [conflict_info["color_conflict_score"]],
+                        device=device,
+                        dtype=prompt_embeds.dtype,
+                    )
+                    print(
+                        "[IMAGGarment] conflict-aware gate: "
+                        f"text_color={conflict_info['text_color'] or 'none'}, "
+                        f"ref_palette_rgb={conflict_info['ref_palette_rgb']}, "
+                        f"score={conflict_info['color_conflict_score']:.4f}, "
+                        f"bucket={conflict_info['conflict_bucket']}"
+                    )
                 image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
                     pil_image=texture_clip_image,
                     clip_image_embeds=texture_embeds,
@@ -919,6 +946,8 @@ class IMAGGarment(StableDiffusionPipeline):
                     "sa_hidden_states": sa_hidden_states,
                     "balanced_gate_timestep": balanced_gate_timestep,
                 }
+                if use_conflict_aware_gate and color_conflict_score is not None:
+                    cond_cross_attention_kwargs["color_conflict_score"] = color_conflict_score
 
                 noise_pred = self.unet(
                     latent_model_input[0].unsqueeze(0),

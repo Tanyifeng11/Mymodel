@@ -9,6 +9,7 @@ import sys
 from collections import Counter
 
 import numpy as np
+from PIL import Image
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
@@ -33,6 +34,13 @@ from eval.metrics import (
     compute_fid_from_paths,
     evaluate_full,
 )
+from color_conflict_utils import (
+    compute_color_conflict,
+    conflict_bucket,
+    delta_e_rgb,
+    dominant_rgb_from_pil,
+    summarize_conflict_rows,
+)
 
 
 PER_SAMPLE_METRICS = [
@@ -53,6 +61,7 @@ PER_SAMPLE_METRICS = [
     "struct_edge_recall",
     "struct_iou",
     "struct_edge_l1",
+    "prompt_color_delta_e",
     "edge_f1",
     "edge_precision",
     "edge_recall",
@@ -152,6 +161,32 @@ def experiment_to_flags(run_name, args):
             "balanced_gate_min": 0.8,
             "balanced_gate_max": 1.2,
         },
+        "E4d_lite_conflict_aware_gate": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
+            "use_balanced_fusion_gate": 1,
+            "balanced_gate_hidden_dim": 64,
+            "balanced_gate_scale": 0.2,
+            "balanced_gate_min": 0.8,
+            "balanced_gate_max": 1.2,
+            "use_conflict_aware_gate": 1,
+        },
+        "e4d_lite_conflict_aware_gate": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
+            "use_balanced_fusion_gate": 1,
+            "balanced_gate_hidden_dim": 64,
+            "balanced_gate_scale": 0.2,
+            "balanced_gate_min": 0.8,
+            "balanced_gate_max": 1.2,
+            "use_conflict_aware_gate": 1,
+        },
         "e2b_gate": {
             "texture_condition_mode": "token",
             "layer_group_enabled": 1,
@@ -195,6 +230,7 @@ def experiment_to_flags(run_name, args):
     config.setdefault("balanced_gate_scale", args.balanced_gate_scale)
     config.setdefault("balanced_gate_min", args.balanced_gate_min)
     config.setdefault("balanced_gate_max", args.balanced_gate_max)
+    config.setdefault("use_conflict_aware_gate", args.use_conflict_aware_gate)
     return config
 
 
@@ -295,12 +331,42 @@ def _sample_text_description(args, sample, mode_name, paths, role, image_path, s
         f"gate_max: {experiment_flags['gate_max']}",
         f"use_balanced_fusion_gate: {int(experiment_flags['use_balanced_fusion_gate'])}",
         f"balanced_gate_scale: {experiment_flags['balanced_gate_scale']}",
+        f"use_conflict_aware_gate: {int(experiment_flags['use_conflict_aware_gate'])}",
+        f"conflict_texture_suppress_strength: {args.conflict_texture_suppress_strength}",
+        f"conflict_palette_suppress_strength: {args.conflict_palette_suppress_strength}",
+        f"conflict_deltae_norm: {args.conflict_deltae_norm}",
+        f"conflict_threshold: {args.conflict_threshold}",
         f"alpha1: {args.alpha1}",
         f"alpha2: {args.alpha2}",
         f"alpha3: {args.alpha3}",
         f"alpha4: {args.alpha4}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _sample_conflict_info(args, sample, paths):
+    explicit_score = sample.get("color_conflict_score")
+    if explicit_score is not None:
+        try:
+            score = float(explicit_score)
+        except (TypeError, ValueError):
+            score = 0.0
+        has_text = bool(sample.get("has_text_color", score > 0.0))
+        return {
+            "text_color": sample.get("text_color", ""),
+            "text_color_rgb": sample.get("text_color_rgb", [0, 0, 0]),
+            "ref_palette_rgb": sample.get("ref_palette_rgb", [0, 0, 0]),
+            "has_text_color": has_text,
+            "color_conflict_score": score,
+            "color_delta_e": sample.get("color_delta_e", None),
+            "conflict_bucket": conflict_bucket(score, has_text),
+        }
+    ref_image = safe_open_rgb(paths.get("texture_path"))
+    return compute_color_conflict(
+        sample.get("prompt", ""),
+        ref_image=ref_image,
+        deltae_norm=args.conflict_deltae_norm,
+    )
 
 
 def _write_image_sidecar(image_path, description):
@@ -461,6 +527,16 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         str(experiment_flags["balanced_gate_min"]),
         "--balanced_gate_max",
         str(experiment_flags["balanced_gate_max"]),
+        "--use_conflict_aware_gate",
+        str(int(experiment_flags["use_conflict_aware_gate"])),
+        "--conflict_texture_suppress_strength",
+        str(args.conflict_texture_suppress_strength),
+        "--conflict_palette_suppress_strength",
+        str(args.conflict_palette_suppress_strength),
+        "--conflict_deltae_norm",
+        str(args.conflict_deltae_norm),
+        "--conflict_threshold",
+        str(args.conflict_threshold),
         "--alpha1",
         str(args.alpha1),
         "--alpha2",
@@ -549,6 +625,45 @@ def _aggregate_rows(rows, mode):
         summary[f"{key}_std"] = float(np.std(values))
         summary[f"{key}_valid"] = len(values)
     return summary
+
+
+def _aggregate_conflict_buckets(rows):
+    bucket_order = [
+        "no_text_color",
+        "low_conflict",
+        "mid_conflict",
+        "high_conflict",
+    ]
+    output = []
+    for mode in sorted({row.get("mode") for row in rows}):
+        mode_rows = [row for row in rows if row.get("mode") == mode]
+        for bucket in bucket_order:
+            bucket_rows = [row for row in mode_rows if row.get("conflict_bucket") == bucket]
+            summary = {
+                "mode": mode,
+                "conflict_bucket": bucket,
+                "num_samples": len(bucket_rows),
+            }
+            for key in (
+                "color_conflict_score",
+                "tcf_lab_delta",
+                "tcf_hsv_l1",
+                "tcf_rgb_l2",
+                "tpf_patch_sim",
+                "leak_colored_frac",
+                "leak_edge_density",
+                "edge_f1",
+                "sketch_iou",
+                "edge_l1",
+                "clip_i_real",
+                "clip_i_texture",
+                "prompt_color_delta_e",
+            ):
+                values = [float(row[key]) for row in bucket_rows if _is_finite(row.get(key))]
+                summary[f"{key}_mean"] = float(np.mean(values)) if values else None
+                summary[f"{key}_valid"] = len(values)
+            output.append(summary)
+    return output
 
 
 def _assign_clip_metric(
@@ -754,6 +869,10 @@ def run_benchmark(args):
         "clip_model_path": args.clip_model_path,
         "texture_preprocess_mode": args.texture_preprocess_mode,
         "experiment_flags": experiment_to_flags(args.run_name, args),
+        "conflict_texture_suppress_strength": args.conflict_texture_suppress_strength,
+        "conflict_palette_suppress_strength": args.conflict_palette_suppress_strength,
+        "conflict_deltae_norm": args.conflict_deltae_norm,
+        "conflict_threshold": args.conflict_threshold,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
         "metrics_only": args.metrics_only,
         "resume_generation": bool(args.resume_generation),
@@ -791,6 +910,7 @@ def run_benchmark(args):
                 _append_reason(reason_counts, reason)
             generation_status_counts[generation_status] += 1
             output_paths = _sample_output_paths(run_dir, mode, sample)
+            conflict_info = _sample_conflict_info(args, sample, paths)
             row = {
                 "mode": mode,
                 "run_name": args.run_name,
@@ -802,6 +922,13 @@ def run_benchmark(args):
                 or output_paths["generated"],
                 "generation_status": generation_status,
                 **paths,
+                "text_color": conflict_info["text_color"],
+                "text_color_rgb": conflict_info["text_color_rgb"],
+                "ref_palette_rgb": conflict_info["ref_palette_rgb"],
+                "has_text_color": bool(conflict_info["has_text_color"]),
+                "color_conflict_score": float(conflict_info["color_conflict_score"]),
+                "color_delta_e": conflict_info.get("color_delta_e"),
+                "conflict_bucket": conflict_info["conflict_bucket"],
             }
             for metric in PER_SAMPLE_METRICS:
                 row[metric] = float("nan")
@@ -897,6 +1024,7 @@ def run_benchmark(args):
         "number_of_empty_boundary_masks": 0,
         "skipped_metrics_and_reasons": {},
     }
+    diagnostics.update(summarize_conflict_rows(rows, threshold=args.conflict_threshold))
     write_json(os.path.join(metrics_dir, "benchmark_samples.json"), rows)
     _write_progress(metrics_dir, rows)
     write_json(os.path.join(metrics_dir, "diagnostics.json"), diagnostics)
@@ -1002,6 +1130,17 @@ def run_benchmark(args):
             gen_path=row["gen_path"],
         )
         row.update(mask_bundle["stats"])
+        if row.get("has_text_color"):
+            garment_mask = mask_bundle.get("garment")
+            mask_image = None
+            if garment_mask is not None:
+                mask_image = Image.fromarray(garment_mask.astype(np.uint8) * 255, mode="L")
+            gen_rgb = dominant_rgb_from_pil(generated, mask=mask_image)
+            row["generated_dominant_rgb"] = list(gen_rgb)
+            row["prompt_color_delta_e"] = delta_e_rgb(row["text_color_rgb"], gen_rgb)
+        else:
+            row["generated_dominant_rgb"] = [0, 0, 0]
+            row["prompt_color_delta_e"] = float("nan")
         if row["garment_mask_pixels"] < args.min_valid_pixels:
             diagnostics["number_of_empty_garment_masks"] += 1
         if row["outside_mask_pixels"] < args.min_valid_pixels:
@@ -1073,6 +1212,7 @@ def run_benchmark(args):
         diagnostics["num_valid_for_clip_i_texture"],
         diagnostics["num_valid_for_clip_i_real"],
     )
+    diagnostics.update(summarize_conflict_rows(rows, threshold=args.conflict_threshold))
 
     fid_value = float("nan")
     if args.compute_fid:
@@ -1137,8 +1277,11 @@ def run_benchmark(args):
         summary["FID"] = fid_value if _is_finite(fid_value) else None
         summary["FID_std"] = None
         summary_rows.append(summary)
+    bucket_rows = _aggregate_conflict_buckets(rows)
 
     _write_progress(metrics_dir, rows)
+    write_csv(os.path.join(metrics_dir, "conflict_bucket_metrics.csv"), bucket_rows)
+    write_json(os.path.join(metrics_dir, "conflict_bucket_metrics.json"), bucket_rows)
     write_csv(os.path.join(metrics_dir, "metrics_summary.csv"), summary_rows)
     write_json(os.path.join(metrics_dir, "metrics_summary.json"), summary_rows)
     write_csv(os.path.join(metrics_dir, "summary_metrics.csv"), summary_rows)
@@ -1203,6 +1346,11 @@ def build_argparser():
     parser.add_argument("--balanced_gate_scale", type=float, default=0.2)
     parser.add_argument("--balanced_gate_min", type=float, default=0.8)
     parser.add_argument("--balanced_gate_max", type=float, default=1.2)
+    parser.add_argument("--use_conflict_aware_gate", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--conflict_texture_suppress_strength", type=float, default=0.3)
+    parser.add_argument("--conflict_palette_suppress_strength", type=float, default=1.0)
+    parser.add_argument("--conflict_deltae_norm", type=float, default=50.0)
+    parser.add_argument("--conflict_threshold", type=float, default=0.55)
     parser.add_argument("--save_balanced_gate_trace", type=int, choices=[0, 1], default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(

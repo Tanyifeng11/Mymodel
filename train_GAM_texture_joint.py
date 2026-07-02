@@ -43,6 +43,7 @@ from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 from texture_preprocess import preprocess_texture_image
+from color_conflict_utils import compute_color_conflict
 
 try:
     _repo_checkpoint_spec = importlib.util.find_spec("repo_utils.checkpoint_utils")
@@ -155,6 +156,7 @@ class JointTextureDataset(Dataset):
         width=512,
         height=640,
         texture_preprocess_mode="crop_tile",
+        conflict_deltae_norm=50.0,
     ):
         with open(json_path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
@@ -164,6 +166,7 @@ class JointTextureDataset(Dataset):
         self.width = width
         self.height = height
         self.texture_preprocess_mode = texture_preprocess_mode
+        self.conflict_deltae_norm = float(conflict_deltae_norm)
 
         self.vae_tf = transforms.Compose(
             [
@@ -225,6 +228,12 @@ class JointTextureDataset(Dataset):
             mask = self.mask_tf(sketch_to_garment_mask(sketch, self.width, self.height))
             mask = (mask > 0.5).float()
 
+        conflict_info = compute_color_conflict(
+            caption,
+            ref_tensor=texture_tensor,
+            deltae_norm=self.conflict_deltae_norm,
+        )
+
         return {
             "vae_cloth": self.vae_tf(cloth),
             "vae_sketch": self.vae_tf(sketch),
@@ -235,6 +244,10 @@ class JointTextureDataset(Dataset):
             "garment_mask": mask,
             "has_mask": torch.tensor(has_mask, dtype=torch.float32),
             "input_ids": input_ids,
+            "text_color_rgb": torch.tensor(conflict_info["text_color_rgb"], dtype=torch.float32),
+            "ref_palette_rgb": torch.tensor(conflict_info["ref_palette_rgb"], dtype=torch.float32),
+            "has_text_color": torch.tensor(float(conflict_info["has_text_color"]), dtype=torch.float32),
+            "color_conflict_score": torch.tensor(conflict_info["color_conflict_score"], dtype=torch.float32),
         }
 
     def __len__(self):
@@ -335,6 +348,11 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "palette_mlp_lr": args.palette_mlp_lr,
         "gate_min": args.gate_min,
         "gate_max": args.gate_max,
+        "use_conflict_aware_gate": args.use_conflict_aware_gate,
+        "conflict_texture_suppress_strength": args.conflict_texture_suppress_strength,
+        "conflict_palette_suppress_strength": args.conflict_palette_suppress_strength,
+        "conflict_deltae_norm": args.conflict_deltae_norm,
+        "conflict_threshold": args.conflict_threshold,
         "joint_t_drop_rate": args.joint_t_drop_rate,
         "joint_i_drop_rate": args.joint_i_drop_rate,
         "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -708,6 +726,11 @@ def save_training_checkpoint(
             "balanced_gate_min": args.balanced_gate_min,
             "balanced_gate_max": args.balanced_gate_max,
             "balanced_gate_reg_weight": args.balanced_gate_reg_weight,
+            "use_conflict_aware_gate": args.use_conflict_aware_gate,
+            "conflict_texture_suppress_strength": args.conflict_texture_suppress_strength,
+            "conflict_palette_suppress_strength": args.conflict_palette_suppress_strength,
+            "conflict_deltae_norm": args.conflict_deltae_norm,
+            "conflict_threshold": args.conflict_threshold,
             "joint_t_drop_rate": args.joint_t_drop_rate,
             "joint_i_drop_rate": args.joint_i_drop_rate,
             "joint_ti_drop_rate": args.joint_ti_drop_rate,
@@ -1134,6 +1157,11 @@ def run_mode_validation_vis(
             cross_attention_kwargs["balanced_gate_timestep"] = (
                 t.float() / float(noise_scheduler.config.num_train_timesteps)
             )
+        if args.use_conflict_aware_gate:
+            cross_attention_kwargs["color_conflict_score"] = batch["color_conflict_score"].to(
+                device=latents.device,
+                dtype=latents.dtype,
+            )
 
         noise_pred = unet(
             latents,
@@ -1285,6 +1313,11 @@ def main():
     ap.add_argument("--balanced_gate_min", type=float, default=0.8)
     ap.add_argument("--balanced_gate_max", type=float, default=1.2)
     ap.add_argument("--balanced_gate_reg_weight", type=float, default=1e-4)
+    ap.add_argument("--use_conflict_aware_gate", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--conflict_texture_suppress_strength", type=float, default=0.3)
+    ap.add_argument("--conflict_palette_suppress_strength", type=float, default=1.0)
+    ap.add_argument("--conflict_deltae_norm", type=float, default=50.0)
+    ap.add_argument("--conflict_threshold", type=float, default=0.55)
     ap.add_argument("--ddp_find_unused_parameters", type=int, default=-1, choices=[-1, 0, 1])
     ap.add_argument("--disable_gradient_checkpointing", type=int, default=1, choices=[0, 1])
     ap.add_argument("--alpha1", type=float, default=1.0)
@@ -1470,6 +1503,9 @@ def main():
                 balanced_gate_scale=args.balanced_gate_scale,
                 balanced_gate_min=args.balanced_gate_min,
                 balanced_gate_max=args.balanced_gate_max,
+                use_conflict_aware_gate=bool(args.use_conflict_aware_gate),
+                conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
+                conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
             )
     unet.set_attn_processor(attn_procs)
     if args.disable_gradient_checkpointing and hasattr(unet, "disable_gradient_checkpointing"):
@@ -1707,6 +1743,7 @@ def main():
         width=args.width,
         height=args.height,
         texture_preprocess_mode=args.texture_preprocess_mode,
+        conflict_deltae_norm=args.conflict_deltae_norm,
     )
     dl = DataLoader(
         ds,
@@ -1844,6 +1881,14 @@ def main():
         print(f"[info] use_texture_gate = {bool(args.use_texture_gate)}")
         print(f"[info] use_palette_tokens = {bool(args.use_palette_tokens)}")
         print(f"[info] use_balanced_fusion_gate = {bool(args.use_balanced_fusion_gate)}")
+        print(f"[info] use_conflict_aware_gate = {bool(args.use_conflict_aware_gate)}")
+        print(
+            "[info] conflict suppression: "
+            f"texture={args.conflict_texture_suppress_strength}, "
+            f"palette={args.conflict_palette_suppress_strength}, "
+            f"deltae_norm={args.conflict_deltae_norm}, "
+            f"threshold={args.conflict_threshold}"
+        )
         print(f"[info] num_palette_tokens = {args.num_palette_tokens}")
         print(f"[info] gate_type = {args.gate_type}")
         print(f"[info] gate_min = {args.gate_min}, gate_max = {args.gate_max}")
@@ -2010,6 +2055,11 @@ def main():
                 if args.use_balanced_fusion_gate:
                     cross_attention_kwargs["balanced_gate_timestep"] = (
                         timesteps.float() / float(noise_scheduler.config.num_train_timesteps)
+                    )
+                if args.use_conflict_aware_gate:
+                    cross_attention_kwargs["color_conflict_score"] = batch["color_conflict_score"].to(
+                        device=noisy_latents.device,
+                        dtype=noisy_latents.dtype,
                     )
 
                 noise_pred = unet(
@@ -2261,6 +2311,13 @@ def main():
                             "train/use_token": float(use_token),
                             "train/use_spatial": float(use_spatial),
                             "train/texture_condition_keep_rate": texture_condition_weight.mean().item(),
+                            "train/mean_conflict_score": batch["color_conflict_score"].detach().float().mean().item(),
+                            "train/high_conflict_count": (
+                                batch["color_conflict_score"].detach().float() >= args.conflict_threshold
+                            ).sum().item(),
+                            "train/no_text_color_count": (
+                                batch["has_text_color"].detach().float() < 0.5
+                            ).sum().item(),
                             "train/encoder_hidden_tokens": enc_h.shape[1],
                             "train/batch_size": bsz,
                             "train/epoch": float(current_epoch) + (float(global_step % max(1, steps_per_epoch)) / max(1, steps_per_epoch)),
@@ -2306,6 +2363,8 @@ def main():
                         f"drop_ti={drop_counts['ti'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_token_branch={branch_drop_counts['token'] / max(1, branch_drop_counts['total']):.3f}, "
                         f"drop_spatial_branch={branch_drop_counts['spatial'] / max(1, branch_drop_counts['total']):.3f}, "
+                        f"mean_conflict={batch['color_conflict_score'].detach().float().mean().item():.3f}, "
+                        f"high_conflict={(batch['color_conflict_score'].detach().float() >= args.conflict_threshold).sum().item()}, "
                         f"encoder_hidden_states={tuple(enc_h.shape)}"
                     )
 
