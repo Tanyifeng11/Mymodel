@@ -1085,8 +1085,6 @@ def run_benchmark(args):
             f"expected={expected_num_samples}"
         )
     if args.evaluation_resize:
-        from PIL import Image
-
         invalid_sizes = []
         expected_size = (args.evaluation_resize, args.evaluation_resize)
         for row in rows:
