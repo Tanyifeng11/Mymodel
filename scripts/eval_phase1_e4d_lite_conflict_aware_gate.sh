@@ -12,9 +12,9 @@ VAL_ROOT_PATH="${VAL_ROOT_PATH:-${BF_TRAIN_ROOT}}"
 
 OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
-E4D_CKPT="${E4D_CKPT:-${OUTPUT_BASE}/phase1_e4d_lite_conflict_aware_gate_e1/checkpoint-final/joint_model.pt}"
+E4D_CKPT="${E4D_CKPT:-${OUTPUT_BASE}/phase1_e4d_lite_conflict_aware_gate_v2_e1/checkpoint-final/joint_model.pt}"
 
-EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_e4d_lite_conflict_aware_gate}"
+EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500_e4d_lite_conflict_aware_gate_v2}"
 REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report_normal}"
 SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/phase1_bf_val_split.json}"
 EVAL_NUM_SAMPLES="${EVAL_NUM_SAMPLES:-500}"
@@ -36,10 +36,10 @@ MIN_VALID_PIXELS="${MIN_VALID_PIXELS:-50}"
 WRITE_TEXT_SIDECARS="${WRITE_TEXT_SIDECARS:-1}"
 SAVE_BALANCED_GATE_TRACE="${SAVE_BALANCED_GATE_TRACE:-0}"
 
-CONFLICT_TEXTURE_SUPPRESS_STRENGTH="${CONFLICT_TEXTURE_SUPPRESS_STRENGTH:-0.3}"
-CONFLICT_PALETTE_SUPPRESS_STRENGTH="${CONFLICT_PALETTE_SUPPRESS_STRENGTH:-1.0}"
+CONFLICT_TEXTURE_SUPPRESS_STRENGTH="${CONFLICT_TEXTURE_SUPPRESS_STRENGTH:-0.1}"
+CONFLICT_PALETTE_SUPPRESS_STRENGTH="${CONFLICT_PALETTE_SUPPRESS_STRENGTH:-0.4}"
 CONFLICT_DELTAE_NORM="${CONFLICT_DELTAE_NORM:-50.0}"
-CONFLICT_THRESHOLD="${CONFLICT_THRESHOLD:-0.55}"
+CONFLICT_THRESHOLD="${CONFLICT_THRESHOLD:-0.70}"
 
 TEXTURE_IMAGES_DIR="${TEXTURE_IMAGES_DIR:-}"
 SKETCH_IMAGES_DIR="${SKETCH_IMAGES_DIR:-}"
@@ -108,7 +108,7 @@ benchmark_cmd=(
   --conflict_deltae_norm "${CONFLICT_DELTAE_NORM}"
   --conflict_threshold "${CONFLICT_THRESHOLD}"
   --output_dir "${EVAL_BASE}"
-  --run_name E4d_lite_conflict_aware_gate
+  --run_name E4d_lite_conflict_aware_gate_v2
 )
 
 if [[ -n "${TEXTURE_IMAGES_DIR}" ]]; then
@@ -131,6 +131,7 @@ echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
 echo "CONFLICT_TEXTURE_SUPPRESS_STRENGTH=${CONFLICT_TEXTURE_SUPPRESS_STRENGTH}"
 echo "CONFLICT_PALETTE_SUPPRESS_STRENGTH=${CONFLICT_PALETTE_SUPPRESS_STRENGTH}"
+echo "CONFLICT_DELTAE_NORM=${CONFLICT_DELTAE_NORM}, CONFLICT_THRESHOLD=${CONFLICT_THRESHOLD}"
 echo "============================================"
 printf '%q ' "${benchmark_cmd[@]}"
 echo
@@ -144,7 +145,7 @@ report_cmd=(
   --experiments_dir "${EVAL_BASE}"
   --real_images_dir "${REAL_IMG_DIR}"
   --output_dir "${REPORT_DIR}"
-  --experiment_names E4d_lite_conflict_aware_gate
+  --experiment_names E4d_lite_conflict_aware_gate_v2
   --device "${REPORT_DEVICE}"
   --clip_model_path "${CLIP_MODEL_PATH}"
 )
@@ -159,7 +160,7 @@ fi
 
 echo "============================================"
 echo "E4D-lite evaluation done."
-echo "Eval output:   ${EVAL_BASE}/E4d_lite_conflict_aware_gate"
-echo "Bucket output: ${EVAL_BASE}/E4d_lite_conflict_aware_gate/conflict_bucket_metrics.csv"
+echo "Eval output:   ${EVAL_BASE}/E4d_lite_conflict_aware_gate_v2"
+echo "Bucket output: ${EVAL_BASE}/E4d_lite_conflict_aware_gate_v2/conflict_bucket_metrics.csv"
 echo "Report output: ${REPORT_DIR}"
 echo "============================================"

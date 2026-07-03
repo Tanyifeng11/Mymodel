@@ -703,9 +703,10 @@ class IMAGGarment(StableDiffusionPipeline):
         use_palette_tokens=False,
         num_palette_tokens=4,
         use_conflict_aware_gate=False,
-        conflict_texture_suppress_strength=0.3,
-        conflict_palette_suppress_strength=1.0,
+        conflict_texture_suppress_strength=0.1,
+        conflict_palette_suppress_strength=0.4,
         conflict_deltae_norm=50.0,
+        conflict_threshold=0.70,
         ref_clip_image=None,
         num_images_per_prompt=1,
         sketch_scale=1.0,
@@ -785,6 +786,7 @@ class IMAGGarment(StableDiffusionPipeline):
                         attn_processor.use_conflict_aware_gate = bool(use_conflict_aware_gate)
                         attn_processor.conflict_texture_suppress_strength = float(conflict_texture_suppress_strength)
                         attn_processor.conflict_palette_suppress_strength = float(conflict_palette_suppress_strength)
+                        attn_processor.conflict_threshold = float(conflict_threshold)
             self.set_texture_token_enabled(use_token)
             self.set_palette_token_enabled(use_token and bool(use_palette_tokens))
             print(f"[IMAGGarment] checkpoint format: {self.texture_meta.get('checkpoint_format', 'texture_adapter')}")

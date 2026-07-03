@@ -348,8 +348,9 @@ class IPAttnProcessor2_0(torch.nn.Module):
         balanced_gate_min: float = 0.8,
         balanced_gate_max: float = 1.2,
         use_conflict_aware_gate: bool = False,
-        conflict_texture_suppress_strength: float = 0.3,
-        conflict_palette_suppress_strength: float = 1.0,
+        conflict_texture_suppress_strength: float = 0.1,
+        conflict_palette_suppress_strength: float = 0.4,
+        conflict_threshold: float = 0.70,
     ):
         super().__init__()
 
@@ -378,6 +379,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         self.use_conflict_aware_gate = bool(use_conflict_aware_gate)
         self.conflict_texture_suppress_strength = float(conflict_texture_suppress_strength)
         self.conflict_palette_suppress_strength = float(conflict_palette_suppress_strength)
+        self.conflict_threshold = float(conflict_threshold)
         self.balanced_gate_trace_enabled = False
         self.balanced_gate_trace = []
 
@@ -482,6 +484,19 @@ class IPAttnProcessor2_0(torch.nn.Module):
                 }
             )
         return gates[:, 0].view(batch_size, 1, 1), gates[:, 1].view(batch_size, 1, 1)
+
+    def _active_conflict(self, color_conflict_score, batch_size, dtype, device):
+        conflict = color_conflict_score
+        if not torch.is_tensor(conflict):
+            conflict = torch.tensor(conflict, device=device)
+        conflict = conflict.to(device=device, dtype=dtype)
+        if conflict.ndim == 0:
+            conflict = conflict.view(1).expand(batch_size)
+        if conflict.ndim > 1:
+            conflict = conflict.view(batch_size, -1)[:, 0]
+        conflict = conflict.view(batch_size, 1, 1).clamp(0.0, 1.0)
+        threshold = max(0.0, min(float(self.conflict_threshold), 0.999))
+        return ((conflict - threshold) / (1.0 - threshold)).clamp(0.0, 1.0)
 
     def __call__(
         self,
@@ -635,16 +650,13 @@ class IPAttnProcessor2_0(torch.nn.Module):
             if balanced_texture_gate is not None:
                 gate = gate * balanced_texture_gate
             if self.use_conflict_aware_gate and color_conflict_score is not None:
-                conflict = color_conflict_score
-                if not torch.is_tensor(conflict):
-                    conflict = torch.tensor(conflict, device=hidden_states.device)
-                conflict = conflict.to(device=hidden_states.device, dtype=hidden_states.dtype)
-                if conflict.ndim == 0:
-                    conflict = conflict.view(1).expand(batch_size)
-                if conflict.ndim > 1:
-                    conflict = conflict.view(batch_size, -1)[:, 0]
-                conflict = conflict.view(batch_size, 1, 1).clamp(0.0, 1.0)
-                texture_suppress = 1.0 - self.conflict_texture_suppress_strength * conflict
+                active_conflict = self._active_conflict(
+                    color_conflict_score,
+                    batch_size,
+                    hidden_states.dtype,
+                    hidden_states.device,
+                )
+                texture_suppress = 1.0 - self.conflict_texture_suppress_strength * active_conflict
                 gate = gate * texture_suppress.clamp_min(0.0)
             hidden_states = hidden_states + self.scale * gate * ip_hidden_states
 
@@ -673,16 +685,13 @@ class IPAttnProcessor2_0(torch.nn.Module):
             if balanced_palette_gate is not None:
                 palette_scale = palette_scale * balanced_palette_gate
             if self.use_conflict_aware_gate and color_conflict_score is not None:
-                conflict = color_conflict_score
-                if not torch.is_tensor(conflict):
-                    conflict = torch.tensor(conflict, device=hidden_states.device)
-                conflict = conflict.to(device=hidden_states.device, dtype=hidden_states.dtype)
-                if conflict.ndim == 0:
-                    conflict = conflict.view(1).expand(batch_size)
-                if conflict.ndim > 1:
-                    conflict = conflict.view(batch_size, -1)[:, 0]
-                conflict = conflict.view(batch_size, 1, 1).clamp(0.0, 1.0)
-                palette_suppress = 1.0 - self.conflict_palette_suppress_strength * conflict
+                active_conflict = self._active_conflict(
+                    color_conflict_score,
+                    batch_size,
+                    hidden_states.dtype,
+                    hidden_states.device,
+                )
+                palette_suppress = 1.0 - self.conflict_palette_suppress_strength * active_conflict
                 palette_scale = palette_scale * palette_suppress.clamp_min(0.0)
             hidden_states = hidden_states + palette_scale * palette_out
 

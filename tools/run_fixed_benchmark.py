@@ -174,6 +174,32 @@ def experiment_to_flags(run_name, args):
             "balanced_gate_max": 1.2,
             "use_conflict_aware_gate": 1,
         },
+        "E4d_lite_conflict_aware_gate_v2": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
+            "use_balanced_fusion_gate": 1,
+            "balanced_gate_hidden_dim": 64,
+            "balanced_gate_scale": 0.2,
+            "balanced_gate_min": 0.8,
+            "balanced_gate_max": 1.2,
+            "use_conflict_aware_gate": 1,
+        },
+        "e4d_lite_conflict_aware_gate_v2": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 0,
+            "use_palette_tokens": 1,
+            "num_palette_tokens": 4,
+            "use_balanced_fusion_gate": 1,
+            "balanced_gate_hidden_dim": 64,
+            "balanced_gate_scale": 0.2,
+            "balanced_gate_min": 0.8,
+            "balanced_gate_max": 1.2,
+            "use_conflict_aware_gate": 1,
+        },
         "e4d_lite_conflict_aware_gate": {
             "texture_condition_mode": "token",
             "layer_group_enabled": 1,
@@ -1345,10 +1371,10 @@ def build_argparser():
     parser.add_argument("--balanced_gate_min", type=float, default=0.8)
     parser.add_argument("--balanced_gate_max", type=float, default=1.2)
     parser.add_argument("--use_conflict_aware_gate", type=int, choices=[0, 1], default=0)
-    parser.add_argument("--conflict_texture_suppress_strength", type=float, default=0.3)
-    parser.add_argument("--conflict_palette_suppress_strength", type=float, default=1.0)
+    parser.add_argument("--conflict_texture_suppress_strength", type=float, default=0.1)
+    parser.add_argument("--conflict_palette_suppress_strength", type=float, default=0.4)
     parser.add_argument("--conflict_deltae_norm", type=float, default=50.0)
-    parser.add_argument("--conflict_threshold", type=float, default=0.55)
+    parser.add_argument("--conflict_threshold", type=float, default=0.70)
     parser.add_argument("--save_balanced_gate_trace", type=int, choices=[0, 1], default=0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(

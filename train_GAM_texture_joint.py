@@ -1314,10 +1314,10 @@ def main():
     ap.add_argument("--balanced_gate_max", type=float, default=1.2)
     ap.add_argument("--balanced_gate_reg_weight", type=float, default=1e-4)
     ap.add_argument("--use_conflict_aware_gate", type=int, default=0, choices=[0, 1])
-    ap.add_argument("--conflict_texture_suppress_strength", type=float, default=0.3)
-    ap.add_argument("--conflict_palette_suppress_strength", type=float, default=1.0)
+    ap.add_argument("--conflict_texture_suppress_strength", type=float, default=0.1)
+    ap.add_argument("--conflict_palette_suppress_strength", type=float, default=0.4)
     ap.add_argument("--conflict_deltae_norm", type=float, default=50.0)
-    ap.add_argument("--conflict_threshold", type=float, default=0.55)
+    ap.add_argument("--conflict_threshold", type=float, default=0.70)
     ap.add_argument("--ddp_find_unused_parameters", type=int, default=-1, choices=[-1, 0, 1])
     ap.add_argument("--disable_gradient_checkpointing", type=int, default=1, choices=[0, 1])
     ap.add_argument("--alpha1", type=float, default=1.0)
@@ -1506,6 +1506,7 @@ def main():
                 use_conflict_aware_gate=bool(args.use_conflict_aware_gate),
                 conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
                 conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
+                conflict_threshold=args.conflict_threshold,
             )
     unet.set_attn_processor(attn_procs)
     if args.disable_gradient_checkpointing and hasattr(unet, "disable_gradient_checkpointing"):

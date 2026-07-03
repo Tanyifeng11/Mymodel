@@ -338,6 +338,7 @@ def prepare(args):
                 use_conflict_aware_gate=bool(args.use_conflict_aware_gate),
                 conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
                 conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
+                conflict_threshold=args.conflict_threshold,
             )
 
     unet.set_attn_processor(attn_procs)
@@ -559,10 +560,10 @@ if __name__ == "__main__":
     parser.add_argument('--balanced_gate_min', type=float, default=0.8)
     parser.add_argument('--balanced_gate_max', type=float, default=1.2)
     parser.add_argument('--use_conflict_aware_gate', type=int, default=0, choices=[0, 1])
-    parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.3)
-    parser.add_argument('--conflict_palette_suppress_strength', type=float, default=1.0)
+    parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.1)
+    parser.add_argument('--conflict_palette_suppress_strength', type=float, default=0.4)
     parser.add_argument('--conflict_deltae_norm', type=float, default=50.0)
-    parser.add_argument('--conflict_threshold', type=float, default=0.55)
+    parser.add_argument('--conflict_threshold', type=float, default=0.70)
     parser.add_argument('--balanced_gate_trace_path', type=str, default="")
     parser.add_argument('--balanced_gate_trace_sample_id', type=str, default="")
     parser.add_argument(
@@ -683,6 +684,7 @@ if __name__ == "__main__":
         conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
         conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
         conflict_deltae_norm=args.conflict_deltae_norm,
+        conflict_threshold=args.conflict_threshold,
         fusion_type=args.fusion_type,
         texture_preprocess_mode=args.texture_preprocess_mode,
         alpha1=args.alpha1,
