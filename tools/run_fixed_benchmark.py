@@ -241,6 +241,16 @@ def experiment_to_flags(run_name, args):
             "gate_min": 0.7,
             "gate_max": 1.3,
         },
+        "e5_tcpm_lite": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 1,
+            "gate_type": "layer",
+            "gate_init": "identity",
+            "gate_min": 0.7,
+            "gate_max": 1.3,
+            "use_tcpm_lite": 1,
+        },
     }
     config = dict(configs.get(run_name, {}))
     config.setdefault("use_texture_gate", args.use_texture_gate)
@@ -252,6 +262,7 @@ def experiment_to_flags(run_name, args):
     config.setdefault("gate_min", args.gate_min)
     config.setdefault("gate_max", args.gate_max)
     config.setdefault("use_balanced_fusion_gate", args.use_balanced_fusion_gate)
+    config.setdefault("use_tcpm_lite", args.use_tcpm_lite)
     config.setdefault("balanced_gate_hidden_dim", args.balanced_gate_hidden_dim)
     config.setdefault("balanced_gate_scale", args.balanced_gate_scale)
     config.setdefault("balanced_gate_min", args.balanced_gate_min)
@@ -555,6 +566,8 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         str(experiment_flags["balanced_gate_max"]),
         "--use_conflict_aware_gate",
         str(int(experiment_flags["use_conflict_aware_gate"])),
+        "--use_tcpm_lite",
+        str(int(experiment_flags["use_tcpm_lite"])),
         "--conflict_texture_suppress_strength",
         str(args.conflict_texture_suppress_strength),
         "--conflict_palette_suppress_strength",
@@ -1371,6 +1384,7 @@ def build_argparser():
     parser.add_argument("--balanced_gate_min", type=float, default=0.8)
     parser.add_argument("--balanced_gate_max", type=float, default=1.2)
     parser.add_argument("--use_conflict_aware_gate", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--use_tcpm_lite", type=int, choices=[0, 1], default=0)
     parser.add_argument("--conflict_texture_suppress_strength", type=float, default=0.1)
     parser.add_argument("--conflict_palette_suppress_strength", type=float, default=0.4)
     parser.add_argument("--conflict_deltae_norm", type=float, default=50.0)

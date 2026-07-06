@@ -509,6 +509,7 @@ class IPAttnProcessor2_0(torch.nn.Module):
         sa_hidden_states=None,
         balanced_gate_timestep=None,
         color_conflict_score=None,
+        tcpm_garment_mask=None,
         *args,
         **kwargs,
     ):
@@ -658,7 +659,27 @@ class IPAttnProcessor2_0(torch.nn.Module):
                 )
                 texture_suppress = 1.0 - self.conflict_texture_suppress_strength * active_conflict
                 gate = gate * texture_suppress.clamp_min(0.0)
-            hidden_states = hidden_states + self.scale * gate * ip_hidden_states
+            texture_residual = self.scale * gate * ip_hidden_states
+            if tcpm_garment_mask is not None and input_ndim == 4:
+                mask = tcpm_garment_mask
+                if not torch.is_tensor(mask):
+                    mask = torch.tensor(mask, device=hidden_states.device)
+                mask = mask.to(device=hidden_states.device, dtype=hidden_states.dtype)
+                if mask.ndim == 3:
+                    mask = mask.unsqueeze(1)
+                mask = F.interpolate(mask, size=(height, width), mode="nearest")
+                mask_flat = mask.flatten(2).transpose(1, 2)
+                if mask_flat.shape[0] != texture_residual.shape[0]:
+                    repeat = max(1, texture_residual.shape[0] // mask_flat.shape[0])
+                    mask_flat = mask_flat.repeat_interleave(repeat, dim=0)
+                mask_flat = mask_flat[:, : texture_residual.shape[1], :]
+                with torch.no_grad():
+                    inner = (texture_residual * mask_flat).detach().float()
+                    outer = (texture_residual * (1.0 - mask_flat)).detach().float()
+                    self.last_tcpm_mask_inner_norm = inner.norm(dim=-1).mean()
+                    self.last_tcpm_mask_outer_norm = outer.norm(dim=-1).mean()
+                texture_residual = texture_residual * mask_flat
+            hidden_states = hidden_states + texture_residual
 
         if use_palette_adapter and palette_hidden_states is not None:
             if "balanced_palette_gate" not in locals():

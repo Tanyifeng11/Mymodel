@@ -24,6 +24,7 @@ from diffusers.loaders import LoraLoaderMixin
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
 from models.palette_tokenizer import PaletteTokenMLP
+from models.tcpm_lite import TCPMLite
 from texture_preprocess import preprocess_texture_image
 from checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 from color_conflict_utils import compute_color_conflict
@@ -77,6 +78,9 @@ class IMAGGarment(StableDiffusionPipeline):
         spatial_texture_encoder=None,
         spatial_injection=None,
         use_texture_gate=False,
+        use_tcpm_lite=False,
+        tcpm_hidden_ratio=0.25,
+        tcpm_residual_scale_init=0.0,
     ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor)
 
@@ -117,6 +121,12 @@ class IMAGGarment(StableDiffusionPipeline):
         self.default_texture_condition_mode = "token"
         self.layer_group_enabled = True  # Phase 1: Ti-MGD routing enabled by default
         self.use_texture_gate = bool(use_texture_gate)
+        self.use_tcpm_lite = bool(use_tcpm_lite)
+        self.tcpm_lite = TCPMLite(
+            hidden_dim=self.unet.config.cross_attention_dim,
+            hidden_ratio=tcpm_hidden_ratio,
+            residual_scale_init=tcpm_residual_scale_init,
+        )
         self.use_palette_tokens = False
         self.num_palette_tokens = 4
         self.palette_token_mlp = None
@@ -581,7 +591,16 @@ class IMAGGarment(StableDiffusionPipeline):
         return image
 
     @torch.inference_mode()
-    def get_image_embeds(self, pil_image=None, clip_image_embeds=None, width=None, height=None, texture_mode="patch_resampled"):
+    def get_image_embeds(
+        self,
+        pil_image=None,
+        clip_image_embeds=None,
+        width=None,
+        height=None,
+        texture_mode="patch_resampled",
+        text_embeds=None,
+        negative_text_embeds=None,
+    ):
         clip_patch_tokens = None
         if pil_image is not None:
             if isinstance(pil_image, Image.Image):
@@ -614,6 +633,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 clip_vision_tokens=clip_patch_tokens,
                 texture_mode=texture_mode,
             )
+            if self.use_tcpm_lite and text_embeds is not None:
+                image_prompt_embeds = self.tcpm_lite(image_prompt_embeds, text_embeds)
 
             zero_clip = torch.zeros_like(clip_image_embeds)
             zero_patch = torch.zeros_like(clip_patch_tokens) if clip_patch_tokens is not None else None
@@ -624,6 +645,11 @@ class IMAGGarment(StableDiffusionPipeline):
                 clip_vision_tokens=zero_patch,
                 texture_mode=texture_mode,
             )
+            if self.use_tcpm_lite and negative_text_embeds is not None:
+                uncond_image_prompt_embeds = self.tcpm_lite(
+                    uncond_image_prompt_embeds,
+                    negative_text_embeds,
+                )
         else:
             image_prompt_embeds = self.image_proj_model(clip_image_embeds)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
@@ -821,6 +847,8 @@ class IMAGGarment(StableDiffusionPipeline):
                     width=width,
                     height=height,
                     texture_mode=texture_mode,
+                    text_embeds=prompt_embeds,
+                    negative_text_embeds=negative_prompt_embeds,
                 )
                 image_prompt_embeds = image_prompt_embeds * texture_scale
                 uncond_image_prompt_embeds = uncond_image_prompt_embeds * texture_scale
@@ -950,6 +978,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 }
                 if use_conflict_aware_gate and color_conflict_score is not None:
                     cond_cross_attention_kwargs["color_conflict_score"] = color_conflict_score
+                if self.use_tcpm_lite and spatial_mask is not None:
+                    cond_cross_attention_kwargs["tcpm_garment_mask"] = spatial_mask
 
                 noise_pred = self.unet(
                     latent_model_input[0].unsqueeze(0),

@@ -276,6 +276,7 @@ def prepare(args):
     print(f"[prepare] use_texture_gate = {bool(args.use_texture_gate)}")
     print(f"[prepare] use_palette_tokens = {bool(args.use_palette_tokens)}")
     print(f"[prepare] use_balanced_fusion_gate = {bool(args.use_balanced_fusion_gate)}")
+    print(f"[prepare] use_tcpm_lite = {bool(args.use_tcpm_lite)}")
     print(f"[prepare] num_palette_tokens = {args.num_palette_tokens}")
     print(f"[prepare] gate_type = {args.gate_type}")
     print(f"[prepare] gate_init = {args.gate_init}")
@@ -447,10 +448,14 @@ def prepare(args):
                          spatial_texture_encoder=spatial_texture_encoder,
                          spatial_injection=spatial_injection,
                          use_texture_gate=bool(args.use_texture_gate),
+                         use_tcpm_lite=bool(args.use_tcpm_lite),
+                         tcpm_hidden_ratio=args.tcpm_hidden_ratio,
+                         tcpm_residual_scale_init=args.tcpm_residual_scale_init,
                          scheduler=noise_scheduler,
                          safety_checker=StableDiffusionSafetyChecker,
                          feature_extractor=CLIPImageProcessor)
     pipe.set_layer_group_enabled(bool(args.layer_group_enabled))
+    pipe.tcpm_lite.to(dtype=torch.float16, device=args.device)
 
     # IMAGGarment will load args.texture_ckpt in __init__, which can overwrite
     # adapter/BF states already loaded from GAM checkpoint. Restore GAM states here.
@@ -518,6 +523,17 @@ def prepare(args):
     elif args.use_palette_tokens and not palette_state:
         print("[prepare] WARNING: use_palette_tokens=1 but checkpoint has no palette_token_mlp state")
 
+    tcpm_state = gam_state.get("tcpm_lite", None)
+    if args.use_tcpm_lite:
+        if tcpm_state:
+            missing, unexpected = pipe.tcpm_lite.load_state_dict(tcpm_state, strict=False)
+            print(
+                "[prepare] restored tcpm_lite from GAM checkpoint "
+                f"(missing={len(missing)}, unexpected={len(unexpected)})"
+            )
+        else:
+            raise RuntimeError("use_tcpm_lite=1 but GAM checkpoint has no tcpm_lite state")
+
     pipe.effective_texture_num_tokens = args.texture_num_tokens
     if isinstance(pipe.texture_meta, dict):
         pipe.texture_meta.update(gam_meta)
@@ -560,6 +576,9 @@ if __name__ == "__main__":
     parser.add_argument('--balanced_gate_min', type=float, default=0.8)
     parser.add_argument('--balanced_gate_max', type=float, default=1.2)
     parser.add_argument('--use_conflict_aware_gate', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--use_tcpm_lite', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--tcpm_hidden_ratio', type=float, default=0.25)
+    parser.add_argument('--tcpm_residual_scale_init', type=float, default=0.0)
     parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.1)
     parser.add_argument('--conflict_palette_suppress_strength', type=float, default=0.4)
     parser.add_argument('--conflict_deltae_norm', type=float, default=50.0)

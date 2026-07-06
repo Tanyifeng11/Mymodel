@@ -42,6 +42,7 @@ from models.bf_texture_module import BFTextureConditioner
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
+from models.tcpm_lite import TCPMLite
 from texture_preprocess import preprocess_texture_image
 from color_conflict_utils import compute_color_conflict
 
@@ -77,6 +78,45 @@ def _get_detail_text_scale(name: str) -> float:
     if "up_blocks" in name:
         return 0.15
     return 0.05
+
+
+def collect_tcpm_summary(tcpm_lite, unet=None):
+    summary = {
+        "residual_scale": 0.0,
+        "gate_mean": 0.0,
+        "gate_std": 0.0,
+        "residual_norm": 0.0,
+        "mask_inner_norm": 0.0,
+        "mask_outer_norm": 0.0,
+    }
+    if tcpm_lite is not None:
+        stats = getattr(tcpm_lite, "last_stats", {}) or {}
+        for key in ("residual_scale", "gate_mean", "gate_std", "residual_norm"):
+            if key in stats:
+                summary[key] = float(stats[key])
+    if unet is not None:
+        inner = []
+        outer = []
+        for proc in unet.attn_processors.values():
+            if hasattr(proc, "last_tcpm_mask_inner_norm"):
+                inner.append(proc.last_tcpm_mask_inner_norm.detach().float())
+            if hasattr(proc, "last_tcpm_mask_outer_norm"):
+                outer.append(proc.last_tcpm_mask_outer_norm.detach().float())
+        if inner:
+            summary["mask_inner_norm"] = float(torch.stack(inner).mean().cpu().item())
+        if outer:
+            summary["mask_outer_norm"] = float(torch.stack(outer).mean().cpu().item())
+    return summary
+
+
+def print_trainable_frozen_summary(named_modules):
+    for label, module in named_modules:
+        total = sum(p.numel() for p in module.parameters())
+        trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
+        frozen = total - trainable
+        print(
+            f"[params] {label}: trainable={trainable:,} frozen={frozen:,} total={total:,}"
+        )
 
 # =========================
 # Dataset
@@ -349,6 +389,12 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "gate_min": args.gate_min,
         "gate_max": args.gate_max,
         "use_conflict_aware_gate": args.use_conflict_aware_gate,
+        "use_tcpm_lite": args.use_tcpm_lite,
+        "tcpm_hidden_ratio": args.tcpm_hidden_ratio,
+        "tcpm_lr": args.tcpm_lr,
+        "tcpm_scale_lr": args.tcpm_scale_lr,
+        "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
+        "freeze_for_tcpm_lite": args.freeze_for_tcpm_lite,
         "conflict_texture_suppress_strength": args.conflict_texture_suppress_strength,
         "conflict_palette_suppress_strength": args.conflict_palette_suppress_strength,
         "conflict_deltae_norm": args.conflict_deltae_norm,
@@ -502,6 +548,7 @@ def load_joint_checkpoint_into_models(
     spatial_injection,
     palette_token_mlp=None,
     accelerator=None,
+    tcpm_lite=None,
 ):
     if not isinstance(state_dict, dict):
         return
@@ -531,6 +578,14 @@ def load_joint_checkpoint_into_models(
             state_dict,
             "palette_token_mlp",
             "palette_token_mlp",
+            strict=False,
+        )
+    if tcpm_lite is not None:
+        load_partial_state(
+            tcpm_lite,
+            state_dict,
+            "tcpm_lite",
+            "tcpm_lite",
             strict=False,
         )
 
@@ -659,6 +714,7 @@ def save_training_checkpoint(
     spatial_texture_encoder,
     spatial_injection,
     palette_token_mlp,
+    tcpm_lite,
     output_dir,
     global_step,
     args,
@@ -679,6 +735,7 @@ def save_training_checkpoint(
     spatial_texture_encoder_raw = unwrap(spatial_texture_encoder)
     spatial_injection_raw = unwrap(spatial_injection)
     palette_token_mlp_raw = unwrap(palette_token_mlp) if palette_token_mlp is not None else None
+    tcpm_lite_raw = unwrap(tcpm_lite) if tcpm_lite is not None else None
     texture_adapter_raw = nn.ModuleList(unet_raw.attn_processors.values())
 
     payload = {
@@ -691,6 +748,9 @@ def save_training_checkpoint(
         "spatial_injection": spatial_injection_raw.state_dict(),
         "palette_token_mlp": (
             palette_token_mlp_raw.state_dict() if palette_token_mlp_raw is not None else {}
+        ),
+        "tcpm_lite": (
+            tcpm_lite_raw.state_dict() if tcpm_lite_raw is not None else {}
         ),
         "meta": {
             "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
@@ -727,6 +787,10 @@ def save_training_checkpoint(
             "balanced_gate_max": args.balanced_gate_max,
             "balanced_gate_reg_weight": args.balanced_gate_reg_weight,
             "use_conflict_aware_gate": args.use_conflict_aware_gate,
+            "use_tcpm_lite": args.use_tcpm_lite,
+            "tcpm_hidden_ratio": args.tcpm_hidden_ratio,
+            "tcpm_residual_scale_init": args.tcpm_residual_scale_init,
+            "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
             "conflict_texture_suppress_strength": args.conflict_texture_suppress_strength,
             "conflict_palette_suppress_strength": args.conflict_palette_suppress_strength,
             "conflict_deltae_norm": args.conflict_deltae_norm,
@@ -1138,6 +1202,8 @@ def run_mode_validation_vis(
                 ],
                 texture_mode=args.texture_mode,
             )
+            if args.use_tcpm_lite:
+                tex_tokens = tcpm_lite(tex_tokens, enc_h)
             enc_h = torch.cat([enc_h, tex_tokens], dim=1)
             if args.use_palette_tokens:
                 palette_tokens = palette_token_mlp(batch["texture_image"])
@@ -1162,6 +1228,13 @@ def run_mode_validation_vis(
                 device=latents.device,
                 dtype=latents.dtype,
             )
+        if args.use_tcpm_lite:
+            tcpm_mask = batch["garment_mask"].float()
+            if args.tcpm_mask_inner_only:
+                tcpm_mask, _, _ = build_region_masks(
+                    tcpm_mask, kernel_size=args.region_kernel_size
+                )
+            cross_attention_kwargs["tcpm_garment_mask"] = tcpm_mask
 
         noise_pred = unet(
             latents,
@@ -1314,6 +1387,13 @@ def main():
     ap.add_argument("--balanced_gate_max", type=float, default=1.2)
     ap.add_argument("--balanced_gate_reg_weight", type=float, default=1e-4)
     ap.add_argument("--use_conflict_aware_gate", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--use_tcpm_lite", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--tcpm_hidden_ratio", type=float, default=0.25)
+    ap.add_argument("--tcpm_residual_scale_init", type=float, default=0.0)
+    ap.add_argument("--tcpm_lr", type=float, default=5e-5)
+    ap.add_argument("--tcpm_scale_lr", type=float, default=1e-5)
+    ap.add_argument("--tcpm_mask_inner_only", type=int, default=1, choices=[0, 1])
+    ap.add_argument("--freeze_for_tcpm_lite", type=int, default=1, choices=[0, 1])
     ap.add_argument("--conflict_texture_suppress_strength", type=float, default=0.1)
     ap.add_argument("--conflict_palette_suppress_strength", type=float, default=0.4)
     ap.add_argument("--conflict_deltae_norm", type=float, default=50.0)
@@ -1568,6 +1648,11 @@ def main():
         cross_attention_dim=unet.config.cross_attention_dim,
         num_palette_tokens=args.num_palette_tokens,
     )
+    tcpm_lite = TCPMLite(
+        hidden_dim=unet.config.cross_attention_dim,
+        hidden_ratio=args.tcpm_hidden_ratio,
+        residual_scale_init=args.tcpm_residual_scale_init,
+    )
 
     # 旧 token 路线初始化
     if accelerator.is_main_process:
@@ -1608,6 +1693,7 @@ def main():
             spatial_injection,
             palette_token_mlp,
             accelerator=accelerator,
+            tcpm_lite=tcpm_lite,
         )
         if args.reload_texture_adapter_after_gam_init:
             if accelerator.is_main_process:
@@ -1637,6 +1723,7 @@ def main():
             spatial_injection,
             palette_token_mlp,
             accelerator=accelerator,
+            tcpm_lite=tcpm_lite,
         )
 
     # bf/token + spatial branch 是否训练
@@ -1663,8 +1750,29 @@ def main():
         p.requires_grad = use_spatial_train
     for p in spatial_injection.parameters():
         p.requires_grad = use_spatial_train
+    for p in tcpm_lite.parameters():
+        p.requires_grad = bool(args.use_tcpm_lite)
 
-    if args.freeze_except_gate:
+    if args.use_tcpm_lite and args.freeze_for_tcpm_lite:
+        for p in unet.parameters():
+            p.requires_grad = False
+        for p in ref_unet.parameters():
+            p.requires_grad = False
+        for p in bf.parameters():
+            p.requires_grad = False
+        if palette_token_mlp is not None:
+            for p in palette_token_mlp.parameters():
+                p.requires_grad = False
+        for p in spatial_texture_encoder.parameters():
+            p.requires_grad = False
+        for p in spatial_injection.parameters():
+            p.requires_grad = False
+        for p in tcpm_lite.parameters():
+            p.requires_grad = True
+        if accelerator.is_main_process:
+            print("[info] use_tcpm_lite=1, freezing UNet/texture adapter/spatial branches; only TCPM-lite is trainable.")
+
+    if args.freeze_except_gate and not args.use_tcpm_lite:
         for p in unet.parameters():
             p.requires_grad = False
         for _, proc in _iter_unet_processors(unet):
@@ -1713,8 +1821,14 @@ def main():
     if use_spatial_train:
         add_params(spatial_texture_encoder.parameters())
         add_params(spatial_injection.parameters())  # SpatialInjectionAdapter only exposes proj params
+    if args.use_tcpm_lite:
+        add_params(
+            [p for n, p in tcpm_lite.named_parameters() if n != "residual_scale"],
+            lr=args.tcpm_lr,
+        )
+        add_params([tcpm_lite.residual_scale], lr=args.tcpm_scale_lr)
 
-    if args.freeze_except_gate:
+    if args.freeze_except_gate and not args.use_tcpm_lite:
         trainable_param_groups = []
         trainable_params = []
         gate_params = []
@@ -1735,6 +1849,18 @@ def main():
             for idx, (name, proc) in enumerate(_iter_unet_processors(unet)):
                 if hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
                     print(f"[debug] gate[{idx}] {name} {tuple(proc.texture_gate_delta.shape)}")
+
+    if accelerator.is_main_process:
+        print_trainable_frozen_summary(
+            [
+                ("unet", unet),
+                ("bf_texture_conditioner", bf),
+                ("spatial_texture_encoder", spatial_texture_encoder),
+                ("spatial_injection", spatial_injection),
+                ("palette_token_mlp", palette_token_mlp),
+                ("tcpm_lite", tcpm_lite),
+            ]
+        )
 
     # dataset
     ds = JointTextureDataset(
@@ -1798,6 +1924,7 @@ def main():
         spatial_texture_encoder,
         spatial_injection,
         palette_token_mlp,
+        tcpm_lite,
         optimizer,
         dl,
         lr_scheduler,
@@ -1808,6 +1935,7 @@ def main():
         spatial_texture_encoder,
         spatial_injection,
         palette_token_mlp,
+        tcpm_lite,
         optimizer,
         dl,
         lr_scheduler,
@@ -2015,6 +2143,8 @@ def main():
                             f"got {tex_tokens.shape[1]}, expected {args.bf_num_tokens}. "
                             "Check texture checkpoint metadata and --force_bf_num_tokens_override."
                         )
+                    if args.use_tcpm_lite:
+                        tex_tokens = tcpm_lite(tex_tokens, enc_h)
                     enc_h = torch.cat([enc_h, tex_tokens], dim=1)
                     if args.use_palette_tokens:
                         palette_tokens = palette_token_mlp(texture_image)
@@ -2062,6 +2192,13 @@ def main():
                         device=noisy_latents.device,
                         dtype=noisy_latents.dtype,
                     )
+                if args.use_tcpm_lite and use_token:
+                    tcpm_mask = batch["garment_mask"].float()
+                    if args.tcpm_mask_inner_only:
+                        tcpm_mask, _, _ = build_region_masks(
+                            tcpm_mask, kernel_size=args.region_kernel_size
+                        )
+                    cross_attention_kwargs["tcpm_garment_mask"] = tcpm_mask
 
                 noise_pred = unet(
                     noisy_latents,
@@ -2276,6 +2413,10 @@ def main():
                 if accelerator.sync_gradients and args.report_to != "none":
                     palette_summary = _collect_palette_summary(unet, palette_tokens)
                     balanced_summary = _collect_balanced_gate_summary(unet)
+                    tcpm_summary = collect_tcpm_summary(
+                        accelerator.unwrap_model(tcpm_lite),
+                        accelerator.unwrap_model(unet),
+                    )
                     grad_norm_log = None
                     if grad_norm is not None:
                         grad_norm_log = (
@@ -2302,6 +2443,12 @@ def main():
                             "train/palette_token_norm": palette_summary["palette_token_norm"],
                             "train/balanced_texture_gate": balanced_summary["balanced_texture_gate"],
                             "train/balanced_palette_gate": balanced_summary["balanced_palette_gate"],
+                            "train/tcpm_residual_scale": tcpm_summary["residual_scale"],
+                            "train/tcpm_gate_mean": tcpm_summary["gate_mean"],
+                            "train/tcpm_gate_std": tcpm_summary["gate_std"],
+                            "train/tcpm_residual_norm": tcpm_summary["residual_norm"],
+                            "train/tcpm_mask_inner_residual_norm": tcpm_summary["mask_inner_norm"],
+                            "train/tcpm_mask_outer_residual_norm": tcpm_summary["mask_outer_norm"],
                             "train/lr": optimizer.param_groups[0]["lr"],
                             "train/grad_norm": grad_norm_log,
                             "train/drop_t_rate": drop_counts["t"] / max(1, drop_counts["total"]),
@@ -2334,6 +2481,10 @@ def main():
                 ):
                     palette_summary = _collect_palette_summary(unet, palette_tokens)
                     balanced_summary = _collect_balanced_gate_summary(unet)
+                    tcpm_summary = collect_tcpm_summary(
+                        accelerator.unwrap_model(tcpm_lite),
+                        accelerator.unwrap_model(unet),
+                    )
                     grad_norm_val = (
                         float(grad_norm.item())
                         if grad_norm is not None and not isinstance(grad_norm, float)
@@ -2358,6 +2509,12 @@ def main():
                         f"palette_token_norm={palette_summary['palette_token_norm']:.6f}, "
                         f"balanced_texture_gate={balanced_summary['balanced_texture_gate']:.6f}, "
                         f"balanced_palette_gate={balanced_summary['balanced_palette_gate']:.6f}, "
+                        f"tcpm_scale={tcpm_summary['residual_scale']:.6f}, "
+                        f"tcpm_gate_mean={tcpm_summary['gate_mean']:.6f}, "
+                        f"tcpm_gate_std={tcpm_summary['gate_std']:.6f}, "
+                        f"tcpm_residual_norm={tcpm_summary['residual_norm']:.6f}, "
+                        f"tcpm_inner_norm={tcpm_summary['mask_inner_norm']:.6f}, "
+                        f"tcpm_outer_norm={tcpm_summary['mask_outer_norm']:.6f}, "
                         f"grad_norm={grad_norm_val}, "
                         f"drop_t={drop_counts['t'] / max(1, drop_counts['total']):.3f}, "
                         f"drop_i={drop_counts['i'] / max(1, drop_counts['total']):.3f}, "
@@ -2493,6 +2650,7 @@ def main():
                         spatial_texture_encoder,
                         spatial_injection,
                         palette_token_mlp,
+                        tcpm_lite,
                         args.output_dir,
                         global_step,
                         args,
@@ -2518,6 +2676,7 @@ def main():
             spatial_texture_encoder,
             spatial_injection,
             palette_token_mlp,
+            tcpm_lite,
             args.output_dir,
             global_step,
             args,
