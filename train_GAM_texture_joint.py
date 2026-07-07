@@ -1166,6 +1166,7 @@ def run_mode_validation_vis(
     batch,
     noise_scheduler,
     args,
+    tcpm_lite=None,
 ):
     os.makedirs(out_dir, exist_ok=True)
 
@@ -2593,6 +2594,7 @@ def main():
                         batch=vis_batch,
                         noise_scheduler=noise_scheduler,
                         args=args,
+                        tcpm_lite=tcpm_lite,
                     )
 
                 if (
@@ -2628,6 +2630,7 @@ def main():
                         batch=vis_batch,
                         noise_scheduler=noise_scheduler,
                         args=args,
+                        tcpm_lite=tcpm_lite,
                     )
 
                 if (
