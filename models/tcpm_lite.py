@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-
 class TCPMLite(nn.Module):
     def __init__(self, hidden_dim: int, hidden_ratio: float = 0.25, residual_scale_init: float = 0.0):
         super().__init__()
