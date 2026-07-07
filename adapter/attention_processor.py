@@ -127,6 +127,7 @@ class SAttnProcessor2_0(torch.nn.Module):
             cond_hidden_states=None,
             sa_hidden_states=None,
             balanced_gate_timestep=None,
+            tcpm_garment_mask=None,
     ) -> torch.FloatTensor:
         residual = hidden_states
         if attn.spatial_norm is not None:
@@ -764,6 +765,7 @@ class LogoRefSAttnProcessor2_0(torch.nn.Module):
             cond_hidden_states=None,
             sa_hidden_states=None,
             balanced_gate_timestep=None,
+            tcpm_garment_mask=None,
 
     ) -> torch.FloatTensor:
         residual = hidden_states
