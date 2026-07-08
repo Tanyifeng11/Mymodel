@@ -251,6 +251,16 @@ def experiment_to_flags(run_name, args):
             "gate_max": 1.3,
             "use_tcpm_lite": 1,
         },
+        "e5b_tcpm_detail_adapter": {
+            "texture_condition_mode": "token",
+            "layer_group_enabled": 1,
+            "use_texture_gate": 1,
+            "gate_type": "layer",
+            "gate_init": "identity",
+            "gate_min": 0.7,
+            "gate_max": 1.3,
+            "use_tcpm_lite": 1,
+        },
     }
     config = dict(configs.get(run_name, {}))
     config.setdefault("use_texture_gate", args.use_texture_gate)

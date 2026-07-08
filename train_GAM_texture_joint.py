@@ -395,6 +395,9 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "tcpm_scale_lr": args.tcpm_scale_lr,
         "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
         "freeze_for_tcpm_lite": args.freeze_for_tcpm_lite,
+        "train_detail_texture_adapter": args.train_detail_texture_adapter,
+        "detail_texture_adapter_lr": args.detail_texture_adapter_lr,
+        "train_detail_texture_gate": args.train_detail_texture_gate,
         "conflict_texture_suppress_strength": args.conflict_texture_suppress_strength,
         "conflict_palette_suppress_strength": args.conflict_palette_suppress_strength,
         "conflict_deltae_norm": args.conflict_deltae_norm,
@@ -791,6 +794,10 @@ def save_training_checkpoint(
             "tcpm_hidden_ratio": args.tcpm_hidden_ratio,
             "tcpm_residual_scale_init": args.tcpm_residual_scale_init,
             "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
+            "freeze_for_tcpm_lite": args.freeze_for_tcpm_lite,
+            "train_detail_texture_adapter": args.train_detail_texture_adapter,
+            "detail_texture_adapter_lr": args.detail_texture_adapter_lr,
+            "train_detail_texture_gate": args.train_detail_texture_gate,
             "conflict_texture_suppress_strength": args.conflict_texture_suppress_strength,
             "conflict_palette_suppress_strength": args.conflict_palette_suppress_strength,
             "conflict_deltae_norm": args.conflict_deltae_norm,
@@ -829,6 +836,25 @@ def save_training_checkpoint(
 def _iter_unet_processors(unet):
     unet_raw = unet.module if hasattr(unet, "module") else unet
     return list(unet_raw.attn_processors.items())
+
+
+def _collect_detail_texture_adapter_params(unet, include_gate=False):
+    params = []
+    names = []
+    for layer_name, proc in _iter_unet_processors(unet):
+        if getattr(proc, "layer_group", "all") != "detail":
+            continue
+        for module_name in ("to_k_ip", "to_v_ip"):
+            module = getattr(proc, module_name, None)
+            if module is None:
+                continue
+            for param_name, param in module.named_parameters():
+                params.append(param)
+                names.append(f"{layer_name}.{module_name}.{param_name}")
+        if include_gate and hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
+            params.append(proc.texture_gate_delta)
+            names.append(f"{layer_name}.texture_gate_delta")
+    return params, names
 
 
 def _collect_gate_stats(unet):
@@ -1395,6 +1421,9 @@ def main():
     ap.add_argument("--tcpm_scale_lr", type=float, default=1e-5)
     ap.add_argument("--tcpm_mask_inner_only", type=int, default=1, choices=[0, 1])
     ap.add_argument("--freeze_for_tcpm_lite", type=int, default=1, choices=[0, 1])
+    ap.add_argument("--train_detail_texture_adapter", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--detail_texture_adapter_lr", type=float, default=2e-6)
+    ap.add_argument("--train_detail_texture_gate", type=int, default=0, choices=[0, 1])
     ap.add_argument("--conflict_texture_suppress_strength", type=float, default=0.1)
     ap.add_argument("--conflict_palette_suppress_strength", type=float, default=0.4)
     ap.add_argument("--conflict_deltae_norm", type=float, default=50.0)
@@ -1770,8 +1799,25 @@ def main():
             p.requires_grad = False
         for p in tcpm_lite.parameters():
             p.requires_grad = True
+        detail_adapter_names = []
+        if args.train_detail_texture_adapter:
+            detail_adapter_params, detail_adapter_names = _collect_detail_texture_adapter_params(
+                unet,
+                include_gate=bool(args.train_detail_texture_gate),
+            )
+            for p in detail_adapter_params:
+                p.requires_grad = True
         if accelerator.is_main_process:
-            print("[info] use_tcpm_lite=1, freezing UNet/texture adapter/spatial branches; only TCPM-lite is trainable.")
+            if args.train_detail_texture_adapter:
+                print(
+                    "[info] use_tcpm_lite=1, freezing backbone branches; "
+                    f"TCPM-lite and detail texture adapter are trainable "
+                    f"(detail_params={len(detail_adapter_names)}, "
+                    f"lr={args.detail_texture_adapter_lr}, "
+                    f"train_detail_texture_gate={bool(args.train_detail_texture_gate)})."
+                )
+            else:
+                print("[info] use_tcpm_lite=1, freezing UNet/texture adapter/spatial branches; only TCPM-lite is trainable.")
 
     if args.freeze_except_gate and not args.use_tcpm_lite:
         for p in unet.parameters():
@@ -1810,6 +1856,21 @@ def main():
             trainable_params.extend(unique)
 
     # 1. 只训练 UNet 的 attention processors（spatial-only 时不训练）
+    if args.train_detail_texture_adapter:
+        detail_adapter_params, detail_adapter_names = _collect_detail_texture_adapter_params(
+            unet,
+            include_gate=bool(args.train_detail_texture_gate),
+        )
+        add_params(detail_adapter_params, lr=args.detail_texture_adapter_lr)
+        if accelerator.is_main_process:
+            print(
+                f"[info] detail texture adapter trainable params: "
+                f"{len(detail_adapter_names)} tensors, lr={args.detail_texture_adapter_lr}"
+            )
+            if args.debug_trainable_params:
+                for name in detail_adapter_names:
+                    print(f"[debug] detail_texture_adapter_param {name}")
+
     if not args.train_spatial_only:
         add_params(nn.ModuleList(unet.attn_processors.values()).parameters())
 
@@ -2012,6 +2073,13 @@ def main():
         print(f"[info] use_palette_tokens = {bool(args.use_palette_tokens)}")
         print(f"[info] use_balanced_fusion_gate = {bool(args.use_balanced_fusion_gate)}")
         print(f"[info] use_conflict_aware_gate = {bool(args.use_conflict_aware_gate)}")
+        print(f"[info] use_tcpm_lite = {bool(args.use_tcpm_lite)}")
+        print(
+            "[info] detail texture adapter tuning: "
+            f"enabled={bool(args.train_detail_texture_adapter)}, "
+            f"lr={args.detail_texture_adapter_lr}, "
+            f"train_gate={bool(args.train_detail_texture_gate)}"
+        )
         print(
             "[info] conflict suppression: "
             f"texture={args.conflict_texture_suppress_strength}, "
