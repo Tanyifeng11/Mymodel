@@ -18,7 +18,7 @@ CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
 
 OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
-BASE_CKPT="${BASE_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e5/checkpoint-final/joint_model.pt}"
+BASE_CKPT="${BASE_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
 RESUME_CKPT="${E6B_RESUME_CKPT:-}"
 OUTPUT_DIR="${E6B_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e6b_unet_late_dist_e1}"
 
