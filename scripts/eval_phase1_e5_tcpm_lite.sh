@@ -10,16 +10,17 @@ SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/phase1_bf_val_split.js
 
 OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
-E5_CKPT="${E5_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
+E5_CKPT="${E5_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e12/checkpoint-final/joint_model.pt}"
 
 EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500}"
-REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report_e5_tcpm_lite}"
+REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report_e5_tcpm_lite_e12}"
 NUM_SAMPLES="${NUM_SAMPLES:-500}"
 EVAL_SEED="${EVAL_SEED:-42}"
 EVAL_DEVICE="${EVAL_DEVICE:-cuda:0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda:0}"
 CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
-EXPERIMENT_NAMES="${EXPERIMENT_NAMES:-e2b_color_safe_gate,e5_tcpm_lite}"
+E5_RUN_NAME="${E5_RUN_NAME:-e5_tcpm_lite_e12}"
+EXPERIMENT_NAMES="${EXPERIMENT_NAMES:-e2b_color_safe_gate,e5_tcpm_lite,e5_tcpm_lite_e12}"
 
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
@@ -42,6 +43,7 @@ echo "============================================"
 echo "Phase 1 E5 TCPM-lite 500-sample evaluation"
 echo "E5_CKPT=${E5_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
+echo "E5_RUN_NAME=${E5_RUN_NAME}"
 echo "EXPERIMENT_NAMES=${EXPERIMENT_NAMES}"
 echo "============================================"
 
@@ -64,13 +66,13 @@ python tools/run_fixed_benchmark.py \
   --clip_model_path "${CLIP_MODEL}" \
   --write_text_sidecars 1 \
   --output_dir "${EVAL_BASE}" \
-  --run_name e5_tcpm_lite \
+  --run_name "${E5_RUN_NAME}" \
   --evaluation_protocol original_image_size \
   --use_tcpm_lite 1
 
 python tools/validate_benchmark_outputs.py \
   --experiments_dir "${EVAL_BASE}" \
-  --experiment_names e5_tcpm_lite \
+  --experiment_names "${E5_RUN_NAME}" \
   --expected_count "${NUM_SAMPLES}"
 
 python -m eval.ablation_report \
@@ -85,6 +87,6 @@ python -m eval.ablation_report \
 
 echo "============================================"
 echo "E5 TCPM-lite evaluation done."
-echo "Generated images and metrics: ${EVAL_BASE}/e5_tcpm_lite"
+echo "Generated images and metrics: ${EVAL_BASE}/${E5_RUN_NAME}"
 echo "Report: ${REPORT_DIR}"
 echo "============================================"

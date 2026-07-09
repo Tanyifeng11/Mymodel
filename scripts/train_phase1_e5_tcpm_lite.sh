@@ -19,7 +19,8 @@ CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
 OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
 BASE_CKPT="${BASE_CKPT:-${OUTPUT_BASE}/phase1_e2b_color_safe_gate_e3/checkpoint-final/joint_model.pt}"
-OUTPUT_DIR="${E5_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3}"
+RESUME_CKPT="${E5_RESUME_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
+OUTPUT_DIR="${E5_OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e12}"
 
 MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-0}"
 MIXED_PRECISION="${MIXED_PRECISION:-fp16}"
@@ -27,7 +28,7 @@ WIDTH="${WIDTH:-384}"
 HEIGHT="${HEIGHT:-512}"
 TRAIN_BATCH_SIZE="${GAM_TRAIN_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GAM_GRADIENT_ACCUMULATION_STEPS:-2}"
-NUM_TRAIN_EPOCHS="${E5_NUM_TRAIN_EPOCHS:-3}"
+NUM_TRAIN_EPOCHS="${E5_NUM_TRAIN_EPOCHS:-9}"
 MAX_TRAIN_STEPS="${E5_MAX_TRAIN_STEPS:--1}"
 CHECKPOINTING_EPOCHS="${GAM_CHECKPOINTING_EPOCHS:-1}"
 NUM_WARMUP_STEPS="${GAM_NUM_WARMUP_STEPS:-500}"
@@ -58,10 +59,12 @@ REGION_KERNEL_SIZE="${REGION_KERNEL_SIZE:-9}"
 JOINT_T_DROP_RATE="${JOINT_T_DROP_RATE:-0.2}"
 JOINT_I_DROP_RATE="${JOINT_I_DROP_RATE:-0.05}"
 JOINT_TI_DROP_RATE="${JOINT_TI_DROP_RATE:-0.05}"
+VAL_VIS_STEPS="${VAL_VIS_STEPS:-0}"
+VIS_EVERY_N_STEPS="${VIS_EVERY_N_STEPS:-0}"
 
 REPORT_TO="${REPORT_TO:-wandb}"
 WANDB_PROJECT="${WANDB_PROJECT:-Mymodel}"
-WANDB_RUN_NAME="${WANDB_RUN_NAME:-phase1_e5_tcpm_lite_e3}"
+WANDB_RUN_NAME="${WANDB_RUN_NAME:-phase1_e5_tcpm_lite_e12}"
 WANDB_MODE="${WANDB_MODE:-online}"
 WANDB_ENTITY="${WANDB_ENTITY:-}"
 
@@ -73,7 +76,7 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 
 cd "${PROJECT_ROOT}"
 
-for required_path in "${TRAIN_JSON}" "${DATA_ROOT_PATH}" "${TEXTURE_ADAPTER_CKPT}" "${BASE_CKPT}" "${SD_MODEL}" "${VAE_MODEL}" "${CLIP_MODEL}"; do
+for required_path in "${TRAIN_JSON}" "${DATA_ROOT_PATH}" "${TEXTURE_ADAPTER_CKPT}" "${BASE_CKPT}" "${RESUME_CKPT}" "${SD_MODEL}" "${VAE_MODEL}" "${CLIP_MODEL}"; do
   if [[ ! -e "${required_path}" ]]; then
     echo "[ERROR] Required path does not exist: ${required_path}" >&2
     exit 1
@@ -95,6 +98,7 @@ CMD=(
   --data_root_path "${DATA_ROOT_PATH}"
   --texture_adapter_ckpt "${TEXTURE_ADAPTER_CKPT}"
   --gam_init_ckpt "${BASE_CKPT}"
+  --resume_from_checkpoint "${RESUME_CKPT}"
   --output_dir "${OUTPUT_DIR}"
   --texture_condition_mode "${TEXTURE_CONDITION_MODE}"
   --layer_group_enabled 1
@@ -136,6 +140,8 @@ CMD=(
   --joint_t_drop_rate "${JOINT_T_DROP_RATE}"
   --joint_i_drop_rate "${JOINT_I_DROP_RATE}"
   --joint_ti_drop_rate "${JOINT_TI_DROP_RATE}"
+  --val_vis_steps "${VAL_VIS_STEPS}"
+  --vis_every_n_steps "${VIS_EVERY_N_STEPS}"
   --report_to "${REPORT_TO}"
   --wandb_project "${WANDB_PROJECT}"
   --wandb_run_name "${WANDB_RUN_NAME}"
@@ -147,8 +153,9 @@ if [[ -n "${WANDB_ENTITY}" ]]; then
 fi
 
 echo "============================================"
-echo "Phase 1 E5 TCPM-lite training"
+echo "Phase 1 E5 TCPM-lite continuation training"
 echo "BASE_CKPT=${BASE_CKPT}"
+echo "RESUME_CKPT=${RESUME_CKPT}"
 echo "TEXTURE_ADAPTER_CKPT=${TEXTURE_ADAPTER_CKPT}"
 echo "OUTPUT_DIR=${OUTPUT_DIR}"
 echo "TCPM_LR=${TCPM_LR}, TCPM_SCALE_LR=${TCPM_SCALE_LR}"
