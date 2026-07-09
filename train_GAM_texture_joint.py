@@ -395,6 +395,11 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "tcpm_scale_lr": args.tcpm_scale_lr,
         "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
         "freeze_for_tcpm_lite": args.freeze_for_tcpm_lite,
+        "train_unet_late_for_distribution": args.train_unet_late_for_distribution,
+        "unet_late_lr": args.unet_late_lr,
+        "unet_late_blocks": args.unet_late_blocks,
+        "train_unet_output_layer": args.train_unet_output_layer,
+        "freeze_tcpm_for_distribution": args.freeze_tcpm_for_distribution,
         "train_detail_texture_adapter": args.train_detail_texture_adapter,
         "detail_texture_adapter_lr": args.detail_texture_adapter_lr,
         "train_detail_texture_gate": args.train_detail_texture_gate,
@@ -854,6 +859,33 @@ def _collect_detail_texture_adapter_params(unet, include_gate=False):
         if include_gate and hasattr(proc, "texture_gate_delta") and proc.texture_gate_delta is not None:
             params.append(proc.texture_gate_delta)
             names.append(f"{layer_name}.texture_gate_delta")
+    return params, names
+
+
+def _collect_unet_late_distribution_params(unet, block_ids, include_output_layer=True):
+    unet_raw = unet.module if hasattr(unet, "module") else unet
+    params = []
+    names = []
+    block_prefixes = tuple(f"up_blocks.{block_id}." for block_id in block_ids)
+    adapter_keys = (
+        "to_k_ip",
+        "to_v_ip",
+        "to_k_palette",
+        "to_v_palette",
+        "palette_branch_scale",
+        "texture_gate_delta",
+        "balanced_gate",
+    )
+
+    for name, param in unet_raw.named_parameters():
+        in_late_block = name.startswith(block_prefixes)
+        in_output_layer = include_output_layer and (
+            name.startswith("conv_norm_out.") or name.startswith("conv_out.")
+        )
+        is_adapter_param = any(key in name for key in adapter_keys)
+        if (in_late_block or in_output_layer) and not is_adapter_param:
+            params.append(param)
+            names.append(name)
     return params, names
 
 
@@ -1421,6 +1453,11 @@ def main():
     ap.add_argument("--tcpm_scale_lr", type=float, default=1e-5)
     ap.add_argument("--tcpm_mask_inner_only", type=int, default=1, choices=[0, 1])
     ap.add_argument("--freeze_for_tcpm_lite", type=int, default=1, choices=[0, 1])
+    ap.add_argument("--train_unet_late_for_distribution", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--unet_late_lr", type=float, default=2e-6)
+    ap.add_argument("--unet_late_blocks", type=str, default="2,3")
+    ap.add_argument("--train_unet_output_layer", type=int, default=1, choices=[0, 1])
+    ap.add_argument("--freeze_tcpm_for_distribution", type=int, default=1, choices=[0, 1])
     ap.add_argument("--train_detail_texture_adapter", type=int, default=0, choices=[0, 1])
     ap.add_argument("--detail_texture_adapter_lr", type=float, default=2e-6)
     ap.add_argument("--train_detail_texture_gate", type=int, default=0, choices=[0, 1])
@@ -1783,6 +1820,8 @@ def main():
     for p in tcpm_lite.parameters():
         p.requires_grad = bool(args.use_tcpm_lite)
 
+    unet_late_params = []
+    unet_late_names = []
     if args.use_tcpm_lite and args.freeze_for_tcpm_lite:
         for p in unet.parameters():
             p.requires_grad = False
@@ -1807,6 +1846,22 @@ def main():
             )
             for p in detail_adapter_params:
                 p.requires_grad = True
+        if args.train_unet_late_for_distribution:
+            unet_late_block_ids = [
+                int(item.strip())
+                for item in args.unet_late_blocks.split(",")
+                if item.strip()
+            ]
+            unet_late_params, unet_late_names = _collect_unet_late_distribution_params(
+                unet,
+                block_ids=unet_late_block_ids,
+                include_output_layer=bool(args.train_unet_output_layer),
+            )
+            for p in unet_late_params:
+                p.requires_grad = True
+            if args.freeze_tcpm_for_distribution:
+                for p in tcpm_lite.parameters():
+                    p.requires_grad = False
         if accelerator.is_main_process:
             if args.train_detail_texture_adapter:
                 print(
@@ -1817,7 +1872,19 @@ def main():
                     f"train_detail_texture_gate={bool(args.train_detail_texture_gate)})."
                 )
             else:
-                print("[info] use_tcpm_lite=1, freezing UNet/texture adapter/spatial branches; only TCPM-lite is trainable.")
+                if args.train_unet_late_for_distribution:
+                    print("[info] use_tcpm_lite=1, freezing base branches; E6b UNet late distribution params are trainable.")
+                else:
+                    print("[info] use_tcpm_lite=1, freezing UNet/texture adapter/spatial branches; only TCPM-lite is trainable.")
+            if args.train_unet_late_for_distribution:
+                print(
+                    "[info] E6b distribution tuning enabled: "
+                    f"unet_late_params={len(unet_late_names)}, "
+                    f"blocks={args.unet_late_blocks}, "
+                    f"output_layer={bool(args.train_unet_output_layer)}, "
+                    f"lr={args.unet_late_lr}, "
+                    f"freeze_tcpm={bool(args.freeze_tcpm_for_distribution)}"
+                )
 
     if args.freeze_except_gate and not args.use_tcpm_lite:
         for p in unet.parameters():
@@ -1870,6 +1937,17 @@ def main():
             if args.debug_trainable_params:
                 for name in detail_adapter_names:
                     print(f"[debug] detail_texture_adapter_param {name}")
+
+    if args.train_unet_late_for_distribution:
+        add_params(unet_late_params, lr=args.unet_late_lr)
+        if accelerator.is_main_process:
+            print(
+                f"[info] E6b UNet late trainable params: "
+                f"{len(unet_late_names)} tensors, lr={args.unet_late_lr}"
+            )
+            if args.debug_trainable_params:
+                for name in unet_late_names:
+                    print(f"[debug] unet_late_distribution_param {name}")
 
     if not args.train_spatial_only:
         add_params(nn.ModuleList(unet.attn_processors.values()).parameters())
@@ -2079,6 +2157,14 @@ def main():
             f"enabled={bool(args.train_detail_texture_adapter)}, "
             f"lr={args.detail_texture_adapter_lr}, "
             f"train_gate={bool(args.train_detail_texture_gate)}"
+        )
+        print(
+            "[info] E6b UNet late distribution tuning: "
+            f"enabled={bool(args.train_unet_late_for_distribution)}, "
+            f"blocks={args.unet_late_blocks}, "
+            f"output_layer={bool(args.train_unet_output_layer)}, "
+            f"lr={args.unet_late_lr}, "
+            f"freeze_tcpm={bool(args.freeze_tcpm_for_distribution)}"
         )
         print(
             "[info] conflict suppression: "
