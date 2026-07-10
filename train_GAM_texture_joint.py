@@ -4,7 +4,6 @@ import importlib.util
 import itertools
 import json
 import math
-from collections import deque
 import os
 import random
 import re
@@ -15,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from PIL import Image, ImageFilter
+from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torchvision.models import VGG19_Weights, vgg19
@@ -45,6 +44,10 @@ from models.spatial_injection import SpatialInjectionAdapter
 from models.tcpm_lite import TCPMLite
 from texture_preprocess import preprocess_texture_image
 from color_conflict_utils import compute_color_conflict
+from garment_mask_utils import (
+    build_sketch_garment_mask,
+    estimate_cloth_foreground_mask,
+)
 
 try:
     _repo_checkpoint_spec = importlib.util.find_spec("repo_utils.checkpoint_utils")
@@ -117,75 +120,6 @@ def print_trainable_frozen_summary(named_modules):
         print(
             f"[params] {label}: trainable={trainable:,} frozen={frozen:,} total={total:,}"
         )
-
-# =========================
-# Dataset
-# =========================
-def sketch_to_garment_mask(
-    sketch: Image.Image,
-    width: int,
-    height: int,
-    line_threshold: int = 245,
-    dilate_size: int = 9,
-) -> Image.Image:
-    """
-    Estimate a garment-region mask from a black-line sketch on white background.
-    The sketch lines are treated as barriers, then the outside background is
-    flood-filled from image borders. The remaining region is the garment mask.
-    """
-    dilate_size = max(3, int(dilate_size) | 1)
-    gray = sketch.convert("L").resize((width, height), Image.BILINEAR)
-    line = np.asarray(gray) < line_threshold
-    line_img = Image.fromarray((line.astype(np.uint8) * 255), mode="L")
-    barrier = np.asarray(line_img.filter(ImageFilter.MaxFilter(dilate_size))) > 0
-
-    h, w = barrier.shape
-    passable = ~barrier
-    outside = np.zeros((h, w), dtype=bool)
-    q = deque()
-
-    def push(y, x):
-        if passable[y, x] and not outside[y, x]:
-            outside[y, x] = True
-            q.append((y, x))
-
-    for x in range(w):
-        push(0, x)
-        push(h - 1, x)
-    for y in range(h):
-        push(y, 0)
-        push(y, w - 1)
-
-    while q:
-        y, x = q.popleft()
-        if y > 0:
-            push(y - 1, x)
-        if y + 1 < h:
-            push(y + 1, x)
-        if x > 0:
-            push(y, x - 1)
-        if x + 1 < w:
-            push(y, x + 1)
-
-    mask = ~outside
-    area = float(mask.mean())
-    if area < 0.02 or area > 0.95:
-        ys, xs = np.where(line)
-        if len(xs) == 0:
-            mask = np.ones((h, w), dtype=bool)
-        else:
-            pad_x = max(8, int(0.06 * w))
-            pad_y = max(8, int(0.06 * h))
-            x0 = max(0, int(xs.min()) - pad_x)
-            x1 = min(w, int(xs.max()) + pad_x)
-            y0 = max(0, int(ys.min()) - pad_y)
-            y1 = min(h, int(ys.max()) + pad_y)
-            mask = np.zeros((h, w), dtype=bool)
-            mask[y0:y1, x0:x1] = True
-
-    mask_img = Image.fromarray((mask.astype(np.uint8) * 255), mode="L")
-    return mask_img.filter(ImageFilter.MaxFilter(5))
-
 
 class JointTextureDataset(Dataset):
     def __init__(
@@ -265,7 +199,16 @@ class JointTextureDataset(Dataset):
             mask = (mask > 0.5).float()
             has_mask = 1
         else:
-            mask = self.mask_tf(sketch_to_garment_mask(sketch, self.width, self.height))
+            mask_image, mask_info = build_sketch_garment_mask(
+                sketch, self.width, self.height
+            )
+            if mask_info["mask_low_confidence"]:
+                target_mask, target_info = estimate_cloth_foreground_mask(
+                    cloth, self.width, self.height
+                )
+                if not target_info["mask_low_confidence"]:
+                    mask_image = target_mask
+            mask = self.mask_tf(mask_image)
             mask = (mask > 0.5).float()
 
         conflict_info = compute_color_conflict(

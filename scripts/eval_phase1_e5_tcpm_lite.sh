@@ -16,6 +16,7 @@ EVAL_BASE="${EVAL_BASE:-${PROJECT_ROOT}/eval_outputs/phase1_full_500}"
 REPORT_DIR="${REPORT_DIR:-${EVAL_BASE}/report_e5_tcpm_lite_e12}"
 NUM_SAMPLES="${NUM_SAMPLES:-500}"
 EVAL_SEED="${EVAL_SEED:-42}"
+GENERATION_SEED="${GENERATION_SEED:-42}"
 EVAL_DEVICE="${EVAL_DEVICE:-cuda:0}"
 REPORT_DEVICE="${REPORT_DEVICE:-cuda:0}"
 CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
@@ -44,6 +45,7 @@ echo "Phase 1 E5 TCPM-lite 500-sample evaluation"
 echo "E5_CKPT=${E5_CKPT}"
 echo "EVAL_BASE=${EVAL_BASE}"
 echo "E5_RUN_NAME=${E5_RUN_NAME}"
+echo "GENERATION_SEED=${GENERATION_SEED}"
 echo "EXPERIMENT_NAMES=${EXPERIMENT_NAMES}"
 echo "============================================"
 
@@ -53,6 +55,7 @@ python tools/run_fixed_benchmark.py \
   --split_path "${SPLIT_PATH}" \
   --num_samples "${NUM_SAMPLES}" \
   --seed "${EVAL_SEED}" \
+  --generation_seed "${GENERATION_SEED}" \
   --sample_id_start 0 \
   --sample_id_end "${NUM_SAMPLES}" \
   --resume_generation 1 \

@@ -3,11 +3,10 @@ import os
 import json
 import importlib
 import importlib.util
-from collections import deque
 import torch
 import numpy as np
 
-from PIL import Image, ImageFilter
+from PIL import Image
 from diffusers import UNet2DConditionModel, AutoencoderKL, DDIMScheduler
 from torchvision import transforms
 from transformers import CLIPImageProcessor
@@ -18,6 +17,7 @@ from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 import argparse
+from garment_mask_utils import build_sketch_garment_mask
 
 try:
     _repo_checkpoint_spec = importlib.util.find_spec("repo_utils.checkpoint_utils")
@@ -106,71 +106,6 @@ def resize_img(input_image, max_side=640, min_side=512, size=None,
     input_image = input_image.resize([w_resize_new, h_resize_new], mode)
 
     return input_image
-
-
-def sketch_to_garment_mask(
-    sketch: Image.Image,
-    width: int,
-    height: int,
-    line_threshold: int = 245,
-    dilate_size: int = 9,
-) -> Image.Image:
-    dilate_size = max(3, int(dilate_size) | 1)
-    gray = sketch.convert("L").resize((width, height), Image.BILINEAR)
-    line = np.asarray(gray) < line_threshold
-    barrier = np.asarray(
-        Image.fromarray((line.astype(np.uint8) * 255), mode="L").filter(
-            ImageFilter.MaxFilter(dilate_size)
-        )
-    ) > 0
-
-    h, w = barrier.shape
-    passable = ~barrier
-    outside = np.zeros((h, w), dtype=bool)
-    q = deque()
-
-    def push(y, x):
-        if passable[y, x] and not outside[y, x]:
-            outside[y, x] = True
-            q.append((y, x))
-
-    for x in range(w):
-        push(0, x)
-        push(h - 1, x)
-    for y in range(h):
-        push(y, 0)
-        push(y, w - 1)
-
-    while q:
-        y, x = q.popleft()
-        if y > 0:
-            push(y - 1, x)
-        if y + 1 < h:
-            push(y + 1, x)
-        if x > 0:
-            push(y, x - 1)
-        if x + 1 < w:
-            push(y, x + 1)
-
-    mask = ~outside
-    area = float(mask.mean())
-    if area < 0.02 or area > 0.95:
-        ys, xs = np.where(line)
-        if len(xs) == 0:
-            mask = np.ones((h, w), dtype=bool)
-        else:
-            pad_x = max(8, int(0.06 * w))
-            pad_y = max(8, int(0.06 * h))
-            x0 = max(0, int(xs.min()) - pad_x)
-            x1 = min(w, int(xs.max()) + pad_x)
-            y0 = max(0, int(ys.min()) - pad_y)
-            y1 = min(h, int(ys.max()) + pad_y)
-            mask = np.zeros((h, w), dtype=bool)
-            mask[y0:y1, x0:x1] = True
-
-    return Image.fromarray((mask.astype(np.uint8) * 255), mode="L").filter(
-        ImageFilter.MaxFilter(5)
-    )
 
 
 def image_grid(imgs, rows, cols):
@@ -267,11 +202,12 @@ def prepare(args):
             "stabilityai/sd-vae-ft-mse",
         )
 
-    generator = torch.Generator(device=args.device).manual_seed(42)
+    generator = torch.Generator(device=args.device).manual_seed(args.seed)
     resolved_image_encoder_path = resolve_image_encoder_path(args)
     print(f"[prepare] base model path: {args.base_model_path}")
     print(f"[prepare] vae model path: {args.vae_model_path}")
     print(f"[prepare] resolved image encoder path: {resolved_image_encoder_path}")
+    print(f"[prepare] generation seed: {args.seed}")
     print(f"[prepare] layer_group_enabled = {bool(args.layer_group_enabled)}")
     print(f"[prepare] use_texture_gate = {bool(args.use_texture_gate)}")
     print(f"[prepare] use_palette_tokens = {bool(args.use_palette_tokens)}")
@@ -547,6 +483,7 @@ if __name__ == "__main__":
     parser.add_argument('--sketch_path', type=str, required=True)
     parser.add_argument('--texture_path',type=str,required=True)
     parser.add_argument('--output_path', type=str, default="./output_sd_base")
+    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument(
         '--texture_ckpt',
         type=str,
@@ -664,7 +601,16 @@ if __name__ == "__main__":
 
     sketch_img = Image.open(args.sketch_path).convert("RGB").resize((args.width, args.height), Image.BILINEAR)
     vae_sketch = img_transform(sketch_img).unsqueeze(0)
-    spatial_mask_img = sketch_to_garment_mask(sketch_img, args.width, args.height)
+    spatial_mask_img, spatial_mask_info = build_sketch_garment_mask(
+        sketch_img, args.width, args.height
+    )
+    print(
+        "spatial mask: "
+        f"source={spatial_mask_info['mask_source']}, "
+        f"confidence={spatial_mask_info['mask_confidence']:.4f}, "
+        f"area={spatial_mask_info['mask_area_ratio']:.4f}, "
+        f"fallback={spatial_mask_info['mask_fallback']}"
+    )
     spatial_mask = transforms.ToTensor()(spatial_mask_img).unsqueeze(0)
     
     if args.texture_path is not None:

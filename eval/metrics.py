@@ -290,8 +290,9 @@ def compute_fid_from_paths(
     real_paths: List[str],
     batch_size: int = 32,
     device: str = "cuda",
-) -> float:
-    """Compute FID with torchmetrics first and a torchvision fallback."""
+    return_backend: bool = False,
+):
+    """Compute FID and optionally return the concrete implementation used."""
     gen_paths = [path for path in gen_paths if existing_file(path)]
     real_paths = [path for path in real_paths if existing_file(path)]
     if len(gen_paths) < 2 or len(real_paths) < 2:
@@ -315,7 +316,9 @@ def compute_fid_from_paths(
                     ).permute(2, 0, 1)
                     batch.append(tensor)
                 metric.update(torch.stack(batch).to(device), real=real)
-        return float(metric.compute().detach().cpu().item())
+        value = float(metric.compute().detach().cpu().item())
+        backend = "torchmetrics_frechet_inception_distance_2048"
+        return (value, backend) if return_backend else value
     except Exception as torchmetrics_error:
         warnings.warn(
             f"torchmetrics FID unavailable, using torchvision fallback: "
@@ -329,7 +332,9 @@ def compute_fid_from_paths(
     real_feat = extract_inception_features(
         real_paths, batch_size=batch_size, device=device
     )
-    return compute_fid(gen_feat, real_feat)
+    value = compute_fid(gen_feat, real_feat)
+    backend = "torchvision_inception_v3_pool3_fallback"
+    return (value, backend) if return_backend else value
 
 
 # ---- CLIP-I (CLIP Image Similarity) ----

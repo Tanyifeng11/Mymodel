@@ -74,6 +74,11 @@ def parse_modes(value):
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def generation_seed_for_sample(base_seed, sample):
+    """Return a stable, distinct seed for each fixed benchmark sample."""
+    return int(base_seed) + int(sample["sample_id"])
+
+
 def mode_to_flags(mode_name):
     if mode_name == "token":
         return {"texture_condition_mode": "token", "fusion_type": "minimal"}
@@ -379,6 +384,7 @@ def _sample_text_description(args, sample, mode_name, paths, role, image_path, s
         f"dataset_index: {sample.get('idx')}",
         f"uid: {sample_uid(sample)}",
         f"generation_status: {status}",
+        f"generation_seed: {generation_seed_for_sample(args.generation_seed, sample)}",
         f"prompt: {sample.get('prompt', '')}",
         f"image_path: {image_path}",
         f"target_path: {paths.get('target_path')}",
@@ -532,6 +538,7 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         return None, "missing_texture"
 
     flags = mode_to_flags(mode_name)
+    generation_seed = generation_seed_for_sample(args.generation_seed, sample)
     experiment_flags = experiment_to_flags(args.run_name, args)
     texture_condition_mode = experiment_flags.get(
         "texture_condition_mode", flags["texture_condition_mode"]
@@ -562,6 +569,8 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         sample_out,
         "--device",
         args.device,
+        "--seed",
+        str(generation_seed),
         "--texture_condition_mode",
         texture_condition_mode,
         "--fusion_type",
@@ -926,6 +935,8 @@ def run_benchmark(args):
         "run_name": args.run_name,
         "modes": modes,
         "seed": args.seed,
+        "generation_seed": args.generation_seed,
+        "generation_seed_policy": "base_seed_plus_sample_id",
         "requested_samples": args.num_samples,
         "split_samples": len(split),
         "sample_id_start": args.sample_id_start,
@@ -990,6 +1001,9 @@ def run_benchmark(args):
                 "gen_path": gen_path
                 or output_paths["generated"],
                 "generation_status": generation_status,
+                "generation_seed": generation_seed_for_sample(
+                    args.generation_seed, sample
+                ),
                 **paths,
                 "text_color": conflict_info["text_color"],
                 "text_color_rgb": conflict_info["text_color_rgb"],
@@ -1256,6 +1270,24 @@ def run_benchmark(args):
         row["metric_warnings"] = sorted(set(metric_warnings))
         _write_progress(metrics_dir, rows)
 
+    mask_confidences = [
+        float(row["mask_confidence"])
+        for row in rows
+        if _is_finite(row.get("mask_confidence"))
+    ]
+    diagnostics["average_mask_confidence"] = (
+        float(np.mean(mask_confidences)) if mask_confidences else None
+    )
+    diagnostics["number_of_low_confidence_masks"] = sum(
+        bool(row.get("mask_low_confidence")) for row in rows
+    )
+    diagnostics["number_of_mask_fallbacks"] = sum(
+        bool(row.get("mask_fallback")) for row in rows
+    )
+    diagnostics["mask_source_counts"] = dict(
+        Counter(row.get("mask_source") or "missing" for row in rows)
+    )
+
     if args.compute_clip_i:
         _assign_clip_metric(
             rows,
@@ -1282,6 +1314,7 @@ def run_benchmark(args):
     diagnostics.update(summarize_conflict_rows(rows, threshold=args.conflict_threshold))
 
     fid_value = float("nan")
+    fid_backend = None
     if args.compute_fid:
         gen_paths = [row["gen_path"] for row in rows if existing_file(row["gen_path"])]
         real_paths = [
@@ -1301,11 +1334,12 @@ def run_benchmark(args):
             _append_reason(reason_counts, reason)
         else:
             try:
-                fid_value = compute_fid_from_paths(
+                fid_value, fid_backend = compute_fid_from_paths(
                     gen_paths,
                     real_paths,
                     batch_size=args.fid_batch_size,
                     device=args.device,
+                    return_backend=True,
                 )
             except Exception as exc:
                 reason = f"FID failed: {exc}"
@@ -1320,6 +1354,7 @@ def run_benchmark(args):
     diagnostics["num_valid_for_structure"] = sum(
         _is_finite(row.get("struct_edge_f1")) for row in rows
     )
+    diagnostics["fid_backend"] = fid_backend
     for source_key, output_key in (
         ("garment_mask_area", "average_garment_mask_area"),
         ("outside_mask_area", "average_outside_mask_area"),
@@ -1343,6 +1378,9 @@ def run_benchmark(args):
         summary = _aggregate_rows(rows, mode)
         summary["FID"] = fid_value if _is_finite(fid_value) else None
         summary["FID_std"] = None
+        summary["FID_backend"] = fid_backend
+        summary["generation_seed"] = args.generation_seed
+        summary["generation_seed_policy"] = "base_seed_plus_sample_id"
         summary_rows.append(summary)
     bucket_rows = _aggregate_conflict_buckets(rows)
 
@@ -1364,6 +1402,7 @@ def run_benchmark(args):
         {
             "status": "completed",
             "generated_images": diagnostics["num_generated_found"],
+            "fid_backend": fid_backend,
             "diagnostics_path": os.path.join(
                 metrics_dir, "diagnostics.json"
             ),
@@ -1386,6 +1425,15 @@ def build_argparser():
     )
     parser.add_argument("--num_samples", type=int, default=16)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--generation_seed",
+        type=int,
+        default=42,
+        help=(
+            "Base generation seed. Each sample uses generation_seed + sample_id; "
+            "--seed remains reserved for the fixed data split."
+        ),
+    )
     parser.add_argument("--sample_id_start", type=int, default=0)
     parser.add_argument("--sample_id_end", type=int, default=None)
     parser.add_argument(

@@ -1,9 +1,15 @@
 import math
 import os
-from collections import deque
 
 import numpy as np
 from PIL import Image, ImageFilter
+
+from garment_mask_utils import (
+    build_sketch_garment_mask,
+    estimate_cloth_foreground_mask,
+    mask_diagnostics,
+    mask_image_to_bool,
+)
 
 
 def existing_file(path):
@@ -62,71 +68,26 @@ def _mask_from_path(path, size):
     return max(scored, key=lambda item: item[:3])[3]
 
 
-def sketch_to_garment_mask(sketch, size, line_threshold=245, dilate_size=9):
-    if sketch is None:
-        return None
+def sketch_to_garment_mask(
+    sketch, size, line_threshold=245, close_size=5, return_info=False
+):
     width, height = size
-    gray = sketch.convert("L").resize((width, height), Image.BILINEAR)
-    line = np.asarray(gray, dtype=np.uint8) < line_threshold
-    dilate_size = max(3, int(dilate_size) | 1)
-    barrier = np.asarray(
-        Image.fromarray(line.astype(np.uint8) * 255, mode="L").filter(
-            ImageFilter.MaxFilter(dilate_size)
-        )
-    ) > 0
-
-    passable = ~barrier
-    outside = np.zeros((height, width), dtype=bool)
-    queue = deque()
-
-    def push(y, x):
-        if passable[y, x] and not outside[y, x]:
-            outside[y, x] = True
-            queue.append((y, x))
-
-    for x in range(width):
-        push(0, x)
-        push(height - 1, x)
-    for y in range(height):
-        push(y, 0)
-        push(y, width - 1)
-
-    while queue:
-        y, x = queue.popleft()
-        if y > 0:
-            push(y - 1, x)
-        if y + 1 < height:
-            push(y + 1, x)
-        if x > 0:
-            push(y, x - 1)
-        if x + 1 < width:
-            push(y, x + 1)
-
-    garment = ~outside
-    return garment
+    mask_image, info = build_sketch_garment_mask(
+        sketch,
+        width,
+        height,
+        line_threshold=line_threshold,
+        close_size=close_size,
+    )
+    garment = mask_image_to_bool(mask_image)
+    return (garment, info) if return_info else garment
 
 
-def estimate_foreground_mask(image, size):
-    if image is None:
-        return None
-    image = image.convert("RGB").resize(size, Image.BICUBIC)
-    arr = np.asarray(image, dtype=np.float32)
-    border = np.concatenate([arr[0], arr[-1], arr[:, 0], arr[:, -1]], axis=0)
-    background = np.median(border, axis=0)
-    color_distance = np.linalg.norm(arr - background[None, None, :], axis=2)
-    value = arr.mean(axis=2)
-    mask = (color_distance > 18.0) | (value < 235.0)
-    try:
-        import cv2
-
-        kernel = np.ones((5, 5), dtype=np.uint8)
-        mask_u8 = mask.astype(np.uint8) * 255
-        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, kernel)
-        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel)
-        mask = mask_u8 > 127
-    except ImportError:
-        pass
-    return mask
+def estimate_foreground_mask(image, size, return_info=False):
+    width, height = size
+    mask_image, info = estimate_cloth_foreground_mask(image, width, height)
+    mask = mask_image_to_bool(mask_image)
+    return (mask, info) if return_info else mask
 
 
 def derive_region_masks(garment_mask, kernel_size=9):
@@ -159,35 +120,67 @@ def prepare_evaluation_masks(
 ):
     warnings = []
     source = None
+    mask_info = None
+    sketch_mask = None
+    sketch_info = None
     garment = _mask_from_path(mask_path, size)
     if garment is not None:
         source = "dataset_mask"
+        mask_info = mask_diagnostics(garment, source)
+        mask_info["mask_confidence"] = 1.0
+        mask_info["mask_low_confidence"] = False
     else:
         if mask_path:
             warnings.append(f"mask unreadable or missing: {mask_path}")
         sketch = safe_open_rgb(sketch_path)
-        garment = sketch_to_garment_mask(sketch, size)
-        if garment is not None and garment.any():
-            source = "sketch"
-        else:
-            garment = None
-            if sketch_path:
-                warnings.append(f"could not derive garment mask from sketch: {sketch_path}")
+        sketch_mask, sketch_info = sketch_to_garment_mask(
+            sketch, size, return_info=True
+        )
+        garment = None
+        if sketch_mask is not None and sketch_mask.any():
+            if not sketch_info["mask_low_confidence"]:
+                garment = sketch_mask
+                mask_info = sketch_info
+                source = sketch_info["mask_source"]
+            else:
+                warnings.append(
+                    "low-confidence sketch mask: "
+                    f"confidence={sketch_info['mask_confidence']:.4f}"
+                )
+        elif sketch_path:
+            warnings.append(f"could not derive garment mask from sketch: {sketch_path}")
 
     if garment is None:
-        garment = estimate_foreground_mask(safe_open_rgb(target_path), size)
-        if garment is not None and garment.any():
-            source = "target_foreground"
-        else:
-            garment = None
+        target_mask, target_info = estimate_foreground_mask(
+            safe_open_rgb(target_path), size, return_info=True
+        )
+        if (
+            target_mask is not None
+            and target_mask.any()
+            and not target_info["mask_low_confidence"]
+        ):
+            garment = target_mask
+            mask_info = target_info
+            mask_info["mask_fallback"] = True
+            mask_info["mask_fallback_reason"] = "low_confidence_sketch"
+            source = target_info["mask_source"]
+
+    if garment is None and sketch_mask is not None and sketch_mask.any():
+        garment = sketch_mask
+        mask_info = sketch_info
+        source = sketch_info["mask_source"]
 
     if garment is None:
-        garment = estimate_foreground_mask(safe_open_rgb(gen_path), size)
+        garment, mask_info = estimate_foreground_mask(
+            safe_open_rgb(gen_path), size, return_info=True
+        )
         if garment is not None and garment.any():
             source = "generated_foreground"
+            mask_info["mask_source"] = source
             warnings.append("garment mask estimated from generated image")
         else:
             garment = None
+            mask_info = None
 
     outside, boundary = derive_region_masks(garment, kernel_size=kernel_size)
     total = max(1, size[0] * size[1])
@@ -204,6 +197,9 @@ def prepare_evaluation_masks(
         "outside_mask_area": count(outside) / total,
         "boundary_mask_area": count(boundary) / total,
     }
+    if mask_info:
+        stats.update(mask_info)
+        stats["mask_source"] = source
     return {
         "garment": garment,
         "outside": outside,
