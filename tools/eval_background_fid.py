@@ -17,6 +17,8 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 
 
 def image_map(directory):
+    if not os.path.isdir(directory):
+        raise FileNotFoundError(f"image directory does not exist: {directory}")
     return {
         name: os.path.join(directory, name)
         for name in sorted(os.listdir(directory))

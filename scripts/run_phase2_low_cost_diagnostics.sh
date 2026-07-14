@@ -7,7 +7,7 @@ DATA_ROOT_PATH="${DATA_ROOT_PATH:-${DATASETS_ROOT}/BF/training}"
 DATASET_JSON="${DATASET_JSON:-${PROJECT_ROOT}/data/train_bf_texture.json}"
 SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/phase1_bf_val_split.json}"
 VAE_MODEL_PATH="${VAE_MODEL_PATH:-${PROJECT_ROOT}/models/stable-diffusion-v1-5/vae}"
-EXPERIMENT_DIR="${EXPERIMENT_DIR:-${PROJECT_ROOT}/eval_outputs/e6b_unet_late_distribution}"
+EXPERIMENT_DIR="${EXPERIMENT_DIR:-${PROJECT_ROOT}/eval_outputs/phase1_full_500/e6b_unet_late_distribution}"
 OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/eval_outputs/phase2_diagnostics}"
 
 # 仅使用调度系统分配给作业的可见设备，不绑定物理 GPU 编号。
@@ -48,6 +48,12 @@ run_task() {
         --seed "${SEED}"
       ;;
     background)
+      for image_dir in "${EXPERIMENT_DIR}/real" "${EXPERIMENT_DIR}/generated"; do
+        if [[ ! -d "${image_dir}" ]]; then
+          echo "[ERROR] Background FID image directory does not exist: ${image_dir}" >&2
+          exit 1
+        fi
+      done
       python tools/eval_background_fid.py \
         --experiment_dir "${EXPERIMENT_DIR}" \
         --output_dir "${OUTPUT_DIR}/background_fid" \
