@@ -688,9 +688,16 @@ def _append_reason(counter, reason):
         counter[str(reason)] += 1
 
 
-def _aggregate_rows(rows, mode):
-    mode_rows = [row for row in rows if row.get("mode") == mode]
+def _aggregate_rows(rows, mode, category=None):
+    mode_rows = [
+        row
+        for row in rows
+        if row.get("mode") == mode
+        and (category is None or row.get("category") == category)
+    ]
     summary = {"mode": mode, "count": len(mode_rows)}
+    if category is not None:
+        summary["category"] = category
     keys = sorted({key for row in mode_rows for key in row})
     for key in keys:
         values = [float(row[key]) for row in mode_rows if _is_finite(row.get(key))]
@@ -882,6 +889,8 @@ def _prepare_evaluation_images(rows, metrics_dir, resize_size, write_text_sideca
 
 
 def run_benchmark(args):
+    if args.progress_write_interval < 1:
+        raise ValueError("progress_write_interval must be at least 1")
     sample_id_end = (
         args.num_samples if args.sample_id_end is None else args.sample_id_end
     )
@@ -997,6 +1006,8 @@ def run_benchmark(args):
                 "sample_id": sample["sample_id"],
                 "dataset_index": sample["idx"],
                 "uid": uid,
+                "category": sample.get("category"),
+                "filename": sample.get("filename"),
                 "prompt": sample["prompt"],
                 "gen_path": gen_path
                 or output_paths["generated"],
@@ -1268,7 +1279,11 @@ def run_benchmark(args):
             _append_reason(reason_counts, reason)
         row.update(metrics)
         row["metric_warnings"] = sorted(set(metric_warnings))
-        _write_progress(metrics_dir, rows)
+        if (
+            row_index % args.progress_write_interval == 0
+            or row_index == len(rows)
+        ):
+            _write_progress(metrics_dir, rows)
 
     mask_confidences = [
         float(row["mask_confidence"])
@@ -1383,8 +1398,17 @@ def run_benchmark(args):
         summary["generation_seed_policy"] = "base_seed_plus_sample_id"
         summary_rows.append(summary)
     bucket_rows = _aggregate_conflict_buckets(rows)
+    category_rows = []
+    categories = sorted(
+        {row.get("category") for row in rows if row.get("category")}
+    )
+    for mode in modes:
+        for category in categories:
+            category_rows.append(_aggregate_rows(rows, mode, category=category))
 
     _write_progress(metrics_dir, rows)
+    write_csv(os.path.join(metrics_dir, "category_metrics.csv"), category_rows)
+    write_json(os.path.join(metrics_dir, "category_metrics.json"), category_rows)
     write_csv(os.path.join(metrics_dir, "conflict_bucket_metrics.csv"), bucket_rows)
     write_json(os.path.join(metrics_dir, "conflict_bucket_metrics.json"), bucket_rows)
     write_csv(os.path.join(metrics_dir, "metrics_summary.csv"), summary_rows)
@@ -1521,6 +1545,12 @@ def build_argparser():
     parser.add_argument("--clip_batch_size", type=int, default=16)
     parser.add_argument("--fid_batch_size", type=int, default=16)
     parser.add_argument("--grid_max_images", type=int, default=100)
+    parser.add_argument(
+        "--progress_write_interval",
+        type=int,
+        default=1,
+        help="Write per-sample progress files every N evaluated samples.",
+    )
     parser.add_argument("--write_text_sidecars", type=int, choices=[0, 1], default=1)
     parser.add_argument(
         "--metrics_only",
