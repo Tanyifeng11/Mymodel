@@ -29,10 +29,12 @@ from eval.eval_utils import (
     safe_open_rgb,
     save_mask_debug,
 )
+from eval.distribution_diagnostics import compute_kid_from_features
 from eval.metrics import (
     compute_clip_i_values,
     compute_fid_from_paths,
     evaluate_full,
+    extract_inception_features,
 )
 from color_conflict_utils import (
     compute_color_conflict,
@@ -969,6 +971,11 @@ def run_benchmark(args):
         "overwrite": bool(args.overwrite),
         "reuse_from_dir": args.reuse_from_dir,
         "evaluation_protocol": args.evaluation_protocol,
+        "mask_policy": args.mask_policy,
+        "compute_fid": bool(args.compute_fid),
+        "compute_kid": bool(args.compute_kid),
+        "kid_subsets": args.kid_subsets,
+        "kid_subset_size": args.kid_subset_size,
     }
     write_manifest(
         os.path.join(metrics_dir, "experiment_manifest.json"), manifest
@@ -1220,6 +1227,7 @@ def run_benchmark(args):
             sketch_path=row["sketch_path"],
             target_path=row["target_path"],
             gen_path=row["gen_path"],
+            mask_policy=args.mask_policy,
         )
         row.update(mask_bundle["stats"])
         if row.get("has_text_color"):
@@ -1330,7 +1338,10 @@ def run_benchmark(args):
 
     fid_value = float("nan")
     fid_backend = None
-    if args.compute_fid:
+    kid_mean = float("nan")
+    kid_std = float("nan")
+    kid_backend = None
+    if args.compute_fid or args.compute_kid:
         gen_paths = [row["gen_path"] for row in rows if existing_file(row["gen_path"])]
         real_paths = [
             row["target_path"]
@@ -1347,7 +1358,7 @@ def run_benchmark(args):
             )
             print(f"[benchmark] WARNING: {reason}")
             _append_reason(reason_counts, reason)
-        else:
+        elif args.compute_fid:
             try:
                 fid_value, fid_backend = compute_fid_from_paths(
                     gen_paths,
@@ -1360,8 +1371,36 @@ def run_benchmark(args):
                 reason = f"FID failed: {exc}"
                 print(f"[benchmark] WARNING: {reason}")
                 _append_reason(reason_counts, reason)
-    else:
+        if len(gen_paths) >= 2 and len(real_paths) >= 2 and args.compute_kid:
+            try:
+                real_features = extract_inception_features(
+                    real_paths,
+                    batch_size=args.fid_batch_size,
+                    device=args.device,
+                )
+                gen_features = extract_inception_features(
+                    gen_paths,
+                    batch_size=args.fid_batch_size,
+                    device=args.device,
+                )
+                kid = compute_kid_from_features(
+                    real_features,
+                    gen_features,
+                    subsets=args.kid_subsets,
+                    subset_size=args.kid_subset_size,
+                    seed=args.kid_seed,
+                )
+                kid_mean = kid["kid_mean"]
+                kid_std = kid["kid_std"]
+                kid_backend = "torchvision_inception_v3_pool3"
+            except Exception as exc:
+                reason = f"KID failed: {exc}"
+                print(f"[benchmark] WARNING: {reason}")
+                _append_reason(reason_counts, reason)
+    if not args.compute_fid:
         _append_reason(reason_counts, "FID disabled by --compute_fid 0")
+    if not args.compute_kid:
+        _append_reason(reason_counts, "KID disabled by --compute_kid 0")
 
     diagnostics["num_valid_for_leakage"] = sum(
         _is_finite(row.get("leak_colored_frac")) for row in rows
@@ -1370,6 +1409,9 @@ def run_benchmark(args):
         _is_finite(row.get("struct_edge_f1")) for row in rows
     )
     diagnostics["fid_backend"] = fid_backend
+    diagnostics["kid_subsets"] = args.kid_subsets if args.compute_kid else None
+    diagnostics["kid_subset_size"] = args.kid_subset_size if args.compute_kid else None
+    diagnostics["kid_backend"] = kid_backend
     for source_key, output_key in (
         ("garment_mask_area", "average_garment_mask_area"),
         ("outside_mask_area", "average_outside_mask_area"),
@@ -1394,6 +1436,9 @@ def run_benchmark(args):
         summary["FID"] = fid_value if _is_finite(fid_value) else None
         summary["FID_std"] = None
         summary["FID_backend"] = fid_backend
+        summary["KID"] = kid_mean if _is_finite(kid_mean) else None
+        summary["KID_std"] = kid_std if _is_finite(kid_std) else None
+        summary["KID_backend"] = kid_backend
         summary["generation_seed"] = args.generation_seed
         summary["generation_seed_policy"] = "base_seed_plus_sample_id"
         summary_rows.append(summary)
@@ -1534,6 +1579,7 @@ def build_argparser():
         "--clip_model_path", default="openai/clip-vit-large-patch14"
     )
     parser.add_argument("--compute_fid", type=int, choices=[0, 1], default=1)
+    parser.add_argument("--compute_kid", type=int, choices=[0, 1], default=0)
     parser.add_argument("--compute_clip_i", type=int, choices=[0, 1], default=1)
     parser.add_argument("--compute_leakage", type=int, choices=[0, 1], default=1)
     parser.add_argument("--compute_structure", type=int, choices=[0, 1], default=1)
@@ -1544,6 +1590,15 @@ def build_argparser():
     parser.add_argument("--min_valid_pixels", type=int, default=50)
     parser.add_argument("--clip_batch_size", type=int, default=16)
     parser.add_argument("--fid_batch_size", type=int, default=16)
+    parser.add_argument("--kid_subsets", type=int, default=50)
+    parser.add_argument("--kid_subset_size", type=int, default=100)
+    parser.add_argument("--kid_seed", type=int, default=42)
+    parser.add_argument(
+        "--mask_policy",
+        choices=["auto", "sketch_only"],
+        default="auto",
+        help="A0 should use sketch_only to prevent target/generated mask fallback.",
+    )
     parser.add_argument("--grid_max_images", type=int, default=100)
     parser.add_argument(
         "--progress_write_interval",

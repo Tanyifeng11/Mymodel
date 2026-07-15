@@ -117,20 +117,23 @@ def prepare_evaluation_masks(
     target_path=None,
     gen_path=None,
     kernel_size=9,
+    mask_policy="auto",
 ):
+    if mask_policy not in ("auto", "sketch_only"):
+        raise ValueError(f"unsupported mask_policy: {mask_policy}")
     warnings = []
     source = None
     mask_info = None
     sketch_mask = None
     sketch_info = None
-    garment = _mask_from_path(mask_path, size)
+    garment = _mask_from_path(mask_path, size) if mask_policy == "auto" else None
     if garment is not None:
         source = "dataset_mask"
         mask_info = mask_diagnostics(garment, source)
         mask_info["mask_confidence"] = 1.0
         mask_info["mask_low_confidence"] = False
     else:
-        if mask_path:
+        if mask_path and mask_policy == "auto":
             warnings.append(f"mask unreadable or missing: {mask_path}")
         sketch = safe_open_rgb(sketch_path)
         sketch_mask, sketch_info = sketch_to_garment_mask(
@@ -138,7 +141,7 @@ def prepare_evaluation_masks(
         )
         garment = None
         if sketch_mask is not None and sketch_mask.any():
-            if not sketch_info["mask_low_confidence"]:
+            if mask_policy == "sketch_only" or not sketch_info["mask_low_confidence"]:
                 garment = sketch_mask
                 mask_info = sketch_info
                 source = sketch_info["mask_source"]
@@ -150,7 +153,7 @@ def prepare_evaluation_masks(
         elif sketch_path:
             warnings.append(f"could not derive garment mask from sketch: {sketch_path}")
 
-    if garment is None:
+    if garment is None and mask_policy == "auto":
         target_mask, target_info = estimate_foreground_mask(
             safe_open_rgb(target_path), size, return_info=True
         )
@@ -165,12 +168,17 @@ def prepare_evaluation_masks(
             mask_info["mask_fallback_reason"] = "low_confidence_sketch"
             source = target_info["mask_source"]
 
-    if garment is None and sketch_mask is not None and sketch_mask.any():
+    if (
+        garment is None
+        and mask_policy == "auto"
+        and sketch_mask is not None
+        and sketch_mask.any()
+    ):
         garment = sketch_mask
         mask_info = sketch_info
         source = sketch_info["mask_source"]
 
-    if garment is None:
+    if garment is None and mask_policy == "auto":
         garment, mask_info = estimate_foreground_mask(
             safe_open_rgb(gen_path), size, return_info=True
         )
