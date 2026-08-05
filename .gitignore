@@ -16,14 +16,14 @@ wandb/
 # 屏蔽数据集和标注文件
 data/
 datasets/
-
+docs/
+*.md
 # 屏蔽下载的本地大模型权重
 models/*
 !models/*.py
 *.safetensors
 *.bin
 *.pth
-
 # 屏蔽训练日志和后台作业脚本
 *.log
 *.err
