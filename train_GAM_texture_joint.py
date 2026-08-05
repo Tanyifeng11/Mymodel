@@ -42,6 +42,8 @@ from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 from models.tcpm_lite import TCPMLite
+from models.attribute_text_texture_fuser import AttributeTextTextureFuser
+from models.attribute_token_mask import build_attribute_masks
 from texture_preprocess import preprocess_texture_image
 from color_conflict_utils import compute_color_conflict
 from garment_mask_utils import (
@@ -131,9 +133,15 @@ class JointTextureDataset(Dataset):
         height=640,
         texture_preprocess_mode="crop_tile",
         conflict_deltae_norm=50.0,
+        max_samples=0,
     ):
         with open(json_path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
+
+        # E7a smoke test 只要 128~256 条。取前 N 条而不是随机抽样, 这样每次
+        # 跑的是同一批数据, 出问题可复现。
+        if max_samples and max_samples > 0:
+            self.data = self.data[:max_samples]
 
         self.tokenizer = tokenizer
         self.image_root = image_root
@@ -227,6 +235,10 @@ class JointTextureDataset(Dataset):
             "garment_mask": mask,
             "has_mask": torch.tensor(has_mask, dtype=torch.float32),
             "input_ids": input_ids,
+            "caption": caption,  # 新增: AA-TCR Fuse 需要 caption 原文构造属性 mask
+            # 归一化属性标签, 供 build_attribute_masks 做 caption/标签交叉校验。
+            # 由 scripts/normalize_attributes.py 写入; 没跑过就是 None, 校验自动跳过。
+            "gt_attrs": it.get("attributes_normalized"),
             "text_color_rgb": torch.tensor(conflict_info["text_color_rgb"], dtype=torch.float32),
             "ref_palette_rgb": torch.tensor(conflict_info["ref_palette_rgb"], dtype=torch.float32),
             "has_text_color": torch.tensor(float(conflict_info["has_text_color"]), dtype=torch.float32),
@@ -238,7 +250,18 @@ class JointTextureDataset(Dataset):
 
 
 def collate_fn(batch):
-    return {k: torch.stack([x[k] for x in batch]) for k in batch[0].keys()}
+    """
+    非 Tensor 字段(caption 字符串、属性标签 list)不能进 torch.stack,
+    原样保留成 Python list。
+    """
+    out = {}
+    for k in batch[0].keys():
+        vals = [x[k] for x in batch]
+        if torch.is_tensor(vals[0]):
+            out[k] = torch.stack(vals)
+        else:
+            out[k] = vals
+    return out
 
 
 # =========================
@@ -671,6 +694,7 @@ def save_training_checkpoint(
     args,
     resolved_image_encoder_path,
     aliases=None,
+    aa_tcr_fuser=None,
 ):
     save_dir = os.path.join(output_dir, f"checkpoint-{global_step}")
     os.makedirs(save_dir, exist_ok=True)
@@ -687,6 +711,7 @@ def save_training_checkpoint(
     spatial_injection_raw = unwrap(spatial_injection)
     palette_token_mlp_raw = unwrap(palette_token_mlp) if palette_token_mlp is not None else None
     tcpm_lite_raw = unwrap(tcpm_lite) if tcpm_lite is not None else None
+    aa_tcr_raw = unwrap(aa_tcr_fuser) if aa_tcr_fuser is not None else None
     texture_adapter_raw = nn.ModuleList(unet_raw.attn_processors.values())
 
     payload = {
@@ -702,6 +727,18 @@ def save_training_checkpoint(
         ),
         "tcpm_lite": (
             tcpm_lite_raw.state_dict() if tcpm_lite_raw is not None else {}
+        ),
+        # E7: 除了 state_dict, 还落盘生效后的 alpha 和最近一次 stats。
+        # 只存裸参数 v 的话, 换 max_alpha 重启后 tanh(v/max)*max 会跳变,
+        # 事后无法还原当时真正生效的 alpha 是多少。
+        "aa_tcr_fuser": (
+            aa_tcr_raw.state_dict() if aa_tcr_raw is not None else {}
+        ),
+        "aa_tcr_effective_alpha": (
+            aa_tcr_raw.effective_alphas() if aa_tcr_raw is not None else {}
+        ),
+        "aa_tcr_last_stats": (
+            dict(aa_tcr_raw.last_stats) if aa_tcr_raw is not None else {}
         ),
         "meta": {
             "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
@@ -743,6 +780,14 @@ def save_training_checkpoint(
             "tcpm_residual_scale_init": args.tcpm_residual_scale_init,
             "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
             "freeze_for_tcpm_lite": args.freeze_for_tcpm_lite,
+            # E7: 重建模块要用到这些超参; max_alpha 尤其关键(决定 alpha 怎么解释)
+            "use_aa_tcr_fuse": args.use_aa_tcr_fuse,
+            "aa_tcr_num_heads": args.aa_tcr_num_heads,
+            "aa_tcr_head_dim": args.aa_tcr_head_dim,
+            "aa_tcr_alpha_init": args.aa_tcr_alpha_init,
+            "aa_tcr_max_alpha": args.aa_tcr_max_alpha,
+            "aa_tcr_empty_fallback": args.aa_tcr_empty_fallback,
+            "aa_tcr_lr": args.aa_tcr_lr,
             "train_detail_texture_adapter": args.train_detail_texture_adapter,
             "detail_texture_adapter_lr": args.detail_texture_adapter_lr,
             "train_detail_texture_gate": args.train_detail_texture_gate,
@@ -1405,6 +1450,18 @@ def main():
     ap.add_argument("--detail_texture_adapter_lr", type=float, default=2e-6)
     ap.add_argument("--train_detail_texture_gate", type=int, default=0, choices=[0, 1])
     ap.add_argument("--conflict_texture_suppress_strength", type=float, default=0.1)
+    # E7: AA-TCR Fuse (属性感知文本-纹理融合)
+    ap.add_argument("--use_aa_tcr_fuse", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--aa_tcr_lr", type=float, default=5e-5)
+    ap.add_argument("--aa_tcr_num_heads", type=int, default=4)
+    ap.add_argument("--aa_tcr_head_dim", type=int, default=None)
+    ap.add_argument("--aa_tcr_alpha_init", type=float, default=0.0)
+    ap.add_argument("--aa_tcr_max_alpha", type=float, default=None)
+    ap.add_argument("--aa_tcr_empty_fallback", type=int, default=1, choices=[0, 1])
+    # >0 时只取数据集前 N 条(E7a smoke test 用 128~256)
+    ap.add_argument("--max_train_samples", type=int, default=0)
+    # 冻结除 AA-TCR Fuse 外的一切(含 TCPM-lite), E7a 要求"可训练参数仅 AA-TCR Fuse"
+    ap.add_argument("--freeze_all_but_aa_tcr", type=int, default=0, choices=[0, 1])
     ap.add_argument("--conflict_palette_suppress_strength", type=float, default=0.4)
     ap.add_argument("--conflict_deltae_norm", type=float, default=50.0)
     ap.add_argument("--conflict_threshold", type=float, default=0.70)
@@ -1536,9 +1593,24 @@ def main():
         print(f"[info] layer_group_enabled = {args.layer_group_enabled}, texture_condition_mode = {args.texture_condition_mode}")
 
     # ---- models ----
-    tokenizer = CLIPTokenizer.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="tokenizer"
-    )
+    # 优先用 Fast tokenizer: 它带 offset_mapping, build_attribute_masks 可以直接
+    # 用字符区间对齐, 不必走 _offsets_slow 的逐 token 解码(每 batch B×77 次 Python
+    # 循环)。装不上就回退到慢速版, 结果一致只是慢一点。
+    try:
+        from transformers import CLIPTokenizerFast
+
+        tokenizer = CLIPTokenizerFast.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="tokenizer"
+        )
+    except Exception as exc:                                     # noqa: BLE001
+        tokenizer = CLIPTokenizer.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="tokenizer"
+        )
+        if accelerator.is_main_process:
+            print(f"[warn] CLIPTokenizerFast unavailable ({exc}); "
+                  "falling back to slow tokenizer (attribute mask 对齐会慢一些)")
+    if accelerator.is_main_process:
+        print(f"[info] tokenizer is_fast = {getattr(tokenizer, 'is_fast', False)}")
     text_encoder = CLIPTextModel.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="text_encoder"
     )
@@ -1663,6 +1735,23 @@ def main():
         hidden_ratio=args.tcpm_hidden_ratio,
         residual_scale_init=args.tcpm_residual_scale_init,
     )
+    # E7: AA-TCR Fuse。alpha 零初始化 => 初始输出与 E5 逐位相同。
+    aa_tcr_fuser = None
+    if args.use_aa_tcr_fuse:
+        aa_tcr_fuser = AttributeTextTextureFuser(
+            hidden_dim=unet.config.cross_attention_dim,
+            num_heads=args.aa_tcr_num_heads,
+            head_dim=args.aa_tcr_head_dim,
+            alpha_init=args.aa_tcr_alpha_init,
+            max_alpha=args.aa_tcr_max_alpha,
+            empty_mask_fallback=bool(args.aa_tcr_empty_fallback),
+        )
+        if accelerator.is_main_process:
+            n_aa = sum(p.numel() for p in aa_tcr_fuser.parameters())
+            print("[E7] AA-TCR Fuse enabled: %.2fM params, alpha_init=%s, "
+                  "max_alpha=%s, empty_mask_fallback=%s"
+                  % (n_aa / 1e6, args.aa_tcr_alpha_init, args.aa_tcr_max_alpha,
+                     bool(args.aa_tcr_empty_fallback)))
 
     # 旧 token 路线初始化
     if accelerator.is_main_process:
@@ -1762,6 +1851,26 @@ def main():
         p.requires_grad = use_spatial_train
     for p in tcpm_lite.parameters():
         p.requires_grad = bool(args.use_tcpm_lite)
+    if aa_tcr_fuser is not None:
+        for p in aa_tcr_fuser.parameters():
+            p.requires_grad = True
+
+    # E7a: 方案第 282 行要求"可训练参数: 仅 AA-TCR Fuse"。冻结其余一切,
+    # 这样 smoke test 里任何非 AA-TCR 参数发生变化都说明接线有问题。
+    if args.freeze_all_but_aa_tcr:
+        if aa_tcr_fuser is None:
+            raise ValueError(
+                "--freeze_all_but_aa_tcr=1 需要同时 --use_aa_tcr_fuse=1, "
+                "否则没有任何参数可训练")
+        for m in (unet, ref_unet, bf, spatial_texture_encoder, spatial_injection,
+                  tcpm_lite, palette_token_mlp):
+            if m is not None:
+                for p in m.parameters():
+                    p.requires_grad = False
+        for p in aa_tcr_fuser.parameters():
+            p.requires_grad = True
+        if accelerator.is_main_process:
+            print("[E7a] freeze_all_but_aa_tcr=1: 除 AA-TCR Fuse 外全部冻结")
 
     unet_late_params = []
     unet_late_names = []
@@ -1781,6 +1890,10 @@ def main():
             p.requires_grad = False
         for p in tcpm_lite.parameters():
             p.requires_grad = True
+        # E7: 冻结主干时 AA-TCR Fuse 仍要训练, 否则 E7a 一步都学不动
+        if aa_tcr_fuser is not None:
+            for p in aa_tcr_fuser.parameters():
+                p.requires_grad = True
         detail_adapter_names = []
         if args.train_detail_texture_adapter:
             detail_adapter_params, detail_adapter_names = _collect_detail_texture_adapter_params(
@@ -1911,6 +2024,14 @@ def main():
         )
         add_params([tcpm_lite.residual_scale], lr=args.tcpm_scale_lr)
 
+    # E7: AA-TCR Fuse 单独一组学习率(方案 7 建议 5e-5)。
+    # 不再给 pattern 分支单独放大 lr —— 稀疏问题已由 empty_mask_fallback 解决,
+    # 三路属性用同一个 lr, 消融时才好归因。
+    if aa_tcr_fuser is not None:
+        add_params(aa_tcr_fuser.parameters(), lr=args.aa_tcr_lr)
+        if accelerator.is_main_process:
+            print("[E7] AA-TCR Fuse param group added, lr=%s" % args.aa_tcr_lr)
+
     if args.freeze_except_gate and not args.use_tcpm_lite:
         trainable_param_groups = []
         trainable_params = []
@@ -1954,7 +2075,11 @@ def main():
         height=args.height,
         texture_preprocess_mode=args.texture_preprocess_mode,
         conflict_deltae_norm=args.conflict_deltae_norm,
+        max_samples=args.max_train_samples,
     )
+    if accelerator.is_main_process and args.max_train_samples > 0:
+        print("[info] max_train_samples=%d, 实际使用 %d 条"
+              % (args.max_train_samples, len(ds)))
     dl = DataLoader(
         ds,
         batch_size=args.train_batch_size,
@@ -2026,6 +2151,11 @@ def main():
     spatial_injection_module = accelerator.unwrap_model(spatial_injection)
     spatial_injection_module.bind_unet(accelerator.unwrap_model(unet))
     spatial_injection_module.enable()
+
+    # E7: AA-TCR Fuse 单独 prepare。它不参与 DDP 通信组的顺序约束, 放在
+    # 主 prepare 之外可以避免 use_aa_tcr_fuse=0 时元组长度变化。
+    if aa_tcr_fuser is not None:
+        aa_tcr_fuser = accelerator.prepare(aa_tcr_fuser)
 
     if accelerator.is_main_process and args.report_to != "none":
         init_kwargs = {}
@@ -2243,6 +2373,19 @@ def main():
                         )
                     if args.use_tcpm_lite:
                         tex_tokens = tcpm_lite(tex_tokens, enc_h)
+                    if args.use_aa_tcr_fuse and aa_tcr_fuser is not None:
+                        tex_tokens = aa_tcr_fuser(
+                            tex_tokens,
+                            enc_h,
+                            attribute_masks=build_attribute_masks(
+                                batch["caption"],
+                                tokenizer,
+                                max_length=enc_h.shape[1],
+                                device=enc_h.device,
+                                ground_truth_attrs=batch.get("gt_attrs"),
+                            ),
+                            input_ids=batch["input_ids"],
+                        )
                     enc_h = torch.cat([enc_h, tex_tokens], dim=1)
                     if args.use_palette_tokens:
                         palette_tokens = palette_token_mlp(texture_image)
@@ -2515,6 +2658,12 @@ def main():
                         accelerator.unwrap_model(tcpm_lite),
                         accelerator.unwrap_model(unet),
                     )
+                    # E7: AA-TCR Fuser stats (alpha、覆盖率、残差范数)
+                    aa_tcr_stats = {}
+                    if aa_tcr_fuser is not None:
+                        raw = accelerator.unwrap_model(aa_tcr_fuser)
+                        for k, v in raw.last_stats.items():
+                            aa_tcr_stats[f"train/aa_tcr_{k}"] = float(v)
                     grad_norm_log = None
                     if grad_norm is not None:
                         grad_norm_log = (
@@ -2568,6 +2717,7 @@ def main():
                             "train/batch_size": bsz,
                             "train/epoch": float(current_epoch) + (float(global_step % max(1, steps_per_epoch)) / max(1, steps_per_epoch)),
                             "train/use_layer_group": float(args.layer_group_enabled),
+                            **aa_tcr_stats,  # E7: alpha/覆盖率/残差范数
                         },
                         step=global_step,
                     )
@@ -2756,6 +2906,7 @@ def main():
                         args,
                         image_encoder_path,
                         aliases=[f"checkpoint-epoch-{completed_epoch:03d}"],
+                        aa_tcr_fuser=aa_tcr_fuser,
                     )
                     if accelerator.is_main_process:
                         print(
@@ -2785,6 +2936,7 @@ def main():
                 "checkpoint-final",
                 f"checkpoint-epoch-{total_epochs:03d}",
             ],
+            aa_tcr_fuser=aa_tcr_fuser,
         )
         print(f"[info] final full checkpoint saved to {save_dir}")
 

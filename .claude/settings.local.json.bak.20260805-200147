@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m models.attribute_token_mask --self-test)",
+      "Read(//home/tcmsn/miniconda3/**)",
+      "Bash(conda env *)",
+      "Bash(/home/tcmsn/miniconda3/envs/IMAGGarment/bin/python *)"
+    ]
+  }
+}

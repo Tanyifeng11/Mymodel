@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(python -m models.attribute_token_mask --self-test)",
+      "Read(//home/tcmsn/miniconda3/**)",
+      "Bash(conda env *)",
+      "Bash(/home/tcmsn/miniconda3/envs/IMAGGarment/bin/python *)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pytest *)",
+      "Bash(python -m compileall .)",
+      "Bash(python scripts/check_data.py)",
+      "Bash(python scripts/check_data.py *)",
+      "Bash(python scripts/train.py)",
+      "Bash(python scripts/train.py *)",
+      "Bash(python scripts/evaluate.py)",
+      "Bash(python scripts/evaluate.py *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(sudo *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(pip install *)",
+      "Bash(python -m pip install *)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+    "credentials": {
+      "files": [
+        {
+          "path": "~/.ssh",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.aws",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/gcloud",
+          "mode": "deny"
+        }
+      ],
+      "envVars": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "GITHUB_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SESSION_TOKEN",
+          "mode": "deny"
+        }
+      ]
+    }
+  }
+}

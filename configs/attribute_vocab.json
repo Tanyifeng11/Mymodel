@@ -1,0 +1,305 @@
+{
+  "_comment": "AA-TCR Fuse 属性标准化词表. 阶段二使用. 纯数据文件, 可手工编辑后重跑 scripts/normalize_attributes.py.",
+  "_matching_order": "1) exact 精确匹配(小写化后) -> 2) leak 串味词表 -> 3) rules 顺序子串匹配(先到先得) -> 4) unknown 并记录",
+
+  "category": {
+    "canonical": [
+      "dress", "top", "shirt", "sweater", "cardigan", "jacket", "coat",
+      "blazer", "vest", "pants", "jeans", "shorts", "skirt", "leggings",
+      "jumpsuit", "underwear_swim", "outer_wrap", "non_garment", "other", "unknown"
+    ],
+    "bottoms": ["pants", "jeans", "shorts", "skirt", "leggings"],
+    "no_sleeve_collar": ["pants", "jeans", "shorts", "skirt", "leggings", "non_garment"],
+    "exact": {
+      "dress": "dress", "gown": "dress", "denim dress": "dress", "sweater dress": "dress",
+      "slip dress": "dress", "mini dress": "dress", "shirt dress": "dress", "wrap dress": "dress",
+      "maxi dress": "dress", "ball gown": "dress", "evening gown": "dress", "wedding dress": "dress",
+      "halter dress": "dress", "tank dress": "dress", "corset dress": "dress", "tunic dress": "dress",
+      "t-shirt dress": "dress", "sweatshirt dress": "dress", "camisole dress": "dress",
+      "mermaid dress": "dress", "nightgown": "dress", "pinafore dress": "dress",
+      "overall dress": "dress", "bridesmaid dress": "dress", "halter neck dress": "dress",
+      "kaftan": "dress", "denim shirt dress": "dress",
+
+      "top": "top", "crop top": "top", "tank top": "top", "camisole": "top",
+      "halter top": "top", "corset top": "top", "tube top": "top", "bandeau top": "top",
+      "cropped top": "top", "hooded top": "top", "kimono-style top": "top",
+      "turtleneck top": "top", "bodice": "top", "bodysuit": "top",
+
+      "shirt": "shirt", "blouse": "shirt", "button-up shirt": "shirt", "denim shirt": "shirt",
+      "polo shirt": "shirt", "t-shirt": "shirt", "T-shirt": "shirt", "tunic": "shirt",
+      "hockey jersey": "shirt",
+
+      "sweater": "sweater", "turtleneck sweater": "sweater", "hooded sweater": "sweater",
+      "pullover": "sweater", "sweatshirt": "sweater", "hoodie": "sweater",
+
+      "cardigan": "cardigan",
+
+      "jacket": "jacket", "denim jacket": "jacket", "biker jacket": "jacket",
+      "bomber jacket": "jacket", "puffer jacket": "jacket", "varsity jacket": "jacket",
+      "tuxedo jacket": "jacket", "down jacket": "jacket", "fleece jacket": "jacket",
+      "bolero jacket": "jacket", "hooded jacket": "jacket", "winter jacket": "jacket",
+      "ski jacket": "jacket", "aviator jacket": "jacket", "hooded denim jacket": "jacket",
+
+      "coat": "coat", "parka": "coat", "trench coat": "coat", "winter coat": "coat", "fur coat": "coat",
+      "puffer coat": "coat", "overcoat": "coat", "peacoat": "coat", "down coat": "coat",
+
+      "blazer": "blazer", "suit": "blazer", "two-piece suit": "blazer", "skirt suit": "blazer",
+
+      "vest": "vest", "sweater vest": "vest",
+
+      "pants": "pants", "pant": "pants", "trousers": "pants", "cargo pants": "pants",
+      "capri pants": "pants", "athletic pants": "pants", "pajama pants": "pants",
+      "sweatpants": "pants", "joggers": "pants", "jogger pants": "pants",
+      "bloomers": "pants", "culottes": "pants",
+
+      "jeans": "jeans", "denim pant": "jeans",
+
+      "shorts": "shorts",
+      "skirt": "skirt", "mini skirt": "skirt", "short skirt": "skirt",
+      "leggings": "leggings", "gaiters": "leggings",
+
+      "romper": "jumpsuit", "jumpsuit": "jumpsuit", "overalls": "jumpsuit",
+      "outfit": "jumpsuit", "two-piece outfit": "jumpsuit",
+
+      "sports bra": "underwear_swim", "bralette": "underwear_swim", "bra": "underwear_swim",
+      "corset": "underwear_swim", "bustier": "underwear_swim", "lingerie set": "underwear_swim",
+      "swimsuit": "underwear_swim", "one-piece swimsuit": "underwear_swim",
+      "bikini top": "underwear_swim", "garter belt": "underwear_swim",
+
+      "poncho": "outer_wrap", "cape": "outer_wrap", "shawl": "outer_wrap",
+      "kimono": "outer_wrap", "robe": "outer_wrap", "cloak": "outer_wrap",
+      "shrug": "outer_wrap", "stole": "outer_wrap", "scarf": "outer_wrap",
+      "hooded garment": "outer_wrap",
+
+      "clutch": "non_garment", "bag": "non_garment", "handbag": "non_garment",
+      "briefcase": "non_garment", "shoulder bag": "non_garment", "pouch": "non_garment",
+      "headband": "non_garment", "gloves": "non_garment", "collar": "non_garment"
+    },
+    "rules": [
+      ["bag", "non_garment"], ["purse", "non_garment"],
+      ["dress", "dress"], ["gown", "dress"],
+      ["jacket", "jacket"], ["coat", "coat"], ["blazer", "blazer"],
+      ["sweater", "sweater"], ["cardigan", "cardigan"], ["vest", "vest"],
+      ["jean", "jeans"], ["short", "shorts"], ["skirt", "skirt"],
+      ["legging", "leggings"], ["pant", "pants"], ["trouser", "pants"],
+      ["shirt", "shirt"], ["blouse", "shirt"],
+      ["top", "top"], ["bra", "underwear_swim"], ["swim", "underwear_swim"]
+    ]
+  },
+
+  "color": {
+    "canonical": [
+      "black", "white", "gray", "beige", "brown", "red", "orange", "yellow",
+      "green", "blue", "purple", "pink", "gold", "silver", "multicolor", "unknown"
+    ],
+    "modifiers": [
+      "light", "dark", "deep", "pale", "pastel", "muted", "soft", "medium",
+      "bright", "neon", "hot", "faded", "warm", "cool", "heather", "burnt",
+      "dusty", "metallic", "off", "wash", "shiny", "matte", "rich", "vivid"
+    ],
+    "leak": {
+      "denim": "material", "plaid": "pattern", "striped": "pattern",
+      "geometric": "pattern", "floral": "pattern", "sheer": "finish",
+      "transparent": "finish", "translucent": "finish", "shimmer": "finish",
+      "metallic": "finish", "iridescent": "finish", "pastel": "modifier_only",
+      "dark speckled": "finish"
+    },
+    "exact": {
+      "cream": "white", "off-white": "white", "ivory": "white", "white": "white",
+      "black": "black", "black heather": "black",
+      "gray": "gray", "grey": "gray", "charcoal": "gray",
+      "beige": "beige", "tan": "beige", "camel": "beige", "khaki": "beige", "nude": "beige",
+      "brown": "brown", "chocolate": "brown",
+      "red": "red", "maroon": "red", "burgundy": "red", "wine": "red", "wine red": "red",
+      "berry": "red", "crimson": "red", "scarlet": "red", "coral red": "red",
+      "orange": "orange", "coral": "orange", "peach": "orange", "peachy": "orange",
+      "rust": "orange", "salmon": "orange", "apricot": "orange",
+      "yellow": "yellow", "mustard": "yellow", "mustard yellow": "yellow", "lemon": "yellow",
+      "green": "green", "olive": "green", "olive green": "green", "olive-green": "green",
+      "mint green": "green", "mint": "green", "lime green": "green", "lime": "green",
+      "teal green": "green", "khaki olive green": "green", "emerald": "green", "sage": "green",
+      "blue": "blue", "navy": "blue", "navy blue": "blue", "teal": "blue",
+      "turquoise": "blue", "aqua": "blue", "aqua blue": "blue", "cobalt blue": "blue",
+      "royal blue": "blue", "denim blue": "blue", "sky blue": "blue", "indigo": "blue",
+      "purple": "purple", "plum": "purple", "lilac": "purple", "lavender": "purple",
+      "mauve": "purple", "violet": "purple", "eggplant": "purple",
+      "pink": "pink", "magenta": "pink", "rose": "pink", "dusty rose": "pink",
+      "blush": "pink", "blush pink": "pink", "fuchsia": "pink",
+      "gold": "gold", "rose gold": "gold", "champagne": "gold", "bronze": "gold", "brass": "gold",
+      "silver": "silver", "chrome": "silver", "pewter": "silver",
+      "multicolor": "multicolor", "multicolored": "multicolor", "multi-color": "multicolor",
+      "multi-colored": "multicolor", "rainbow": "multicolor", "colorful": "multicolor",
+      "marbled": "multicolor", "ombre": "multicolor", "pastel ombre": "multicolor",
+      "pastel rainbow gradient": "multicolor", "tie-dye": "multicolor", "gradient": "multicolor"
+    }
+  },
+
+  "material": {
+    "canonical": [
+      "denim", "knit", "lace", "leather", "fur", "sequin", "velvet", "mesh",
+      "wool", "satin", "suede", "corduroy", "tweed", "chiffon", "fleece",
+      "silk", "cotton", "linen", "unknown"
+    ],
+    "rare_threshold": 20,
+    "exact": {
+      "faux fur": "fur", "faux leather": "leather", "pu leather": "leather",
+      "sequins": "sequin", "sequined": "sequin", "knitted": "knit", "cable knit": "knit",
+      "woolen": "wool", "cotton blend": "cotton", "jean": "denim"
+    }
+  },
+
+  "pattern": {
+    "canonical": [
+      "solid", "lace/openwork", "embroidered", "graphic/text print", "floral",
+      "striped", "color block", "geometric", "animal print", "plaid",
+      "abstract", "polka dot", "camouflage", "unknown"
+    ],
+    "non_solid_is": "any pattern value other than solid/unknown",
+    "exact": {
+      "stripes": "striped", "stripe": "striped", "openwork": "lace/openwork",
+      "lace": "lace/openwork", "embroidery": "embroidered", "print": "graphic/text print",
+      "graphic print": "graphic/text print", "text print": "graphic/text print",
+      "colorblock": "color block", "color-block": "color block",
+      "polka dots": "polka dot", "camo": "camouflage", "leopard": "animal print",
+      "zebra": "animal print", "checkered": "plaid", "check": "plaid", "gingham": "plaid"
+    }
+  },
+
+  "sleeve": {
+    "canonical": [
+      "long", "three_quarter", "short", "cap", "sleeveless", "strap",
+      "strapless", "off_shoulder", "one_shoulder", "unknown", "not_applicable"
+    ],
+    "leak_exact": [
+      "leather", "black leather", "leather-like", "off-shoulder leather",
+      "lace", "sheer lace", "lace/openwork", "mesh", "sheer mesh", "long-sleeved mesh",
+      "quilted", "ribbed", "striped", "fluffy", "textured", "cable-knit", "padded",
+      "feathered", "sheer", "tulle", "fur-trimmed", "fur-lined", "biker-style",
+      "studded", "distressed"
+    ],
+    "shape_only_exact": [
+      "ruffled", "puffed", "puff", "bell", "batwing", "dolman", "raglan", "balloon",
+      "flared", "wide", "draped", "loose", "oversized", "cuffed", "rolled", "ruched",
+      "cropped", "open", "buttoned", "lace-up", "bow", "asymmetrical", "cut-out",
+      "fringed", "long shaggy", "wide, draped", "wide, open", "wide, cape-style",
+      "wide, loose-fitting", "wide, bell-shaped", "wide sleeve"
+    ],
+    "rules": [
+      ["sleeveless", "sleeveless"],
+      ["no sleeve", "sleeveless"],
+      ["halter", "sleeveless"],
+      ["sling", "sleeveless"],
+      ["strapless", "strapless"],
+      ["off-the-shoulder", "off_shoulder"],
+      ["off-shoulder", "off_shoulder"],
+      ["cold shoulder", "off_shoulder"],
+      ["cold-shoulder", "off_shoulder"],
+      ["one-shoulder", "one_shoulder"],
+      ["one shoulder", "one_shoulder"],
+      ["cape sleeve", "one_shoulder"],
+      ["strap", "strap"],
+      ["three-quarter", "three_quarter"],
+      ["three quarter", "three_quarter"],
+      ["3/4", "three_quarter"],
+      ["quarter-length", "three_quarter"],
+      ["cap sleeve", "cap"],
+      ["short", "short"],
+      ["long", "long"],
+
+      ["_comment", "以下为尾部兜底: 仅当上面没有任何长度词命中时才生效, 一律判 unknown"],
+      ["ruffl", "unknown"], ["bell", "unknown"], ["puff", "unknown"],
+      ["rolled", "unknown"], ["cuff", "unknown"], ["ruch", "unknown"],
+      ["batwing", "unknown"], ["dolman", "unknown"], ["raglan", "unknown"],
+      ["balloon", "unknown"], ["flare", "unknown"], ["drape", "unknown"],
+      ["wide", "unknown"], ["loose", "unknown"], ["oversiz", "unknown"],
+      ["crop", "unknown"], ["lace", "unknown"], ["mesh", "unknown"],
+      ["sheer", "unknown"], ["leather", "unknown"], ["quilt", "unknown"],
+      ["pad", "unknown"], ["fur", "unknown"], ["feather", "unknown"],
+      ["stud", "unknown"], ["knit", "unknown"], ["tulle", "unknown"],
+      ["fring", "unknown"], ["bow", "unknown"], ["cut-out", "unknown"],
+      ["asymmetr", "unknown"], ["open", "unknown"], ["button", "unknown"],
+      ["textur", "unknown"], ["stripe", "unknown"], ["biker", "unknown"],
+      ["distress", "unknown"], ["fluffy", "unknown"], ["shaggy", "unknown"],
+      ["ribbed", "unknown"], ["tie", "unknown"], ["belt", "unknown"],
+      ["graphic", "unknown"], ["checker", "unknown"], ["cable", "unknown"]
+    ]
+  },
+
+  "collar": {
+    "canonical": [
+      "round", "v_neck", "turtleneck", "high_neck", "stand_collar", "hood",
+      "lapel", "shirt_collar", "square", "boat", "scoop", "sweetheart",
+      "halter", "strapless", "off_shoulder", "unknown", "not_applicable"
+    ],
+    "leak_exact": [
+      "lace/openwork", "lace", "lace openwork", "lace panel", "lace overlay",
+      "lace yoke", "circular lace", "quilted", "velvet", "ribbed", "distressed",
+      "frayed hemline", "biker", "fur collar", "fur-trimmed", "fur-lined",
+      "fur trim", "faux fur", "shearling", "sequined collar", "feathered",
+      "structured", "classic", "textured collar", "black collar", "velvet collar",
+      "collar", "collared", "neckline", "decorative collar", "simple neckline",
+      "shaped collar", "scalloped", "draped", "wide", "open", "none"
+    ],
+    "rules": [
+      ["turtleneck", "turtleneck"],
+      ["mock neck", "turtleneck"],
+      ["mock-neck", "turtleneck"],
+      ["hood", "hood"],
+      ["lapel", "lapel"],
+      ["notch", "lapel"],
+      ["v-neck", "v_neck"],
+      ["v neck", "v_neck"],
+      ["vneck", "v_neck"],
+      ["v-shaped", "v_neck"],
+      ["sweetheart", "sweetheart"],
+      ["heart neckline", "sweetheart"],
+      ["square", "square"],
+      ["boat", "boat"],
+      ["scoop", "scoop"],
+      ["halter", "halter"],
+      ["strapless", "strapless"],
+      ["bandeau", "strapless"],
+      ["tube", "strapless"],
+      ["bustier", "strapless"],
+      ["underwire", "strapless"],
+      ["off-the-shoulder", "off_shoulder"],
+      ["off-shoulder", "off_shoulder"],
+      ["one-shoulder", "off_shoulder"],
+      ["stand", "stand_collar"],
+      ["high", "high_neck"],
+      ["crew", "round"],
+      ["round", "round"],
+      ["o-neck", "round"],
+      ["circular", "round"],
+      ["rounded", "round"],
+      ["button-up", "shirt_collar"],
+      ["button-down", "shirt_collar"],
+      ["buttoned collar", "shirt_collar"],
+      ["classic collar", "shirt_collar"],
+      ["point collar", "shirt_collar"],
+      ["pointed", "shirt_collar"],
+      ["polo", "shirt_collar"],
+      ["shawl collar", "shirt_collar"],
+      ["peter pan", "shirt_collar"],
+      ["wrap collar", "shirt_collar"],
+
+      ["_comment", "以下为尾部兜底: 仅当上面没有任何形状词命中时才生效, 一律判 unknown"],
+      ["cowl", "unknown"], ["plunging", "unknown"], ["ruffl", "unknown"],
+      ["lace", "unknown"], ["racerback", "unknown"], ["collarless", "unknown"],
+      ["scallop", "unknown"], ["straight neckline", "unknown"], ["low neckline", "unknown"],
+      ["deep neckline", "unknown"], ["keyhole", "unknown"], ["choker", "unknown"],
+      ["criss-cross", "unknown"], ["crisscross", "unknown"], ["strappy", "unknown"],
+      ["strap", "unknown"], ["bow", "unknown"], ["tie", "unknown"],
+      ["open back", "unknown"], ["low back", "unknown"], ["backless", "unknown"],
+      ["cut-out", "unknown"], ["cutout", "unknown"], ["mesh", "unknown"],
+      ["sheer", "unknown"], ["fur", "unknown"], ["shearling", "unknown"],
+      ["velvet", "unknown"], ["sequin", "unknown"], ["stud", "unknown"],
+      ["embroider", "unknown"], ["embellish", "unknown"], ["brooch", "unknown"],
+      ["chain", "unknown"], ["ribbon", "unknown"], ["zip", "unknown"],
+      ["placket", "unknown"], ["drawstring", "unknown"], ["gathered", "unknown"],
+      ["twisted", "unknown"], ["asymmetr", "unknown"], ["corset", "unknown"],
+      ["bodice", "unknown"], ["bustline", "unknown"], ["yoke", "unknown"],
+      ["trim", "unknown"], ["quarter-zip", "unknown"], ["half-zip", "unknown"]
+    ]
+  }
+}
