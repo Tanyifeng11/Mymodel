@@ -85,6 +85,41 @@ def _get_detail_text_scale(name: str) -> float:
     return 0.05
 
 
+def _opt_float(v):
+    """
+    默认值为 None 的浮点参数。shell 里写 --aa_tcr_max_alpha "${MAX_ALPHA:-None}"
+    时, 变量未设会展开成字面量字符串 "None", type=float 会直接报错退出。
+    这里把 "none"/"null"/"" 都当作"没传", 与 default=None 语义一致。
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s == "" or s.lower() in ("none", "null"):
+        return None
+    return float(s)
+
+
+def _opt_int(v):
+    """--aa_tcr_head_dim 同理: 默认 None, 可能被 shell 展开成字面量 "None"。"""
+    f = _opt_float(v)
+    return None if f is None else int(f)
+
+
+def _aa_console_stats(aa_tcr_fuser, accelerator=None):
+    """
+    从 AA-TCR Fuser 取控制台要打的几个关键量。E7a 判据全靠它们:
+    alpha_* 是否离开 0(模块在学)、cover_pattern(真实词命中率, 与 fallback 无关)、
+    rel_change(残差相对幅度, 方案第 430 行的止损指标)。
+    """
+    if aa_tcr_fuser is None:
+        return {}
+    raw = accelerator.unwrap_model(aa_tcr_fuser) if accelerator is not None else aa_tcr_fuser
+    stats = getattr(raw, "last_stats", {}) or {}
+    keys = ("alpha_color", "alpha_material", "alpha_pattern",
+            "cover_color", "cover_material", "cover_pattern", "rel_change")
+    return {k: float(stats[k]) for k in keys if k in stats}
+
+
 def collect_tcpm_summary(tcpm_lite, unet=None):
     summary = {
         "residual_scale": 0.0,
@@ -1454,9 +1489,9 @@ def main():
     ap.add_argument("--use_aa_tcr_fuse", type=int, default=0, choices=[0, 1])
     ap.add_argument("--aa_tcr_lr", type=float, default=5e-5)
     ap.add_argument("--aa_tcr_num_heads", type=int, default=4)
-    ap.add_argument("--aa_tcr_head_dim", type=int, default=None)
+    ap.add_argument("--aa_tcr_head_dim", type=_opt_int, default=None)
     ap.add_argument("--aa_tcr_alpha_init", type=float, default=0.0)
-    ap.add_argument("--aa_tcr_max_alpha", type=float, default=None)
+    ap.add_argument("--aa_tcr_max_alpha", type=_opt_float, default=None)
     ap.add_argument("--aa_tcr_empty_fallback", type=int, default=1, choices=[0, 1])
     # >0 时只取数据集前 N 条(E7a smoke test 用 128~256)
     ap.add_argument("--max_train_samples", type=int, default=0)
@@ -1874,7 +1909,9 @@ def main():
 
     unet_late_params = []
     unet_late_names = []
-    if args.use_tcpm_lite and args.freeze_for_tcpm_lite:
+    # freeze_all_but_aa_tcr 优先级更高: 它要求"可训练参数仅 AA-TCR Fuse",
+    # 而这个分支会把 tcpm_lite 重新解冻, 两者冲突时以前者为准。
+    if args.use_tcpm_lite and args.freeze_for_tcpm_lite and not args.freeze_all_but_aa_tcr:
         for p in unet.parameters():
             p.requires_grad = False
         for p in ref_unet.parameters():
@@ -2055,16 +2092,17 @@ def main():
                     print(f"[debug] gate[{idx}] {name} {tuple(proc.texture_gate_delta.shape)}")
 
     if accelerator.is_main_process:
-        print_trainable_frozen_summary(
-            [
-                ("unet", unet),
-                ("bf_texture_conditioner", bf),
-                ("spatial_texture_encoder", spatial_texture_encoder),
-                ("spatial_injection", spatial_injection),
-                ("palette_token_mlp", palette_token_mlp),
-                ("tcpm_lite", tcpm_lite),
-            ]
-        )
+        summary_modules = [
+            ("unet", unet),
+            ("bf_texture_conditioner", bf),
+            ("spatial_texture_encoder", spatial_texture_encoder),
+            ("spatial_injection", spatial_injection),
+            ("palette_token_mlp", palette_token_mlp),
+            ("tcpm_lite", tcpm_lite),
+        ]
+        if aa_tcr_fuser is not None:
+            summary_modules.append(("aa_tcr_fuser", aa_tcr_fuser))
+        print_trainable_frozen_summary(summary_modules)
 
     # dataset
     ds = JointTextureDataset(
@@ -2772,6 +2810,15 @@ def main():
                         f"mean_conflict={batch['color_conflict_score'].detach().float().mean().item():.3f}, "
                         f"high_conflict={(batch['color_conflict_score'].detach().float() >= args.conflict_threshold).sum().item()}, "
                         f"encoder_hidden_states={tuple(enc_h.shape)}"
+                        + (
+                            # E7 关键观测量: alpha 是否离开 0、pattern 真实命中率、
+                            # 残差相对幅度。只进 wandb 的话看不到, 控制台也打一份。
+                            ", " + ", ".join(
+                                "aa_%s=%.6f" % (k, v)
+                                for k, v in _aa_console_stats(aa_tcr_fuser, accelerator).items()
+                            )
+                            if aa_tcr_fuser is not None else ""
+                        )
                     )
 
                 if (

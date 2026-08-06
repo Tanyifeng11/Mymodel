@@ -21,8 +21,10 @@ A^T 即为 [B, 16, N_text], 数值上一致但 mask 处理更安全(见下)。
 
 三个关键设计:
 
-1. alpha 零初始化。训练开始时输出与 E5 逐位相同, 保证不会一上来就破坏
-   已有的草图结构和边界表现(方案第 12 节硬约束 4)。
+1. alpha 零初始化, 且 **只有** alpha 零初始化。训练开始时输出与 E5 逐位相同,
+   保证不会一上来就破坏已有的草图结构和边界表现(方案第 12 节硬约束 4)。
+   输出投影 to_out 必须是非零的小随机初始化 —— 两处同时置零会造成梯度死锁,
+   模块永远学不动, 详见 _AttributeCrossAttention.__init__ 的注释。
 
 2. 空 mask 必须显式置零。真实数据里 80% 的 caption 根本没提图案词,
    pattern mask 整行为 False; 对全 -inf 的行做 softmax 会得到 NaN 并在
@@ -62,8 +64,16 @@ class _AttributeCrossAttention(nn.Module):
         self.to_v = nn.Linear(dim, inner, bias=False)
         self.to_out = nn.Linear(inner, dim, bias=False)
 
-        # 输出投影零初始化: 配合外层 alpha, 双重保证初始残差恰好为 0
-        nn.init.zeros_(self.to_out.weight)
+        # to_out 必须是非零的小随机初始化, 不能置零。
+        # 残差是 alpha * to_out(...)。若 alpha 与 to_out 同时为 0:
+        #     d(loss)/d(alpha)  ∝ to_out(...) = 0
+        #     d(loss)/d(to_out) ∝ alpha       = 0
+        # 两者互为对方唯一的梯度来源, 双零即互锁, 永远出不来(见
+        # test_e7a_deadlock.py)。初始残差恒为 0 这一硬约束由外层 alpha=0
+        # 单独保证即可, 这里只需保证 to_out 有梯度可回传。
+        # std=0.02 而非默认 kaiming: alpha 离 0 后残差方向虽是随机的, 幅度
+        # 足够小, 不会一上来就把已有的草图结构带偏。
+        nn.init.normal_(self.to_out.weight, std=0.02)
 
     def forward(self, tex: torch.Tensor, txt: torch.Tensor,
                 mask: torch.Tensor, txt_lengths: Optional[torch.Tensor] = None,
@@ -132,7 +142,8 @@ class AttributeTextTextureFuser(nn.Module):
     per-attribute alpha 加回纹理 token。
 
     alpha 全部零初始化 => 模块初始输出 == 输入, 精确退化为 E5。
-    """
+    注意只有 alpha 零初始化; to_out 是小随机初始化, 否则梯度死锁。
+"""
 
     def __init__(self,
                  hidden_dim: int = 768,
@@ -280,12 +291,12 @@ def _self_test():
     print("2. 空 mask 不产生 NaN/Inf       : %s" % ("OK" if finite else "FAIL"))
     ok &= finite
 
-    # 放开 alpha 后应当真的改变输出, 且仍然有限
+    # 放开 alpha 后应当真的改变输出, 且仍然有限。
+    # 这里只动 alpha, 不再手动重初始化 to_out —— 出厂 to_out 就是小随机值,
+    # 测的必须是真正会跑起来的那个状态。
     with torch.no_grad():
         for a in ATTRIBUTE_NAMES:
             f.alpha[a].fill_(1.0)
-        for a in ATTRIBUTE_NAMES:
-            nn.init.normal_(f.blocks[a].to_out.weight, std=0.02)
     out2 = f(tex, txt, masks, input_ids=ids)
     finite2 = torch.isfinite(out2).all().item()
     changed = not torch.allclose(out2, tex, atol=1e-6)
@@ -305,7 +316,6 @@ def _self_test():
     with torch.no_grad():
         for a in ATTRIBUTE_NAMES:
             f_nf.alpha[a].fill_(1.0)
-            nn.init.normal_(f_nf.blocks[a].to_out.weight, std=0.02)
     out_nf = f_nf(tex, txt, masks, input_ids=ids)
     d3nf = (out_nf[3] - tex[3]).abs().max().item()
     print("5. 关 fallback 时全空残差为 0   : %s (max|diff|=%.2e)"
@@ -335,7 +345,6 @@ def _self_test():
         with torch.no_grad():
             for a in ATTRIBUTE_NAMES:
                 fh.alpha[a].fill_(1.0)
-                nn.init.normal_(fh.blocks[a].to_out.weight, std=0.02)
         oh = fh(tex.half(), txt.half(), masks, input_ids=ids)
         hok = torch.isfinite(oh).all().item()
     except Exception as e:                                   # noqa: BLE001
@@ -370,6 +379,37 @@ def _self_test():
     print("11. max_alpha raw/effective 分开记录: %s (raw=%.2f eff=%.4f)"
           % ("OK" if cok else "FAIL", raw, eff))
     ok &= cok
+
+    # 12. 出厂状态就跑一遍真实优化器循环。这一条是补上之前测试设计的漏洞:
+    # 前面几条都是先手动把 alpha 设成 1 才测梯度, 模拟的是"训练若干步之后",
+    # 而 E7a 真正跑的是出厂状态。alpha 与 to_out 同时置零会互锁, 梯度恒为 0,
+    # 只有这一条能抓到。判据是梯度范数, 以及 alpha 有没有离开 0 ——
+    # AdamW 的解耦权重衰减在梯度为 0 时照样会挪动权重, "参数变了"不作判据。
+    fg = AttributeTextTextureFuser(hidden_dim=D)     # 完全默认, 不动任何权重
+    target = torch.randn(B, Nt, D)
+    opt = torch.optim.AdamW(fg.parameters(), lr=1e-3)
+    gnorms = []
+    for _ in range(20):
+        opt.zero_grad()
+        loss = (fg(tex, txt, masks, input_ids=ids) - target).pow(2).mean()
+        loss.backward()
+        gnorms.append(float(torch.nn.utils.clip_grad_norm_(fg.parameters(), 1.0)))
+        opt.step()
+    alpha_moved = max(abs(float(fg.alpha[a].detach())) for a in ATTRIBUTE_NAMES)
+    gok2 = max(gnorms) > 1e-8 and alpha_moved > 1e-8
+    print("12. 出厂状态非死锁(可训练)      : %s (grad_norm 首=%.3e 末=%.3e, "
+          "max|alpha|=%.3e)"
+          % ("OK" if gok2 else "FAIL", gnorms[0], gnorms[-1], alpha_moved))
+    if not gok2:
+        print("    -> alpha 与 to_out 不可同时零初始化: 残差 alpha*to_out(...) 的"
+              "两个因子互为对方唯一梯度来源, 双零即互锁。")
+    ok &= gok2
+
+    # 13. 出厂状态下 to_out 必须非零(上一条的直接成因, 单独报一行便于定位)
+    zok = all(float(fg.blocks[a].to_out.weight.abs().max()) > 0
+              for a in ATTRIBUTE_NAMES)
+    print("13. 出厂 to_out 非零初始化      : %s" % ("OK" if zok else "FAIL"))
+    ok &= zok
 
     n = sum(p.numel() for p in f.parameters())
     print("\n新增参数量: %.2fM" % (n / 1e6))
