@@ -25,6 +25,7 @@ from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcesso
 from models.bf_texture_module import BFTextureConditioner
 from models.palette_tokenizer import PaletteTokenMLP
 from models.tcpm_lite import TCPMLite
+from models.attribute_token_mask import build_attribute_masks
 from texture_preprocess import preprocess_texture_image
 from checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 from color_conflict_utils import compute_color_conflict
@@ -81,6 +82,7 @@ class IMAGGarment(StableDiffusionPipeline):
         use_tcpm_lite=False,
         tcpm_hidden_ratio=0.25,
         tcpm_residual_scale_init=0.0,
+        aa_tcr_fuser=None,
     ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor)
 
@@ -96,6 +98,7 @@ class IMAGGarment(StableDiffusionPipeline):
             spatial_injection=spatial_injection,
             safety_checker=safety_checker,
             feature_extractor=feature_extractor,
+            aa_tcr_fuser=aa_tcr_fuser,
         )
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
         self.clip_image_processor = CLIPImageProcessor()
@@ -130,6 +133,7 @@ class IMAGGarment(StableDiffusionPipeline):
         self.use_palette_tokens = False
         self.num_palette_tokens = 4
         self.palette_token_mlp = None
+        self.aa_tcr_fuser = aa_tcr_fuser
         self.load_texture_adapter()
 
     def _setup_layer_groups(self):
@@ -591,6 +595,46 @@ class IMAGGarment(StableDiffusionPipeline):
         return image
 
     @torch.inference_mode()
+    def _apply_aa_tcr_fuse(self, texture_tokens, text_embeds, captions):
+        if self.aa_tcr_fuser is None or text_embeds is None:
+            return texture_tokens
+
+        batch_size = text_embeds.shape[0]
+        if captions is None:
+            captions = [""] * batch_size
+        elif isinstance(captions, str):
+            captions = [captions] * batch_size
+        else:
+            captions = list(captions)
+            if len(captions) == 1 and batch_size > 1:
+                captions *= batch_size
+        if len(captions) != batch_size:
+            raise ValueError(
+                "AA-TCR captions batch size %d does not match text embeddings batch size %d"
+                % (len(captions), batch_size)
+            )
+
+        input_ids = self.tokenizer(
+            captions,
+            padding="max_length",
+            truncation=True,
+            max_length=text_embeds.shape[1],
+            return_tensors="pt",
+        ).input_ids.to(texture_tokens.device)
+        attribute_masks = build_attribute_masks(
+            captions,
+            self.tokenizer,
+            max_length=text_embeds.shape[1],
+            device=texture_tokens.device,
+        )
+        return self.aa_tcr_fuser(
+            texture_tokens,
+            text_embeds,
+            attribute_masks=attribute_masks,
+            input_ids=input_ids,
+        )
+
+    @torch.inference_mode()
     def get_image_embeds(
         self,
         pil_image=None,
@@ -600,6 +644,8 @@ class IMAGGarment(StableDiffusionPipeline):
         texture_mode="patch_resampled",
         text_embeds=None,
         negative_text_embeds=None,
+        aa_tcr_captions=None,
+        aa_tcr_negative_captions=None,
     ):
         clip_patch_tokens = None
         if pil_image is not None:
@@ -635,6 +681,9 @@ class IMAGGarment(StableDiffusionPipeline):
             )
             if self.use_tcpm_lite and text_embeds is not None:
                 image_prompt_embeds = self.tcpm_lite(image_prompt_embeds, text_embeds)
+            image_prompt_embeds = self._apply_aa_tcr_fuse(
+                image_prompt_embeds, text_embeds, aa_tcr_captions
+            )
 
             zero_clip = torch.zeros_like(clip_image_embeds)
             zero_patch = torch.zeros_like(clip_patch_tokens) if clip_patch_tokens is not None else None
@@ -650,6 +699,11 @@ class IMAGGarment(StableDiffusionPipeline):
                     uncond_image_prompt_embeds,
                     negative_text_embeds,
                 )
+            uncond_image_prompt_embeds = self._apply_aa_tcr_fuse(
+                uncond_image_prompt_embeds,
+                negative_text_embeds,
+                aa_tcr_negative_captions,
+            )
         else:
             image_prompt_embeds = self.image_proj_model(clip_image_embeds)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
@@ -849,6 +903,8 @@ class IMAGGarment(StableDiffusionPipeline):
                     texture_mode=texture_mode,
                     text_embeds=prompt_embeds,
                     negative_text_embeds=negative_prompt_embeds,
+                    aa_tcr_captions=prompt,
+                    aa_tcr_negative_captions=negative_prompt,
                 )
                 image_prompt_embeds = image_prompt_embeds * texture_scale
                 uncond_image_prompt_embeds = uncond_image_prompt_embeds * texture_scale

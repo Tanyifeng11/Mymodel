@@ -16,6 +16,7 @@ from adapter.attention_processor import LogoCacheSAttnProcessor2_0, LogoRefSAttn
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
+from models.attribute_text_texture_fuser import AttributeTextTextureFuser
 import argparse
 from garment_mask_utils import build_sketch_garment_mask
 
@@ -342,6 +343,31 @@ def prepare(args):
             proc.num_tokens = args.texture_num_tokens
     print(f"[prepare] effective texture_num_tokens for IPAttnProcessor2_0: {args.texture_num_tokens}")
 
+    gam_state = gam_info.get("state", {})
+    aa_tcr_fuser = None
+    aa_tcr_state = gam_state.get("aa_tcr_fuser", {})
+    if args.use_aa_tcr_fuse:
+        if not aa_tcr_state:
+            raise RuntimeError(
+                "use_aa_tcr_fuse=1 but GAM checkpoint has no aa_tcr_fuser state"
+            )
+        aa_tcr_fuser = AttributeTextTextureFuser(
+            hidden_dim=unet.config.cross_attention_dim,
+            num_heads=int(gam_meta.get("aa_tcr_num_heads", 4)),
+            head_dim=gam_meta.get("aa_tcr_head_dim"),
+            alpha_init=float(gam_meta.get("aa_tcr_alpha_init", 0.0)),
+            max_alpha=gam_meta.get("aa_tcr_max_alpha"),
+            empty_mask_fallback=bool(gam_meta.get("aa_tcr_empty_fallback", 1)),
+        ).to(device=args.device, dtype=torch.float16)
+        missing, unexpected = aa_tcr_fuser.load_state_dict(aa_tcr_state, strict=False)
+        if missing or unexpected:
+            raise RuntimeError(
+                "AA-TCR checkpoint is incomplete: "
+                f"missing={missing}, unexpected={unexpected}"
+            )
+        aa_tcr_fuser.eval()
+        print("[prepare] restored AA-TCR Fuse from GAM checkpoint")
+
     spatial_texture_encoder = None
     spatial_injection = None
     if args.texture_condition_mode in ("spatial", "hybrid"):
@@ -387,6 +413,7 @@ def prepare(args):
                          use_tcpm_lite=bool(args.use_tcpm_lite),
                          tcpm_hidden_ratio=args.tcpm_hidden_ratio,
                          tcpm_residual_scale_init=args.tcpm_residual_scale_init,
+                         aa_tcr_fuser=aa_tcr_fuser,
                          scheduler=noise_scheduler,
                          safety_checker=StableDiffusionSafetyChecker,
                          feature_extractor=CLIPImageProcessor)
@@ -395,7 +422,6 @@ def prepare(args):
 
     # IMAGGarment will load args.texture_ckpt in __init__, which can overwrite
     # adapter/BF states already loaded from GAM checkpoint. Restore GAM states here.
-    gam_state = gam_info.get("state", {})
     if "texture_adapter" in gam_state:
         adapter_sd = gam_state["texture_adapter"]
         checkpoint_has_gate = any(
@@ -514,6 +540,7 @@ if __name__ == "__main__":
     parser.add_argument('--balanced_gate_max', type=float, default=1.2)
     parser.add_argument('--use_conflict_aware_gate', type=int, default=0, choices=[0, 1])
     parser.add_argument('--use_tcpm_lite', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--use_aa_tcr_fuse', type=int, default=0, choices=[0, 1])
     parser.add_argument('--tcpm_hidden_ratio', type=float, default=0.25)
     parser.add_argument('--tcpm_residual_scale_init', type=float, default=0.0)
     parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.1)
