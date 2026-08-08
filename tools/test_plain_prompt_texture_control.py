@@ -142,6 +142,8 @@ def main():
             generator=generator,
             num_inference_steps=args.num_inference_steps,
             texture_mode=args.texture_mode,
+            texture_condition_mode=args.texture_condition_mode,
+            texture_preprocess_mode=args.texture_preprocess_mode,
             texture_num_tokens=args.texture_num_tokens,
             texture_scale=args.texture_scale,
         )[0]
