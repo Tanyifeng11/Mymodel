@@ -30,6 +30,7 @@ SUMMARY_METRICS = {
     "struct_iou_mean": "higher",
     "leak_colored_frac_mean": "lower",
     "leak_edge_density_mean": "lower",
+    "prompt_color_delta_e_mean": "lower",
 }
 
 PER_SAMPLE_METRICS = {
@@ -37,11 +38,21 @@ PER_SAMPLE_METRICS = {
     "clip_i_texture": "higher",
     "tpf_patch_sim": "higher",
     "tcf_lab_delta": "lower",
+    "prompt_color_delta_e": "lower",
     "struct_edge_f1": "higher",
     "struct_iou": "higher",
     "leak_colored_frac": "lower",
     "leak_edge_density": "lower",
 }
+
+SUBSET_GROUPS = (
+    "all",
+    "pattern_hit",
+    "pattern_fallback",
+    "color_conflict",
+    "high_conflict",
+    "no_text_color",
+)
 
 
 def finite_float(value):
@@ -88,8 +99,13 @@ def group_names(row):
     groups.append("pattern_hit" if find_spans(prompt, "pattern") else "pattern_fallback")
     if str(row.get("conflict_bucket", "")) == "no_text_color":
         groups.append("no_text_color")
-    elif finite_float(row.get("color_conflict_score")) is not None and float(row["color_conflict_score"]) >= 0.25:
-        groups.append("color_conflict")
+    else:
+        score = finite_float(row.get("color_conflict_score"))
+        if score is not None:
+            if score >= 0.25:
+                groups.append("color_conflict")
+            if score >= 0.55:
+                groups.append("high_conflict")
     return groups
 
 
@@ -176,7 +192,7 @@ def build_subset_rows(samples, experiments, seeds):
     for experiment in experiments:
         for seed in seeds:
             rows = list(samples[experiment][seed].values())
-            for group in ("all", "pattern_hit", "pattern_fallback", "color_conflict", "no_text_color"):
+            for group in SUBSET_GROUPS:
                 selected = [row for row in rows if group in group_names(row)]
                 result = {
                     "experiment": experiment,
@@ -192,7 +208,7 @@ def build_subset_rows(samples, experiments, seeds):
 
     aggregate = []
     for experiment in experiments:
-        for group in ("all", "pattern_hit", "pattern_fallback", "color_conflict", "no_text_color"):
+        for group in SUBSET_GROUPS:
             selected = [
                 row for row in per_seed
                 if row["experiment"] == experiment and row["subset"] == group
@@ -213,7 +229,7 @@ def build_subset_rows(samples, experiments, seeds):
 
 def build_bootstrap_rows(samples, comparisons, seeds, iterations, bootstrap_seed):
     output = []
-    groups = ("all", "pattern_hit", "pattern_fallback", "color_conflict", "no_text_color")
+    groups = SUBSET_GROUPS
     for comparison_index, (candidate, reference) in enumerate(comparisons):
         for group_index, group in enumerate(groups):
             common = []

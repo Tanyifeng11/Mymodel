@@ -9,7 +9,7 @@ SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/phase1_bf_val_split.js
 OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 TEXTURE_CKPT="${TEXTURE_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
 E5_CKPT="${E5_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
-E7A_CKPT="${E7A_CKPT:-${OUTPUT_BASE}/phase1_e7a/checkpoint-final/joint_model.pt}"
+E7A_CKPT="${E7A_CKPT:-${OUTPUT_BASE}/phase1_e7a/joint_model.pt}"
 CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
 
 EVAL_ROOT="${E7A_CONTROL_EVAL_ROOT:-${PROJECT_ROOT}/eval_outputs/e7a_control/sketch_only}"
@@ -38,7 +38,7 @@ common_args=(
   --dataset_json "${DATASET_JSON}" --data_root "${DATA_ROOT_PATH}" --split_path "${SPLIT_PATH}"
   --num_samples "${NUM_SAMPLES}" --seed "${EVAL_SEED}" --sample_id_start 0 --sample_id_end "${NUM_SAMPLES}"
   --resume_generation 1 --skip_existing 1 --overwrite 0 --texture_ckpt "${TEXTURE_CKPT}"
-  --device "${DEVICE}" --modes token --texture_condition_mode token --texture_preprocess_mode plain_resize
+  --device "${DEVICE}" --modes token --texture_preprocess_mode plain_resize
   --use_texture_gate 1 --use_tcpm_lite 1 --layer_group_enabled 1 --clip_model_path "${CLIP_MODEL}"
   --evaluation_protocol original_image_size --compute_kid 1 --kid_subsets "${KID_SUBSETS}" --kid_subset_size "${KID_SUBSET_SIZE}"
   --write_text_sidecars 1
