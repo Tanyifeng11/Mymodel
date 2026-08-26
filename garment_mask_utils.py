@@ -1,12 +1,50 @@
 from collections import deque
+import warnings
 
 import numpy as np
 from PIL import Image, ImageFilter
 
+# ---------------------------------------------------------------------------
+# cv2 后端探测。
+#
+# 历史教训: 既有全部评测报告都跑在 cv2 缺失的环境里, 走了下面的 Pillow fallback。
+# 两条路径的形态学运算并不等价 —— 草图 mask 的置信度判定会变, auto 策略下
+# sketch_flood_fill 的通过率在 70/500(Pillow) 与 364/500(cv2) 之间跳。也就是说
+# 全部 mask 派生指标(leak / boundary / edge / IoU / TCF / TPF)在两条后端之间不可比。
+#
+# opencv-python 在 requirements.txt 里是声明了的, 但非 headless 版依赖 libGL,
+# 在无图形栈的节点上 `import cv2` 会抛 ImportError 并被静默吞掉。所以这里:
+#   1. 捕获所有异常并保留真实原因(不只是 ImportError);
+#   2. 退回 Pillow 时发出 RuntimeWarning, 不再静默;
+#   3. 通过 mask_backend_info() 暴露后端, 供评测脚本写进 diagnostics。
+# ---------------------------------------------------------------------------
+CV2_IMPORT_ERROR = None
 try:
     import cv2
-except ImportError:  # Pillow fallback keeps inference usable in minimal environments.
+except Exception as exc:  # noqa: BLE001 - 常见为 opencv-python 缺 libGL.so.1
     cv2 = None
+    CV2_IMPORT_ERROR = "%s: %s" % (type(exc).__name__, exc)
+    warnings.warn(
+        "garment_mask_utils: cv2 unavailable (%s); falling back to Pillow morphology. "
+        "Mask results WILL differ from the cv2 path, so every mask-derived metric "
+        "becomes incomparable across backends. Install opencv-python-headless, or "
+        "record the backend via mask_backend_info() before comparing any numbers."
+        % CV2_IMPORT_ERROR,
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
+
+def mask_backend_info():
+    """返回当前 mask 形态学后端, 供评测脚本写进 diagnostics.json。
+
+    任何跨 run 的 mask 派生指标比较, 都必须先确认这两个 run 的 mask_backend 相同。
+    """
+    return {
+        "mask_backend": "pillow_fallback" if cv2 is None else "opencv",
+        "cv2_version": None if cv2 is None else str(getattr(cv2, "__version__", "unknown")),
+        "cv2_import_error": CV2_IMPORT_ERROR,
+    }
 
 
 def _odd(value, minimum=3):

@@ -10,9 +10,10 @@
 #SBATCH -o /share/home/u2515283058/Mymodel/log_e7a_report_%j.log
 #SBATCH -e /share/home/u2515283058/Mymodel/log_e7a_report_%j.err
 
-set -euo pipefail
+set -eo pipefail
 source /share/apps/anaconda3/etc/profile.d/conda.sh
 conda activate Mymodel
+set -u
 
 PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 EVAL_ROOT="${E7A_CONTROL_EVAL_ROOT:-${PROJECT_ROOT}/eval_outputs/e7a_control/sketch_only}"

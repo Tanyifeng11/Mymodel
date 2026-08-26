@@ -36,6 +36,7 @@ from eval.metrics import (
     evaluate_full,
     extract_inception_features,
 )
+from garment_mask_utils import mask_backend_info
 from color_conflict_utils import (
     compute_color_conflict,
     conflict_bucket,
@@ -1324,6 +1325,14 @@ def run_benchmark(args):
     )
     diagnostics["mask_source_counts"] = dict(
         Counter(row.get("mask_source") or "missing" for row in rows)
+    )
+    # mask 形态学后端与几何决定了全部 mask 派生指标的取值。历史上这两项都没被
+    # 记录, 导致跨 run 的 leak / boundary / edge / IoU / TCF / TPF 无法判断可比性。
+    diagnostics.update(mask_backend_info())
+    diagnostics["mask_geometry_counts"] = dict(
+        Counter(
+            "%sx%s" % (row.get("mask_width"), row.get("mask_height")) for row in rows
+        )
     )
 
     if args.compute_clip_i:

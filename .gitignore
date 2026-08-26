@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 output/
+output_eval/
 output_sd_base/
 outputs/
 eval_outputs/
