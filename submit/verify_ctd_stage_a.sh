@@ -21,13 +21,15 @@ PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 DATA_ROOT="${CTD_DATA_ROOT:-/share/home/u2515283058/datasets/BF/training}"
 DATASET_JSON="${CTD_DATASET_JSON:-${PROJECT_ROOT}/data/train_bf_texture.json}"
 SD_PATH="${CTD_SD_PATH:-${PROJECT_ROOT}/models/stable-diffusion-v1-5}"
-PER_SAMPLE_CSV="${CTD_PER_SAMPLE_CSV:-${PROJECT_ROOT}/eval_outputs/report_e7a/metrics_per_sample.csv}"
+# 仅供第 2 步构造 CTD 的验证样本清单；不用于 E7a 模型评测。
+# 该路径来自 caption sweep 的既有 plan.json 记录。
+PER_SAMPLE_CSV="${CTD_PER_SAMPLE_CSV:-${PROJECT_ROOT}/eval_outputs/phase1_e7a_500/report_e7a/metrics_per_sample.csv}"
 CTD_SEED="${CTD_SEED:-42}"
 CTD_PREP_LIMIT="${CTD_PREP_LIMIT:-64}"
 CTD_MIN_DELTA_E="${CTD_MIN_DELTA_E:-15.0}"
 VALIDATION_ROOT="${CTD_VALIDATION_ROOT:-${PROJECT_ROOT}/output_eval/ctd_validation_${SLURM_JOB_ID}}"
 
-for path in "${PROJECT_ROOT}" "${DATA_ROOT}" "${DATASET_JSON}" "${SD_PATH}" "${PER_SAMPLE_CSV}"; do
+for path in "${PROJECT_ROOT}" "${DATA_ROOT}" "${DATASET_JSON}" "${SD_PATH}"; do
   if [[ ! -e "${path}" ]]; then
     echo "[ERROR] required path missing: ${path}" >&2
     exit 2
@@ -48,6 +50,11 @@ pytest -v test_ctd_equivalence.py || TEST_STATUS=$?
 echo "========== [2/2] CTD 评测集小规模渲染 =========="
 # prepare_ctd_eval_sets.py 当前会写相对 data/；切到独立目录可避免覆盖
 # 项目 data/ 下的文件。图像、JSON、manifest 全部落在本次验证目录。
+if [[ ! -e "${PER_SAMPLE_CSV}" ]]; then
+  echo "[ERROR] CTD 验证样本清单缺失: ${PER_SAMPLE_CSV}" >&2
+  echo "        用 CTD_PER_SAMPLE_CSV=/实际/metrics_per_sample.csv 覆盖后重提即可。" >&2
+  exit 2
+fi
 mkdir -p "${VALIDATION_ROOT}"
 cd "${VALIDATION_ROOT}"
 python "${PROJECT_ROOT}/tools/prepare_ctd_eval_sets.py" \
