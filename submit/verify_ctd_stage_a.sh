@@ -45,7 +45,12 @@ export PYTHONDONTWRITEBYTECODE=1
 echo "========== [1/2] CTD 等价性与算子测试 =========="
 cd "${PROJECT_ROOT}"
 TEST_STATUS=0
-pytest -v test_ctd_equivalence.py || TEST_STATUS=$?
+if python -c "import pytest"; then
+  python -m pytest -v test_ctd_equivalence.py || TEST_STATUS=$?
+else
+  echo "[ERROR] 当前 Python 环境未安装 pytest；等价性测试未执行。" >&2
+  TEST_STATUS=127
+fi
 
 echo "========== [2/2] CTD 评测集小规模渲染 =========="
 # prepare_ctd_eval_sets.py 当前会写相对 data/；切到独立目录可避免覆盖
@@ -67,6 +72,10 @@ python "${PROJECT_ROOT}/tools/prepare_ctd_eval_sets.py" \
 
 echo "[done] validation artifacts: ${VALIDATION_ROOT}"
 if [[ "${TEST_STATUS}" -ne 0 ]]; then
-  echo "[failed] 等价性测试未通过，评测集渲染结果仅用于诊断；禁止启动训练。" >&2
+  if [[ "${TEST_STATUS}" -eq 127 ]]; then
+    echo "[failed] 等价性测试未执行（缺少 pytest），评测集渲染结果仅用于诊断；禁止启动训练。" >&2
+  else
+    echo "[failed] 等价性测试未通过，评测集渲染结果仅用于诊断；禁止启动训练。" >&2
+  fi
   exit "${TEST_STATUS}"
 fi
