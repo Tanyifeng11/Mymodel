@@ -25,6 +25,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -42,7 +43,11 @@ from color_conflict_utils import (
     dominant_rgb_from_pil,
     rgb_to_lab,
 )
-from eval.eval_utils import prepare_evaluation_masks, safe_open_rgb
+from eval.eval_utils import (
+    extract_generated_panel,
+    prepare_evaluation_masks,
+    safe_open_rgb,
+)
 from garment_mask_utils import mask_backend_info
 
 # 默认扫这 12 档(COLOR_TABLE 的英文键, 去掉 grey 与 gray 的重复)
@@ -337,13 +342,36 @@ def stage_generate(args):
 def _find_generated(out_dir):
     if not os.path.isdir(out_dir):
         return None
-    cands = [p for p in sorted(os.listdir(out_dir)) if p.lower().endswith(".png")]
+    cands = [
+        p for p in sorted(os.listdir(out_dir))
+        if p.lower().endswith((".png", ".jpg", ".jpeg"))
+        and not p.lower().endswith("_mask.png")
+        and p.lower() != "generated_panel.png"
+    ]
     if not cands:
         return None
     for p in cands:
         if "generated" in p.lower():
             return os.path.join(out_dir, p)
     return os.path.join(out_dir, cands[0])
+
+
+def _prepare_generated_panel(out_dir):
+    """返回可评分的单张生成图，而不是 inference 写出的三联对比图。
+
+    inference 默认保存 ``sketch | texture | generated`` 的 JPG，同时保存同名
+    ``*_mask.png``。评分若按 PNG 搜索会把 mask 当作生成图，主色和 TPF 都会失真。
+    缓存面板到独立文件，避免覆写原始三联图，便于人工复核。
+    """
+    source = _find_generated(out_dir)
+    if source is None:
+        return None
+
+    panel = os.path.join(out_dir, "generated_panel.png")
+    if not os.path.isfile(panel) or os.path.getmtime(panel) < os.path.getmtime(source):
+        shutil.copy2(source, panel)
+        extract_generated_panel(panel)
+    return panel
 
 
 def stage_score(args):
@@ -357,7 +385,7 @@ def stage_score(args):
 
     rows, missing = [], 0
     for item in plan["items"]:
-        gen_path = _find_generated(item["out_dir"])
+        gen_path = _prepare_generated_panel(item["out_dir"])
         if gen_path is None:
             missing += 1
             continue

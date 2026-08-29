@@ -21,6 +21,7 @@ import collections
 import json
 import os
 import sys
+from unittest import mock
 
 REPO = os.path.dirname(os.path.abspath(__file__))
 if REPO not in sys.path:
@@ -45,6 +46,8 @@ except ImportError:
 
 from tools.sweep_caption_color import (
     DEFAULT_COLORS,
+    _find_generated,
+    _prepare_generated_panel,
     find_color_words,
     replace_color_word,
 )
@@ -99,6 +102,24 @@ def test_replace_to_every_default_color_is_distinct():
     outs = {replace_color_word(cap, c) for c in DEFAULT_COLORS}
     assert None not in outs
     assert len(outs) == len(DEFAULT_COLORS), "各颜色档必须产出不同的 prompt"
+
+
+def test_score_uses_generated_panel_not_mask():
+    """评分必须排除 inference 产出的 *_mask.png，并裁出右侧生成面板。"""
+    with mock.patch("tools.sweep_caption_color.os.path.isdir", return_value=True), \
+         mock.patch("tools.sweep_caption_color.os.listdir",
+                    return_value=["sample_mask.png", "sample.jpg"]):
+        assert _find_generated("/out").endswith("sample.jpg")
+
+    with mock.patch("tools.sweep_caption_color._find_generated",
+                    return_value="/out/sample.jpg"), \
+         mock.patch("tools.sweep_caption_color.os.path.isfile", return_value=False), \
+         mock.patch("tools.sweep_caption_color.shutil.copy2") as copy, \
+         mock.patch("tools.sweep_caption_color.extract_generated_panel") as extract:
+        panel = _prepare_generated_panel("/out")
+        assert panel.endswith("generated_panel.png")
+        copy.assert_called_once_with("/out/sample.jpg", panel)
+        extract.assert_called_once_with(panel)
 
 
 # ---------------------------------------------------------------------------
