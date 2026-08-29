@@ -45,7 +45,14 @@ from models.tcpm_lite import TCPMLite
 from models.attribute_text_texture_fuser import AttributeTextTextureFuser
 from models.attribute_token_mask import build_attribute_masks
 from texture_preprocess import preprocess_texture_image
-from color_conflict_utils import compute_color_conflict
+from color_conflict_utils import (
+    chroma_shift_to,
+    compute_color_conflict,
+    delta_e_rgb,
+    dominant_rgb_from_pil,
+    extract_text_color,
+    pick_far_ab,
+)
 from garment_mask_utils import (
     build_sketch_garment_mask,
     estimate_cloth_foreground_mask,
@@ -169,6 +176,10 @@ class JointTextureDataset(Dataset):
         texture_preprocess_mode="crop_tile",
         conflict_deltae_norm=50.0,
         max_samples=0,
+        ctd_prob=0.0,
+        ctd_min_delta_e=15.0,
+        ctd_seed=42,
+        ctd_all_samples=0,
     ):
         with open(json_path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
@@ -184,6 +195,13 @@ class JointTextureDataset(Dataset):
         self.height = height
         self.texture_preprocess_mode = texture_preprocess_mode
         self.conflict_deltae_norm = float(conflict_deltae_norm)
+        # CTD-A: 条件端色度替换 (docs/ctd_stage_a_spec.md §2.1)
+        # ctd_prob=0.0 是默认值 -> 默认行为与 E5 逐位相同。
+        self.ctd_prob = float(ctd_prob)
+        self.ctd_min_delta_e = float(ctd_min_delta_e)
+        self.ctd_seed = int(ctd_seed)
+        # 消融 A1: 对全部样本扰动(含无颜色词的 12%), 隔离"管辖先验"本身。
+        self.ctd_all_samples = bool(int(ctd_all_samples))
 
         self.vae_tf = transforms.Compose(
             [
@@ -215,6 +233,36 @@ class JointTextureDataset(Dataset):
         texture_path = it.get("texture", it.get("color", it["cloth"]))
         texture = self._load(texture_path)
 
+        # caption 提前读取: CTD 需要它决定是否扰动(原在 tokenize 处读取)
+        caption = it["caption"] if isinstance(it["caption"], str) else it["caption"][0]
+
+        # ---------------- CTD-A: 条件端色度替换 ----------------
+        # 扰动作用在 PIL 图上, 在 preprocess_texture_image 之前 —— 这样
+        # texture_tensor 与 texture_for_clip -> clip_texture 都自动看到扰动,
+        # 一处插入覆盖两条通路, crop_tile 模式也不受影响。
+        ctd_applied, ctd_delta_e = 0, 0.0
+        ref_rgb_orig = dominant_rgb_from_pil(texture)
+        _, text_rgb = extract_text_color(caption)
+        # 管辖先验: 只有含显式颜色词的样本参与抛硬币(A1 消融放开到全部样本)。
+        # 不合格样本一律不消耗全局 random —— 这样 ctd_prob=0 时 RNG 流与 E5 逐位相同,
+        # ctd_prob>0 且 ctd_all_samples=0 时也与 spec §2.2 的消耗序列一致。
+        ctd_eligible = text_rgb is not None or self.ctd_all_samples
+        if self.ctd_prob > 0.0 and ctd_eligible and random.random() < self.ctd_prob:
+            # A1 消融: 无颜色词样本也扰动, 此时用中性灰做"文本色"以挑远色。
+            probe_rgb = text_rgb if text_rgb is not None else (135, 135, 135)
+            # 远色的选择按样本 id 确定, 同一样本每次拿到同一个反事实颜色(降方差,
+            # 也让增广评测集可复现); 抛硬币用全局 random, 所以同一样本跨 epoch
+            # 会既出现原始版也出现反事实版 —— 这才是打断捷径需要的成对对照。
+            rng = random.Random(self.ctd_seed * 1000003 + i)
+            target_ab, _ = pick_far_ab(probe_rgb, rng)
+            texture_cf = chroma_shift_to(texture, target_ab)
+            d = delta_e_rgb(ref_rgb_orig, dominant_rgb_from_pil(texture_cf))
+            # ΔE 校验是必需的, 不是可选的。没有它 p_cf 是个假数(spec §0.2);
+            # 有它, out-of-gamut 被夹取导致的失效扰动也会被自动剔除。
+            if d >= self.ctd_min_delta_e:
+                texture, ctd_applied, ctd_delta_e = texture_cf, 1, d
+        # -------------------------------------------------------
+
         texture_tensor = preprocess_texture_image(
             texture,
             width=self.width,
@@ -225,7 +273,6 @@ class JointTextureDataset(Dataset):
             (texture_tensor * 0.5 + 0.5).clamp(0, 1)
         )
 
-        caption = it["caption"] if isinstance(it["caption"], str) else it["caption"][0]
         input_ids = self.tokenizer(
             caption,
             padding="max_length",
@@ -278,6 +325,10 @@ class JointTextureDataset(Dataset):
             "ref_palette_rgb": torch.tensor(conflict_info["ref_palette_rgb"], dtype=torch.float32),
             "has_text_color": torch.tensor(float(conflict_info["has_text_color"]), dtype=torch.float32),
             "color_conflict_score": torch.tensor(conflict_info["color_conflict_score"], dtype=torch.float32),
+            # CTD-A 诊断 D0 的唯一依据 (spec §5.2)
+            "ctd_applied": torch.tensor(float(ctd_applied), dtype=torch.float32),
+            "ctd_delta_e": torch.tensor(float(ctd_delta_e), dtype=torch.float32),
+            "ref_palette_rgb_orig": torch.tensor(ref_rgb_orig, dtype=torch.float32),
         }
 
     def __len__(self):
@@ -370,6 +421,10 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "pretrained_vae_model_path": args.pretrained_vae_model_path,
         "texture_condition_mode": args.texture_condition_mode,
         "texture_preprocess_mode": args.texture_preprocess_mode,
+        "ctd_prob": args.ctd_prob,
+        "ctd_min_delta_e": args.ctd_min_delta_e,
+        "ctd_seed": args.ctd_seed,
+        "ctd_all_samples": args.ctd_all_samples,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
         "lambda_style": args.lambda_style,
         "style_loss_type": args.style_loss_type,
@@ -782,6 +837,10 @@ def save_training_checkpoint(
             "texture_mode": args.texture_mode,
             "texture_condition_mode": args.texture_condition_mode,
             "texture_preprocess_mode": args.texture_preprocess_mode,
+            "ctd_prob": args.ctd_prob,
+            "ctd_min_delta_e": args.ctd_min_delta_e,
+            "ctd_seed": args.ctd_seed,
+            "ctd_all_samples": args.ctd_all_samples,
             "lambda_style": args.lambda_style,
             "style_loss_type": args.style_loss_type,
             "lambda_patch_style": args.lambda_patch_style,
@@ -1430,6 +1489,14 @@ def main():
         default="hybrid",
         choices=["token", "spatial", "hybrid"],
     )
+    # ---- CTD-A: 条件端色度替换 (docs/ctd_stage_a_spec.md §2.3) ----
+    ap.add_argument("--ctd_prob", type=float, default=0.0,
+                    help="CTD-A 色度替换概率, 仅作用于 caption 含显式颜色词的样本。0=关闭(等价 E5)")
+    ap.add_argument("--ctd_min_delta_e", type=float, default=15.0,
+                    help="扰动前后参考图主色 ΔE 低于此值则视为扰动失效, 不计入增广")
+    ap.add_argument("--ctd_seed", type=int, default=42)
+    ap.add_argument("--ctd_all_samples", type=int, default=0, choices=[0, 1],
+                    help="消融 A1: 对全部样本扰动(含无颜色词的样本), 隔离管辖先验本身")
     ap.add_argument(
         "--fusion_type",
         type=str,
@@ -2114,6 +2181,10 @@ def main():
         texture_preprocess_mode=args.texture_preprocess_mode,
         conflict_deltae_norm=args.conflict_deltae_norm,
         max_samples=args.max_train_samples,
+        ctd_prob=args.ctd_prob,
+        ctd_min_delta_e=args.ctd_min_delta_e,
+        ctd_seed=args.ctd_seed,
+        ctd_all_samples=args.ctd_all_samples,
     )
     if accelerator.is_main_process and args.max_train_samples > 0:
         print("[info] max_train_samples=%d, 实际使用 %d 条"
@@ -2702,6 +2773,17 @@ def main():
                         raw = accelerator.unwrap_model(aa_tcr_fuser)
                         for k, v in raw.last_stats.items():
                             aa_tcr_stats[f"train/aa_tcr_{k}"] = float(v)
+                    # CTD-A 诊断 D0: 扰动是否真的发生了 (spec §5.2)
+                    # 这两条日志是诊断 D0 的唯一依据。
+                    ctd_applied_flag = batch["ctd_applied"].detach().float()
+                    ctd_rate = float(ctd_applied_flag.mean().item())
+                    _ctd_hit = ctd_applied_flag > 0.5
+                    ctd_de = (
+                        float(batch["ctd_delta_e"].detach().float()[_ctd_hit].mean().item())
+                        if bool(_ctd_hit.any())
+                        else 0.0
+                    )
+                    ctd_stats = {"train/ctd_rate": ctd_rate, "train/ctd_delta_e": ctd_de}
                     grad_norm_log = None
                     if grad_norm is not None:
                         grad_norm_log = (
@@ -2756,6 +2838,7 @@ def main():
                             "train/epoch": float(current_epoch) + (float(global_step % max(1, steps_per_epoch)) / max(1, steps_per_epoch)),
                             "train/use_layer_group": float(args.layer_group_enabled),
                             **aa_tcr_stats,  # E7: alpha/覆盖率/残差范数
+                            **ctd_stats,  # CTD-A: D0 诊断(扰动率与实测 ΔE)
                         },
                         step=global_step,
                     )

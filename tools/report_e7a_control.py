@@ -31,6 +31,8 @@ SUMMARY_METRICS = {
     "leak_colored_frac_mean": "lower",
     "leak_edge_density_mean": "lower",
     "prompt_color_delta_e_mean": "lower",
+    "target_color_delta_e_mean": "lower",
+    "gt_floor_delta_e_mean": "lower",
 }
 
 PER_SAMPLE_METRICS = {
@@ -39,6 +41,8 @@ PER_SAMPLE_METRICS = {
     "tpf_patch_sim": "higher",
     "tcf_lab_delta": "lower",
     "prompt_color_delta_e": "lower",
+    "target_color_delta_e": "lower",
+    "gt_floor_delta_e": "lower",
     "struct_edge_f1": "higher",
     "struct_iou": "higher",
     "leak_colored_frac": "lower",

@@ -65,6 +65,8 @@ PER_SAMPLE_METRICS = [
     "struct_iou",
     "struct_edge_l1",
     "prompt_color_delta_e",
+    "target_color_delta_e",
+    "gt_floor_delta_e",
     "edge_f1",
     "edge_precision",
     "edge_recall",
@@ -1246,17 +1248,33 @@ def run_benchmark(args):
             mask_policy=args.mask_policy,
         )
         row.update(mask_bundle["stats"])
+        garment_mask = mask_bundle.get("garment")
+        mask_image = None
+        if garment_mask is not None:
+            mask_image = Image.fromarray(garment_mask.astype(np.uint8) * 255, mode="L")
+        gen_rgb = dominant_rgb_from_pil(generated, mask=mask_image)
         if row.get("has_text_color"):
-            garment_mask = mask_bundle.get("garment")
-            mask_image = None
-            if garment_mask is not None:
-                mask_image = Image.fromarray(garment_mask.astype(np.uint8) * 255, mode="L")
-            gen_rgb = dominant_rgb_from_pil(generated, mask=mask_image)
             row["generated_dominant_rgb"] = list(gen_rgb)
             row["prompt_color_delta_e"] = delta_e_rgb(row["text_color_rgb"], gen_rgb)
         else:
             row["generated_dominant_rgb"] = [0, 0, 0]
             row["prompt_color_delta_e"] = float("nan")
+        # CTD 主指标 (docs/ctd_stage_a_spec.md §4): 参照物是真实目标图的主色, 不过
+        # COLOR_TABLE, 所以无法靠坍缩颜色分辨率来刷 —— 它的下界是可测的 GT floor(=0)。
+        # 对无颜色词样本也要算 —— 那是 D1 护栏(防全局阻尼)的读数。
+        target_image = safe_open_rgb(row["target_path"])
+        if target_image is not None:
+            tgt_rgb = dominant_rgb_from_pil(target_image, mask=mask_image)
+            row["target_dominant_rgb"] = list(tgt_rgb)
+            row["target_color_delta_e"] = delta_e_rgb(tgt_rgb, gen_rgb)
+            if row.get("has_text_color"):
+                row["gt_floor_delta_e"] = delta_e_rgb(row["text_color_rgb"], tgt_rgb)
+            else:
+                row["gt_floor_delta_e"] = float("nan")
+        else:
+            row["target_dominant_rgb"] = [0, 0, 0]
+            row["target_color_delta_e"] = float("nan")
+            row["gt_floor_delta_e"] = float("nan")
         if row["garment_mask_pixels"] < args.min_valid_pixels:
             diagnostics["number_of_empty_garment_masks"] += 1
         if row["outside_mask_pixels"] < args.min_valid_pixels:

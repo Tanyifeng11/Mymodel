@@ -1,3 +1,4 @@
+import math
 import re
 from typing import Any, Dict, Optional, Tuple
 
@@ -213,3 +214,76 @@ def summarize_conflict_rows(rows, threshold: float = 0.55) -> Dict[str, Any]:
         "mid_conflict_count": buckets["mid_conflict"],
         "high_conflict_count": buckets["high_conflict"],
     }
+
+
+# ---------------------------------------------------------------------------
+# CTD-A: 条件端色度替换算子 (docs/ctd_stage_a_spec.md §1)
+# ---------------------------------------------------------------------------
+FAR_POOL = [
+    "red", "blue", "black", "white", "pink", "green",
+    "yellow", "purple", "brown", "gray", "orange", "beige",
+]
+
+
+def lab_to_rgb(lab: Any) -> np.ndarray:
+    """rgb_to_lab 的逆变换。输入 (...,3) LAB, 输出同形状 uint8 RGB。"""
+    lab = np.asarray(lab, dtype=np.float32)
+    shape = lab.shape
+    flat = lab.reshape(-1, 3)
+    fy = (flat[:, 0] + 16.0) / 116.0
+    fx = fy + flat[:, 1] / 500.0
+    fz = fy - flat[:, 2] / 200.0
+    delta = 6.0 / 29.0
+
+    def finv(t):
+        return np.where(t > delta, t**3, 3.0 * delta * delta * (t - 4.0 / 29.0))
+
+    xyz = np.stack([finv(fx), finv(fy), finv(fz)], axis=-1)
+    xyz = xyz * np.array([0.95047, 1.0, 1.08883], dtype=np.float32)
+    inv = np.array(
+        [
+            [3.2404542, -1.5371385, -0.4985314],
+            [-0.9692660, 1.8760108, 0.0415560],
+            [0.0556434, -0.2040259, 1.0572252],
+        ],
+        dtype=np.float32,
+    )
+    lin = np.clip(xyz @ inv.T, 0.0, 1.0)
+    srgb = np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * np.power(lin, 1 / 2.4) - 0.055)
+    return np.clip(srgb * 255.0 + 0.5, 0, 255).astype(np.uint8).reshape(shape)
+
+
+def chroma_shift_to(image: Image.Image, target_ab) -> Image.Image:
+    """把参考图的平均色度平移到 target_ab, L 与像素间相对色度差保持不变。
+
+    用平移而不是旋转: 旋转对 a≈b≈0 的黑/白/灰参考图是恒等变换, 而本数据集
+    57.9% 的有色词样本正是这一类(见 spec §0.2)。平移保留像素间的相对色度差,
+    所以图案的色度对比不丢; L 通道完全不动, 所以织纹、褶皱、印花边缘不丢。
+    """
+    arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+    lab = rgb_to_lab(arr).astype(np.float32)
+    lab[..., 1] += float(target_ab[0]) - float(lab[..., 1].mean())
+    lab[..., 2] += float(target_ab[1]) - float(lab[..., 2].mean())
+    return Image.fromarray(lab_to_rgb(lab))
+
+
+def pick_far_ab(text_rgb, rng, top_k: int = 4, jitter: float = 0.15):
+    """族 A(训练用): 在 COLOR_TABLE 里挑离 text_rgb 最远的 top_k, 随机取一个并抖动。
+
+    取自 COLOR_TABLE 保证扰动后的参考图仍是一个真实存在的服装颜色, 不会被推到
+    面料不存在的色域(否则标准集 FID 会涨)。挑"远色"保证冲突足够强。
+    """
+    scored = sorted(
+        ((delta_e_rgb(text_rgb, COLOR_TABLE[k]), k) for k in FAR_POOL), reverse=True
+    )
+    name = rng.choice([k for _, k in scored[:top_k]])
+    lab = rgb_to_lab(np.asarray(COLOR_TABLE[name], np.float32).reshape(1, 3)).reshape(3)
+    a = lab[1] * (1.0 + rng.uniform(-jitter, jitter))
+    b = lab[2] * (1.0 + rng.uniform(-jitter, jitter))
+    return (float(a), float(b)), name
+
+
+def polar_ab(hue_deg: float, chroma: float = 45.0):
+    """族 B(仅测试用): 直接给 LAB 色度极坐标, 完全不经过 COLOR_TABLE。"""
+    r = math.radians(hue_deg)
+    return (chroma * math.cos(r), chroma * math.sin(r))
