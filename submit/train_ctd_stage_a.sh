@@ -36,3 +36,14 @@ CTD_MAX_TRAIN_STEPS="${CTD_MAX_TRAIN_STEPS}" \
 WANDB_MODE="${WANDB_MODE:-offline}" \
 DRY_RUN="${DRY_RUN:-0}" \
 bash scripts/train_phase1_ctd_stage_a.sh
+
+if [[ "${DRY_RUN:-0}" != "1" ]]; then
+  D0_METRICS="${CTD_OUTPUT_DIR}/ctd_d0_metrics.jsonl"
+  if [[ -s "${D0_METRICS}" ]]; then
+    echo "[CTD D0] final metrics record:"
+    tail -n 1 "${D0_METRICS}"
+  else
+    echo "[ERROR] CTD D0 metrics file was not generated: ${D0_METRICS}" >&2
+    exit 1
+  fi
+fi

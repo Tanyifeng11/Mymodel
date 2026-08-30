@@ -2336,6 +2336,26 @@ def main():
             or 0
         )
 
+    # CTD-A 的 D0 是训练准入条件，不能只依赖 W&B（离线 run 不一定能可靠导出
+    # 单项 history）。这里直接落盘每个优化步的全局统计，并维护本次启动的累计值。
+    ctd_d0_path = os.path.join(args.output_dir, "ctd_d0_metrics.jsonl")
+    ctd_d0_samples = 0
+    ctd_d0_eligible = 0
+    ctd_d0_applied = 0
+    ctd_d0_delta_e_sum = 0.0
+    ctd_d0_interval_samples = 0
+    ctd_d0_interval_eligible = 0
+    ctd_d0_interval_applied = 0
+    ctd_d0_interval_delta_e_sum = 0.0
+    ctd_rate_cumulative = 0.0
+    ctd_de_cumulative = 0.0
+    ctd_rate_low = 0.0
+    ctd_rate_high = 0.0
+    ctd_d0_pass = False
+    if accelerator.is_main_process and global_step == 0:
+        with open(ctd_d0_path, "w", encoding="utf-8"):
+            pass
+
     if accelerator.is_main_process:
         print(
             f"[train] dataset_size={dataset_len}, batch_size={args.train_batch_size}, "
@@ -2777,9 +2797,86 @@ def main():
                 else:
                     grad_norm = None
 
+                # CTD 在每个 micro-batch 都可能发生。即使使用梯度累积，也必须把
+                # 这批样本计入 D0，不能只统计 sync 时的最后一个 micro-batch。
+                ctd_flags = accelerator.gather_for_metrics(
+                    batch["ctd_applied"].detach().float()
+                )
+                ctd_delta_e_values = accelerator.gather_for_metrics(
+                    batch["ctd_delta_e"].detach().float()
+                )
+                ctd_has_text = accelerator.gather_for_metrics(
+                    batch["has_text_color"].detach().float()
+                )
+                ctd_hits = ctd_flags > 0.5
+                ctd_d0_interval_samples += int(ctd_flags.numel())
+                ctd_d0_interval_eligible += (
+                    int(ctd_flags.numel())
+                    if args.ctd_all_samples
+                    else int((ctd_has_text > 0.5).sum().item())
+                )
+                ctd_d0_interval_applied += int(ctd_hits.sum().item())
+                ctd_d0_interval_delta_e_sum += float(
+                    ctd_delta_e_values[ctd_hits].sum().item()
+                )
+
                 if accelerator.sync_gradients:
                     global_step += 1
                     total_steps_done += 1
+
+                    # D0 统计覆盖全部 DDP rank 与该优化步内的全部 micro-batch。
+                    # 只由主进程写文件，避免并发写入。
+                    step_samples = ctd_d0_interval_samples
+                    step_eligible = ctd_d0_interval_eligible
+                    step_applied = ctd_d0_interval_applied
+                    step_delta_e_sum = ctd_d0_interval_delta_e_sum
+                    ctd_d0_interval_samples = 0
+                    ctd_d0_interval_eligible = 0
+                    ctd_d0_interval_applied = 0
+                    ctd_d0_interval_delta_e_sum = 0.0
+
+                    ctd_d0_samples += step_samples
+                    ctd_d0_eligible += step_eligible
+                    ctd_d0_applied += step_applied
+                    ctd_d0_delta_e_sum += step_delta_e_sum
+
+                    ctd_rate = step_applied / max(1, step_samples)
+                    ctd_de = step_delta_e_sum / step_applied if step_applied else 0.0
+                    ctd_rate_cumulative = ctd_d0_applied / max(1, ctd_d0_samples)
+                    ctd_de_cumulative = (
+                        ctd_d0_delta_e_sum / ctd_d0_applied
+                        if ctd_d0_applied else 0.0
+                    )
+                    # p × 当前训练流中的可扰动样本占比，是本次运行的 D0 基准。
+                    ctd_rate_target = args.ctd_prob * ctd_d0_eligible / max(1, ctd_d0_samples)
+                    ctd_rate_low = ctd_rate_target * 0.9
+                    ctd_rate_high = ctd_rate_target * 1.1
+                    ctd_d0_pass = (
+                        ctd_rate_low <= ctd_rate_cumulative <= ctd_rate_high
+                        and ctd_de_cumulative > 25.0
+                    )
+                    ctd_stats = {"train/ctd_rate": ctd_rate, "train/ctd_delta_e": ctd_de}
+
+                    if accelerator.is_main_process:
+                        ctd_record = {
+                            "global_step": global_step,
+                            "step_samples": step_samples,
+                            "step_eligible": step_eligible,
+                            "step_applied": step_applied,
+                            "step_ctd_rate": ctd_rate,
+                            "step_ctd_delta_e": ctd_de if step_applied else None,
+                            "cumulative_samples": ctd_d0_samples,
+                            "cumulative_eligible": ctd_d0_eligible,
+                            "cumulative_applied": ctd_d0_applied,
+                            "cumulative_ctd_rate": ctd_rate_cumulative,
+                            "cumulative_ctd_delta_e": ctd_de_cumulative if ctd_d0_applied else None,
+                            "target_ctd_rate": ctd_rate_target,
+                            "target_ctd_rate_low": ctd_rate_low,
+                            "target_ctd_rate_high": ctd_rate_high,
+                            "d0_pass": ctd_d0_pass,
+                        }
+                        with open(ctd_d0_path, "a", encoding="utf-8") as f:
+                            f.write(json.dumps(ctd_record, ensure_ascii=False) + "\n")
 
                 if accelerator.sync_gradients and args.report_to != "none":
                     palette_summary = _collect_palette_summary(unet, palette_tokens)
@@ -2794,17 +2891,6 @@ def main():
                         raw = accelerator.unwrap_model(aa_tcr_fuser)
                         for k, v in raw.last_stats.items():
                             aa_tcr_stats[f"train/aa_tcr_{k}"] = float(v)
-                    # CTD-A 诊断 D0: 扰动是否真的发生了 (spec §5.2)
-                    # 这两条日志是诊断 D0 的唯一依据。
-                    ctd_applied_flag = batch["ctd_applied"].detach().float()
-                    ctd_rate = float(ctd_applied_flag.mean().item())
-                    _ctd_hit = ctd_applied_flag > 0.5
-                    ctd_de = (
-                        float(batch["ctd_delta_e"].detach().float()[_ctd_hit].mean().item())
-                        if bool(_ctd_hit.any())
-                        else 0.0
-                    )
-                    ctd_stats = {"train/ctd_rate": ctd_rate, "train/ctd_delta_e": ctd_de}
                     grad_norm_log = None
                     if grad_norm is not None:
                         grad_norm_log = (
@@ -2913,6 +2999,10 @@ def main():
                         f"drop_spatial_branch={branch_drop_counts['spatial'] / max(1, branch_drop_counts['total']):.3f}, "
                         f"mean_conflict={batch['color_conflict_score'].detach().float().mean().item():.3f}, "
                         f"high_conflict={(batch['color_conflict_score'].detach().float() >= args.conflict_threshold).sum().item()}, "
+                        f"ctd_rate_cum={ctd_rate_cumulative:.3f}, "
+                        f"ctd_delta_e_cum={ctd_de_cumulative:.2f}, "
+                        f"ctd_target=[{ctd_rate_low:.3f},{ctd_rate_high:.3f}], "
+                        f"d0={'PASS' if ctd_d0_pass else 'PENDING'}, "
                         f"encoder_hidden_states={tuple(enc_h.shape)}"
                         + (
                             # E7 关键观测量: alpha 是否离开 0、pattern 真实命中率、
@@ -3070,6 +3160,14 @@ def main():
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
+        print(
+            f"[CTD D0] samples={ctd_d0_samples}, eligible={ctd_d0_eligible}, "
+            f"applied={ctd_d0_applied}, ctd_rate={ctd_rate_cumulative:.6f}, "
+            f"ctd_delta_e={ctd_de_cumulative:.6f}, "
+            f"target=[{ctd_rate_low:.6f}, {ctd_rate_high:.6f}], "
+            f"result={'PASS' if ctd_d0_pass else 'FAIL'}"
+        )
+        print(f"[CTD D0] metrics: {ctd_d0_path}")
         save_dir = save_training_checkpoint(
             accelerator,
             unet,
