@@ -225,8 +225,8 @@ FAR_POOL = [
 ]
 
 
-def lab_to_rgb(lab: Any) -> np.ndarray:
-    """rgb_to_lab 的逆变换。输入 (...,3) LAB, 输出同形状 uint8 RGB。"""
+def _lab_to_linear_rgb(lab: Any) -> np.ndarray:
+    """LAB 转线性 RGB；不裁剪，用于判断候选颜色是否落在 sRGB 色域内。"""
     lab = np.asarray(lab, dtype=np.float32)
     shape = lab.shape
     flat = lab.reshape(-1, 3)
@@ -248,23 +248,48 @@ def lab_to_rgb(lab: Any) -> np.ndarray:
         ],
         dtype=np.float32,
     )
-    lin = np.clip(xyz @ inv.T, 0.0, 1.0)
+    return (xyz @ inv.T).reshape(shape)
+
+
+def lab_to_rgb(lab: Any) -> np.ndarray:
+    """rgb_to_lab 的逆变换。输入 (...,3) LAB, 输出同形状 uint8 RGB。"""
+    lin = np.clip(_lab_to_linear_rgb(lab), 0.0, 1.0)
     srgb = np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * np.power(lin, 1 / 2.4) - 0.055)
-    return np.clip(srgb * 255.0 + 0.5, 0, 255).astype(np.uint8).reshape(shape)
+    return np.clip(srgb * 255.0 + 0.5, 0, 255).astype(np.uint8)
 
 
 def chroma_shift_to(image: Image.Image, target_ab) -> Image.Image:
-    """把参考图的平均色度平移到 target_ab, L 与像素间相对色度差保持不变。
+    """把参考图安全地向 target_ab 平移，保持 L 与相对色度差。
 
     用平移而不是旋转: 旋转对 a≈b≈0 的黑/白/灰参考图是恒等变换, 而本数据集
-    57.9% 的有色词样本正是这一类(见 spec §0.2)。平移保留像素间的相对色度差,
-    所以图案的色度对比不丢; L 通道完全不动, 所以织纹、褶皱、印花边缘不丢。
+    57.9% 的有色词样本正是这一类(见 spec §0.2)。目标色在当前明度下可能超出
+    sRGB 色域；此时回退到最大的色域内平移，绝不靠 RGB 裁剪伪造颜色变化。
+    调用方仍须用实际 ΔE 门限决定该样本是否施加 CTD。
     """
     arr = np.asarray(image.convert("RGB"), dtype=np.float32)
     lab = rgb_to_lab(arr).astype(np.float32)
-    lab[..., 1] += float(target_ab[0]) - float(lab[..., 1].mean())
-    lab[..., 2] += float(target_ab[1]) - float(lab[..., 2].mean())
-    return Image.fromarray(lab_to_rgb(lab))
+    delta_a = float(target_ab[0]) - float(lab[..., 1].mean())
+    delta_b = float(target_ab[1]) - float(lab[..., 2].mean())
+
+    # 从完整偏移向原图逐像素二分回退。黑色阴影或高光白点在固定 L 下可能根本
+    # 不能承受任何色度，不能让这一个像素阻止整张面料变化；该像素保持原色即可。
+    # 每个像素都取最大的色域内偏移，因此后续 RGB 量化不会发生裁剪。
+    lo = np.zeros(lab.shape[:2], dtype=np.float32)
+    hi = np.ones(lab.shape[:2], dtype=np.float32)
+    for _ in range(16):
+        scale = (lo + hi) / 2.0
+        candidate = lab.copy()
+        candidate[..., 1] += scale * delta_a
+        candidate[..., 2] += scale * delta_b
+        lin = _lab_to_linear_rgb(candidate)
+        valid = (lin.min(axis=-1) >= -1e-6) & (lin.max(axis=-1) <= 1.0 + 1e-6)
+        lo = np.where(valid, scale, lo)
+        hi = np.where(valid, hi, scale)
+
+    candidate = lab.copy()
+    candidate[..., 1] += lo * delta_a
+    candidate[..., 2] += lo * delta_b
+    return Image.fromarray(lab_to_rgb(candidate))
 
 
 def pick_far_ab(text_rgb, rng, top_k: int = 4, jitter: float = 0.15):
