@@ -27,6 +27,10 @@ PER_SAMPLE_CSV="${CTD_PER_SAMPLE_CSV:-${PROJECT_ROOT}/eval_outputs/phase1_e7a_50
 CTD_SEED="${CTD_SEED:-42}"
 CTD_PREP_LIMIT="${CTD_PREP_LIMIT:-64}"
 CTD_MIN_DELTA_E="${CTD_MIN_DELTA_E:-15.0}"
+CTD_TARGET_STRATEGY="${CTD_TARGET_STRATEGY:-legacy}"
+CTD_EVAL_PAIR_MODE="${CTD_EVAL_PAIR_MODE:-intersection}"
+CTD_GAMUT_REQUESTED_CHROMA="${CTD_GAMUT_REQUESTED_CHROMA:-90.0}"
+CTD_GAMUT_CANDIDATE_COUNT="${CTD_GAMUT_CANDIDATE_COUNT:-8}"
 VALIDATION_ROOT="${CTD_VALIDATION_ROOT:-${PROJECT_ROOT}/output_eval/ctd_validation_${SLURM_JOB_ID}}"
 
 for path in "${PROJECT_ROOT}" "${DATA_ROOT}" "${DATASET_JSON}" "${SD_PATH}"; do
@@ -68,6 +72,10 @@ python "${PROJECT_ROOT}/tools/prepare_ctd_eval_sets.py" \
   --out_dir "${VALIDATION_ROOT}/eval_sets" \
   --ctd_seed "${CTD_SEED}" \
   --min_delta_e "${CTD_MIN_DELTA_E}" \
+  --ctd_target_strategy "${CTD_TARGET_STRATEGY}" \
+  --ctd_eval_pair_mode "${CTD_EVAL_PAIR_MODE}" \
+  --gamut_requested_chroma "${CTD_GAMUT_REQUESTED_CHROMA}" \
+  --gamut_candidate_count "${CTD_GAMUT_CANDIDATE_COUNT}" \
   --limit "${CTD_PREP_LIMIT}"
 
 echo "[done] validation artifacts: ${VALIDATION_ROOT}"

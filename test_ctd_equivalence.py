@@ -34,6 +34,8 @@ from color_conflict_utils import (  # noqa: E402
     extract_text_color,
     lab_to_rgb,
     pick_far_ab,
+    pick_gamut_aware_far_ab,
+    pick_gamut_aware_polar_ab,
     polar_ab,
     rgb_to_lab,
 )
@@ -142,6 +144,36 @@ def test_polar_ab_does_not_touch_color_table():
         for v in COLOR_TABLE.values()
     ]
     assert all(abs(ab[0] - t[0]) > 1e-6 or abs(ab[1] - t[1]) > 1e-6 for t in table_abs)
+
+
+@pytest.mark.parametrize(
+    "source_rgb,text_rgb",
+    [((20, 20, 20), COLOR_TABLE["black"]), ((244, 244, 242), COLOR_TABLE["white"])],
+)
+def test_gamut_aware_target_selection_is_deterministic_and_reaches_gate(source_rgb, text_rgb):
+    """新策略要为黑/白参考图选到色域内 ΔE>=15 的可复现 A/B 目标。"""
+    base = Image.new("RGB", (64, 64), source_rgb)
+    before = dominant_rgb_from_pil(base)
+    selectors = [
+        lambda rng: pick_gamut_aware_far_ab(before, text_rgb, rng, min_delta_e=15.0),
+        lambda rng: pick_gamut_aware_polar_ab(
+            before,
+            text_rgb,
+            base_hue_deg=60.0,
+            rng=rng,
+            min_delta_e=15.0,
+            requested_chroma=90.0,
+            candidate_count=8,
+        ),
+    ]
+    for selector in selectors:
+        target_a, info_a = selector(random.Random(1234))
+        target_b, info_b = selector(random.Random(1234))
+        assert target_a == target_b and info_a == info_b
+        assert target_a is not None, f"{source_rgb}: 未找到色域内可行目标"
+        out = chroma_shift_to(base, target_a)
+        d = delta_e_rgb(before, dominant_rgb_from_pil(out))
+        assert d >= 15.0, f"{source_rgb}: 实测 ΔE {d:.2f} < 15"
 
 
 # ---------------------------------------------------------------------------

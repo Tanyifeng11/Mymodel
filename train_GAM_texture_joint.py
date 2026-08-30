@@ -52,6 +52,7 @@ from color_conflict_utils import (
     dominant_rgb_from_pil,
     extract_text_color,
     pick_far_ab,
+    pick_gamut_aware_far_ab,
 )
 from garment_mask_utils import (
     build_sketch_garment_mask,
@@ -180,6 +181,7 @@ class JointTextureDataset(Dataset):
         ctd_min_delta_e=15.0,
         ctd_seed=42,
         ctd_all_samples=0,
+        ctd_target_strategy="legacy",
     ):
         with open(json_path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
@@ -202,6 +204,9 @@ class JointTextureDataset(Dataset):
         self.ctd_seed = int(ctd_seed)
         # 消融 A1: 对全部样本扰动(含无颜色词的 12%), 隔离"管辖先验"本身。
         self.ctd_all_samples = bool(int(ctd_all_samples))
+        if ctd_target_strategy not in ("legacy", "gamut_aware"):
+            raise ValueError("ctd_target_strategy 必须是 legacy 或 gamut_aware")
+        self.ctd_target_strategy = ctd_target_strategy
 
         self.vae_tf = transforms.Compose(
             [
@@ -254,12 +259,23 @@ class JointTextureDataset(Dataset):
             # 也让增广评测集可复现); 抛硬币用全局 random, 所以同一样本跨 epoch
             # 会既出现原始版也出现反事实版 —— 这才是打断捷径需要的成对对照。
             rng = random.Random(self.ctd_seed * 1000003 + i)
-            target_ab, _ = pick_far_ab(probe_rgb, rng)
-            texture_cf = chroma_shift_to(texture, target_ab)
-            d = delta_e_rgb(ref_rgb_orig, dominant_rgb_from_pil(texture_cf))
+            if self.ctd_target_strategy == "legacy":
+                target_ab, _ = pick_far_ab(probe_rgb, rng)
+            else:
+                target_ab, _ = pick_gamut_aware_far_ab(
+                    ref_rgb_orig,
+                    probe_rgb,
+                    rng,
+                    min_delta_e=self.ctd_min_delta_e,
+                )
+            if target_ab is not None:
+                texture_cf = chroma_shift_to(texture, target_ab)
+                d = delta_e_rgb(ref_rgb_orig, dominant_rgb_from_pil(texture_cf))
+            else:
+                d = 0.0
             # ΔE 校验是必需的, 不是可选的。没有它 p_cf 是个假数(spec §0.2);
             # 有它, out-of-gamut 被夹取导致的失效扰动也会被自动剔除。
-            if d >= self.ctd_min_delta_e:
+            if target_ab is not None and d >= self.ctd_min_delta_e:
                 texture, ctd_applied, ctd_delta_e = texture_cf, 1, d
         # -------------------------------------------------------
 
@@ -425,6 +441,7 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "ctd_min_delta_e": args.ctd_min_delta_e,
         "ctd_seed": args.ctd_seed,
         "ctd_all_samples": args.ctd_all_samples,
+        "ctd_target_strategy": args.ctd_target_strategy,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
         "lambda_style": args.lambda_style,
         "style_loss_type": args.style_loss_type,
@@ -841,6 +858,7 @@ def save_training_checkpoint(
             "ctd_min_delta_e": args.ctd_min_delta_e,
             "ctd_seed": args.ctd_seed,
             "ctd_all_samples": args.ctd_all_samples,
+            "ctd_target_strategy": args.ctd_target_strategy,
             "lambda_style": args.lambda_style,
             "style_loss_type": args.style_loss_type,
             "lambda_patch_style": args.lambda_patch_style,
@@ -1497,6 +1515,8 @@ def main():
     ap.add_argument("--ctd_seed", type=int, default=42)
     ap.add_argument("--ctd_all_samples", type=int, default=0, choices=[0, 1],
                     help="消融 A1: 对全部样本扰动(含无颜色词的样本), 隔离管辖先验本身")
+    ap.add_argument("--ctd_target_strategy", choices=["legacy", "gamut_aware"], default="legacy",
+                    help="CTD 目标色策略；legacy 保持旧行为，gamut_aware 按参考图亮度选择可达目标")
     ap.add_argument(
         "--fusion_type",
         type=str,
@@ -2185,6 +2205,7 @@ def main():
         ctd_min_delta_e=args.ctd_min_delta_e,
         ctd_seed=args.ctd_seed,
         ctd_all_samples=args.ctd_all_samples,
+        ctd_target_strategy=args.ctd_target_strategy,
     )
     if accelerator.is_main_process and args.max_train_samples > 0:
         print("[info] max_train_samples=%d, 实际使用 %d 条"

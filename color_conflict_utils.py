@@ -312,3 +312,91 @@ def polar_ab(hue_deg: float, chroma: float = 45.0):
     """族 B(仅测试用): 直接给 LAB 色度极坐标, 完全不经过 COLOR_TABLE。"""
     r = math.radians(hue_deg)
     return (chroma * math.cos(r), chroma * math.sin(r))
+
+
+def _pick_gamut_aware_candidate(
+    source_rgb,
+    text_rgb,
+    candidates,
+    rng,
+    min_delta_e: float = 15.0,
+    top_choices: int = 3,
+):
+    """从候选目标中选当前参考亮度下可达且与文本冲突的目标。
+
+    先在 1×1 的参考主色代理图上走同一套色域安全算子，避免训练时为每个候选
+    都处理整张纹理。真正施加到原图后，调用方仍须以实测 ΔE 做最终门限。
+    """
+    source_rgb = tuple(int(round(float(x))) for x in source_rgb)
+    proxy = Image.new("RGB", (1, 1), source_rgb)
+    viable = []
+    for target_ab, meta in candidates:
+        shifted = chroma_shift_to(proxy, target_ab)
+        shifted_rgb = dominant_rgb_from_pil(shifted)
+        source_delta_e = delta_e_rgb(source_rgb, shifted_rgb)
+        conflict_delta_e = delta_e_rgb(text_rgb, shifted_rgb)
+        if source_delta_e >= min_delta_e and conflict_delta_e >= min_delta_e:
+            viable.append((conflict_delta_e, source_delta_e, target_ab, meta))
+    if not viable:
+        return None, {"reason": "no_gamut_feasible_target"}
+
+    viable.sort(key=lambda x: (x[0], x[1], str(x[3])), reverse=True)
+    pool = viable[: max(1, min(int(top_choices), len(viable)))]
+    conflict_delta_e, source_delta_e, target_ab, meta = rng.choice(pool)
+    info = dict(meta)
+    info.update(
+        {
+            "proxy_delta_e": float(source_delta_e),
+            "proxy_conflict_delta_e": float(conflict_delta_e),
+        }
+    )
+    return target_ab, info
+
+
+def pick_gamut_aware_far_ab(
+    source_rgb,
+    text_rgb,
+    rng,
+    min_delta_e: float = 15.0,
+    top_k: int = 8,
+    jitter: float = 0.15,
+):
+    """族 A：从远离文本色的多个色卡候选中选当前亮度下可达的目标。"""
+    scored = sorted(
+        ((delta_e_rgb(text_rgb, COLOR_TABLE[k]), k) for k in FAR_POOL), reverse=True
+    )
+    candidates = []
+    for _, name in scored[:top_k]:
+        lab = rgb_to_lab(np.asarray(COLOR_TABLE[name], np.float32).reshape(1, 3)).reshape(3)
+        target_ab = (
+            float(lab[1] * (1.0 + rng.uniform(-jitter, jitter))),
+            float(lab[2] * (1.0 + rng.uniform(-jitter, jitter))),
+        )
+        candidates.append((target_ab, {"target_name": name}))
+    return _pick_gamut_aware_candidate(
+        source_rgb, text_rgb, candidates, rng, min_delta_e=min_delta_e
+    )
+
+
+def pick_gamut_aware_polar_ab(
+    source_rgb,
+    text_rgb,
+    base_hue_deg: float,
+    rng,
+    min_delta_e: float = 15.0,
+    requested_chroma: float = 90.0,
+    candidate_count: int = 8,
+):
+    """族 B：在与色卡无关的黄金角候选中选当前亮度下可达的目标。"""
+    candidates = []
+    for k in range(int(candidate_count)):
+        hue_deg = (float(base_hue_deg) + k * 137.5) % 360.0
+        candidates.append(
+            (
+                polar_ab(hue_deg, chroma=requested_chroma),
+                {"hue_deg": hue_deg, "requested_chroma": float(requested_chroma)},
+            )
+        )
+    return _pick_gamut_aware_candidate(
+        source_rgb, text_rgb, candidates, rng, min_delta_e=min_delta_e
+    )

@@ -36,6 +36,8 @@ from color_conflict_utils import (  # noqa: E402
     dominant_rgb_from_pil,
     extract_text_color,
     pick_far_ab,
+    pick_gamut_aware_far_ab,
+    pick_gamut_aware_polar_ab,
     polar_ab,
 )
 from garment_mask_utils import mask_backend_info  # noqa: E402
@@ -88,7 +90,15 @@ def main():
                     help="必须与训练的 --ctd_seed 一致, 否则 S2 不是'训练同族'")
     ap.add_argument("--min_delta_e", type=float, default=15.0)
     ap.add_argument("--chroma", type=float, default=45.0,
-                    help="族 B 的 LAB 色度半径")
+                    help="legacy 策略下族 B 的 LAB 色度半径")
+    ap.add_argument("--ctd_target_strategy", choices=["legacy", "gamut_aware"], default="legacy",
+                    help="目标色策略；legacy 保持旧行为，gamut_aware 按参考图亮度选择可达目标")
+    ap.add_argument("--ctd_eval_pair_mode", choices=["intersection", "independent"], default="intersection",
+                    help="A/B 样本保留方式；intersection 保持旧行为，independent 允许两集合独立保留")
+    ap.add_argument("--gamut_requested_chroma", type=float, default=90.0,
+                    help="gamut_aware 族 B 的请求色度；实际输出仍由色域安全回退限制")
+    ap.add_argument("--gamut_candidate_count", type=int, default=8,
+                    help="gamut_aware 族 B 的黄金角候选数")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
 
@@ -133,45 +143,71 @@ def main():
         src = Image.open(row["texture_abs"]).convert("RGB")
         orig_rgb = dominant_rgb_from_pil(src)
 
-        # 族 A: 与训练同一条 RNG 路径 —— 同一样本拿到同一个反事实颜色
+        # 族 A: 与训练同一条 RNG 路径 —— 同一样本拿到同一个反事实颜色。
         rng = random.Random(args.ctd_seed * 1000003 + i)
-        ab_a, color_name = pick_far_ab(text_rgb, rng)
-        img_a = chroma_shift_to(src, ab_a)
-        de_a = delta_e_rgb(orig_rgb, dominant_rgb_from_pil(img_a))
+        base_hue = (i * 137.5 + 60.0) % 360.0
+        if args.ctd_target_strategy == "legacy":
+            ab_a, color_name = pick_far_ab(text_rgb, rng)
+            info_a = {"target_name": color_name}
+            ab_b = polar_ab(base_hue, chroma=args.chroma)
+            info_b = {"hue_deg": base_hue, "requested_chroma": args.chroma}
+        else:
+            ab_a, info_a = pick_gamut_aware_far_ab(
+                orig_rgb, text_rgb, rng, min_delta_e=args.min_delta_e
+            )
+            rng_b = random.Random(args.ctd_seed * 1000003 + i + 7919)
+            ab_b, info_b = pick_gamut_aware_polar_ab(
+                orig_rgb,
+                text_rgb,
+                base_hue,
+                rng_b,
+                min_delta_e=args.min_delta_e,
+                requested_chroma=args.gamut_requested_chroma,
+                candidate_count=args.gamut_candidate_count,
+            )
 
-        # 族 B: 与 COLOR_TABLE 完全无关的 LAB 极坐标(黄金角散布, 避免聚簇)
-        ab_b = polar_ab((i * 137.5 + 60.0) % 360.0, chroma=args.chroma)
-        img_b = chroma_shift_to(src, ab_b)
-        de_b = delta_e_rgb(orig_rgb, dominant_rgb_from_pil(img_b))
+        img_a = chroma_shift_to(src, ab_a) if ab_a is not None else None
+        img_b = chroma_shift_to(src, ab_b) if ab_b is not None else None
+        de_a = delta_e_rgb(orig_rgb, dominant_rgb_from_pil(img_a)) if img_a is not None else 0.0
+        de_b = delta_e_rgb(orig_rgb, dominant_rgb_from_pil(img_b)) if img_b is not None else 0.0
 
         rec = {
             "sample_id": sid,
             "has_text_color": 1,
             "text_color_rgb": list(text_rgb),
-            "setA_target_ab": list(ab_a),
-            "setA_color_name": color_name,
+            "setA_target_ab": list(ab_a) if ab_a is not None else None,
+            "setA_color_name": info_a.get("target_name", ""),
+            "setA_selector": info_a,
             "setA_delta_e": de_a,
-            "setB_target_ab": list(ab_b),
-            "setB_hue_deg": (i * 137.5 + 60.0) % 360.0,
+            "setB_target_ab": list(ab_b) if ab_b is not None else None,
+            "setB_hue_deg": info_b.get("hue_deg", base_hue),
+            "setB_selector": info_b,
             "setB_delta_e": de_b,
             "reference_rgb_orig": list(orig_rgb),
         }
 
-        # ΔE 校验: 不达标的样本剔除并记录 —— 没有它 p_cf 是个假数(spec §0.2)
+        # ΔE 校验: 不达标的候选不计入对应集合。independent 模式不让 A/B 互相拖累。
         ok_a, ok_b = de_a >= args.min_delta_e, de_b >= args.min_delta_e
+        rec["setA_perturbed"] = int(ok_a)
+        rec["setB_perturbed"] = int(ok_b)
         rec["perturbed"] = int(ok_a and ok_b)
-        if not (ok_a and ok_b):
-            rec["reason"] = "delta_e_below_min(A=%.2f,B=%.2f)" % (de_a, de_b)
-            skipped.append(rec)
-            manifest.append(rec)
-            continue
+        if not ok_a:
+            rec["setA_reason"] = "delta_e_below_min(%.2f)" % de_a
+        if not ok_b:
+            rec["setB_reason"] = "delta_e_below_min(%.2f)" % de_b
 
-        pa = os.path.join(tex_a, "%s.png" % sid)
-        pb = os.path.join(tex_b, "%s.png" % sid)
-        img_a.save(pa)
-        img_b.save(pb)
-        set_a.append(dict(base_entry, texture=os.path.abspath(pa)))
-        set_b.append(dict(base_entry, texture=os.path.abspath(pb)))
+        keep_a = ok_a and (args.ctd_eval_pair_mode == "independent" or ok_b)
+        keep_b = ok_b and (args.ctd_eval_pair_mode == "independent" or ok_a)
+        if keep_a:
+            pa = os.path.join(tex_a, "%s.png" % sid)
+            img_a.save(pa)
+            set_a.append(dict(base_entry, texture=os.path.abspath(pa)))
+        if keep_b:
+            pb = os.path.join(tex_b, "%s.png" % sid)
+            img_b.save(pb)
+            set_b.append(dict(base_entry, texture=os.path.abspath(pb)))
+        if not (ok_a and ok_b):
+            skipped.append(rec)
         manifest.append(rec)
 
         if (i + 1) % 100 == 0:
@@ -185,19 +221,27 @@ def main():
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
 
+    perturbed_a = [m for m in manifest if m.get("setA_perturbed")]
+    perturbed_b = [m for m in manifest if m.get("setB_perturbed")]
     perturbed = [m for m in manifest if m.get("perturbed")]
-    des_a = [m["setA_delta_e"] for m in perturbed]
-    des_b = [m["setB_delta_e"] for m in perturbed]
+    des_a = [m["setA_delta_e"] for m in perturbed_a]
+    des_b = [m["setB_delta_e"] for m in perturbed_b]
     summary = {
         "n_rows": len(rows),
         "n_no_text_color": n_no_text,
         "n_perturbed": len(perturbed),
+        "n_feasible_setA": len(perturbed_a),
+        "n_feasible_setB": len(perturbed_b),
         "n_skipped": len(skipped),
         "mean_delta_e_setA": (sum(des_a) / len(des_a)) if des_a else 0.0,
         "mean_delta_e_setB": (sum(des_b) / len(des_b)) if des_b else 0.0,
         "min_delta_e_gate": args.min_delta_e,
         "ctd_seed": args.ctd_seed,
+        "ctd_target_strategy": args.ctd_target_strategy,
+        "ctd_eval_pair_mode": args.ctd_eval_pair_mode,
         "chroma": args.chroma,
+        "gamut_requested_chroma": args.gamut_requested_chroma,
+        "gamut_candidate_count": args.gamut_candidate_count,
         "mask_backend": mask_backend_info(),
     }
     with open(os.path.join(args.out_dir, "manifest.json"), "w", encoding="utf-8") as f:
@@ -206,8 +250,8 @@ def main():
         json.dump(skipped, f, indent=2, ensure_ascii=False)
 
     print()
-    print("[prep] 样本 %d  无颜色词 %d  扰动成功 %d  剔除 %d"
-          % (len(rows), n_no_text, len(perturbed), len(skipped)))
+    print("[prep] 样本 %d  无颜色词 %d  A可行 %d  B可行 %d  交集 %d  有失败 %d"
+          % (len(rows), n_no_text, len(perturbed_a), len(perturbed_b), len(perturbed), len(skipped)))
     print("[prep] 实测 ΔE  族A 均值 %.2f   族B 均值 %.2f"
           % (summary["mean_delta_e_setA"], summary["mean_delta_e_setB"]))
     print("[prep] -> %s (%d 条)" % (pa_json, len(set_a)))
