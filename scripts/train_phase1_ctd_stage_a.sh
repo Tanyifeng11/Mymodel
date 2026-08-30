@@ -110,8 +110,11 @@ done
 
 mkdir -p "${OUTPUT_DIR}"
 
-CMD=(
-  accelerate launch
+CMD=(accelerate launch)
+if [[ "${NUM_GPUS}" -gt 1 ]]; then
+  CMD+=(--multi_gpu)
+fi
+CMD+=(
   --num_processes="${NUM_GPUS}"
   --main_process_port "${MAIN_PROCESS_PORT}"
   --mixed_precision="${MIXED_PRECISION}"
