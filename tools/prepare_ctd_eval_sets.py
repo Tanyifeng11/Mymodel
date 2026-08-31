@@ -113,7 +113,7 @@ def main():
     os.makedirs(tex_a, exist_ok=True)
     os.makedirs(tex_b, exist_ok=True)
 
-    set_a, set_b, manifest, skipped = [], [], [], []
+    set_s1, set_a, set_b, manifest, skipped = [], [], [], [], []
     n_no_text = 0
 
     for i, row in enumerate(rows):
@@ -127,6 +127,10 @@ def main():
             "sketch": _rel(row["sketch_abs"], args.data_root),
             "sample_id": sid,
         }
+        # S1 保留原始参考图，是 D1/D2 的护栏；S2/S3 只是同一批样本的反事实版本。
+        set_s1.append(
+            dict(base_entry, texture=_rel(row["texture_abs"], args.data_root))
+        )
 
         if text_rgb is None:
             # 无颜色词: 两个集合都用原始参考图 —— no_text_color 对照(D1 护栏)
@@ -215,9 +219,10 @@ def main():
                   % (i + 1, len(rows), len(set_a), len(set_b), len(skipped)))
 
     os.makedirs("data", exist_ok=True)
+    ps1_json = os.path.join("data", "ctd_eval_setS1.json")
     pa_json = os.path.join("data", "ctd_eval_setA.json")
     pb_json = os.path.join("data", "ctd_eval_setB.json")
-    for path, payload in ((pa_json, set_a), (pb_json, set_b)):
+    for path, payload in ((ps1_json, set_s1), (pa_json, set_a), (pb_json, set_b)):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
 
@@ -228,6 +233,7 @@ def main():
     des_b = [m["setB_delta_e"] for m in perturbed_b]
     summary = {
         "n_rows": len(rows),
+        "n_setS1": len(set_s1),
         "n_no_text_color": n_no_text,
         "n_perturbed": len(perturbed),
         "n_feasible_setA": len(perturbed_a),
@@ -254,6 +260,7 @@ def main():
           % (len(rows), n_no_text, len(perturbed_a), len(perturbed_b), len(perturbed), len(skipped)))
     print("[prep] 实测 ΔE  族A 均值 %.2f   族B 均值 %.2f"
           % (summary["mean_delta_e_setA"], summary["mean_delta_e_setB"]))
+    print("[prep] -> %s (%d 条)" % (ps1_json, len(set_s1)))
     print("[prep] -> %s (%d 条)" % (pa_json, len(set_a)))
     print("[prep] -> %s (%d 条)" % (pb_json, len(set_b)))
     print("[prep] -> %s/manifest.json, skipped.json" % args.out_dir)
