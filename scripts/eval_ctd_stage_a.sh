@@ -16,7 +16,7 @@ EVAL_ROOT="${CTD_EVAL_ROOT:-${PROJECT_ROOT}/output_eval/ctd_stage_a_gamut_p030_f
 SET_ROOT="${CTD_EVAL_SET_ROOT:-${EVAL_ROOT}/sets}"
 SPLIT_ROOT="${CTD_EVAL_SPLIT_ROOT:-${EVAL_ROOT}/splits}"
 REPORT_ROOT="${CTD_EVAL_REPORT_ROOT:-${EVAL_ROOT}/report}"
-GENERATION_SEEDS="${GENERATION_SEEDS:-42,123,2026}"
+CTD_EVAL_MODE="${CTD_EVAL_MODE:-full}" # full: S1/S2/S3 x 3 seeds; screen: S2/S3 x seed 42
 EVAL_SEED="${EVAL_SEED:-42}"
 DEVICE="${DEVICE:-cuda:0}"
 BOOTSTRAP_SAMPLES="${BOOTSTRAP_SAMPLES:-2000}"
@@ -25,6 +25,21 @@ KID_SUBSET_SIZE="${KID_SUBSET_SIZE:-100}"
 CTD_TARGET_STRATEGY="${CTD_TARGET_STRATEGY:-gamut_aware}"
 CTD_EVAL_PAIR_MODE="${CTD_EVAL_PAIR_MODE:-independent}"
 CTD_SEED="${CTD_SEED:-42}"
+
+case "${CTD_EVAL_MODE}" in
+  full)
+    EVAL_SETS="S1,S2,S3"
+    GENERATION_SEEDS="${GENERATION_SEEDS:-42,123,2026}"
+    ;;
+  screen)
+    EVAL_SETS="S2,S3"
+    GENERATION_SEEDS="42"
+    ;;
+  *)
+    echo "[ERROR] CTD_EVAL_MODE must be full or screen, got: ${CTD_EVAL_MODE}" >&2
+    exit 1
+    ;;
+esac
 
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
@@ -37,6 +52,8 @@ for path in "${DATA_ROOT_PATH}" "${TEXTURE_CKPT}" "${E5_CKPT}" "${CTD_CKPT}" "${
 done
 
 mkdir -p "${SET_ROOT}" "${SPLIT_ROOT}" "${REPORT_ROOT}"
+
+echo "[CTD eval] mode=${CTD_EVAL_MODE}, sets=${EVAL_SETS}, generation_seeds=${GENERATION_SEEDS}"
 
 echo "========== [1/3] 构造 S1/S2/S3 固定评测集 =========="
 pushd "${SET_ROOT}" >/dev/null
@@ -100,19 +117,30 @@ run_set() {
       --expected_count "${sample_count}"
   done
 
-  python "${PROJECT_ROOT}/tools/report_e7a_control.py" \
-    --eval_root "${EVAL_ROOT}/${set_name}" \
-    --output_dir "${REPORT_ROOT}/${set_name}" \
-    --experiments e5,ctd --comparisons ctd:e5 \
-    --generation_seeds "${GENERATION_SEEDS}" \
-    --bootstrap_samples "${BOOTSTRAP_SAMPLES}"
+  if [[ "${CTD_EVAL_MODE}" == "full" ]]; then
+    python "${PROJECT_ROOT}/tools/report_e7a_control.py" \
+      --eval_root "${EVAL_ROOT}/${set_name}" \
+      --output_dir "${REPORT_ROOT}/${set_name}" \
+      --experiments e5,ctd --comparisons ctd:e5 \
+      --generation_seeds "${GENERATION_SEEDS}" \
+      --bootstrap_samples "${BOOTSTRAP_SAMPLES}"
+  fi
 }
 
-run_set S1 "${SET_ROOT}/data/ctd_eval_setS1.json"
-run_set S2 "${SET_ROOT}/data/ctd_eval_setA.json"
-run_set S3 "${SET_ROOT}/data/ctd_eval_setB.json"
+for eval_set in ${EVAL_SETS//,/ }; do
+  case "${eval_set}" in
+    S1) run_set S1 "${SET_ROOT}/data/ctd_eval_setS1.json" ;;
+    S2) run_set S2 "${SET_ROOT}/data/ctd_eval_setA.json" ;;
+    S3) run_set S3 "${SET_ROOT}/data/ctd_eval_setB.json" ;;
+  esac
+done
 
 echo "========== [3/3] 完成 =========="
-echo "[done] S1 护栏报告: ${REPORT_ROOT}/S1"
-echo "[done] S2 主评测报告: ${REPORT_ROOT}/S2"
-echo "[done] S3 泛化报告: ${REPORT_ROOT}/S3"
+if [[ "${CTD_EVAL_MODE}" == "full" ]]; then
+  echo "[done] S1 护栏报告: ${REPORT_ROOT}/S1"
+  echo "[done] S2 主评测报告: ${REPORT_ROOT}/S2"
+  echo "[done] S3 泛化报告: ${REPORT_ROOT}/S3"
+else
+  echo "[done] screening metrics: ${EVAL_ROOT}/S2/seed_42 and ${EVAL_ROOT}/S3/seed_42"
+  echo "[next] CTD_EVAL_MODE=full sbatch submit/eval_ctd_stage_a.sh will reuse these generated images."
+fi
