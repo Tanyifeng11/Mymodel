@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""汇总 E7a 固定对照评测：多 seed、子集和 paired bootstrap。"""
+"""汇总固定对照评测：多 seed 正式报告，或单 seed 参考报告。"""
 
 import argparse
 import csv
@@ -294,12 +294,21 @@ def main():
     parser.add_argument("--comparisons", default="e7a_on:e5,e7a_on:e7a_off")
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
     parser.add_argument("--bootstrap_seed", type=int, default=42)
+    parser.add_argument(
+        "--single_seed_reference",
+        action="store_true",
+        help="允许恰好一个 generation seed，并将输出明确标记为仅供方向筛选的参考报告。",
+    )
     args = parser.parse_args()
 
     experiments = parse_list(args.experiments)
     seeds = parse_list(args.generation_seeds, int)
     comparisons = [tuple(item.split(":", 1)) for item in parse_list(args.comparisons)]
-    if len(seeds) < 2 or args.bootstrap_samples < 100:
+    if args.bootstrap_samples < 100:
+        raise ValueError("at least 100 bootstrap samples are required")
+    if args.single_seed_reference and len(seeds) != 1:
+        raise ValueError("--single_seed_reference requires exactly one generation seed")
+    if not args.single_seed_reference and len(seeds) < 2:
         raise ValueError("at least two seeds and 100 bootstrap samples are required")
     if any(len(pair) != 2 or pair[0] not in experiments or pair[1] not in experiments for pair in comparisons):
         raise ValueError("comparisons must be candidate:reference names from --experiments")
@@ -311,13 +320,30 @@ def main():
     bootstrap_rows = build_bootstrap_rows(
         samples, comparisons, seeds, args.bootstrap_samples, args.bootstrap_seed
     )
-    save_tables(args.output_dir, {
-        "per_seed_summary": seed_rows,
-        "multiseed_summary": build_multiseed_rows(seed_rows, experiments),
-        "subset_per_seed": subset_per_seed,
-        "subset_multiseed": subset_multiseed,
-        "paired_bootstrap": bootstrap_rows,
-    })
+    if args.single_seed_reference:
+        save_tables(args.output_dir, {
+            "single_seed_reference_metadata": [{
+                "report_kind": "single_seed_reference",
+                "generation_seed": seeds[0],
+                "statistical_scope": (
+                    "配对样本重采样区间；不包含生成 seed 方差，"
+                    "仅用于方向筛选，不能作为正式显著性结论。"
+                ),
+            }],
+            "per_seed_summary": seed_rows,
+            "single_seed_summary": build_multiseed_rows(seed_rows, experiments),
+            "subset_per_seed": subset_per_seed,
+            "subset_single_seed": subset_multiseed,
+            "single_seed_paired_bootstrap": bootstrap_rows,
+        })
+    else:
+        save_tables(args.output_dir, {
+            "per_seed_summary": seed_rows,
+            "multiseed_summary": build_multiseed_rows(seed_rows, experiments),
+            "subset_per_seed": subset_per_seed,
+            "subset_multiseed": subset_multiseed,
+            "paired_bootstrap": bootstrap_rows,
+        })
     print(f"[e7a-control] report saved to {args.output_dir}")
 
 

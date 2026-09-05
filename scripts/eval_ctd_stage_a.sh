@@ -21,6 +21,7 @@ SET_ROOT="${CTD_EVAL_SET_ROOT:-${EVAL_ROOT}/sets}"
 SPLIT_ROOT="${CTD_EVAL_SPLIT_ROOT:-${EVAL_ROOT}/splits}"
 REPORT_ROOT="${CTD_EVAL_REPORT_ROOT:-${EVAL_ROOT}/report}"
 CTD_EVAL_MODE="${CTD_EVAL_MODE:-full}" # full: S1/S2/S3 x 3 seeds; screen: S2/S3 x 1 seed; screen_all: S1/S2/S3 x 1 seed
+SINGLE_SEED_REFERENCE_REPORT="${SINGLE_SEED_REFERENCE_REPORT:-0}"
 EVAL_SEED="${EVAL_SEED:-42}"
 DEVICE="${DEVICE:-cuda:0}"
 BOOTSTRAP_SAMPLES="${BOOTSTRAP_SAMPLES:-2000}"
@@ -141,6 +142,14 @@ run_set() {
       --experiments "${CONTROL_NAME},ctd" --comparisons "ctd:${CONTROL_NAME}" \
       --generation_seeds "${GENERATION_SEEDS}" \
       --bootstrap_samples "${BOOTSTRAP_SAMPLES}"
+  elif [[ "${SINGLE_SEED_REFERENCE_REPORT}" == "1" ]]; then
+    python "${PROJECT_ROOT}/tools/report_e7a_control.py" \
+      --eval_root "${EVAL_ROOT}/${set_name}" \
+      --output_dir "${REPORT_ROOT}/${set_name}" \
+      --experiments "${CONTROL_NAME},ctd" --comparisons "ctd:${CONTROL_NAME}" \
+      --generation_seeds "${GENERATION_SEEDS}" \
+      --bootstrap_samples "${BOOTSTRAP_SAMPLES}" \
+      --single_seed_reference
   fi
 }
 
@@ -158,6 +167,10 @@ if [[ "${CTD_EVAL_MODE}" == "full" ]]; then
   echo "[done] S2 主评测报告: ${REPORT_ROOT}/S2"
   echo "[done] S3 泛化报告: ${REPORT_ROOT}/S3"
 else
-  echo "[done] screening metrics: ${EVAL_ROOT}; no multiseed bootstrap report was generated."
+  if [[ "${SINGLE_SEED_REFERENCE_REPORT}" == "1" ]]; then
+    echo "[done] single-seed reference reports: ${REPORT_ROOT} (not a formal multiseed result)."
+  else
+    echo "[done] screening metrics: ${EVAL_ROOT}; no multiseed bootstrap report was generated."
+  fi
   echo "[next] CTD_EVAL_MODE=full sbatch submit/eval_ctd_stage_a.sh will reuse these generated images."
 fi
