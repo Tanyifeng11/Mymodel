@@ -91,6 +91,8 @@ class Trace:
 
 
 def build_cases(args):
+    if args.suite == "followup":
+        return build_followup_cases(args)
     cases = [
         {"name": f"texture_{i}", "prompt": args.prompt, "texture": str(Path(p).resolve())}
         for i, p in enumerate(args.texture_paths)
@@ -107,12 +109,42 @@ def build_cases(args):
     return cases
 
 
-def save_grid(path, records, images):
+def build_followup_cases(args):
+    """每组保持同一纹理和草图，只改变提示词；组间只改变指定开关。"""
+    texture = str(Path(args.texture_paths[0]).resolve())
+    prompts = [args.prompt, *args.text_prompts]
+    groups = ["normal", "texture_off", "routing_off"]
+    if args.use_aa_tcr_fuse:
+        groups.append("fuser_off")
+    cases = []
+    for group in groups:
+        for i, prompt in enumerate(prompts):
+            references = [f"normal_{i}"] if group != "normal" else []
+            if i:
+                references.append(f"{group}_0")
+            cases.append({
+                "name": f"{group}_{i}", "prompt": prompt,
+                "texture": None if group == "texture_off" else texture,
+                "layer_group_enabled": 0 if group == "routing_off" else args.layer_group_enabled,
+                "fuser_enabled": bool(args.use_aa_tcr_fuse) and group != "fuser_off",
+                "compare_to": references,
+            })
+    cases.append({**cases[0], "name": "repeat_baseline", "compare_to": ["normal_0"]})
+    return cases
+
+
+def set_case_state(pipe, case, original_fuser, original_routing):
+    # 每次都设置全部开关，避免上一项的关闭状态影响下一项。
+    pipe.set_layer_group_enabled(bool(case.get("layer_group_enabled", original_routing)))
+    pipe.aa_tcr_fuser = original_fuser if case.get("fuser_enabled", True) else None
+
+
+def save_grid(path, records, images, columns=4):
     cell_w, cell_h = 280, 340
-    grid = Image.new("RGB", (cell_w * 4, cell_h * ((len(images) + 3) // 4)), "white")
+    grid = Image.new("RGB", (cell_w * columns, cell_h * ((len(images) + columns - 1) // columns)), "white")
     draw = ImageDraw.Draw(grid)
     for i, (record, picture) in enumerate(zip(records, images)):
-        x, y = (i % 4) * cell_w, (i // 4) * cell_h
+        x, y = (i % columns) * cell_w, (i // columns) * cell_h
         # 默认提示词为英文，避免服务器 PIL 默认字体缺少中文字形。
         label = f"{record['name']}\n{record['prompt']}".encode("ascii", "replace").decode()
         draw.text((x + 4, y + 4), label, fill="black")
@@ -130,10 +162,11 @@ def main():
     parser.description = "E5/E7a 文本与纹理响应诊断（不训练、不计算 FID）"
     parser.add_argument("--text_prompts", nargs="+", default=["a red cloth", "a blue cloth"])
     parser.add_argument("--seeds", nargs="+", type=int, default=[42])
+    parser.add_argument("--suite", choices=["initial", "followup"], default="initial")
     args = parser.parse_args()
     if args.texture_condition_mode != "token" or args.use_palette_tokens:
         raise ValueError("本诊断限定 token 模式且不启用 palette，与 E5/E7a 对照配置一致")
-    if len(args.texture_paths) < 2:
+    if args.suite == "initial" and len(args.texture_paths) < 2:
         raise ValueError("至少提供两张不同纹理图")
     for p in [args.GAM_model_ckpt, args.texture_ckpt, args.sketch_path, *args.texture_paths]:
         if not Path(p).is_file():
@@ -168,6 +201,8 @@ def main():
             value.eval()
     torch.backends.cudnn.benchmark = False
     trace = Trace(pipe)
+    original_fuser = pipe.aa_tcr_fuser
+    original_routing = pipe.layer_group_enabled
     write_json(out / "effective_args.json", vars(args))
     write_json(out / "texture_metadata.json", pipe.texture_meta)
     transform = transforms.Compose([
@@ -177,14 +212,16 @@ def main():
     with Image.open(args.sketch_path) as sketch:
         ref_image = transform(sketch.convert("RGB")).unsqueeze(0)
     cases = build_cases(args)
-    summary = {"checkpoint": str(Path(args.GAM_model_ckpt).resolve()), "seeds": {}}
+    summary = {"checkpoint": str(Path(args.GAM_model_ckpt).resolve()), "suite": args.suite, "seeds": {}}
     try:
         for seed in args.seeds:
             seed_dir = out / f"seed_{seed}"
             seed_dir.mkdir()
             images, records = [], []
             baseline = None
+            previous_traces = {}
             for case in cases:
+                set_case_state(pipe, case, original_fuser, original_routing)
                 trace.reset()
                 torch.manual_seed(seed)
                 np.random.seed(seed)
@@ -198,7 +235,10 @@ def main():
                     if step == args.num_inference_steps - 1:
                         trace.save("final_latents", latents)
 
-                print(f"[diagnose] seed={seed} case={case['name']} prompt={case['prompt']}", flush=True)
+                print(
+                    f"[diagnose] seed={seed} case={case['name']} prompt={case['prompt']} "
+                    f"routing={pipe.layer_group_enabled} fuser={pipe.aa_tcr_fuser is not None}", flush=True,
+                )
                 with torch.inference_mode():
                     picture = pipe(
                         ref_image=ref_image, prompt=case["prompt"], texture_clip_image=texture,
@@ -226,14 +266,33 @@ def main():
                         for name, value in trace.values.items() if name in baseline
                     },
                     "stages_absent_vs_baseline": sorted(set(baseline) - set(trace.values)),
+                    "effective_switches": {
+                        "layer_group_enabled": pipe.layer_group_enabled,
+                        "fuser_enabled": pipe.aa_tcr_fuser is not None,
+                        "texture_enabled": case["texture"] is not None,
+                    },
+                    "paired_comparisons": {
+                        reference: {
+                            "differences": {
+                                name: difference(previous_traces[reference][name], value)
+                                for name, value in trace.values.items() if name in previous_traces[reference]
+                            },
+                            "stages_absent_vs_reference": sorted(set(previous_traces[reference]) - set(trace.values)),
+                        }
+                        for reference in case.get("compare_to", [])
+                    },
                 }
+                if args.suite == "followup":
+                    previous_traces[case["name"]] = dict(trace.values)
                 write_json(seed_dir / f"{case['name']}.json", record)
                 records.append(record)
                 images.append(picture)
-            save_grid(seed_dir / "grid.png", records, images)
+            save_grid(seed_dir / "grid.png", records, images,
+                      columns=1 + len(args.text_prompts) if args.suite == "followup" else 4)
             summary["seeds"][str(seed)] = records
             write_json(out / "summary.json", summary)
     finally:
+        set_case_state(pipe, {}, original_fuser, original_routing)
         trace.close()
     print(f"[done] {out / 'summary.json'}", flush=True)
 

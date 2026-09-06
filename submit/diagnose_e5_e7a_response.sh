@@ -21,7 +21,8 @@ SKETCH_PATH="${SKETCH_PATH:-${PROJECT_ROOT}/test/sketch1.jpg}"
 TEXTURE_PATHS="${TEXTURE_PATHS:-${PROJECT_ROOT}/test/texture1.jpg ${PROJECT_ROOT}/test/texture2.jpg ${PROJECT_ROOT}/test/texture3.png ${PROJECT_ROOT}/test/texture4.png}"
 SEEDS="${SEEDS:-42}"
 STEPS="${STEPS:-50}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${PROJECT_ROOT}/eval_outputs/response_diagnosis_$(date +%Y%m%d_%H%M%S)_${SLURM_JOB_ID:-local}}"
+SUITE="${SUITE:-initial}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${PROJECT_ROOT}/eval_outputs/response_${SUITE}_$(date +%Y%m%d_%H%M%S)_${SLURM_JOB_ID:-local}}"
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
@@ -47,7 +48,7 @@ run_model() {
     --GAM_model_ckpt "${ckpt}" --texture_ckpt "${TEXTURE_CKPT}" \
     --sketch_path "${SKETCH_PATH}" --texture_paths "${textures[@]}" \
     --output_dir "${OUTPUT_ROOT}/${name}" --device cuda:0 \
-    --seeds "${seeds[@]}" --num_inference_steps "${STEPS}" \
+    --seeds "${seeds[@]}" --num_inference_steps "${STEPS}" --suite "${SUITE}" \
     --prompt "a cloth" --text_prompts "a red cloth" "a blue cloth" \
     --texture_condition_mode token --texture_mode patch_resampled \
     --texture_preprocess_mode plain_resize --use_tcpm_lite 1 \
