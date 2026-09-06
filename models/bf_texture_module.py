@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from models.text_guided_queries import TextGuidedQueries
+
 
 class BFTextureConditioner(nn.Module):
     def __init__(
@@ -12,6 +14,9 @@ class BFTextureConditioner(nn.Module):
         stage_channels=None,
         stage_token_hw=(8, 8),
         texture_mode: str = "patch_resampled",
+        text_guidance_dim: int = 0,
+        text_guidance_heads: int = 4,
+        text_guidance_max_ratio: float = 0.3,
     ):
         super().__init__()
         self.num_tokens = num_tokens
@@ -76,6 +81,35 @@ class BFTextureConditioner(nn.Module):
             nn.Linear(cross_attention_dim * 2, cross_attention_dim),
         )
         self.token_norm = nn.LayerNorm(cross_attention_dim)
+        self.text_guidance = None
+        self.text_guidance_enabled = True
+        if text_guidance_dim:
+            self.configure_text_guidance(text_guidance_dim, text_guidance_heads, text_guidance_max_ratio)
+
+    def configure_text_guidance(self, text_guidance_dim=0, text_guidance_heads=4,
+                                text_guidance_max_ratio=0.3):
+        self.text_guidance = (
+            TextGuidedQueries(self.cross_attention_dim, text_guidance_dim,
+                              text_guidance_heads, text_guidance_max_ratio).to(
+                device=self.resampler_queries.device, dtype=self.resampler_queries.dtype
+            ) if text_guidance_dim else None
+        )
+
+    def text_guidance_config(self):
+        module = self.text_guidance
+        return {
+            "text_guidance_dim": module.inner_dim if module is not None else 0,
+            "text_guidance_heads": module.num_heads if module is not None else 4,
+            "text_guidance_max_ratio": module.max_ratio if module is not None else 0.3,
+        }
+
+    def train_resampler_only(self):
+        """B/C 共用冻结规则，token MLP、CNN、投影层保持 E5 权重。"""
+        self.requires_grad_(False)
+        self.resampler_queries.requires_grad_(True)
+        self.resampler.requires_grad_(True)
+        if self.text_guidance is not None:
+            self.text_guidance.requires_grad_(True)
 
     def _stage_to_tokens(self, feat: torch.Tensor) -> torch.Tensor:
         pooled = self.stage_pool(feat)
@@ -130,6 +164,9 @@ class BFTextureConditioner(nn.Module):
         texture_images: torch.Tensor = None,
         clip_vision_tokens: torch.Tensor = None,
         texture_mode: str = None,
+        text_embeds: torch.Tensor = None,
+        text_mask: torch.Tensor = None,
+        apply_text_guidance: bool = True,
     ):
         if texture_images is None:
             raise ValueError("texture_images is required.")
@@ -157,6 +194,8 @@ class BFTextureConditioner(nn.Module):
 
         bsz = fused_tokens.shape[0]
         query = self.resampler_queries.expand(bsz, -1, -1)
+        if self.text_guidance is not None and self.text_guidance_enabled and apply_text_guidance:
+            query = self.text_guidance(query, text_embeds, text_mask)
         tokens, _ = self.resampler(query, fused_tokens, fused_tokens, need_weights=False)
         tokens = tokens + self.token_mlp(tokens)
         tokens = self.token_norm(tokens)

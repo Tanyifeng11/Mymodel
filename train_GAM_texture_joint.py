@@ -21,7 +21,7 @@ from torchvision.models import VGG19_Weights, vgg19
 from torchvision.utils import make_grid, save_image
 
 from accelerate import Accelerator
-from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration
+from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration, set_seed
 from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from transformers import (
@@ -38,6 +38,7 @@ from adapter.attention_processor import (
     LogoRefSAttnProcessor2_0,
 )
 from models.bf_texture_module import BFTextureConditioner
+from models.text_guided_queries import text_content_mask, guidance_config_from_checkpoint
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
@@ -468,6 +469,13 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "tcpm_scale_lr": args.tcpm_scale_lr,
         "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
         "freeze_for_tcpm_lite": args.freeze_for_tcpm_lite,
+        "resampler_training": args.resampler_training,
+        "text_guidance_dim": args.text_guidance_dim if args.resampler_training == "text" else 0,
+        "text_guidance_heads": args.text_guidance_heads,
+        "text_guidance_max_ratio": args.text_guidance_max_ratio,
+        "text_guidance_lr": args.text_guidance_lr,
+        "resampler_lr": args.resampler_lr,
+        "seed": args.seed,
         "train_unet_late_for_distribution": args.train_unet_late_for_distribution,
         "unet_late_lr": args.unet_late_lr,
         "unet_late_blocks": args.unet_late_blocks,
@@ -636,6 +644,12 @@ def load_joint_checkpoint_into_models(
 
     load_partial_state(unet, state_dict, "unet", "unet", strict=False)
     load_partial_state(ref_unet, state_dict, "ref_unet", "ref_unet", strict=False)
+    bf_raw = bf.module if hasattr(bf, "module") else bf
+    guidance_config = guidance_config_from_checkpoint(
+        state_dict.get("bf_texture_conditioner", {}), state_dict.get("meta", {})
+    )
+    if guidance_config["text_guidance_dim"] and guidance_config != bf_raw.text_guidance_config():
+        raise ValueError("恢复的文本查询架构与训练参数不一致，请使用 checkpoint 中的配置")
     load_partial_state(
         bf, state_dict, "bf_texture_conditioner", "bf_texture_conditioner", strict=False
     )
@@ -827,6 +841,9 @@ def save_training_checkpoint(
         "ref_unet": ref_unet_raw.state_dict(),
         "texture_adapter": texture_adapter_raw.state_dict(),
         "bf_texture_conditioner": bf_raw.state_dict(),
+        "text_guidance_last_stats": (
+            dict(bf_raw.text_guidance.last_stats) if bf_raw.text_guidance is not None else {}
+        ),
         "spatial_texture_encoder": spatial_texture_encoder_raw.state_dict(),
         "spatial_injection": spatial_injection_raw.state_dict(),
         "palette_token_mlp": (
@@ -848,6 +865,11 @@ def save_training_checkpoint(
             dict(aa_tcr_raw.last_stats) if aa_tcr_raw is not None else {}
         ),
         "meta": {
+            **bf_raw.text_guidance_config(),
+            "resampler_training": args.resampler_training,
+            "text_guidance_lr": args.text_guidance_lr,
+            "resampler_lr": args.resampler_lr,
+            "seed": args.seed,
             "pretrained_model_name_or_path": args.pretrained_model_name_or_path,
             "pretrained_vae_model_path": args.pretrained_vae_model_path,
             "texture_num_tokens": args.bf_num_tokens,
@@ -1360,6 +1382,8 @@ def run_mode_validation_vis(
                     :, 1:, :
                 ],
                 texture_mode=args.texture_mode,
+                text_embeds=text_h,
+                text_mask=text_content_mask(batch["input_ids"], args.text_eos_token_id),
             )
             if args.use_tcpm_lite:
                 tex_tokens = tcpm_lite(tex_tokens, enc_h)
@@ -1563,6 +1587,14 @@ def main():
     ap.add_argument("--tcpm_scale_lr", type=float, default=1e-5)
     ap.add_argument("--tcpm_mask_inner_only", type=int, default=1, choices=[0, 1])
     ap.add_argument("--freeze_for_tcpm_lite", type=int, default=1, choices=[0, 1])
+    ap.add_argument("--resampler_training", choices=["off", "visual", "text"], default="off")
+    ap.add_argument("--text_guidance_dim", type=int, default=256)
+    ap.add_argument("--text_guidance_heads", type=int, default=4)
+    ap.add_argument("--text_guidance_max_ratio", type=float, default=0.3)
+    ap.add_argument("--text_guidance_lr", type=float, default=5e-5)
+    ap.add_argument("--resampler_lr", type=float, default=1e-5)
+    ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--checkpointing_steps", type=int, default=0)
     ap.add_argument("--train_unet_late_for_distribution", type=int, default=0, choices=[0, 1])
     ap.add_argument("--unet_late_lr", type=float, default=2e-6)
     ap.add_argument("--unet_late_blocks", type=str, default="2,3")
@@ -1661,6 +1693,17 @@ def main():
     )
 
     args = ap.parse_args()
+    if args.seed is not None:
+        set_seed(args.seed)
+    if args.resampler_training != "off":
+        if args.texture_condition_mode != "token" or args.texture_mode != "patch_resampled":
+            raise ValueError("重采样实验仅支持 token / patch_resampled 配置")
+        if not args.use_tcpm_lite or args.bf_num_tokens != 16:
+            raise ValueError("重采样实验需要 E5 TCPM 和 16 个纹理 token")
+        if any((args.use_aa_tcr_fuse, args.freeze_all_but_aa_tcr, args.freeze_except_gate,
+                args.train_unet_late_for_distribution, args.train_detail_texture_adapter,
+                args.train_spatial_only, args.use_palette_tokens)):
+            raise ValueError("重采样实验不能同时启用其他模块训练或融合实验")
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = False
 
@@ -1731,6 +1774,7 @@ def main():
         if accelerator.is_main_process:
             print(f"[warn] CLIPTokenizerFast unavailable ({exc}); "
                   "falling back to slow tokenizer (attribute mask 对齐会慢一些)")
+    args.text_eos_token_id = tokenizer.eos_token_id
     if accelerator.is_main_process:
         print(f"[info] tokenizer is_fast = {getattr(tokenizer, 'is_fast', False)}")
     text_encoder = CLIPTextModel.from_pretrained(
@@ -1847,6 +1891,9 @@ def main():
         clip_embeddings_dim=image_encoder.config.hidden_size,
         cross_attention_dim=unet.config.cross_attention_dim,
         num_tokens=args.bf_num_tokens,
+        text_guidance_dim=args.text_guidance_dim if args.resampler_training == "text" else 0,
+        text_guidance_heads=args.text_guidance_heads,
+        text_guidance_max_ratio=args.text_guidance_max_ratio,
     )
     palette_token_mlp = PaletteTokenMLP(
         cross_attention_dim=unet.config.cross_attention_dim,
@@ -1998,7 +2045,8 @@ def main():
     unet_late_names = []
     # freeze_all_but_aa_tcr 优先级更高: 它要求"可训练参数仅 AA-TCR Fuse",
     # 而这个分支会把 tcpm_lite 重新解冻, 两者冲突时以前者为准。
-    if args.use_tcpm_lite and args.freeze_for_tcpm_lite and not args.freeze_all_but_aa_tcr:
+    if (args.use_tcpm_lite and args.freeze_for_tcpm_lite and not args.freeze_all_but_aa_tcr
+            and args.resampler_training == "off"):
         for p in unet.parameters():
             p.requires_grad = False
         for p in ref_unet.parameters():
@@ -2084,6 +2132,13 @@ def main():
         if accelerator.is_main_process:
             print("[info] freeze_except_gate=1, only texture_gate_delta remains trainable.")
 
+    if args.resampler_training != "off":
+        for module in (unet, ref_unet, bf, spatial_texture_encoder, spatial_injection,
+                       tcpm_lite, palette_token_mlp):
+            module.requires_grad_(False)
+        bf.train_resampler_only()
+        print(f"[resampler] 仅训练查询/视觉重采样器，文本引导={args.resampler_training == 'text'}")
+
     # 显式构造 trainable params
     trainable_param_groups = []
     trainable_params = []
@@ -2133,7 +2188,13 @@ def main():
         add_params(nn.ModuleList(unet.attn_processors.values()).parameters())
 
     # 2. BF token conditioner
-    add_params(bf.parameters())
+    if args.resampler_training != "off":
+        add_params([bf.resampler_queries], lr=args.resampler_lr)
+        add_params(bf.resampler.parameters(), lr=args.resampler_lr)
+        if bf.text_guidance is not None:
+            add_params(bf.text_guidance.parameters(), lr=args.text_guidance_lr)
+    else:
+        add_params(bf.parameters())
     if palette_token_mlp is not None:
         add_params(palette_token_mlp.parameters(), lr=args.palette_mlp_lr)
 
@@ -2237,7 +2298,7 @@ def main():
     else:
         total_epochs = max(1, args.num_train_epochs)
         target_global_step = total_epochs * steps_per_epoch
-    checkpoint_interval_steps = max(1, args.checkpointing_epochs * steps_per_epoch)
+    checkpoint_interval_steps = args.checkpointing_steps or max(1, args.checkpointing_epochs * steps_per_epoch)
 
     optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
     lr_scheduler = get_scheduler(
@@ -2419,10 +2480,13 @@ def main():
         return_tensors="pt",
     ).input_ids[0]
 
+    # 模块初始化消耗的随机数不同；在数据迭代前重置，保持 B/C 的训练采样可比。
+    if args.seed is not None:
+        set_seed(args.seed + accelerator.process_index)
     while global_step < target_global_step:
         for batch in dl:
             current_epoch = global_step // max(1, steps_per_epoch)
-            with accelerator.accumulate(unet):
+            with accelerator.accumulate(bf if args.resampler_training != "off" else unet):
                 drop_token_branch = False
                 drop_spatial_branch = False
                 if args.texture_condition_mode == "hybrid":
@@ -2514,6 +2578,8 @@ def main():
                             args.clip_hidden_layer
                         ][:, 1:, :],
                         texture_mode=args.texture_mode,
+                        text_embeds=enc_h,
+                        text_mask=text_content_mask(input_ids, tokenizer.eos_token_id),
                     )
                     if tex_tokens.shape[1] != args.bf_num_tokens:
                         raise RuntimeError(
@@ -2887,6 +2953,10 @@ def main():
                     )
                     # E7: AA-TCR Fuser stats (alpha、覆盖率、残差范数)
                     aa_tcr_stats = {}
+                    guidance = accelerator.unwrap_model(bf).text_guidance
+                    if guidance is not None:
+                        aa_tcr_stats.update({f"train/tgr_{k}": float(v)
+                                             for k, v in guidance.last_stats.items()})
                     if aa_tcr_fuser is not None:
                         raw = accelerator.unwrap_model(aa_tcr_fuser)
                         for k, v in raw.last_stats.items():
@@ -3014,6 +3084,13 @@ def main():
                             if aa_tcr_fuser is not None else ""
                         )
                     )
+                    guidance = accelerator.unwrap_model(bf).text_guidance
+                    if guidance is not None:
+                        stats = {"step": global_step, **guidance.last_stats}
+                        print(f"[text_guidance] {stats}")
+                        with open(os.path.join(args.output_dir, "text_guidance_stats.jsonl"),
+                                  "a", encoding="utf-8") as handle:
+                            handle.write(json.dumps(stats) + "\n")
 
                 if (
                     accelerator.sync_gradients

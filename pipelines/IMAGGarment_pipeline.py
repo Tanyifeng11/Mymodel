@@ -23,6 +23,7 @@ from diffusers.loaders import LoraLoaderMixin
 
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
+from models.text_guided_queries import text_content_mask, guidance_config_from_checkpoint
 from models.palette_tokenizer import PaletteTokenMLP
 from models.tcpm_lite import TCPMLite
 from models.attribute_token_mask import build_attribute_masks
@@ -292,6 +293,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 num_tokens=num_tokens,
                 stage_channels=(c1, c2, c3, c4),
                 texture_mode="patch_resampled",
+                **guidance_config_from_checkpoint(bf_sd, extract_texture_metadata(state_dict)),
             ).to(self.device, dtype=torch.float16)
 
             missing, unexpected = self.bf_texture_conditioner.load_state_dict(bf_sd, strict=False)
@@ -424,6 +426,9 @@ class IMAGGarment(StableDiffusionPipeline):
         negative_prompt_embeds: Optional[torch.FloatTensor] = None,
         lora_scale: Optional[float] = None,
         clip_skip: Optional[int] = None,
+        return_text_masks: bool = False,
+        prompt_text_mask=None,
+        negative_text_mask=None,
     ):
         if lora_scale is not None and isinstance(self, LoraLoaderMixin):
             self._lora_scale = lora_scale
@@ -452,6 +457,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 return_tensors="pt",
             )
             text_input_ids = text_inputs.input_ids
+            if return_text_masks:
+                prompt_text_mask = text_content_mask(text_input_ids, self.tokenizer.eos_token_id)
             untruncated_ids = self.tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
 
             if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
@@ -492,6 +499,10 @@ class IMAGGarment(StableDiffusionPipeline):
         bs_embed, seq_len, _ = prompt_embeds.shape
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
         prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
+        if return_text_masks:
+            if prompt_text_mask is None:
+                raise ValueError("预编码 prompt_embeds 用于文本引导时，必须同时传入 prompt_text_mask")
+            prompt_text_mask = prompt_text_mask.to(device).repeat_interleave(num_images_per_prompt, dim=0)
 
         if do_classifier_free_guidance and negative_prompt_embeds is None:
             if negative_prompt is None:
@@ -523,6 +534,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 truncation=True,
                 return_tensors="pt",
             )
+            if return_text_masks:
+                negative_text_mask = text_content_mask(uncond_input.input_ids, self.tokenizer.eos_token_id)
 
             if hasattr(self.text_encoder.config, "use_attention_mask") and self.text_encoder.config.use_attention_mask:
                 attention_mask = uncond_input.attention_mask.to(device)
@@ -540,10 +553,16 @@ class IMAGGarment(StableDiffusionPipeline):
             negative_prompt_embeds = negative_prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)
             negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)
             negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
+            if return_text_masks:
+                if negative_text_mask is None:
+                    raise ValueError("预编码 negative_prompt_embeds 需要对应的 negative_text_mask")
+                negative_text_mask = negative_text_mask.to(device).repeat_interleave(num_images_per_prompt, dim=0)
 
         if isinstance(self, LoraLoaderMixin) and USE_PEFT_BACKEND:
             unscale_lora_layers(self.text_encoder, lora_scale)
 
+        if return_text_masks:
+            return prompt_embeds, negative_prompt_embeds, prompt_text_mask, negative_text_mask
         return prompt_embeds, negative_prompt_embeds
 
     def prepare_latents(
@@ -646,6 +665,8 @@ class IMAGGarment(StableDiffusionPipeline):
         negative_text_embeds=None,
         aa_tcr_captions=None,
         aa_tcr_negative_captions=None,
+        text_mask=None,
+        negative_text_mask=None,
     ):
         clip_patch_tokens = None
         if pil_image is not None:
@@ -678,6 +699,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 texture_images=texture_tensor,
                 clip_vision_tokens=clip_patch_tokens,
                 texture_mode=texture_mode,
+                text_embeds=text_embeds,
+                text_mask=text_mask,
             )
             if self.use_tcpm_lite and text_embeds is not None:
                 image_prompt_embeds = self.tcpm_lite(image_prompt_embeds, text_embeds)
@@ -693,6 +716,9 @@ class IMAGGarment(StableDiffusionPipeline):
                 texture_images=zero_texture,
                 clip_vision_tokens=zero_patch,
                 texture_mode=texture_mode,
+                text_embeds=negative_text_embeds,
+                text_mask=negative_text_mask,
+                apply_text_guidance=negative_text_embeds is not None,
             )
             if self.use_tcpm_lite and negative_text_embeds is not None:
                 uncond_image_prompt_embeds = self.tcpm_lite(
@@ -824,7 +850,12 @@ class IMAGGarment(StableDiffusionPipeline):
         text_encoder_lora_scale = (
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
         )
-        prompt_embeds, negative_prompt_embeds = self.encode_prompt(
+        use_text_guidance = (
+            self.bf_texture_conditioner is not None
+            and self.bf_texture_conditioner.text_guidance is not None
+            and self.bf_texture_conditioner.text_guidance_enabled
+        )
+        encoded_prompt = self.encode_prompt(
             prompt,
             device,
             num_images_per_prompt,
@@ -834,7 +865,12 @@ class IMAGGarment(StableDiffusionPipeline):
             negative_prompt_embeds=negative_prompt_embeds,
             lora_scale=text_encoder_lora_scale,
             clip_skip=self._clip_skip,
+            return_text_masks=use_text_guidance,
+            prompt_text_mask=kwargs.get("prompt_text_mask"),
+            negative_text_mask=kwargs.get("negative_text_mask"),
         )
+        prompt_embeds, negative_prompt_embeds = encoded_prompt[:2]
+        text_mask, negative_text_mask = encoded_prompt[2:] if use_text_guidance else (None, None)
 
         image_prompt_embeds = None
         uncond_image_prompt_embeds = None
@@ -905,6 +941,8 @@ class IMAGGarment(StableDiffusionPipeline):
                     negative_text_embeds=negative_prompt_embeds,
                     aa_tcr_captions=prompt,
                     aa_tcr_negative_captions=negative_prompt,
+                    text_mask=text_mask,
+                    negative_text_mask=negative_text_mask,
                 )
                 image_prompt_embeds = image_prompt_embeds * texture_scale
                 uncond_image_prompt_embeds = uncond_image_prompt_embeds * texture_scale

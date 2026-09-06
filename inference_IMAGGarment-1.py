@@ -17,6 +17,7 @@ from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 from models.attribute_text_texture_fuser import AttributeTextTextureFuser
+from models.text_guided_queries import guidance_config_from_checkpoint
 import argparse
 from garment_mask_utils import build_sketch_garment_mask
 
@@ -462,8 +463,20 @@ def prepare(args):
         raise RuntimeError("E2b requires texture_adapter gate parameters in GAM checkpoint")
 
     bf_state = gam_info.get("bf_state", None)
+    if getattr(args, "use_text_guided_resampler", -1) == 1 and (
+        not bf_state or getattr(pipe, "bf_texture_conditioner", None) is None
+    ):
+        raise ValueError("文本引导重采样需要完整的 BF 纹理分支 checkpoint")
     if bf_state is not None and getattr(pipe, "bf_texture_conditioner", None) is not None:
-        missing, unexpected = pipe.bf_texture_conditioner.load_state_dict(bf_state, strict=False)
+        guidance_config = guidance_config_from_checkpoint(bf_state, gam_meta)
+        pipe.bf_texture_conditioner.configure_text_guidance(**guidance_config)
+        has_guidance = bool(guidance_config["text_guidance_dim"])
+        requested_guidance = getattr(args, "use_text_guided_resampler", -1)
+        if requested_guidance == 1 and not has_guidance:
+            raise ValueError("启用了文本引导，但 GAM checkpoint 中没有对应权重")
+        pipe.bf_texture_conditioner.text_guidance_enabled = has_guidance and requested_guidance != 0
+        missing, unexpected = pipe.bf_texture_conditioner.load_state_dict(bf_state, strict=has_guidance)
+        print(f"[prepare] text_guided_resampler={pipe.bf_texture_conditioner.text_guidance_enabled}, config={guidance_config}")
         print(
             "[prepare] restored bf_texture_conditioner from GAM checkpoint after pipe init "
             f"(missing={len(missing)}, unexpected={len(unexpected)})"
@@ -541,6 +554,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_conflict_aware_gate', type=int, default=0, choices=[0, 1])
     parser.add_argument('--use_tcpm_lite', type=int, default=0, choices=[0, 1])
     parser.add_argument('--use_aa_tcr_fuse', type=int, default=0, choices=[0, 1])
+    parser.add_argument('--use_text_guided_resampler', type=int, default=-1, choices=[-1, 0, 1],
+                        help='-1 根据 checkpoint 自动启用，0 关闭文本查询，1 要求文本查询权重存在')
     parser.add_argument('--tcpm_hidden_ratio', type=float, default=0.25)
     parser.add_argument('--tcpm_residual_scale_init', type=float, default=0.0)
     parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.1)
