@@ -138,6 +138,53 @@ class ResamplerTests(unittest.TestCase):
         torch.testing.assert_close(output, q, rtol=0, atol=0)
         self.assertTrue(all(torch.isfinite(p.grad).all() for p in module.parameters() if p.grad is not None))
 
+    def test_autocast_handles_masked_and_empty_text(self):
+        # CPU 上也实际启用 FP16 autocast；有 GPU 时覆盖服务器的 CUDA 路径。
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        module = TextGuidedQueries(32, 16).to(device)
+        q = torch.randn(2, 16, 32, device=device)
+        text = torch.randn(2, 5, 32, device=device)
+        mask = torch.tensor([[0, 1, 1, 0, 0], [0, 0, 0, 0, 0]], device=device).bool()
+        for gate_value in (0.0, 0.5):
+            with self.subTest(gate=gate_value):
+                module.zero_grad(set_to_none=True)
+                module.gate.data.fill_(gate_value)
+                with torch.autocast(device_type=device.type, dtype=torch.float16):
+                    output = module(q, text, mask)
+                    changed_padding = text.clone()
+                    changed_padding[~mask] = 100 * torch.randn_like(changed_padding[~mask])
+                    padding_output = module(q, changed_padding, mask)
+                self.assertTrue(torch.isfinite(output).all())
+                torch.testing.assert_close(output[1], q[1], rtol=0, atol=0)
+                torch.testing.assert_close(padding_output, output, rtol=0, atol=0)
+                if gate_value == 0:
+                    torch.testing.assert_close(output, q, rtol=0, atol=0)
+                self.assertLessEqual(module.last_stats["query_relative_rms_max"], 0.300001)
+                output.float().square().mean().backward()
+                self.assertTrue(all(p.grad is not None and torch.isfinite(p.grad).all()
+                                    for p in module.parameters()))
+                self.assertGreater(module.gate.grad.abs().item(), 0)
+                if gate_value:
+                    self.assertGreater(module.to_out.weight.grad.abs().sum().item(), 0)
+
+    def test_conditioner_autocast_backward(self):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = small_conditioner(True).to(device)
+        model.train_resampler_only()
+        model.text_guidance.gate.data.fill_(0.5)
+        data = {name: value.to(device) for name, value in self.inputs().items()}
+        data["text_mask"][1] = False
+        with torch.autocast(device_type=device.type, dtype=torch.float16):
+            output, _ = model(**data)
+        self.assertTrue(torch.isfinite(output).all())
+        torch.nn.functional.mse_loss(output.float(), torch.randn_like(output).float()).backward()
+        for name, parameter in model.named_parameters():
+            if parameter.requires_grad:
+                self.assertIsNotNone(parameter.grad, name)
+                self.assertTrue(torch.isfinite(parameter.grad).all(), name)
+            else:
+                self.assertIsNone(parameter.grad, name)
+
     def test_checkpoint_roundtrip_and_metadata_validation(self):
         model = small_conditioner(True).eval()
         model.text_guidance.gate.data.fill_(0.6)

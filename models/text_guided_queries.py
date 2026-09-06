@@ -64,13 +64,15 @@ class TextGuidedQueries(nn.Module):
         q = self.to_q(self.norm_query(queries)).view(b, n, h, d).transpose(1, 2)
         k = self.to_k(text).view(b, -1, h, d).transpose(1, 2)
         v = self.to_v(text).view(b, -1, h, d).transpose(1, 2)
-        logits = (q.float() @ k.float().transpose(-1, -2)) * (d ** -0.5)
         mask = text_mask.to(device=queries.device, dtype=torch.bool)
-        # 全空行先保持有限值，最后将其残差显式清零；所有参数仍连接计算图。
-        logits = logits.masked_fill(~mask[:, None, None, :], torch.finfo(torch.float32).min)
-        weights = logits.softmax(dim=-1).to(v.dtype)
-        delta = (weights @ v).transpose(1, 2).reshape(b, n, self.inner_dim)
-        delta = self.to_out(delta).float()
+        # 外层 autocast 会将 float() 后的矩阵乘法再次降为 FP16，须显式关闭。
+        with torch.autocast(device_type=queries.device.type, enabled=False):
+            logits = (q.float() @ k.float().transpose(-1, -2)) * (d ** -0.5)
+            # 全空行先保持有限值，最后将其残差显式清零；所有参数仍连接计算图。
+            logits = logits.masked_fill(~mask[:, None, None, :], torch.finfo(torch.float32).min)
+            weights = logits.softmax(dim=-1)
+            delta = (weights @ v.float()).transpose(1, 2).reshape(b, n, self.inner_dim)
+        delta = self.to_out(delta.to(v.dtype)).float()
         query_rms = queries.detach().float().square().mean(dim=-1, keepdim=True).sqrt()
         delta_rms = delta.square().mean(dim=-1, keepdim=True).clamp_min(1e-12).sqrt()
         gate = self.max_ratio * self.gate.float().tanh()

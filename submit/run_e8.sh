@@ -1,6 +1,7 @@
 #!/bin/bash
 # 提交：sbatch submit/run_e8.sh
 # 同一作业内依次训练 E8a、E8b，再评测 E5/E8a/E8b；默认各训练 1000 步、各评测 100 张。
+# E8a 已完成时：SKIP_E8A=1 sbatch submit/run_e8.sh（从 E5 重新训练 E8b，再评测）。
 
 #SBATCH -J E8
 #SBATCH -p gpu
@@ -33,6 +34,15 @@ cd "${PROJECT_ROOT}"
 
 # 两组分别从同一 E5 初始化；输出目录分开，训练数据始终使用 training。
 for mode in visual text; do
+  if [[ "${mode}" == "visual" && "${SKIP_E8A:-0}" == "1" ]]; then
+    visual_ckpt="${OUTPUT_BASE}/phase1_resampler_visual/checkpoint-final/joint_model.pt"
+    if [[ "${DRY_RUN:-0}" != "1" && ! -f "${visual_ckpt}" ]]; then
+      echo "缺少 E8a 最终权重，不能跳过训练：${visual_ckpt}" >&2
+      exit 1
+    fi
+    echo "[E8a] 跳过训练，复用权重：${visual_ckpt}"
+    continue
+  fi
   if [[ "${mode}" == "visual" ]]; then stage=E8a; else stage=E8b; fi
   echo "[${stage}] 开始训练，模式=${mode}，步数=${MAX_TRAIN_STEPS:-1000}"
   RESAMPLER_MODE="${mode}" \
