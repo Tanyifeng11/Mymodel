@@ -93,6 +93,8 @@ class Trace:
 def build_cases(args):
     if args.suite == "followup":
         return build_followup_cases(args)
+    if args.suite == "text_scale":
+        return build_text_scale_cases(args)
     cases = [
         {"name": f"texture_{i}", "prompt": args.prompt, "texture": str(Path(p).resolve())}
         for i, p in enumerate(args.texture_paths)
@@ -133,10 +135,41 @@ def build_followup_cases(args):
     return cases
 
 
-def set_case_state(pipe, case, original_fuser, original_routing):
+def build_text_scale_cases(args):
+    """只改变 detail 层文本特征缩放；纹理仍仅进入原有层。"""
+    texture = str(Path(args.texture_paths[0]).resolve())
+    cases = []
+    for group, scale in [("normal", None), ("text_scale_one", 1.0)]:
+        for i, prompt in enumerate([args.prompt, *args.text_prompts]):
+            references = [f"normal_{i}"] if group != "normal" else []
+            if i:
+                references.append(f"{group}_0")
+            cases.append({
+                "name": f"{group}_{i}", "prompt": prompt, "texture": texture,
+                "layer_group_enabled": 1, "fuser_enabled": bool(args.use_aa_tcr_fuse),
+                "detail_text_scale_override": scale, "compare_to": references,
+            })
+    cases.append({**cases[0], "name": "repeat_baseline", "compare_to": ["normal_0"]})
+    return cases
+
+
+def set_case_state(pipe, case, original_fuser, original_routing, original_text_scales):
     # 每次都设置全部开关，避免上一项的关闭状态影响下一项。
     pipe.set_layer_group_enabled(bool(case.get("layer_group_enabled", original_routing)))
     pipe.aa_tcr_fuser = original_fuser if case.get("fuser_enabled", True) else None
+    for name, scale in original_text_scales.items():
+        proc = pipe.unet.attn_processors[name]
+        override = case.get("detail_text_scale_override")
+        proc.detail_text_scale = (
+            float(override) if proc.layer_group == "detail" and override is not None else scale
+        )
+
+
+def attention_settings(pipe):
+    return {
+        name: {"layer_group": proc.layer_group, "detail_text_scale": float(proc.detail_text_scale)}
+        for name, proc in pipe.unet.attn_processors.items() if hasattr(proc, "detail_text_scale")
+    }
 
 
 def save_grid(path, records, images, columns=4):
@@ -162,10 +195,12 @@ def main():
     parser.description = "E5/E7a 文本与纹理响应诊断（不训练、不计算 FID）"
     parser.add_argument("--text_prompts", nargs="+", default=["a red cloth", "a blue cloth"])
     parser.add_argument("--seeds", nargs="+", type=int, default=[42])
-    parser.add_argument("--suite", choices=["initial", "followup"], default="initial")
+    parser.add_argument("--suite", choices=["initial", "followup", "text_scale"], default="initial")
     args = parser.parse_args()
     if args.texture_condition_mode != "token" or args.use_palette_tokens:
         raise ValueError("本诊断限定 token 模式且不启用 palette，与 E5/E7a 对照配置一致")
+    if args.suite == "text_scale" and not args.layer_group_enabled:
+        raise ValueError("text_scale 对照要求保留分层路由：--layer_group_enabled 1")
     if args.suite == "initial" and len(args.texture_paths) < 2:
         raise ValueError("至少提供两张不同纹理图")
     for p in [args.GAM_model_ckpt, args.texture_ckpt, args.sketch_path, *args.texture_paths]:
@@ -203,6 +238,16 @@ def main():
     trace = Trace(pipe)
     original_fuser = pipe.aa_tcr_fuser
     original_routing = pipe.layer_group_enabled
+    original_text_scales = {
+        name: proc.detail_text_scale
+        for name, proc in pipe.unet.attn_processors.items() if hasattr(proc, "detail_text_scale")
+    }
+    if args.suite == "text_scale" and not any(
+        proc.layer_group == "detail" for name, proc in pipe.unet.attn_processors.items()
+        if name in original_text_scales
+    ):
+        raise RuntimeError("没有找到 detail 层，停止无效的文本缩放对照")
+    write_json(out / "original_attention_settings.json", attention_settings(pipe))
     write_json(out / "effective_args.json", vars(args))
     write_json(out / "texture_metadata.json", pipe.texture_meta)
     transform = transforms.Compose([
@@ -221,7 +266,7 @@ def main():
             baseline = None
             previous_traces = {}
             for case in cases:
-                set_case_state(pipe, case, original_fuser, original_routing)
+                set_case_state(pipe, case, original_fuser, original_routing, original_text_scales)
                 trace.reset()
                 torch.manual_seed(seed)
                 np.random.seed(seed)
@@ -237,7 +282,8 @@ def main():
 
                 print(
                     f"[diagnose] seed={seed} case={case['name']} prompt={case['prompt']} "
-                    f"routing={pipe.layer_group_enabled} fuser={pipe.aa_tcr_fuser is not None}", flush=True,
+                    f"routing={pipe.layer_group_enabled} fuser={pipe.aa_tcr_fuser is not None} "
+                    f"detail_text_scale_override={case.get('detail_text_scale_override')}", flush=True,
                 )
                 with torch.inference_mode():
                     picture = pipe(
@@ -271,6 +317,7 @@ def main():
                         "fuser_enabled": pipe.aa_tcr_fuser is not None,
                         "texture_enabled": case["texture"] is not None,
                     },
+                    "effective_attention_settings": attention_settings(pipe),
                     "paired_comparisons": {
                         reference: {
                             "differences": {
@@ -282,17 +329,17 @@ def main():
                         for reference in case.get("compare_to", [])
                     },
                 }
-                if args.suite == "followup":
+                if args.suite != "initial":
                     previous_traces[case["name"]] = dict(trace.values)
                 write_json(seed_dir / f"{case['name']}.json", record)
                 records.append(record)
                 images.append(picture)
             save_grid(seed_dir / "grid.png", records, images,
-                      columns=1 + len(args.text_prompts) if args.suite == "followup" else 4)
+                      columns=1 + len(args.text_prompts) if args.suite != "initial" else 4)
             summary["seeds"][str(seed)] = records
             write_json(out / "summary.json", summary)
     finally:
-        set_case_state(pipe, {}, original_fuser, original_routing)
+        set_case_state(pipe, {}, original_fuser, original_routing, original_text_scales)
         trace.close()
     print(f"[done] {out / 'summary.json'}", flush=True)
 
