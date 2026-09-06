@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 from torchvision import transforms
 
 
-def parse_args():
+def build_parser():
     parser = argparse.ArgumentParser(description="Plain-prompt texture-control test")
     parser.add_argument("--GAM_model_ckpt", required=True)
     parser.add_argument("--texture_ckpt", required=True)
@@ -74,7 +74,11 @@ def parse_args():
     parser.add_argument("--alpha3", type=float, default=1.5)
     parser.add_argument("--alpha4", type=float, default=1.0)
     parser.add_argument("--debug_spatial", action="store_true")
-    return parser.parse_args()
+    return parser
+
+
+def parse_args():
+    return build_parser().parse_args()
 
 
 def mse(left, right):
