@@ -1,5 +1,6 @@
 import argparse
 import csv
+import hashlib
 import importlib.util
 import itertools
 import json
@@ -39,6 +40,7 @@ from adapter.attention_processor import (
 )
 from models.bf_texture_module import BFTextureConditioner
 from models.text_guided_queries import text_content_mask, guidance_config_from_checkpoint
+from models.local_detail_adapter import DEFAULT_LOCAL_DETAIL_LAYER, attach_local_detail_adapter
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
@@ -56,6 +58,7 @@ from color_conflict_utils import (
     pick_gamut_aware_far_ab,
 )
 from garment_mask_utils import (
+    build_region_masks,
     build_sketch_garment_mask,
     estimate_cloth_foreground_mask,
 )
@@ -431,6 +434,8 @@ def override_args_from_texture_meta(args, texture_meta):
 
 def save_training_manifest(args, resolved_image_encoder_path):
     payload = {
+        **local_detail_config(args),
+        **training_run_config(args),
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "git_commit": safe_git_hash(),
         "output_dir": args.output_dir,
@@ -636,6 +641,78 @@ def validate_text_only_source(state_dict, resume=False):
             raise ValueError("text_only 模型续训只接受 text_only checkpoint，不能使用 E8a/E8b")
     elif mode != "off" or any(key.startswith("text_guidance.") for key in bf_state):
         raise ValueError("text_only 必须从无新增文本模块的 E5 初始化，不能从 E8a/E8b 初始化")
+
+
+def local_detail_config(args):
+    """A/B 的唯一结构差异是局部旁路读取的特征来源。"""
+    return {
+        "local_detail_source": args.local_detail_source,
+        "local_detail_grid": args.local_detail_grid,
+        "local_detail_layer": args.local_detail_layer,
+        "local_detail_dim": args.local_detail_dim,
+        "local_detail_heads": args.local_detail_heads,
+        "local_detail_lr": args.local_detail_lr,
+    }
+
+
+def training_run_config(args):
+    """把 A/B 可比性需要的训练量与数据来源一起保存。"""
+    fields = ("train_batch_size", "gradient_accumulation_steps", "max_train_steps",
+              "num_warmup_steps", "max_grad_norm", "mixed_precision",
+              "dataset_json_path", "data_root_path")
+    return {**{name: getattr(args, name) for name in fields},
+            "training_data_sha256": getattr(args, "training_data_sha256", "")}
+
+
+def validate_local_detail_source(state_dict):
+    """首轮 E9 仅从原 E5 新训，避免继承 E8 或另一条 E9 分支。"""
+    if not isinstance(state_dict, dict):
+        raise ValueError("E9 需要完整的 E5 joint checkpoint")
+    meta = state_dict.get("meta", {})
+    if meta.get("resampler_training", "off") != "off" or meta.get("text_guidance_dim", 0):
+        raise ValueError("E9 需要原 E5，不能使用 E8 重采样/文本模块权重")
+    if meta.get("local_detail_source", "off") != "off":
+        raise ValueError("E9 A/B 均须从 E5 新训，不能继承已有局部旁路")
+    for component in ("unet", "texture_adapter", "bf_texture_conditioner"):
+        if any("local_detail_adapter." in key or "text_guidance." in key
+               for key in state_dict.get(component, {})):
+            raise ValueError(f"E9 的 E5 起点已包含新增模块：{component}")
+
+
+def validate_local_detail_base_config(args, metadata):
+    """检查覆盖元数据后的生效配置，避免冻结了权重却改变 E5 条件语义。"""
+    if args.texture_mode != "patch_resampled" or args.bf_num_tokens != 16:
+        raise ValueError("E9 生效配置必须为 patch_resampled / 16 个原纹理 token")
+    fields = {
+        "texture_num_tokens": "bf_num_tokens", "texture_mode": "texture_mode",
+        "texture_condition_mode": "texture_condition_mode",
+        "texture_preprocess_mode": "texture_preprocess_mode", "clip_hidden_layer": "clip_hidden_layer",
+        "width": "width", "height": "height", "layer_group_enabled": "layer_group_enabled",
+        "use_texture_gate": "use_texture_gate", "use_tcpm_lite": "use_tcpm_lite",
+        "tcpm_mask_inner_only": "tcpm_mask_inner_only", "region_kernel_size": "region_kernel_size",
+    }
+    for saved, actual in fields.items():
+        if saved in metadata and metadata[saved] != getattr(args, actual):
+            raise ValueError(f"E9 配置与 E5 不一致：{saved}={getattr(args, actual)!r}，"
+                             f"E5={metadata[saved]!r}")
+
+
+def local_detail_stats(unet, layer):
+    unet = unet.module if hasattr(unet, "module") else unet
+    module = getattr(unet.attn_processors.get(layer), "local_detail_adapter", None)
+    if module is None:
+        return {}
+    return {name: float(value) for name, value in module.last_stats.items()}
+
+
+def freeze_local_detail_only(unet, layer, frozen_modules):
+    """仅开放新旁路；保留所有已有权重的数值和 dtype。"""
+    for module in (unet, *frozen_modules):
+        if module is not None:
+            module.requires_grad_(False)
+    adapter = unet.attn_processors[layer].local_detail_adapter
+    adapter.float().requires_grad_(True)
+    return adapter
 
 
 def print_load_key_details(prefix, missing, unexpected, max_items=32):
@@ -872,6 +949,7 @@ def save_training_checkpoint(
         "text_guidance_last_stats": (
             dict(bf_raw.text_guidance.last_stats) if bf_raw.text_guidance is not None else {}
         ),
+        "local_detail_last_stats": local_detail_stats(unet_raw, args.local_detail_layer),
         "spatial_texture_encoder": spatial_texture_encoder_raw.state_dict(),
         "spatial_injection": spatial_injection_raw.state_dict(),
         "palette_token_mlp": (
@@ -894,6 +972,9 @@ def save_training_checkpoint(
         ),
         "meta": {
             **bf_raw.text_guidance_config(),
+            **local_detail_config(args),
+            **training_run_config(args),
+            "train_global_step": int(global_step),
             "resampler_training": args.resampler_training,
             "text_guidance_lr": args.text_guidance_lr,
             "resampler_lr": args.resampler_lr,
@@ -912,6 +993,7 @@ def save_training_checkpoint(
             "lambda_style": args.lambda_style,
             "style_loss_type": args.style_loss_type,
             "lambda_patch_style": args.lambda_patch_style,
+            "lambda_edge": args.lambda_edge,
             "lambda_texture_color": args.lambda_texture_color,
             "lambda_texture_gram": args.lambda_texture_gram,
             "lambda_region_texture": args.lambda_region_texture,
@@ -1321,26 +1403,6 @@ def region_color_lab_loss(pred, texture, garment_mask=None, sample_weight=None):
     return _weighted_mean_per_sample(loss_per_sample, sample_weight=sample_weight)
 
 
-def build_region_masks(mask, kernel_size=9):
-    """
-    Split a garment mask into inner body, boundary band, and outside regions.
-    mask: [B, 1, H, W], values in [0, 1].
-    """
-    k = max(1, int(kernel_size))
-    if k % 2 == 0:
-        k += 1
-
-    mask = mask.float().contiguous().clamp(0.0, 1.0)
-    dilated = F.max_pool2d(mask.contiguous(), kernel_size=k, stride=1, padding=k // 2).contiguous()
-    eroded = -F.max_pool2d((-mask).contiguous(), kernel_size=k, stride=1, padding=k // 2)
-    eroded = eroded.contiguous()
-
-    body = eroded.clamp(0.0, 1.0).contiguous()
-    boundary = (dilated - eroded).clamp(0.0, 1.0).contiguous()
-    outside = (1.0 - dilated).clamp(0.0, 1.0).contiguous()
-    return body, boundary, outside
-
-
 def masked_l1_loss(pred, target, mask):
     pred = pred.float().contiguous()
     target = target.float().contiguous()
@@ -1621,6 +1683,13 @@ def main():
     ap.add_argument("--text_guidance_max_ratio", type=float, default=0.3)
     ap.add_argument("--text_guidance_lr", type=float, default=5e-5)
     ap.add_argument("--resampler_lr", type=float, default=1e-5)
+    ap.add_argument("--local_detail_source", choices=["off", "resampled", "local"], default="off",
+                    help="E9：冻结 E5，只训练一个读取原 16 token 或局部 CNN token 的旁路")
+    ap.add_argument("--local_detail_grid", type=int, default=16)
+    ap.add_argument("--local_detail_layer", default=DEFAULT_LOCAL_DETAIL_LAYER)
+    ap.add_argument("--local_detail_dim", type=int, default=128)
+    ap.add_argument("--local_detail_heads", type=int, default=4)
+    ap.add_argument("--local_detail_lr", type=float, default=5e-5)
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--checkpointing_steps", type=int, default=0)
     ap.add_argument("--train_unet_late_for_distribution", type=int, default=0, choices=[0, 1])
@@ -1721,6 +1790,29 @@ def main():
     )
 
     args = ap.parse_args()
+    is_local_detail = args.local_detail_source != "off"
+    if is_local_detail:
+        if args.texture_condition_mode != "token" or args.texture_mode != "patch_resampled":
+            raise ValueError("E9 仅支持 E5 的 token / patch_resampled 配置")
+        if not args.gam_init_ckpt or not args.use_tcpm_lite or args.bf_num_tokens != 16:
+            raise ValueError("E9 需要完整 E5 起点、TCPM 和 16 个原纹理 token")
+        if args.resume_from_checkpoint or args.reload_texture_adapter_after_gam_init:
+            raise ValueError("首轮 E9 仅从 E5 新训，不恢复训练状态或重新覆盖纹理权重")
+        if args.resampler_training != "off" or any((
+            args.use_aa_tcr_fuse, args.freeze_all_but_aa_tcr, args.freeze_except_gate,
+            args.train_unet_late_for_distribution, args.train_detail_texture_adapter,
+            args.train_spatial_only, args.use_palette_tokens, args.use_balanced_fusion_gate,
+            args.use_conflict_aware_gate, args.ctd_prob,
+        )):
+            raise ValueError("E9 首轮不能同时启用其他融合、训练或 CTD 实验")
+        if not args.layer_group_enabled or args.local_detail_grid < 1:
+            raise ValueError("E9 需要 E5 分层注入和正数 local_detail_grid")
+        # 冻结运行不使用原训练可视化路径，以免误展示没有接新旁路的图。
+        if args.val_vis_steps or args.vis_every_n_steps:
+            raise ValueError("E9 请使用独立评测入口，训练设置 val_vis_steps=0、vis_every_n_steps=0")
+        args.start_global_step = 0
+        with open(args.dataset_json_path, "rb") as training_data:
+            args.training_data_sha256 = hashlib.sha256(training_data.read()).hexdigest()
     if args.seed is not None:
         set_seed(args.seed)
     if args.resampler_training != "off":
@@ -1782,6 +1874,8 @@ def main():
     if accelerator.is_main_process and texture_meta:
         print(f"[train_GAM_texture_joint] texture checkpoint meta: {texture_meta}")
     override_args_from_texture_meta(args, texture_meta)
+    if is_local_detail:
+        validate_local_detail_base_config(args, {})
 
     if accelerator.is_main_process:
         print(f"[info] effective bf_num_tokens = {args.bf_num_tokens}")
@@ -1987,6 +2081,9 @@ def main():
         if accelerator.is_main_process:
             print(f"[resume] loading gam_init_ckpt: {args.gam_init_ckpt}")
         init_state = torch.load(args.gam_init_ckpt, map_location="cpu", weights_only=False)
+        if is_local_detail:
+            validate_local_detail_source(init_state)
+            validate_local_detail_base_config(args, init_state.get("meta", {}))
         if args.resampler_training == "text_only":
             validate_text_only_source(init_state)
         load_joint_checkpoint_into_models(
@@ -1999,7 +2096,7 @@ def main():
             palette_token_mlp,
             accelerator=accelerator,
             tcpm_lite=tcpm_lite,
-            strict_base=args.resampler_training == "text_only",
+            strict_base=args.resampler_training == "text_only" or is_local_detail,
         )
         if args.reload_texture_adapter_after_gam_init:
             if accelerator.is_main_process:
@@ -2014,6 +2111,14 @@ def main():
                 log_prefix="[load after gam_init]",
                 debug=args.debug_checkpoint_load,
             )
+
+    # 先逐值加载全部 E5，再创建新旁路，旧权重的严格加载不需要放宽白名单。
+    local_detail_adapter = None
+    if is_local_detail:
+        local_detail_adapter = attach_local_detail_adapter(
+            unet, layer=args.local_detail_layer,
+            inner_dim=args.local_detail_dim, num_heads=args.local_detail_heads,
+        )
 
     # resume 继续训练
     if args.resume_from_checkpoint:
@@ -2185,6 +2290,14 @@ def main():
             bf.train_resampler_only()
             print(f"[resampler] 仅训练查询/视觉重采样器，文本引导={args.resampler_training == 'text'}")
 
+    if is_local_detail:
+        local_detail_adapter = freeze_local_detail_only(
+            unet, args.local_detail_layer,
+            (ref_unet, bf, spatial_texture_encoder, spatial_injection, tcpm_lite, palette_token_mlp),
+        )
+        print(f"[E9] 冻结全部 E5，仅训练 {args.local_detail_layer} 的局部旁路，"
+              f"source={args.local_detail_source}, grid={args.local_detail_grid}")
+
     # 显式构造 trainable params
     trainable_param_groups = []
     trainable_params = []
@@ -2202,6 +2315,9 @@ def main():
                 "lr": args.learning_rate if lr is None else lr,
             })
             trainable_params.extend(unique)
+
+    if is_local_detail:
+        add_params(local_detail_adapter.parameters(), lr=args.local_detail_lr)
 
     # 1. 只训练 UNet 的 attention processors（spatial-only 时不训练）
     if args.train_detail_texture_adapter:
@@ -2274,6 +2390,14 @@ def main():
         if gate_params:
             trainable_param_groups.append({"params": gate_params, "lr": args.learning_rate})
             trainable_params.extend(gate_params)
+
+    if is_local_detail:
+        expected = {id(p) for p in local_detail_adapter.parameters()}
+        if {id(p) for p in trainable_params} != expected:
+            raise RuntimeError("E9 优化器必须且只能包含新增局部旁路参数")
+        if accelerator.is_main_process:
+            print(f"[E9] optimizer: {len(trainable_params)} tensors, "
+                  f"{sum(p.numel() for p in trainable_params):,} parameters, lr={args.local_detail_lr}")
 
     if args.resampler_training == "text_only":
         expected = {id(p) for p in bf.text_guidance.parameters()}
@@ -2628,8 +2752,9 @@ def main():
 
                 enc_h = text_h
                 palette_tokens = None
+                local_detail_tokens = None
                 if use_token:
-                    tex_tokens, _ = bf(
+                    bf_outputs = bf(
                         clip_image_embeds=clip_out.image_embeds,
                         texture_images=texture_image,
                         clip_vision_tokens=clip_out.hidden_states[
@@ -2638,7 +2763,12 @@ def main():
                         texture_mode=args.texture_mode,
                         text_embeds=enc_h,
                         text_mask=text_content_mask(input_ids, tokenizer.eos_token_id),
+                        local_detail_source=args.local_detail_source,
+                        local_detail_grid=args.local_detail_grid,
                     )
+                    tex_tokens = bf_outputs[0]
+                    if is_local_detail:
+                        local_detail_tokens = bf_outputs[2]
                     if tex_tokens.shape[1] != args.bf_num_tokens:
                         raise RuntimeError(
                             "Texture token count mismatch: "
@@ -2698,6 +2828,17 @@ def main():
                 }
 
                 cross_attention_kwargs = {"sa_hidden_states": sa}
+                if is_local_detail and local_detail_tokens is not None:
+                    local_mask, _, _ = build_region_masks(
+                        batch["garment_mask"].float(), kernel_size=args.region_kernel_size
+                    )
+                    # 图像条件 dropout 时整个旁路归零，避免 BF/归一化偏置形成伪条件。
+                    local_mask = local_mask * texture_condition_weight[:, None, None, None]
+                    cross_attention_kwargs.update(
+                        local_detail_tokens=local_detail_tokens,
+                        local_detail_mask=local_mask,
+                        local_detail_spatial_shape=tuple(noisy_latents.shape[-2:]),
+                    )
                 if args.use_balanced_fusion_gate:
                     cross_attention_kwargs["balanced_gate_timestep"] = (
                         timesteps.float() / float(noise_scheduler.config.num_train_timesteps)
@@ -3094,6 +3235,20 @@ def main():
                         if grad_norm is not None and not isinstance(grad_norm, float)
                         else grad_norm
                     )
+                    if is_local_detail:
+                        detail_stats = local_detail_stats(
+                            accelerator.unwrap_model(unet), args.local_detail_layer
+                        )
+                        detail_row = {
+                            "step": global_step, "source": args.local_detail_source,
+                            "num_tokens": int(local_detail_tokens.shape[1]),
+                            "condition_keep_rate": float(texture_condition_weight.mean()),
+                            **detail_stats,
+                        }
+                        print(f"[E9] {json.dumps(detail_row, ensure_ascii=False)}")
+                        with open(os.path.join(args.output_dir, "local_detail_metrics.jsonl"),
+                                  "a", encoding="utf-8") as detail_log:
+                            detail_log.write(json.dumps(detail_row, ensure_ascii=False) + "\n")
                     print(
                         f"step={global_step}, epoch={current_epoch + 1}/{total_epochs}, "
                         f"loss_total={loss.item():.6f}, "

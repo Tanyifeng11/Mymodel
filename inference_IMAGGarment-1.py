@@ -18,6 +18,7 @@ from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 from models.attribute_text_texture_fuser import AttributeTextTextureFuser
 from models.text_guided_queries import guidance_config_from_checkpoint
+from models.local_detail_adapter import attach_local_detail_adapter, DEFAULT_LOCAL_DETAIL_LAYER
 import argparse
 from garment_mask_utils import build_sketch_garment_mask
 
@@ -126,10 +127,61 @@ def image_grid(imgs, rows, cols):
     return grid
 
 
-def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules):
+def configure_local_detail_from_checkpoint(unet, state, requested=-1):
+    """E9 的 A/B 来源只读 checkpoint，显式关闭时保持原 E5 路径。"""
+    meta = extract_texture_metadata(state)
+    source = meta.get("local_detail_source", "off")
+    if source not in ("off", "resampled", "local"):
+        raise ValueError(f"未知的 local_detail_source: {source}")
+    config = {
+        "source": "off" if requested == 0 else source,
+        "grid": int(meta.get("local_detail_grid", 16)),
+        "region_kernel_size": int(meta.get("region_kernel_size", 9)),
+    }
+    if requested == 0:
+        return config
+    branch_states = {
+        name: {key: value for key, value in state.get(name, {}).items()
+               if ".local_detail_adapter." in key}
+        for name in ("unet", "texture_adapter")
+    }
+    has_weights = any(branch_states.values())
+    if source == "off":
+        if requested == 1 or has_weights:
+            raise ValueError("E9 局部旁路需要 checkpoint 中的有效来源元数据和完整权重")
+        return config
+    if not has_weights:
+        raise ValueError("checkpoint 声明启用 E9，但没有 local_detail_adapter 权重")
+    if config["grid"] < 1:
+        raise ValueError("local_detail_grid 必须为正整数")
+
+    layer = meta.get("local_detail_layer", DEFAULT_LOCAL_DETAIL_LAYER)
+    inner_dim = int(meta.get("local_detail_dim", 128))
+    num_heads = int(meta.get("local_detail_heads", 4))
+    module = getattr(unet.attn_processors.get(layer), "local_detail_adapter", None)
+    if module is None:
+        module = attach_local_detail_adapter(unet, layer=layer, inner_dim=inner_dim, num_heads=num_heads)
+    elif module.inner_dim != inner_dim or module.num_heads != num_heads:
+        raise ValueError("已挂载 E9 模块的维度与 checkpoint 元数据不一致")
+    prefixes = {
+        "unet": layer + ".local_detail_adapter.",
+        "texture_adapter": str(list(unet.attn_processors).index(layer)) + ".local_detail_adapter.",
+    }
+    for name, weights in branch_states.items():
+        if weights:
+            prefix = prefixes[name]
+            if any(not key.startswith(prefix) for key in weights):
+                raise ValueError(f"{name} 的 E9 权重层与 checkpoint 元数据不一致")
+            module.load_state_dict({key[len(prefix):]: value for key, value in weights.items()}, strict=True)
+    module.eval()
+    return config
+
+
+def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules, use_local_detail_adapter=-1):
     state = load_checkpoint_file(ckpt_path)
     ckpt_format = detect_gam_checkpoint_format(state)
     print(f"[load_gam_checkpoint] detected format: {ckpt_format}")
+    local_detail_config = configure_local_detail_from_checkpoint(unet, state, use_local_detail_adapter)
 
     unet_loaded = ref_loaded = adapter_loaded = bf_loaded = False
     bf_state = None
@@ -177,7 +229,8 @@ def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules):
     print(f"[load_gam_checkpoint] unet_loaded={unet_loaded}, ref_unet_loaded={ref_loaded}, adapter_loaded={adapter_loaded}, bf_in_ckpt={bf_loaded}")
     if meta:
         print(f"[load_gam_checkpoint] metadata: {meta}")
-    return {"format": ckpt_format, "meta": meta, "bf_state": bf_state, "state": state}
+    return {"format": ckpt_format, "meta": meta, "bf_state": bf_state, "state": state,
+            "local_detail_config": local_detail_config}
 
 
 def prepare(args):
@@ -312,7 +365,10 @@ def prepare(args):
     del st
     ref_unet.to(dtype=torch.float16,device=args.device)
     # weights load
-    gam_info = load_gam_checkpoint(args.GAM_model_ckpt, unet, ref_unet, adapter_modules)
+    gam_info = load_gam_checkpoint(
+        args.GAM_model_ckpt, unet, ref_unet, adapter_modules,
+        use_local_detail_adapter=getattr(args, "use_local_detail_adapter", -1),
+    )
     gam_meta = gam_info.get("meta", {})
     ckpt_tokens = int(gam_meta.get("texture_num_tokens", args.texture_num_tokens))
     if ckpt_tokens != args.texture_num_tokens:
@@ -423,6 +479,17 @@ def prepare(args):
 
     # IMAGGarment will load args.texture_ckpt in __init__, which can overwrite
     # adapter/BF states already loaded from GAM checkpoint. Restore GAM states here.
+    local_detail_config = configure_local_detail_from_checkpoint(
+        pipe.unet, gam_state, getattr(args, "use_local_detail_adapter", -1),
+    )
+    pipe.local_detail_source = local_detail_config["source"]
+    pipe.local_detail_grid = local_detail_config["grid"]
+    pipe.local_detail_region_kernel_size = local_detail_config["region_kernel_size"]
+    pipe._local_detail_tokens = None
+    if pipe.local_detail_source != "off":
+        if pipe.bf_texture_conditioner is None or args.texture_condition_mode not in ("token", "hybrid"):
+            raise ValueError("E9 局部旁路要求 BF 纹理分支及 token/hybrid 条件模式")
+        print(f"[prepare] local_detail_source={pipe.local_detail_source}, grid={pipe.local_detail_grid}")
     if "texture_adapter" in gam_state:
         adapter_sd = gam_state["texture_adapter"]
         checkpoint_has_gate = any(
@@ -556,6 +623,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_aa_tcr_fuse', type=int, default=0, choices=[0, 1])
     parser.add_argument('--use_text_guided_resampler', type=int, default=-1, choices=[-1, 0, 1],
                         help='-1 根据 checkpoint 自动启用，0 关闭文本查询，1 要求文本查询权重存在')
+    parser.add_argument('--use_local_detail_adapter', type=int, default=-1, choices=[-1, 0, 1],
+                        help='-1 根据 checkpoint 自动启用 E9，0 关闭，1 要求完整 E9 权重；A/B 来源读取 checkpoint')
     parser.add_argument('--tcpm_hidden_ratio', type=float, default=0.25)
     parser.add_argument('--tcpm_residual_scale_init', type=float, default=0.0)
     parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.1)

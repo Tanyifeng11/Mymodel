@@ -316,6 +316,7 @@ def experiment_to_flags(run_name, args):
     config.setdefault("use_tcpm_lite", args.use_tcpm_lite)
     config.setdefault("use_aa_tcr_fuse", args.use_aa_tcr_fuse)
     config.setdefault("use_text_guided_resampler", args.use_text_guided_resampler)
+    config.setdefault("use_local_detail_adapter", args.use_local_detail_adapter)
     config.setdefault("balanced_gate_hidden_dim", args.balanced_gate_hidden_dim)
     config.setdefault("balanced_gate_scale", args.balanced_gate_scale)
     config.setdefault("balanced_gate_min", args.balanced_gate_min)
@@ -425,6 +426,7 @@ def _sample_text_description(args, sample, mode_name, paths, role, image_path, s
         f"use_conflict_aware_gate: {int(experiment_flags['use_conflict_aware_gate'])}",
         f"use_aa_tcr_fuse: {int(experiment_flags['use_aa_tcr_fuse'])}",
         f"use_text_guided_resampler: {int(experiment_flags['use_text_guided_resampler'])}",
+        f"use_local_detail_adapter: {int(experiment_flags['use_local_detail_adapter'])}",
         f"conflict_texture_suppress_strength: {args.conflict_texture_suppress_strength}",
         f"conflict_palette_suppress_strength: {args.conflict_palette_suppress_strength}",
         f"conflict_deltae_norm: {args.conflict_deltae_norm}",
@@ -631,6 +633,8 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         str(int(experiment_flags["use_aa_tcr_fuse"])),
         "--use_text_guided_resampler",
         str(int(experiment_flags["use_text_guided_resampler"])),
+        "--use_local_detail_adapter",
+        str(int(experiment_flags["use_local_detail_adapter"])),
         "--conflict_texture_suppress_strength",
         str(args.conflict_texture_suppress_strength),
         "--conflict_palette_suppress_strength",
@@ -1580,6 +1584,7 @@ def build_argparser():
     parser.add_argument("--use_tcpm_lite", type=int, choices=[0, 1], default=0)
     parser.add_argument("--use_aa_tcr_fuse", type=int, choices=[0, 1], default=0)
     parser.add_argument("--use_text_guided_resampler", type=int, choices=[-1, 0, 1], default=-1)
+    parser.add_argument("--use_local_detail_adapter", type=int, choices=[-1, 0, 1], default=-1)
     parser.add_argument("--conflict_texture_suppress_strength", type=float, default=0.1)
     parser.add_argument("--conflict_palette_suppress_strength", type=float, default=0.4)
     parser.add_argument("--conflict_deltae_norm", type=float, default=50.0)

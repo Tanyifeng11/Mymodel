@@ -31,6 +31,9 @@ class AttnProcessor2_0(torch.nn.Module):
         cond_hidden_states=None,
         sa_hidden_states=None,
         balanced_gate_timestep=None,
+        local_detail_tokens=None,
+        local_detail_mask=None,
+        local_detail_spatial_shape=None,
         *args,
         **kwargs,
     ):
@@ -128,6 +131,9 @@ class SAttnProcessor2_0(torch.nn.Module):
             sa_hidden_states=None,
             balanced_gate_timestep=None,
             tcpm_garment_mask=None,
+            local_detail_tokens=None,
+            local_detail_mask=None,
+            local_detail_spatial_shape=None,
     ) -> torch.FloatTensor:
         residual = hidden_states
         if attn.spatial_norm is not None:
@@ -230,6 +236,9 @@ class CAttnProcessor2_0(torch.nn.Module):
             cond_hidden_states=None,
             sa_hidden_states=None,
             balanced_gate_timestep=None,
+            local_detail_tokens=None,
+            local_detail_mask=None,
+            local_detail_spatial_shape=None,
     ) -> torch.FloatTensor:
         residual = hidden_states
         if attn.spatial_norm is not None:
@@ -511,6 +520,9 @@ class IPAttnProcessor2_0(torch.nn.Module):
         balanced_gate_timestep=None,
         color_conflict_score=None,
         tcpm_garment_mask=None,
+        local_detail_tokens=None,
+        local_detail_mask=None,
+        local_detail_spatial_shape=None,
         *args,
         **kwargs,
     ):
@@ -730,11 +742,16 @@ class IPAttnProcessor2_0(torch.nn.Module):
 
         hidden_states = hidden_states / attn.rescale_output_factor
 
+        # E9 独立旁路不受原 IP 分支的开关、门或输出投影影响。
+        local_adapter = getattr(self, "local_detail_adapter", None)
+        if local_adapter is not None and local_detail_tokens is not None:
+            hidden_states = hidden_states + local_adapter(
+                residual, local_detail_tokens, local_detail_mask, local_detail_spatial_shape
+            )
+
         return hidden_states
 
 
-
-    
 class LogoRefSAttnProcessor2_0(torch.nn.Module):
     r"""
     Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
@@ -766,6 +783,9 @@ class LogoRefSAttnProcessor2_0(torch.nn.Module):
             sa_hidden_states=None,
             balanced_gate_timestep=None,
             tcpm_garment_mask=None,
+            local_detail_tokens=None,
+            local_detail_mask=None,
+            local_detail_spatial_shape=None,
 
     ) -> torch.FloatTensor:
         residual = hidden_states
@@ -880,6 +900,9 @@ class LogoCacheSAttnProcessor2_0(torch.nn.Module):
             attention_mask: Optional[torch.FloatTensor] = None,
             temb: Optional[torch.FloatTensor] = None,
             scale: float = 1.0,
+            local_detail_tokens=None,
+            local_detail_mask=None,
+            local_detail_spatial_shape=None,
     ) -> torch.FloatTensor:
         self.cache["hidden_states"] = hidden_states  # cache hidden states
         residual = hidden_states
@@ -980,6 +1003,9 @@ class LogoCacheCAttnProcessor2_0(torch.nn.Module):
             cond_hidden_states=None,
             sa_hidden_states=None,
             balanced_gate_timestep=None,
+            local_detail_tokens=None,
+            local_detail_mask=None,
+            local_detail_spatial_shape=None,
     ) -> torch.FloatTensor:
         
 
@@ -996,5 +1022,8 @@ class SkipAttnProcessor(torch.nn.Module):
         encoder_hidden_states=None,
         attention_mask=None,
         temb=None,
+        local_detail_tokens=None,
+        local_detail_mask=None,
+        local_detail_spatial_shape=None,
     ):
         return hidden_states

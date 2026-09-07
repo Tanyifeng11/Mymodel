@@ -30,6 +30,7 @@ from models.attribute_token_mask import build_attribute_masks
 from texture_preprocess import preprocess_texture_image
 from checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 from color_conflict_utils import compute_color_conflict
+from garment_mask_utils import build_region_masks
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -135,6 +136,10 @@ class IMAGGarment(StableDiffusionPipeline):
         self.num_palette_tokens = 4
         self.palette_token_mlp = None
         self.aa_tcr_fuser = aa_tcr_fuser
+        self.local_detail_source = "off"
+        self.local_detail_grid = 16
+        self.local_detail_region_kernel_size = 9
+        self._local_detail_tokens = None
         self.load_texture_adapter()
 
     def _setup_layer_groups(self):
@@ -668,6 +673,9 @@ class IMAGGarment(StableDiffusionPipeline):
         text_mask=None,
         negative_text_mask=None,
     ):
+        # 每次只缓存当前参考图的正条件；负 CFG 继续走原来的 BF 输出。
+        self._local_detail_tokens = None
+        local_detail_source = getattr(self, "local_detail_source", "off")
         clip_patch_tokens = None
         if pil_image is not None:
             if isinstance(pil_image, Image.Image):
@@ -694,14 +702,19 @@ class IMAGGarment(StableDiffusionPipeline):
             ).to(self.device, dtype=torch.float16)
             texture_tensor = texture_tensor * 2.0 - 1.0
 
-            image_prompt_embeds, _ = self.bf_texture_conditioner(
+            positive_outputs = self.bf_texture_conditioner(
                 clip_image_embeds=clip_image_embeds,
                 texture_images=texture_tensor,
                 clip_vision_tokens=clip_patch_tokens,
                 texture_mode=texture_mode,
                 text_embeds=text_embeds,
                 text_mask=text_mask,
+                local_detail_source=local_detail_source,
+                local_detail_grid=getattr(self, "local_detail_grid", 16),
             )
+            image_prompt_embeds = positive_outputs[0]
+            if local_detail_source != "off":
+                self._local_detail_tokens = positive_outputs[2]
             if self.use_tcpm_lite and text_embeds is not None:
                 image_prompt_embeds = self.tcpm_lite(image_prompt_embeds, text_embeds)
             image_prompt_embeds = self._apply_aa_tcr_fuse(
@@ -731,6 +744,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 aa_tcr_negative_captions,
             )
         else:
+            if local_detail_source != "off":
+                raise ValueError("E9 局部旁路需要 BF 纹理分支")
             image_prompt_embeds = self.image_proj_model(clip_image_embeds)
             uncond_image_prompt_embeds = self.image_proj_model(torch.zeros_like(clip_image_embeds))
         return image_prompt_embeds, uncond_image_prompt_embeds
@@ -830,6 +845,7 @@ class IMAGGarment(StableDiffusionPipeline):
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
+        self._local_detail_tokens = None
         self.set_scale(sketch_scale)
         self.set_ipa_scale(ipa_scale)
         self._guidance_scale = guidance_scale
@@ -885,6 +901,8 @@ class IMAGGarment(StableDiffusionPipeline):
             force_override = kwargs.get("force_texture_num_tokens_override", False)
             use_token = texture_condition_mode in ("token", "hybrid")
             use_spatial = texture_condition_mode in ("spatial", "hybrid")
+            if getattr(self, "local_detail_source", "off") != "off" and not use_token:
+                raise ValueError("E9 局部旁路需要 token/hybrid 条件模式")
             ckpt_tokens = self.effective_texture_num_tokens
             if texture_num_tokens != ckpt_tokens:
                 if force_override:
@@ -950,6 +968,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 bs_embed, seq_len, _ = image_prompt_embeds.shape
                 image_prompt_embeds = image_prompt_embeds.repeat(1, num_samples, 1)
                 image_prompt_embeds = image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
+                if self._local_detail_tokens is not None:
+                    self._local_detail_tokens = self._local_detail_tokens.repeat_interleave(num_samples, dim=0)
 
                 uncond_image_prompt_embeds = uncond_image_prompt_embeds.repeat(1, num_samples, 1)
                 uncond_image_prompt_embeds = uncond_image_prompt_embeds.view(bs_embed * num_samples, seq_len, -1)
@@ -1021,6 +1041,21 @@ class IMAGGarment(StableDiffusionPipeline):
             generator,
         )
 
+        local_detail_kwargs = {}
+        if self._local_detail_tokens is not None:
+            garment_mask = kwargs.get("spatial_mask")
+            if garment_mask is None:
+                raise ValueError("E9 局部旁路需要由草图生成的 spatial_mask")
+            local_detail_mask, _, _ = build_region_masks(
+                garment_mask.to(device=device),
+                kernel_size=self.local_detail_region_kernel_size,
+            )
+            local_detail_kwargs = {
+                "local_detail_tokens": self._local_detail_tokens,
+                "local_detail_mask": local_detail_mask.to(dtype=latents.dtype),
+                "local_detail_spatial_shape": tuple(latents.shape[-2:]),
+            }
+
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
         ref_image_tensor = ref_image.to(dtype=self.vae.dtype, device=self.vae.device)
@@ -1069,6 +1104,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 cond_cross_attention_kwargs = {
                     "sa_hidden_states": sa_hidden_states,
                     "balanced_gate_timestep": balanced_gate_timestep,
+                    **local_detail_kwargs,
                 }
                 if use_conflict_aware_gate and color_conflict_score is not None:
                     cond_cross_attention_kwargs["color_conflict_score"] = color_conflict_score
@@ -1125,4 +1161,5 @@ class IMAGGarment(StableDiffusionPipeline):
         image = (image / 2 + 0.5).clamp(0, 1)
         image = image.cpu().permute(0, 2, 3, 1).float().numpy()
         image = self.numpy_to_pil(image)
+        self._local_detail_tokens = None
         return image

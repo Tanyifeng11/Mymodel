@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from models.text_guided_queries import TextGuidedQueries
 
@@ -122,7 +123,8 @@ class BFTextureConditioner(nn.Module):
         pooled = self.stage_pool(feat)
         return pooled.flatten(2).transpose(1, 2)
 
-    def _build_patch_tokens(self, clip_vision_tokens: torch.Tensor, texture_images: torch.Tensor):
+    def _build_patch_tokens(self, clip_vision_tokens: torch.Tensor, texture_images: torch.Tensor,
+                            local_detail_grid=None):
         f1 = self.stage1(texture_images)
         f2 = self.stage2(f1)
         f3 = self.stage3(f2)
@@ -140,9 +142,14 @@ class BFTextureConditioner(nn.Module):
         for proj, tokens in zip(self.token_source_proj, stage_tokens):
             projected.append(proj(tokens))
         fused_tokens = torch.cat(projected, dim=1)
+        if local_detail_grid is not None:
+            local = F.adaptive_avg_pool2d(f3, (local_detail_grid, local_detail_grid))
+            local = self.token_source_proj[3](local.flatten(2).transpose(1, 2))
+            return fused_tokens, [f1.shape, f2.shape, f3.shape, f4.shape], local
         return fused_tokens, [f1.shape, f2.shape, f3.shape, f4.shape]
 
-    def _build_legacy_tokens(self, clip_image_embeds: torch.Tensor, texture_images: torch.Tensor):
+    def _build_legacy_tokens(self, clip_image_embeds: torch.Tensor, texture_images: torch.Tensor,
+                             local_detail_grid=None):
         f1 = self.stage1(texture_images)
         f2 = self.stage2(f1)
         f3 = self.stage3(f2)
@@ -163,6 +170,10 @@ class BFTextureConditioner(nn.Module):
         for proj, tokens in zip(self.token_source_proj, legacy_tokens):
             projected.append(proj(tokens))
         fused_tokens = torch.cat(projected, dim=1)
+        if local_detail_grid is not None:
+            local = F.adaptive_avg_pool2d(f3, (local_detail_grid, local_detail_grid))
+            local = self.token_source_proj[3](local.flatten(2).transpose(1, 2))
+            return fused_tokens, [f1.shape, f2.shape, f3.shape, f4.shape], local
         return fused_tokens, [f1.shape, f2.shape, f3.shape, f4.shape]
 
     def forward(
@@ -174,11 +185,18 @@ class BFTextureConditioner(nn.Module):
         text_embeds: torch.Tensor = None,
         text_mask: torch.Tensor = None,
         apply_text_guidance: bool = True,
+        local_detail_source: str = "off",
+        local_detail_grid: int = 16,
     ):
         if texture_images is None:
             raise ValueError("texture_images is required.")
 
         mode = texture_mode or self.texture_mode
+        if local_detail_source not in {"off", "resampled", "local"}:
+            raise ValueError(f"不支持的 local_detail_source：{local_detail_source}")
+        if local_detail_source == "local" and local_detail_grid <= 0:
+            raise ValueError("local_detail_grid 必须大于零")
+        grid = local_detail_grid if local_detail_source == "local" else None
 
         if mode == "patch_resampled":
             if clip_vision_tokens is None:
@@ -186,7 +204,7 @@ class BFTextureConditioner(nn.Module):
                     raise ValueError("patch_resampled mode requires clip_vision_tokens or clip_image_embeds.")
                 clip_vision_tokens = clip_image_embeds.unsqueeze(1)
 
-            fused_tokens, feature_shapes = self._build_patch_tokens(clip_vision_tokens, texture_images)
+            built = self._build_patch_tokens(clip_vision_tokens, texture_images, grid)
 
         elif mode == "legacy_pooled":
             if clip_image_embeds is None:
@@ -194,11 +212,12 @@ class BFTextureConditioner(nn.Module):
                     raise ValueError("legacy_pooled mode requires clip_image_embeds or clip_vision_tokens.")
                 clip_image_embeds = clip_vision_tokens.mean(dim=1)
 
-            fused_tokens, feature_shapes = self._build_legacy_tokens(clip_image_embeds, texture_images)
+            built = self._build_legacy_tokens(clip_image_embeds, texture_images, grid)
 
         else:
             raise ValueError(f"Unsupported texture_mode: {mode}")
 
+        fused_tokens, feature_shapes = built[:2]
         bsz = fused_tokens.shape[0]
         query = self.resampler_queries.expand(bsz, -1, -1)
         if self.text_guidance is not None and self.text_guidance_enabled and apply_text_guidance:
@@ -206,4 +225,8 @@ class BFTextureConditioner(nn.Module):
         tokens, _ = self.resampler(query, fused_tokens, fused_tokens, need_weights=False)
         tokens = tokens + self.token_mlp(tokens)
         tokens = self.token_norm(tokens)
+        if local_detail_source != "off":
+            # A 组复用原始 16 token；B 组绕过 8×8 stage_pool 和 resampler。
+            local_tokens = tokens if local_detail_source == "resampled" else built[2]
+            return tokens, feature_shapes, local_tokens
         return tokens, feature_shapes

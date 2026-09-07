@@ -4,6 +4,23 @@ import warnings
 import numpy as np
 from PIL import Image, ImageFilter
 
+
+def build_region_masks(mask, kernel_size=9):
+    """用同一套张量运算划分服装内部、边界和背景，供训练与推理复用。"""
+    import torch.nn.functional as F
+
+    k = max(1, int(kernel_size))
+    if k % 2 == 0:
+        k += 1
+    mask = mask.float().contiguous().clamp(0.0, 1.0)
+    dilated = F.max_pool2d(mask.contiguous(), kernel_size=k, stride=1, padding=k // 2).contiguous()
+    eroded = -F.max_pool2d((-mask).contiguous(), kernel_size=k, stride=1, padding=k // 2)
+    eroded = eroded.contiguous()
+    body = eroded.clamp(0.0, 1.0).contiguous()
+    boundary = (dilated - eroded).clamp(0.0, 1.0).contiguous()
+    outside = (1.0 - dilated).clamp(0.0, 1.0).contiguous()
+    return body, boundary, outside
+
 # ---------------------------------------------------------------------------
 # cv2 后端探测。
 #
