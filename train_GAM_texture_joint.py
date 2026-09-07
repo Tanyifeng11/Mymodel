@@ -470,7 +470,7 @@ def save_training_manifest(args, resolved_image_encoder_path):
         "tcpm_mask_inner_only": args.tcpm_mask_inner_only,
         "freeze_for_tcpm_lite": args.freeze_for_tcpm_lite,
         "resampler_training": args.resampler_training,
-        "text_guidance_dim": args.text_guidance_dim if args.resampler_training == "text" else 0,
+        "text_guidance_dim": args.text_guidance_dim if args.resampler_training in ("text", "text_only") else 0,
         "text_guidance_heads": args.text_guidance_heads,
         "text_guidance_max_ratio": args.text_guidance_max_ratio,
         "text_guidance_lr": args.text_guidance_lr,
@@ -609,12 +609,33 @@ def _balanced_gate_l2(unet, device):
     return torch.stack(values).mean().to(device)
 
 
-def load_partial_state(module, state_dict, key, name, strict=False):
+def load_partial_state(module, state_dict, key, name, strict=False, allowed_missing=()):
     if key not in state_dict:
+        if strict:
+            raise ValueError(f"E5 完整加载失败：缺少组件 {key}")
         print(f"[load] {name}: key '{key}' not found, keep init.")
         return
-    missing, unexpected = module.load_state_dict(state_dict[key], strict=strict)
+    missing, unexpected = module.load_state_dict(state_dict[key], strict=False)
+    if strict:
+        invalid_missing = set(missing) - set(allowed_missing)
+        if invalid_missing or unexpected:
+            raise ValueError(f"E5 完整加载失败 {name}: missing={sorted(invalid_missing)}, unexpected={list(unexpected)}")
     print(f"[load] {name}: missing={len(missing)} unexpected={len(unexpected)}")
+
+
+def validate_text_only_source(state_dict, resume=False):
+    """E8c 新训练从 E5 开始；模型续训只接受 E8c 自己的权重。"""
+    if not isinstance(state_dict, dict):
+        raise ValueError("text_only 需要完整的 joint checkpoint")
+    meta = state_dict.get("meta", {})
+    mode = meta.get("resampler_training", "off")
+    bf_state = state_dict.get("bf_texture_conditioner", {})
+    config = guidance_config_from_checkpoint(bf_state, meta)
+    if resume:
+        if mode != "text_only" or not config["text_guidance_dim"]:
+            raise ValueError("text_only 模型续训只接受 text_only checkpoint，不能使用 E8a/E8b")
+    elif mode != "off" or any(key.startswith("text_guidance.") for key in bf_state):
+        raise ValueError("text_only 必须从无新增文本模块的 E5 初始化，不能从 E8a/E8b 初始化")
 
 
 def print_load_key_details(prefix, missing, unexpected, max_items=32):
@@ -638,12 +659,15 @@ def load_joint_checkpoint_into_models(
     palette_token_mlp=None,
     accelerator=None,
     tcpm_lite=None,
+    strict_base=False,
 ):
     if not isinstance(state_dict, dict):
+        if strict_base:
+            raise ValueError("E5 完整加载需要 joint checkpoint 字典")
         return
 
-    load_partial_state(unet, state_dict, "unet", "unet", strict=False)
-    load_partial_state(ref_unet, state_dict, "ref_unet", "ref_unet", strict=False)
+    load_partial_state(unet, state_dict, "unet", "unet", strict=strict_base)
+    load_partial_state(ref_unet, state_dict, "ref_unet", "ref_unet", strict=strict_base)
     bf_raw = bf.module if hasattr(bf, "module") else bf
     guidance_config = guidance_config_from_checkpoint(
         state_dict.get("bf_texture_conditioner", {}), state_dict.get("meta", {})
@@ -651,21 +675,23 @@ def load_joint_checkpoint_into_models(
     if guidance_config["text_guidance_dim"] and guidance_config != bf_raw.text_guidance_config():
         raise ValueError("恢复的文本查询架构与训练参数不一致，请使用 checkpoint 中的配置")
     load_partial_state(
-        bf, state_dict, "bf_texture_conditioner", "bf_texture_conditioner", strict=False
+        bf, state_dict, "bf_texture_conditioner", "bf_texture_conditioner", strict=strict_base,
+        allowed_missing=([key for key in bf_raw.state_dict() if key.startswith("text_guidance.")]
+                         if not guidance_config["text_guidance_dim"] else ()),
     )
     load_partial_state(
         spatial_texture_encoder,
         state_dict,
         "spatial_texture_encoder",
         "spatial_texture_encoder",
-        strict=False,
+        strict=strict_base,
     )
     load_partial_state(
         spatial_injection,
         state_dict,
         "spatial_injection",
         "spatial_injection",
-        strict=False,
+        strict=strict_base,
     )
     if palette_token_mlp is not None:
         load_partial_state(
@@ -673,7 +699,7 @@ def load_joint_checkpoint_into_models(
             state_dict,
             "palette_token_mlp",
             "palette_token_mlp",
-            strict=False,
+            strict=strict_base,
         )
     if tcpm_lite is not None:
         load_partial_state(
@@ -681,13 +707,15 @@ def load_joint_checkpoint_into_models(
             state_dict,
             "tcpm_lite",
             "tcpm_lite",
-            strict=False,
+            strict=strict_base,
         )
 
+    if strict_base and "texture_adapter" not in state_dict:
+        raise ValueError("E5 完整加载失败：缺少组件 texture_adapter")
     if "texture_adapter" in state_dict:
         unet_raw = accelerator.unwrap_model(unet) if accelerator is not None else (unet.module if hasattr(unet, "module") else unet)
         attn_module_list = nn.ModuleList(unet_raw.attn_processors.values())
-        missing, unexpected = attn_module_list.load_state_dict(state_dict["texture_adapter"], strict=False)
+        missing, unexpected = attn_module_list.load_state_dict(state_dict["texture_adapter"], strict=strict_base)
         gate_missing = [k for k in missing if "texture_gate_delta" in k or "gate" in k]
         palette_missing = [k for k in missing if _is_palette_key(k)]
         balanced_missing = [k for k in missing if _is_balanced_gate_key(k)]
@@ -1587,7 +1615,7 @@ def main():
     ap.add_argument("--tcpm_scale_lr", type=float, default=1e-5)
     ap.add_argument("--tcpm_mask_inner_only", type=int, default=1, choices=[0, 1])
     ap.add_argument("--freeze_for_tcpm_lite", type=int, default=1, choices=[0, 1])
-    ap.add_argument("--resampler_training", choices=["off", "visual", "text"], default="off")
+    ap.add_argument("--resampler_training", choices=["off", "visual", "text", "text_only"], default="off")
     ap.add_argument("--text_guidance_dim", type=int, default=256)
     ap.add_argument("--text_guidance_heads", type=int, default=4)
     ap.add_argument("--text_guidance_max_ratio", type=float, default=0.3)
@@ -1704,6 +1732,13 @@ def main():
                 args.train_unet_late_for_distribution, args.train_detail_texture_adapter,
                 args.train_spatial_only, args.use_palette_tokens)):
             raise ValueError("重采样实验不能同时启用其他模块训练或融合实验")
+        if args.resampler_training == "text_only":
+            if not args.gam_init_ckpt or args.text_guidance_dim <= 0:
+                raise ValueError("text_only 需要 E5 --gam_init_ckpt 和非零 --text_guidance_dim")
+            if args.reload_texture_adapter_after_gam_init:
+                raise ValueError("text_only 禁止在加载 E5 后重新覆盖纹理适配器")
+            if not args.resume_from_checkpoint:
+                args.start_global_step = 0
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = False
 
@@ -1891,7 +1926,7 @@ def main():
         clip_embeddings_dim=image_encoder.config.hidden_size,
         cross_attention_dim=unet.config.cross_attention_dim,
         num_tokens=args.bf_num_tokens,
-        text_guidance_dim=args.text_guidance_dim if args.resampler_training == "text" else 0,
+        text_guidance_dim=args.text_guidance_dim if args.resampler_training in ("text", "text_only") else 0,
         text_guidance_heads=args.text_guidance_heads,
         text_guidance_max_ratio=args.text_guidance_max_ratio,
     )
@@ -1951,7 +1986,9 @@ def main():
     if args.gam_init_ckpt:
         if accelerator.is_main_process:
             print(f"[resume] loading gam_init_ckpt: {args.gam_init_ckpt}")
-        init_state = torch.load(args.gam_init_ckpt, map_location="cpu")
+        init_state = torch.load(args.gam_init_ckpt, map_location="cpu", weights_only=False)
+        if args.resampler_training == "text_only":
+            validate_text_only_source(init_state)
         load_joint_checkpoint_into_models(
             init_state,
             unet,
@@ -1962,6 +1999,7 @@ def main():
             palette_token_mlp,
             accelerator=accelerator,
             tcpm_lite=tcpm_lite,
+            strict_base=args.resampler_training == "text_only",
         )
         if args.reload_texture_adapter_after_gam_init:
             if accelerator.is_main_process:
@@ -1981,7 +2019,10 @@ def main():
     if args.resume_from_checkpoint:
         if accelerator.is_main_process:
             print(f"[resume] loading resume_from_checkpoint: {args.resume_from_checkpoint}")
-        resume_state = torch.load(args.resume_from_checkpoint, map_location="cpu")
+        resume_state = torch.load(args.resume_from_checkpoint, map_location="cpu", weights_only=False)
+        if args.resampler_training == "text_only":
+            validate_text_only_source(resume_state, resume=True)
+            print("[E8c] 继续加载模型权重；优化器和学习率调度器重新初始化，不是精确断点续训。")
         load_joint_checkpoint_into_models(
             resume_state,
             unet,
@@ -1992,6 +2033,7 @@ def main():
             palette_token_mlp,
             accelerator=accelerator,
             tcpm_lite=tcpm_lite,
+            strict_base=args.resampler_training == "text_only",
         )
 
     # bf/token + spatial branch 是否训练
@@ -2136,8 +2178,12 @@ def main():
         for module in (unet, ref_unet, bf, spatial_texture_encoder, spatial_injection,
                        tcpm_lite, palette_token_mlp):
             module.requires_grad_(False)
-        bf.train_resampler_only()
-        print(f"[resampler] 仅训练查询/视觉重采样器，文本引导={args.resampler_training == 'text'}")
+        if args.resampler_training == "text_only":
+            bf.train_text_guidance_only()
+            print("[E8c] 完全冻结 E5（含原 query/resampler），仅训练新增 text_guidance。")
+        else:
+            bf.train_resampler_only()
+            print(f"[resampler] 仅训练查询/视觉重采样器，文本引导={args.resampler_training == 'text'}")
 
     # 显式构造 trainable params
     trainable_param_groups = []
@@ -2189,8 +2235,9 @@ def main():
 
     # 2. BF token conditioner
     if args.resampler_training != "off":
-        add_params([bf.resampler_queries], lr=args.resampler_lr)
-        add_params(bf.resampler.parameters(), lr=args.resampler_lr)
+        if args.resampler_training != "text_only":
+            add_params([bf.resampler_queries], lr=args.resampler_lr)
+            add_params(bf.resampler.parameters(), lr=args.resampler_lr)
         if bf.text_guidance is not None:
             add_params(bf.text_guidance.parameters(), lr=args.text_guidance_lr)
     else:
@@ -2227,6 +2274,17 @@ def main():
         if gate_params:
             trainable_param_groups.append({"params": gate_params, "lr": args.learning_rate})
             trainable_params.extend(gate_params)
+
+    if args.resampler_training == "text_only":
+        expected = {id(p) for p in bf.text_guidance.parameters()}
+        if {id(p) for p in trainable_params} != expected:
+            raise RuntimeError("E8c 优化器参数不符合只训练文本模块的约束")
+        if accelerator.is_main_process:
+            print(f"[E8c] optimizer: {len(trainable_params)} tensors, "
+                  f"{sum(p.numel() for p in trainable_params):,} parameters, lr={args.text_guidance_lr}")
+            for name, parameter in bf.named_parameters():
+                if parameter.requires_grad:
+                    print(f"[E8c] trainable: {name}")
 
     if args.debug_trainable_params and accelerator.is_main_process:
         print("[debug] trainable UNet parameters:")

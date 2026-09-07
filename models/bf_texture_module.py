@@ -111,6 +111,13 @@ class BFTextureConditioner(nn.Module):
         if self.text_guidance is not None:
             self.text_guidance.requires_grad_(True)
 
+    def train_text_guidance_only(self):
+        """E8c：原 E5 包括 query/resampler 全部冻结，只训练新增文本模块。"""
+        if self.text_guidance is None:
+            raise ValueError("text_only 训练需要先创建文本查询模块")
+        self.requires_grad_(False)
+        self.text_guidance.requires_grad_(True)
+
     def _stage_to_tokens(self, feat: torch.Tensor) -> torch.Tensor:
         pooled = self.stage_pool(feat)
         return pooled.flatten(2).transpose(1, 2)

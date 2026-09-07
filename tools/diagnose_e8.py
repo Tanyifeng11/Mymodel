@@ -69,6 +69,7 @@ def main(argv=None):
                        "早期 checkpoint 的生成质量", "文本开关的最终图像质量"],
         "checkpoints": {}, "metadata_differences": {},
     }
+    execution_failed = False
     try:
         checkpoints = {}
         for name in ("e5", "e8a", "e8b"):
@@ -123,14 +124,16 @@ def main(argv=None):
             if not zero_ok:
                 report["errors"].append("E5 加零门控模块后 BF/TCPM 输出未保持逐值相等")
     except Exception as error:
+        execution_failed = True
         report["errors"].append("%s: %s" % (type(error).__name__, error))
         print("[ERROR] " + report["errors"][-1], file=sys.stderr, flush=True)
     finally:
         attention = bool(report["errors"]) or bool(report.get("weights", {}).get("unexpected_entries", 0))
-        report["status"] = "attention_required" if attention else "completed"
+        report["status"] = "failed" if execution_failed else ("attention_required" if attention else "completed")
         write_json(output / "diagnosis.json", report)
         print("[结果] %s，目录: %s" % (report["status"], output), flush=True)
-    return 2 if attention else 0
+    # 检查发现保留在报告中；只有执行失败才让 Slurm 将作业标为失败。
+    return 1 if execution_failed else 0
 
 
 if __name__ == "__main__":

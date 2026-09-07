@@ -1,6 +1,8 @@
 """CPU 检查：E5 等价初始化、条件对齐、梯度、冻结范围和权重往返。"""
 
 import ast
+import contextlib
+import copy
 import io
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +13,7 @@ from PIL import Image
 import torch
 
 from models.bf_texture_module import BFTextureConditioner
+from models.tcpm_lite import TCPMLite
 from models.text_guided_queries import (
     TextGuidedQueries, guidance_config_from_checkpoint, text_content_mask,
 )
@@ -40,6 +43,38 @@ def pipeline_method(name):
     }
     exec(compile(ast.Module(body=[method], type_ignores=[]), str(ROOT / "pipelines/IMAGGarment_pipeline.py"), "exec"), namespace)
     return namespace[name]
+
+
+def training_load_functions():
+    # 隔离执行真实加载函数，避免 CPU 测试依赖 diffusers/accelerate。
+    path = ROOT / "train_GAM_texture_joint.py"
+    names = {"load_partial_state", "validate_text_only_source", "load_joint_checkpoint_into_models",
+             "_is_palette_key", "_is_balanced_gate_key"}
+    nodes = [node for node in ast.parse(path.read_text(encoding="utf-8")).body
+             if isinstance(node, ast.FunctionDef) and node.name in names]
+    namespace = {"nn": torch.nn, "guidance_config_from_checkpoint": guidance_config_from_checkpoint}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), namespace)
+    return namespace
+
+
+def small_joint_models(guided=False):
+    unet = torch.nn.Sequential(torch.nn.Linear(4, 4))
+    unet.attn_processors = {"test": unet[0]}
+    return {
+        "unet": unet, "ref_unet": torch.nn.Linear(4, 4), "bf": small_conditioner(guided),
+        "spatial_texture_encoder": torch.nn.Linear(4, 4),
+        "spatial_injection": torch.nn.Linear(4, 4),
+        "palette_token_mlp": torch.nn.Linear(4, 4), "tcpm_lite": TCPMLite(32),
+    }
+
+
+def joint_state(models, mode="off"):
+    state = {("bf_texture_conditioner" if name == "bf" else name): copy.deepcopy(model.state_dict())
+             for name, model in models.items()}
+    state["texture_adapter"] = copy.deepcopy(
+        torch.nn.ModuleList(models["unet"].attn_processors.values()).state_dict())
+    state["meta"] = {**models["bf"].text_guidance_config(), "resampler_training": mode}
+    return state
 
 
 class FakeTokenizer:
@@ -113,6 +148,108 @@ class ResamplerTests(unittest.TestCase):
             if not parameter.requires_grad:
                 torch.testing.assert_close(parameter, before[name], rtol=0, atol=0)
         self.assertFalse(torch.equal(model.resampler_queries, before["resampler_queries"]))
+
+    def test_text_only_learns_through_frozen_bf_tcpm_and_downstream(self):
+        base, candidate = small_conditioner(), small_conditioner(True)
+        candidate.load_state_dict(base.state_dict(), strict=False)
+        base.requires_grad_(False)
+        candidate.train_text_guidance_only()
+        tcpm = TCPMLite(32, residual_scale_init=0.2).requires_grad_(False)
+        downstream = torch.nn.Sequential(torch.nn.Linear(32, 8), torch.nn.SiLU(),
+                                         torch.nn.Linear(8, 3)).requires_grad_(False)
+        modules = {"bf": candidate, "tcpm": tcpm, "downstream": downstream}
+        before = {name: copy.deepcopy(module.state_dict()) for name, module in modules.items()}
+        names = [name for name, p in candidate.named_parameters() if p.requires_grad]
+        self.assertTrue(names)
+        self.assertTrue(all(name.startswith("text_guidance.") for name in names))
+        data = self.inputs()
+
+        def predict(model):
+            tokens = tcpm(model(**data)[0], data["text_embeds"])
+            return downstream(tokens.mean(dim=1))
+
+        baseline = predict(base).detach()
+        torch.testing.assert_close(predict(candidate), baseline, rtol=0, atol=0)
+        optimizer = torch.optim.AdamW(candidate.text_guidance.parameters(), lr=1e-2)
+        target = torch.randn_like(baseline)
+        for step in range(3):
+            optimizer.zero_grad(set_to_none=True)
+            torch.nn.functional.mse_loss(predict(candidate), target).backward()
+            for name, parameter in candidate.named_parameters():
+                if parameter.requires_grad:
+                    self.assertIsNotNone(parameter.grad, name)
+                    self.assertTrue(torch.isfinite(parameter.grad).all(), name)
+                else:
+                    self.assertIsNone(parameter.grad, name)
+            self.assertGreater(candidate.text_guidance.gate.grad.abs().item(), 0)
+            if step > 0:
+                self.assertGreater(candidate.text_guidance.to_out.weight.grad.abs().sum().item(), 0)
+            optimizer.step()
+
+        changed_text = []
+        for module_name, module in modules.items():
+            for name, value in module.state_dict().items():
+                if module_name == "bf" and name.startswith("text_guidance."):
+                    if not torch.equal(value, before[module_name][name]):
+                        changed_text.append(name)
+                else:
+                    torch.testing.assert_close(value, before[module_name][name], rtol=0, atol=0)
+            if module_name != "bf":
+                self.assertTrue(all(p.grad is None for p in module.parameters()))
+        self.assertIn("text_guidance.gate", changed_text)
+        self.assertIn("text_guidance.to_out.weight", changed_text)
+        self.assertFalse(torch.equal(predict(candidate), baseline))
+        candidate.text_guidance_enabled = False
+        torch.testing.assert_close(predict(candidate), baseline, rtol=0, atol=0)
+
+    def test_text_only_requires_text_module(self):
+        with self.assertRaisesRegex(ValueError, "text_only"):
+            small_conditioner().train_text_guidance_only()
+
+    def test_strict_e5_load_only_allows_new_text_keys(self):
+        functions = training_load_functions()
+        state = joint_state(small_joint_models())
+        candidate = small_joint_models(True)
+        functions["validate_text_only_source"](state)
+        with contextlib.redirect_stdout(io.StringIO()):
+            functions["load_joint_checkpoint_into_models"](state, **candidate, strict_base=True)
+        for name, value in state["bf_texture_conditioner"].items():
+            torch.testing.assert_close(candidate["bf"].state_dict()[name], value, rtol=0, atol=0)
+        self.assertEqual(candidate["bf"].text_guidance.gate.item(), 0)
+        for component, missing_key in (("bf_texture_conditioner", "resampler_queries"),
+                                       ("unet", "0.weight"), ("tcpm_lite", "residual_scale"),
+                                       ("texture_adapter", "0.weight")):
+            with self.subTest(component=component), contextlib.redirect_stdout(io.StringIO()):
+                broken = copy.deepcopy(state)
+                del broken[component][missing_key]
+                with self.assertRaises((ValueError, RuntimeError)):
+                    functions["load_joint_checkpoint_into_models"](
+                        broken, **small_joint_models(True), strict_base=True)
+        broken = copy.deepcopy(state)
+        del broken["texture_adapter"]
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, "texture_adapter"):
+            functions["load_joint_checkpoint_into_models"](
+                broken, **small_joint_models(True), strict_base=True)
+
+    def test_text_only_resume_rejects_other_modes_and_incomplete_text(self):
+        functions = training_load_functions()
+        e8c = joint_state(small_joint_models(True), "text_only")
+        functions["validate_text_only_source"](e8c, resume=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            functions["load_joint_checkpoint_into_models"](
+                e8c, **small_joint_models(True), strict_base=True)
+        for mode, guided in (("off", False), ("visual", False), ("text", True)):
+            with self.subTest(mode=mode):
+                state = joint_state(small_joint_models(guided), mode)
+                with self.assertRaisesRegex(ValueError, "text_only"):
+                    functions["validate_text_only_source"](state, resume=True)
+                if mode != "off":
+                    with self.assertRaisesRegex(ValueError, "E5"):
+                        functions["validate_text_only_source"](state)
+        del e8c["bf_texture_conditioner"]["text_guidance.to_out.weight"]
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(ValueError, "text_guidance"):
+            functions["load_joint_checkpoint_into_models"](
+                e8c, **small_joint_models(True), strict_base=True)
 
     def test_empty_single_word_padding_and_ratio_bound(self):
         module = TextGuidedQueries(32, 16, 4, 0.3)

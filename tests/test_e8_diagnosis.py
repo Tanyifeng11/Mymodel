@@ -2,6 +2,7 @@
 
 import contextlib
 import copy
+import csv
 import hashlib
 import io
 import json
@@ -119,6 +120,45 @@ class DiagnosisTests(unittest.TestCase):
             self.assertTrue((output / "weight_differences.csv").is_file())
             for path, digest in before.items():
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
+
+    def test_cli_findings_do_not_mark_execution_failed(self):
+        self.states["e8a"]["unet"]["weight"][0] += 1
+        with tempfile.TemporaryDirectory(prefix="e8_diagnosis_test_", dir=Path(__file__).resolve().parents[1]) as folder:
+            root = Path(folder)
+            argv = []
+            for name, state in self.states.items():
+                path = root / (name + ".pt")
+                torch.save(state, path)
+                argv.extend(["--" + name + "-ckpt", str(path)])
+            output = root / "report"
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = main(argv + ["--weights-only", "--output-dir", str(output)])
+            self.assertEqual(code, 0)
+            report = json.loads((output / "diagnosis.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "attention_required")
+            self.assertGreater(report["weights"]["unexpected_entries"], 0)
+            with (output / "weight_differences.csv").open(encoding="utf-8-sig", newline="") as handle:
+                row = next(row for row in csv.DictReader(handle)
+                           if row["comparison"] == "e8a_vs_e5" and row["component"] == "unet")
+            self.assertEqual(row["status"], "unexpected_change")
+            self.assertEqual(row["unexpected"], "True")
+            self.assertEqual(row["changed_numel"], "1")
+
+    def test_cli_load_failure_returns_nonzero_and_keeps_error(self):
+        with tempfile.TemporaryDirectory(prefix="e8_diagnosis_test_", dir=Path(__file__).resolve().parents[1]) as folder:
+            root = Path(folder)
+            argv = []
+            for name in self.states:
+                argv.extend(["--" + name + "-ckpt", str(root / (name + ".pt"))])
+            output = root / "report"
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                code = main(argv + ["--weights-only", "--output-dir", str(output)])
+            self.assertEqual(code, 1)
+            report = json.loads((output / "diagnosis.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "failed")
+            self.assertTrue(any("FileNotFoundError" in error for error in report["errors"]))
+            self.assertIn("[ERROR]", stderr.getvalue())
 
 
 if __name__ == "__main__":

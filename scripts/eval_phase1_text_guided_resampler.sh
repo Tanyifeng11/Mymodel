@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 同一官方数据划分、同一 100 张样本、同一生成 seed，比较 A/B/C。
+# 同一官方数据划分、同一 100 张样本、同一生成 seed，比较 E8 各组。
 PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 DATASETS_ROOT="${DATASETS_ROOT:-/share/home/u2515283058/datasets}"
 BF_SPLIT="${BF_SPLIT:-validation}"
@@ -30,6 +30,10 @@ run() {
   printf '\n'
   if [[ "${DRY_RUN:-0}" != "1" ]]; then "$@"; fi
 }
+if [[ ",${EXPERIMENTS}," == *",text_only_off,"* || ",${EXPERIMENTS}," == *",text_only_on,"* ]]; then
+  run python tools/check_e8c_frozen.py --e5-ckpt "${E5_CKPT}" --text-ckpt "${TEXT_CKPT}" \
+    --output-dir "${EVAL_ROOT}/frozen_check"
+fi
 if [[ ! -f "${DATASET_JSON}" ]]; then
   run python tools/build_bf_test_manifest.py --data_root "${DATA_ROOT_PATH}" \
     --dataset_json "${DATASET_JSON}" --split_path "${SPLIT_PATH}" --split_count "${NUM_SAMPLES}" \
@@ -53,6 +57,8 @@ for seed in "${seeds[@]}"; do
       e5) ckpt="${E5_CKPT}"; guidance=0 ;;
       resampler_visual) ckpt="${VISUAL_CKPT}"; guidance=0 ;;
       resampler_text) ckpt="${TEXT_CKPT}"; guidance=1 ;;
+      text_only_off) ckpt="${TEXT_CKPT}"; guidance=0 ;;
+      text_only_on) ckpt="${TEXT_CKPT}"; guidance=1 ;;
       *) echo "未知实验：${experiment}" >&2; exit 1 ;;
     esac
     run python tools/run_fixed_benchmark.py "${common[@]}" \
@@ -61,11 +67,22 @@ for seed in "${seeds[@]}"; do
   done
   run python tools/validate_benchmark_outputs.py --experiments_dir "${EVAL_ROOT}/seed_${seed}" \
     --experiment_names "${EXPERIMENTS}" --expected_count "${NUM_SAMPLES}"
+  if [[ "${EXPERIMENTS}" == "e5,text_only_off,text_only_on" ]]; then
+    run python tools/check_e8c_images.py --experiments-dir "${EVAL_ROOT}/seed_${seed}" \
+      --expected-count "${NUM_SAMPLES}" --output-dir "${EVAL_ROOT}/seed_${seed}/image_check"
+  fi
 done
-if [[ "${EXPERIMENTS}" == "e5,resampler_visual,resampler_text" ]]; then
+comparisons=""
+case "${EXPERIMENTS}" in
+  e5,resampler_visual,resampler_text)
+    comparisons=resampler_visual:e5,resampler_text:e5,resampler_text:resampler_visual ;;
+  e5,text_only_off,text_only_on)
+    comparisons=text_only_off:e5,text_only_on:e5,text_only_on:text_only_off ;;
+esac
+if [[ -n "${comparisons}" ]]; then
   report_args=()
   if [[ "${#seeds[@]}" == 1 ]]; then report_args+=(--single_seed_reference); fi
   run python tools/report_e7a_control.py --eval_root "${EVAL_ROOT}" --output_dir "${EVAL_ROOT}/report" \
     --experiments "${EXPERIMENTS}" --generation_seeds "${GENERATION_SEEDS}" \
-    --comparisons resampler_visual:e5,resampler_text:e5,resampler_text:resampler_visual "${report_args[@]}"
+    --comparisons "${comparisons}" "${report_args[@]}"
 fi
