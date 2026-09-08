@@ -30,6 +30,10 @@ models/*
 *.err
 submit.sh
 
+# Codex 测试归档
+/_codex_tests/
+e9_split_test_*/
+
 # 屏蔽 Python 编译缓存
 __pycache__/
 *.pyc
