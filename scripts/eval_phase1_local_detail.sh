@@ -34,14 +34,17 @@ run() {
   printf '\n'
   if [[ "${DRY_RUN:-0}" != "1" ]]; then "$@"; fi
 }
+has_experiment() {
+  [[ ",${EXPERIMENTS}," == *",$1,"* ]]
+}
 
 # 冻结检查：确认两组都只新增旁路，且除来源外训练配置一致。
 # 用 if 而不是 [[ ]] && ...，避免 set -e 下条件不成立时直接退出。
 frozen_args=()
-if [[ ",${EXPERIMENTS}," == *",e9_a,"* ]]; then
+if has_experiment e9_a; then
   frozen_args+=(--e9-a-ckpt "${E9_A_CKPT}")
 fi
-if [[ ",${EXPERIMENTS}," == *",e9_b,"* ]]; then
+if has_experiment e9_b; then
   frozen_args+=(--e9-b-ckpt "${E9_B_CKPT}")
 fi
 if [[ "${#frozen_args[@]}" -gt 0 ]]; then
@@ -101,15 +104,17 @@ for seed in "${seeds[@]}"; do
   done
   run python tools/validate_benchmark_outputs.py --experiments_dir "${EVAL_ROOT}/seed_${seed}" \
     --experiment_names "${EXPERIMENTS}" --expected_count "${NUM_SAMPLES}"
-  if [[ "${EXPERIMENTS}" == "e5,e9_a,e9_b" ]]; then
+  if has_experiment e5 && { has_experiment e9_a || has_experiment e9_b; }; then
     run python tools/check_e9_images.py --experiments-dir "${EVAL_ROOT}/seed_${seed}" \
-      --expected-count "${NUM_SAMPLES}" --output-dir "${EVAL_ROOT}/seed_${seed}/image_check"
+      --experiment-names "${EXPERIMENTS}" --expected-count "${NUM_SAMPLES}" \
+      --output-dir "${EVAL_ROOT}/seed_${seed}/image_check"
   fi
 done
 comparisons=""
-if [[ "${EXPERIMENTS}" == "e5,e9_a,e9_b" ]]; then
-  comparisons=e9_a:e5,e9_b:e5,e9_b:e9_a
-fi
+add_comparison() { comparisons+="${comparisons:+,}$1"; }
+if has_experiment e5 && has_experiment e9_a; then add_comparison e9_a:e5; fi
+if has_experiment e5 && has_experiment e9_b; then add_comparison e9_b:e5; fi
+if has_experiment e9_a && has_experiment e9_b; then add_comparison e9_b:e9_a; fi
 if [[ -n "${comparisons}" ]]; then
   report_args=()
   if [[ "${#seeds[@]}" == 1 ]]; then report_args+=(--single_seed_reference); fi

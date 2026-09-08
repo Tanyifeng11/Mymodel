@@ -88,6 +88,17 @@ class E9ImageTests(unittest.TestCase):
         self.assertEqual(report["inactive_bypass"], ["e9_a"])
         self.assertFalse(report["identical_variants"])
 
+    def test_two_way_e5_b_check_is_supported(self):
+        for index in range(2):
+            self.write_image("e9_b", index, 60 + index)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["--experiments-dir", str(self.root), "--experiment-names", "e5,e9_b",
+                         "--expected-count", "2", "--output-dir", str(self.root / "two_way_check")])
+        report = json.loads((self.root / "two_way_check/image_check.json").read_text(encoding="utf-8"))
+        self.assertEqual(code, 0)
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual([row["comparison"] for row in report["comparisons"]], ["e9_b_vs_e5"])
+
     def test_downloaded_path_fallback_is_used(self):
         # metrics_per_sample.json 里保留的服务器绝对路径在本地不可用。
         self.assertTrue(all(not Path(row["gen_path"]).is_file()

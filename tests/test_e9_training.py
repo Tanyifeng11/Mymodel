@@ -198,7 +198,8 @@ class FreezeAndOptimizerTests(unittest.TestCase):
 class ConfigValidationTests(unittest.TestCase):
     def setUp(self):
         self.namespace = training_functions({"validate_local_detail_source",
-                                             "validate_local_detail_base_config"})
+                                             "validate_local_detail_base_config",
+                                             "validate_local_detail_resume_source"})
 
     def e5_state(self):
         return {"meta": {"resampler_training": "off", "text_guidance_dim": 0,
@@ -244,6 +245,35 @@ class ConfigValidationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.namespace["validate_local_detail_base_config"](
                         args, {**metadata, field: value})
+
+    def resume_state(self, source="local", step=1000):
+        state = self.e5_state()
+        state["meta"].update({
+            "local_detail_source": source, "local_detail_grid": 16,
+            "local_detail_layer": LAYER, "local_detail_dim": 128,
+            "local_detail_heads": 4, "train_global_step": step,
+            "texture_num_tokens": 16, "texture_mode": "patch_resampled",
+            "texture_condition_mode": "token", "texture_preprocess_mode": "plain_resize",
+            "clip_hidden_layer": -1, "width": 384, "height": 512,
+            "layer_group_enabled": 1, "use_texture_gate": 1, "use_tcpm_lite": 1,
+            "tcpm_mask_inner_only": 1, "region_kernel_size": 9,
+        })
+        state["unet"][LAYER + ".local_detail_adapter.alpha"] = torch.zeros(())
+        state["texture_adapter"]["0.local_detail_adapter.alpha"] = torch.zeros(())
+        return state
+
+    def test_local_b_resume_accepts_own_checkpoint_and_step(self):
+        step = self.namespace["validate_local_detail_resume_source"](
+            self.resume_state(), local_detail_args(max_train_steps=2000))
+        self.assertEqual(step, 1000)
+
+    def test_local_b_resume_rejects_other_source_or_non_extension(self):
+        with self.assertRaises(ValueError):
+            self.namespace["validate_local_detail_resume_source"](
+                self.resume_state(source="resampled"), local_detail_args(max_train_steps=2000))
+        with self.assertRaises(ValueError):
+            self.namespace["validate_local_detail_resume_source"](
+                self.resume_state(step=1000), local_detail_args(max_train_steps=1000))
 
     def test_effective_config_must_be_patch_resampled_16_tokens(self):
         for override in ({"texture_mode": "legacy_pooled"}, {"bf_num_tokens": 8}):

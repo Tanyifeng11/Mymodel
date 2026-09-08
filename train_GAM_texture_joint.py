@@ -652,6 +652,9 @@ def local_detail_config(args):
         "local_detail_dim": args.local_detail_dim,
         "local_detail_heads": args.local_detail_heads,
         "local_detail_lr": args.local_detail_lr,
+        "local_detail_resume": bool(getattr(args, "local_detail_resume", 0)),
+        "local_detail_resume_from": getattr(args, "resume_from_checkpoint", ""),
+        "local_detail_resume_start_step": getattr(args, "resume_checkpoint_global_step", None),
     }
 
 
@@ -695,6 +698,39 @@ def validate_local_detail_base_config(args, metadata):
         if saved in metadata and metadata[saved] != getattr(args, actual):
             raise ValueError(f"E9 配置与 E5 不一致：{saved}={getattr(args, actual)!r}，"
                              f"E5={metadata[saved]!r}")
+
+
+def validate_local_detail_resume_source(state_dict, args):
+    """E9-B 第二阶段只允许从自身完整旁路 checkpoint 继续。"""
+    if not isinstance(state_dict, dict):
+        raise ValueError("E9-B 续训需要完整的 joint checkpoint")
+    meta = state_dict.get("meta", {})
+    if meta.get("resampler_training", "off") != "off" or meta.get("text_guidance_dim", 0):
+        raise ValueError("E9-B 续训 checkpoint 不能包含重采样或文本模块训练")
+    if args.local_detail_source != "local" or meta.get("local_detail_source") != "local":
+        raise ValueError("E9 第二阶段只允许续训 local(B 组) checkpoint")
+    for saved, actual in (
+        ("local_detail_grid", "local_detail_grid"),
+        ("local_detail_layer", "local_detail_layer"),
+        ("local_detail_dim", "local_detail_dim"),
+        ("local_detail_heads", "local_detail_heads"),
+    ):
+        if meta.get(saved) != getattr(args, actual):
+            raise ValueError(f"E9-B 续训配置不一致：{saved}={getattr(args, actual)!r}，"
+                             f"checkpoint={meta.get(saved)!r}")
+    validate_local_detail_base_config(args, meta)
+    for component in ("unet", "texture_adapter"):
+        if not any("local_detail_adapter." in key for key in state_dict.get(component, {})):
+            raise ValueError(f"E9-B 续训 checkpoint 缺少局部旁路权重：{component}")
+    try:
+        saved_step = int(meta["train_global_step"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("E9-B 续训 checkpoint 缺少有效 train_global_step") from error
+    if saved_step < 1:
+        raise ValueError("E9-B 续训 checkpoint 的 train_global_step 必须为正数")
+    if args.max_train_steps <= saved_step:
+        raise ValueError(f"E9-B 续训 max_train_steps 必须大于 {saved_step}")
+    return saved_step
 
 
 def local_detail_stats(unet, layer):
@@ -1690,6 +1726,8 @@ def main():
     ap.add_argument("--local_detail_dim", type=int, default=128)
     ap.add_argument("--local_detail_heads", type=int, default=4)
     ap.add_argument("--local_detail_lr", type=float, default=5e-5)
+    ap.add_argument("--local_detail_resume", type=int, default=0, choices=[0, 1],
+                    help="E9-B 第二阶段：仅加载并继续训练自身 local checkpoint；优化器和调度器重新初始化")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--checkpointing_steps", type=int, default=0)
     ap.add_argument("--train_unet_late_for_distribution", type=int, default=0, choices=[0, 1])
@@ -1791,12 +1829,18 @@ def main():
 
     args = ap.parse_args()
     is_local_detail = args.local_detail_source != "off"
+    args.resume_checkpoint_global_step = None
     if is_local_detail:
         if args.texture_condition_mode != "token" or args.texture_mode != "patch_resampled":
             raise ValueError("E9 仅支持 E5 的 token / patch_resampled 配置")
         if not args.gam_init_ckpt or not args.use_tcpm_lite or args.bf_num_tokens != 16:
             raise ValueError("E9 需要完整 E5 起点、TCPM 和 16 个原纹理 token")
-        if args.resume_from_checkpoint or args.reload_texture_adapter_after_gam_init:
+        if args.local_detail_resume:
+            if args.local_detail_source != "local" or not args.resume_from_checkpoint:
+                raise ValueError("E9 第二阶段仅支持 local(B 组) 并要求 --resume_from_checkpoint")
+            if args.reload_texture_adapter_after_gam_init or args.start_global_step >= 0:
+                raise ValueError("E9-B 续训不能重新覆盖纹理权重，且必须自动读取 checkpoint 步数")
+        elif args.resume_from_checkpoint or args.reload_texture_adapter_after_gam_init:
             raise ValueError("首轮 E9 仅从 E5 新训，不恢复训练状态或重新覆盖纹理权重")
         if args.resampler_training != "off" or any((
             args.use_aa_tcr_fuse, args.freeze_all_but_aa_tcr, args.freeze_except_gate,
@@ -1810,7 +1854,8 @@ def main():
         # 冻结运行不使用原训练可视化路径，以免误展示没有接新旁路的图。
         if args.val_vis_steps or args.vis_every_n_steps:
             raise ValueError("E9 请使用独立评测入口，训练设置 val_vis_steps=0、vis_every_n_steps=0")
-        args.start_global_step = 0
+        if not args.local_detail_resume:
+            args.start_global_step = 0
         with open(args.dataset_json_path, "rb") as training_data:
             args.training_data_sha256 = hashlib.sha256(training_data.read()).hexdigest()
     if args.seed is not None:
@@ -2125,6 +2170,9 @@ def main():
         if accelerator.is_main_process:
             print(f"[resume] loading resume_from_checkpoint: {args.resume_from_checkpoint}")
         resume_state = torch.load(args.resume_from_checkpoint, map_location="cpu", weights_only=False)
+        if is_local_detail:
+            args.resume_checkpoint_global_step = validate_local_detail_resume_source(resume_state, args)
+            print("[E9] 继续加载 B 组局部旁路；优化器和学习率调度器将重新初始化。")
         if args.resampler_training == "text_only":
             validate_text_only_source(resume_state, resume=True)
             print("[E8c] 继续加载模型权重；优化器和学习率调度器重新初始化，不是精确断点续训。")
@@ -2138,7 +2186,7 @@ def main():
             palette_token_mlp,
             accelerator=accelerator,
             tcpm_lite=tcpm_lite,
-            strict_base=args.resampler_training == "text_only",
+            strict_base=args.resampler_training == "text_only" or is_local_detail,
         )
 
     # bf/token + spatial branch 是否训练
@@ -2474,12 +2522,26 @@ def main():
             )
         ),
     )
+    if args.start_global_step >= 0:
+        initial_global_step = args.start_global_step
+    else:
+        initial_global_step = (
+            args.resume_checkpoint_global_step
+            or infer_checkpoint_step(args.resume_from_checkpoint)
+            or infer_checkpoint_step(args.gam_init_ckpt)
+            or 0
+        )
     if args.max_train_steps > 0:
         target_global_step = args.max_train_steps
         total_epochs = max(1, math.ceil(target_global_step / steps_per_epoch))
     else:
         total_epochs = max(1, args.num_train_epochs)
         target_global_step = total_epochs * steps_per_epoch
+    if target_global_step <= initial_global_step:
+        raise ValueError(
+            f"max_train_steps 必须大于起始步数：target={target_global_step}, "
+            f"start={initial_global_step}"
+        )
     checkpoint_interval_steps = args.checkpointing_steps or max(1, args.checkpointing_epochs * steps_per_epoch)
 
     optimizer = torch.optim.AdamW(trainable_param_groups, lr=args.learning_rate)
@@ -2487,7 +2549,7 @@ def main():
         "cosine",
         optimizer=optimizer,
         num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=target_global_step,
+        num_training_steps=target_global_step - initial_global_step,
     )
 
     fixed_vis_batch = None
@@ -2570,14 +2632,7 @@ def main():
     drop_counts = {"t": 0, "i": 0, "ti": 0, "total": 0}
     branch_drop_counts = {"token": 0, "spatial": 0, "total": 0}
 
-    if args.start_global_step >= 0:
-        global_step = args.start_global_step
-    else:
-        global_step = (
-            infer_checkpoint_step(args.resume_from_checkpoint)
-            or infer_checkpoint_step(args.gam_init_ckpt)
-            or 0
-        )
+    global_step = initial_global_step
 
     # CTD-A 的 D0 是训练准入条件，不能只依赖 W&B（离线 run 不一定能可靠导出
     # 单项 history）。这里直接落盘每个优化步的全局统计，并维护本次启动的累计值。

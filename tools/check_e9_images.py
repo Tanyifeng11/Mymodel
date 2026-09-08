@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -41,9 +42,11 @@ def target_input(row):
     return row.get("source_target_path") or row["target_path"]
 
 
-def check_alignment(samples):
+def check_alignment(samples, experiments):
     reference = samples["e5"]
-    for experiment in EXPERIMENTS[1:]:
+    for experiment in experiments:
+        if experiment == "e5":
+            continue
         candidate = samples[experiment]
         if set(reference) != set(candidate):
             raise ValueError("%s 与 E5 的样本 ID 集合不一致" % experiment)
@@ -68,15 +71,15 @@ def generated_path(run_dir, row):
     raise FileNotFoundError("生成图不存在：%s；本地候选：%s" % (path, local_path))
 
 
-def compare_images(experiments_dir, samples):
+def compare_images(experiments_dir, samples, experiments, comparisons):
     rows = []
     for sample_id in sorted(samples["e5"]):
         images, paths = {}, {}
-        for experiment in EXPERIMENTS:
+        for experiment in experiments:
             paths[experiment] = generated_path(experiments_dir / experiment, samples[experiment][sample_id])
             with Image.open(paths[experiment]) as image:
                 images[experiment] = np.asarray(image.convert("RGB"), dtype=np.int16)
-        for reference, candidate in COMPARISONS:
+        for reference, candidate in comparisons:
             first, second = images[reference], images[candidate]
             if first.shape != second.shape:
                 raise ValueError("%s: %s 与 %s 尺寸不一致，不能进行原尺度比较" %
@@ -90,9 +93,9 @@ def compare_images(experiments_dir, samples):
     return rows
 
 
-def summarize(rows):
+def summarize(rows, comparisons):
     summaries = []
-    for reference, candidate in COMPARISONS:
+    for reference, candidate in comparisons:
         comparison = candidate + "_vs_" + reference
         group = [row for row in rows if row["comparison"] == comparison]
         summaries.append(dict(comparison=comparison, sample_count=len(group),
@@ -102,10 +105,12 @@ def summarize(rows):
     return summaries
 
 
-def check_bypass_active(summaries, expected_count, report):
+def check_bypass_active(summaries, expected_count, report, experiments):
     """E9 与 E8c 相反：旁路训练后应当改变输出，逐像素等同 E5 说明它没有生效。"""
     by_comparison = {summary["comparison"]: summary for summary in summaries}
-    for experiment in ("e9_a", "e9_b"):
+    for experiment in experiments:
+        if experiment == "e5":
+            continue
         summary = by_comparison.get(experiment + "_vs_e5")
         if summary is None:
             continue
@@ -132,28 +137,37 @@ def write_csv(path, fields, rows):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--experiments-dir", type=Path, required=True)
+    parser.add_argument("--experiment-names", default=",".join(EXPERIMENTS),
+                        help="逗号分隔，必须包含 e5；可只检查 e5,e9_b")
     parser.add_argument("--expected-count", type=int, default=100)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
+    experiments = tuple(name.strip() for name in args.experiment_names.split(",") if name.strip())
     args.output_dir.mkdir(parents=True, exist_ok=True)
     rows = []
     report = dict(status="completed", expected_count=args.expected_count,
-                  experiments_dir=str(args.experiments_dir), comparisons=[], errors=[],
+                  experiments_dir=str(args.experiments_dir), experiment_names=list(experiments), comparisons=[], errors=[],
                   inactive_bypass=[], identical_variants=False,
                   scope="RGB 0–255 原尺度像素对照；汇总 MAE 为逐图 MAE 的均值。"
                         "变化幅度不是质量指标，也不能证明图案得到保持。")
     try:
         if args.expected_count <= 0:
             raise ValueError("expected-count 必须大于 0")
+        if len(experiments) < 2 or len(set(experiments)) != len(experiments) or experiments[0] != "e5":
+            raise ValueError("experiment-names 必须以 e5 开头，且至少包含一个 E9 组")
+        unknown = set(experiments) - set(EXPERIMENTS)
+        if unknown:
+            raise ValueError("未知 E9 实验：%s" % sorted(unknown))
+        comparisons = tuple(itertools.combinations(experiments, 2))
         samples = {name: load_samples(args.experiments_dir / name, args.expected_count)
-                   for name in EXPERIMENTS}
-        check_alignment(samples)
-        rows = compare_images(args.experiments_dir, samples)
-        report["comparisons"] = summarize(rows)
+                   for name in experiments}
+        check_alignment(samples, experiments)
+        rows = compare_images(args.experiments_dir, samples, experiments, comparisons)
+        report["comparisons"] = summarize(rows, comparisons)
         for summary in report["comparisons"]:
             print("[image] %(comparison)s: 完全相同 %(exact_equal_count)s/%(sample_count)s，"
                   "MAE(0–255)=%(pixel_mae_255).6f，最大像素差=%(max_abs_delta)s" % summary, flush=True)
-        check_bypass_active(report["comparisons"], args.expected_count, report)
+        check_bypass_active(report["comparisons"], args.expected_count, report, experiments)
     except Exception as error:
         report["status"] = "failed"
         report["errors"].append("%s: %s" % (type(error).__name__, error))

@@ -4,6 +4,8 @@ set -euo pipefail
 # E9：完全冻结 E5，只训练一个细节层上的局部旁路。
 # LOCAL_DETAIL_SOURCE=resampled 为 A 组（复用原 16 个纹理 token），
 # local 为 B 组（读取压缩前的局部特征）。除来源外两组配置必须一致。
+# LOCAL_DETAIL_RESUME_CKPT 仅用于 B 组第二阶段；它恢复模型权重和全局步数，
+# 但按当前训练器约定重新初始化优化器和学习率调度器。
 PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 DATASETS_ROOT="${DATASETS_ROOT:-/share/home/u2515283058/datasets}"
 LOCAL_DETAIL_SOURCE="${LOCAL_DETAIL_SOURCE:-local}"
@@ -15,6 +17,7 @@ OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 BASE_CKPT="${BASE_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
 OUTPUT_DIR="${OUTPUT_DIR:-${OUTPUT_BASE}/phase1_local_detail_${LOCAL_DETAIL_SOURCE}}"
+LOCAL_DETAIL_RESUME_CKPT="${LOCAL_DETAIL_RESUME_CKPT:-}"
 TRAIN_JSON="${TRAIN_JSON:-${PROJECT_ROOT}/data/train_bf_texture.json}"
 DATA_ROOT_PATH="${DATA_ROOT_PATH:-${DATASETS_ROOT}/BF/training}"
 SD_MODEL="${SD_MODEL:-${PROJECT_ROOT}/models/stable-diffusion-v1-5}"
@@ -27,20 +30,37 @@ export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_XET=1 TOKENIZERS_PARALLELISM=false
 cd "${PROJECT_ROOT}"
 
+if [[ -n "${LOCAL_DETAIL_RESUME_CKPT}" && "${LOCAL_DETAIL_SOURCE}" != "local" ]]; then
+  echo "E9 第二阶段仅允许续训 local(B 组) checkpoint" >&2
+  exit 1
+fi
+
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
-  for path in "${BASE_CKPT}" "${TEXTURE_ADAPTER_CKPT}" "${TRAIN_JSON}" "${DATA_ROOT_PATH}" "${SD_MODEL}" "${VAE_MODEL}" "${CLIP_MODEL}"; do
+  required_paths=("${BASE_CKPT}" "${TEXTURE_ADAPTER_CKPT}" "${TRAIN_JSON}" "${DATA_ROOT_PATH}" "${SD_MODEL}" "${VAE_MODEL}" "${CLIP_MODEL}")
+  if [[ -n "${LOCAL_DETAIL_RESUME_CKPT}" ]]; then
+    required_paths+=("${LOCAL_DETAIL_RESUME_CKPT}")
+  fi
+  for path in "${required_paths[@]}"; do
     [[ -e "${path}" ]] || { echo "缺少路径：${path}" >&2; exit 1; }
   done
 fi
 
-# 首轮 E9 只从 E5 新训，不恢复训练状态；训练期不出图，评测走独立入口。
+# 首轮从 E5 新训；B 组第二阶段仅恢复自身旁路。训练期不出图，评测走独立入口。
+resume_args=()
+start_global_step=0
+run_label="local_detail_${LOCAL_DETAIL_SOURCE}"
+if [[ -n "${LOCAL_DETAIL_RESUME_CKPT}" ]]; then
+  resume_args=(--local_detail_resume 1 --resume_from_checkpoint "${LOCAL_DETAIL_RESUME_CKPT}")
+  start_global_step=-1
+  run_label="local_detail_${LOCAL_DETAIL_SOURCE}_stage2"
+fi
 cmd=(
   accelerate launch --num_processes "${NUM_GPUS}" --main_process_port "${MAIN_PROCESS_PORT:-0}"
   --mixed_precision "${MIXED_PRECISION}" train_GAM_texture_joint.py
   --pretrained_model_name_or_path "${SD_MODEL}" --pretrained_vae_model_path "${VAE_MODEL}"
   --image_encoder_path "${CLIP_MODEL}" --dataset_json_path "${TRAIN_JSON}" --data_root_path "${DATA_ROOT_PATH}"
   --texture_adapter_ckpt "${TEXTURE_ADAPTER_CKPT}" --gam_init_ckpt "${BASE_CKPT}"
-  --output_dir "${OUTPUT_DIR}" --start_global_step 0
+  --output_dir "${OUTPUT_DIR}" --start_global_step "${start_global_step}"
   --local_detail_source "${LOCAL_DETAIL_SOURCE}" --local_detail_grid "${LOCAL_DETAIL_GRID:-16}"
   --local_detail_dim "${LOCAL_DETAIL_DIM:-128}" --local_detail_heads "${LOCAL_DETAIL_HEADS:-4}"
   --local_detail_lr "${LOCAL_DETAIL_LR:-5e-5}" --learning_rate "${LOCAL_DETAIL_LR:-5e-5}"
@@ -62,8 +82,9 @@ cmd=(
   --lambda_leak "${LAMBDA_LEAK:-0.1}" --region_kernel_size 9 --tcpm_mask_inner_only 1
   --joint_t_drop_rate 0.2 --joint_i_drop_rate 0.05 --joint_ti_drop_rate 0.05
   --val_vis_steps 0 --vis_every_n_steps 0 --report_to "${REPORT_TO:-none}"
-  --wandb_run_name "local_detail_${LOCAL_DETAIL_SOURCE}"
+  --wandb_run_name "${run_label}"
 )
+cmd+=("${resume_args[@]}")
 printf '%q ' "${cmd[@]}"
 printf '\n'
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
