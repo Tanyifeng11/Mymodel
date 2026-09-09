@@ -50,8 +50,9 @@ class LocalDetailAdapterTests(unittest.TestCase):
     def test_alpha_receives_gradient_from_first_step(self):
         module = adapter()
         hidden, context, mask, shape = inputs()
-        module(hidden, context, mask, shape).square().mean().backward()
-        # 门为零但投影随机初始化，alpha 的梯度非零，第一步就能学。
+        # 用一阶目标模拟去噪损失对残差的首步梯度；平方范数在零门处梯度恒为零。
+        module(hidden, context, mask, shape).mean().backward()
+        # 门为零但投影随机初始化，alpha 的一阶梯度非零，第一步就能学。
         self.assertIsNotNone(module.alpha.grad)
         self.assertNotEqual(float(module.alpha.grad), 0.0)
 
@@ -84,6 +85,24 @@ class LocalDetailAdapterTests(unittest.TestCase):
         self.assertEqual(set(module.last_stats), {"alpha", "residual_relative_rms"})
         self.assertAlmostEqual(float(module.last_stats["alpha"]), 0.25, places=6)
         self.assertGreater(float(module.last_stats["residual_relative_rms"]), 0.0)
+
+    def test_highpass_constraint_changes_only_the_residual_output(self):
+        plain = adapter()
+        highpass = LocalDetailAdapter(16, 768, 8, 2, output_constraint="highpass")
+        highpass.load_state_dict(plain.state_dict())
+        with torch.no_grad():
+            plain.alpha.fill_(0.5)
+            highpass.alpha.fill_(0.5)
+        hidden, context, mask, shape = inputs()
+        plain_residual = plain(hidden, context, mask, shape)
+        highpass_residual = highpass(hidden, context, mask, shape)
+        self.assertEqual(highpass_residual.shape, plain_residual.shape)
+        self.assertFalse(torch.equal(highpass_residual, plain_residual))
+        self.assertGreater(float(highpass_residual.abs().max()), 0.0)
+
+    def test_bad_output_constraint_is_rejected(self):
+        with self.assertRaises(ValueError):
+            LocalDetailAdapter(16, 768, 8, 2, output_constraint="unknown")
 
     def test_four_dim_hidden_states_round_trip(self):
         module = adapter()

@@ -6,17 +6,25 @@ import torch.nn.functional as F
 
 
 DEFAULT_LOCAL_DETAIL_LAYER = "up_blocks.3.attentions.0.transformer_blocks.0.attn2.processor"
+LOCAL_DETAIL_OUTPUT_CONSTRAINTS = ("off", "highpass")
 
 
 class LocalDetailAdapter(nn.Module):
-    def __init__(self, hidden_dim, context_dim=768, inner_dim=128, num_heads=4):
+    def __init__(self, hidden_dim, context_dim=768, inner_dim=128, num_heads=4,
+                 output_constraint="off", highpass_kernel=3):
         super().__init__()
         if inner_dim <= 0 or num_heads <= 0 or inner_dim % num_heads:
             raise ValueError("local detail 的 inner_dim 必须是 num_heads 的正整数倍")
+        if output_constraint not in LOCAL_DETAIL_OUTPUT_CONSTRAINTS:
+            raise ValueError("不支持的 local detail 输出约束：%s" % output_constraint)
+        if highpass_kernel < 1 or highpass_kernel % 2 != 1:
+            raise ValueError("local detail highpass_kernel 必须为正奇数")
         self.hidden_dim = hidden_dim
         self.context_dim = context_dim
         self.inner_dim = inner_dim
         self.num_heads = num_heads
+        self.output_constraint = output_constraint
+        self.highpass_kernel = highpass_kernel
         self.query_norm = nn.LayerNorm(hidden_dim)
         self.context_norm = nn.LayerNorm(context_dim)
         self.to_q = nn.Linear(hidden_dim, inner_dim, bias=False)
@@ -59,6 +67,14 @@ class LocalDetailAdapter(nn.Module):
         detail = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0)
         detail = detail.transpose(1, 2).reshape(batch, sequence, self.inner_dim)
         detail = self.to_out(detail)
+        if self.output_constraint == "highpass":
+            # E9-C：冻结 E5 负责低频轮廓与大色块；旁路只能提供局部高频残差。
+            detail_map = detail.transpose(1, 2).reshape(batch, self.hidden_dim, height, width)
+            lowpass = F.avg_pool2d(
+                detail_map, kernel_size=self.highpass_kernel, stride=1,
+                padding=self.highpass_kernel // 2, count_include_pad=False,
+            )
+            detail = (detail_map - lowpass).flatten(2).transpose(1, 2)
         # 门乘法用 FP32，最终恢复主分支 dtype；区域外残差严格为零。
         residual = (self.alpha.float() * detail.float() * mask.float()).to(hidden_states.dtype)
         with torch.no_grad():
@@ -73,7 +89,8 @@ class LocalDetailAdapter(nn.Module):
         return residual
 
 
-def attach_local_detail_adapter(unet, layer=DEFAULT_LOCAL_DETAIL_LAYER, inner_dim=128, num_heads=4):
+def attach_local_detail_adapter(unet, layer=DEFAULT_LOCAL_DETAIL_LAYER, inner_dim=128, num_heads=4,
+                                output_constraint="off", highpass_kernel=3):
     """在原处理器下注册新模块，原 E5 的参数名称保持不变。"""
     if layer not in unet.attn_processors:
         raise ValueError(f"未找到 local detail 目标层：{layer}")
@@ -85,8 +102,8 @@ def attach_local_detail_adapter(unet, layer=DEFAULT_LOCAL_DETAIL_LAYER, inner_di
     adapter = LocalDetailAdapter(
         hidden_dim=processor.hidden_size,
         context_dim=processor.cross_attention_dim or processor.hidden_size,
-        inner_dim=inner_dim,
-        num_heads=num_heads,
+        inner_dim=inner_dim, num_heads=num_heads,
+        output_constraint=output_constraint, highpass_kernel=highpass_kernel,
     ).to(device=processor.to_k_ip.weight.device, dtype=processor.to_k_ip.weight.dtype)
     processor.local_detail_adapter = adapter
     return adapter

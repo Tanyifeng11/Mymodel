@@ -74,6 +74,20 @@ class FrozenE9Tests(unittest.TestCase):
         self.assertFalse(any(row["unexpected"] for row in rows))
         json.dumps(report, allow_nan=False)
 
+    def test_e9_c_requires_highpass_constraint(self):
+        reference, candidate = checkpoints()
+        candidate["meta"]["local_detail_output_constraint"] = "highpass"
+        candidate["meta"]["local_detail_highpass_kernel"] = 3
+        report, _ = audit_variant(reference, candidate, "e9_c", "local")
+        self.assertTrue(report["frozen_passed"], report["errors"] + report["violations"])
+        self.assertEqual(report["local_detail_output_constraint"], "highpass")
+
+        reference, candidate = checkpoints()
+        report, _ = audit_variant(reference, candidate, "e9_c", "local")
+        self.assertFalse(report["frozen_passed"])
+        self.assertTrue(any(item.get("error") == "e9_c_requires_highpass_output_constraint"
+                            for item in report["errors"]))
+
     def test_query_and_visual_resampler_drift_fail(self):
         # 默认白名单把这两项当可训练；E9 必须覆盖为冻结。
         for key in ("resampler_queries", "resampler.weight"):

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# E9 首轮三组对照：E5 / E9-A(旁路读原 16 token) / E9-B(旁路读压缩前局部 token)。
-# 同一官方验证划分、同一样本、同一生成 seed，三组之间只有旁路来源不同。
+# E9 对照：E5 / E9-A(旁路读原 16 token) / E9-B(局部 token) / E9-C(B 路高通残差)。
+# 同一官方验证划分、同一样本、同一生成 seed；具体实验由 EXPERIMENTS 显式指定。
 PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 DATASETS_ROOT="${DATASETS_ROOT:-/share/home/u2515283058/datasets}"
 BF_SPLIT="${BF_SPLIT:-validation}"
@@ -18,6 +18,7 @@ OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 E5_CKPT="${E5_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
 E9_A_CKPT="${E9_A_CKPT:-${OUTPUT_BASE}/phase1_local_detail_resampled/checkpoint-final/joint_model.pt}"
 E9_B_CKPT="${E9_B_CKPT:-${OUTPUT_BASE}/phase1_local_detail_local/checkpoint-final/joint_model.pt}"
+E9_C_CKPT="${E9_C_CKPT:-${OUTPUT_BASE}/phase1_local_detail_c_highpass/checkpoint-final/joint_model.pt}"
 TEXTURE_CKPT="${TEXTURE_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
 CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
 # 默认每次评测单独落盘，避免 checkpoint 更新后误复用旧生成图。
@@ -46,6 +47,9 @@ if has_experiment e9_a; then
 fi
 if has_experiment e9_b; then
   frozen_args+=(--e9-b-ckpt "${E9_B_CKPT}")
+fi
+if has_experiment e9_c; then
+  frozen_args+=(--e9-c-ckpt "${E9_C_CKPT}")
 fi
 if [[ "${#frozen_args[@]}" -gt 0 ]]; then
   run python tools/check_e9_frozen.py --e5-ckpt "${E5_CKPT}" "${frozen_args[@]}" \
@@ -95,6 +99,7 @@ for seed in "${seeds[@]}"; do
       e5) ckpt="${E5_CKPT}"; local_detail=0 ;;
       e9_a) ckpt="${E9_A_CKPT}"; local_detail=-1 ;;
       e9_b) ckpt="${E9_B_CKPT}"; local_detail=-1 ;;
+      e9_c) ckpt="${E9_C_CKPT}"; local_detail=-1 ;;
       *) echo "未知实验：${experiment}" >&2; exit 1 ;;
     esac
     run python tools/run_fixed_benchmark.py "${common[@]}" \
@@ -114,6 +119,7 @@ comparisons=""
 add_comparison() { comparisons+="${comparisons:+,}$1"; }
 if has_experiment e5 && has_experiment e9_a; then add_comparison e9_a:e5; fi
 if has_experiment e5 && has_experiment e9_b; then add_comparison e9_b:e5; fi
+if has_experiment e5 && has_experiment e9_c; then add_comparison e9_c:e5; fi
 if has_experiment e9_a && has_experiment e9_b; then add_comparison e9_b:e9_a; fi
 if [[ -n "${comparisons}" ]]; then
   report_args=()

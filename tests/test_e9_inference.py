@@ -54,10 +54,12 @@ def branch_state(inner_dim=8, num_heads=2, hidden=32, context=32):
 
 
 def checkpoint(source="local", inner_dim=8, num_heads=2, include=("unet", "texture_adapter"),
-               grid=16, layer=LAYER):
+               grid=16, layer=LAYER, output_constraint="off", highpass_kernel=3):
     state = {"meta": {"local_detail_source": source, "local_detail_grid": grid,
                       "local_detail_layer": layer, "local_detail_dim": inner_dim,
-                      "local_detail_heads": num_heads, "region_kernel_size": 9},
+                      "local_detail_heads": num_heads, "region_kernel_size": 9,
+                      "local_detail_output_constraint": output_constraint,
+                      "local_detail_highpass_kernel": highpass_kernel},
              "unet": {}, "texture_adapter": {}}
     if source != "off":
         weights = branch_state(inner_dim, num_heads)
@@ -90,6 +92,11 @@ class ConfigureLocalDetailTests(unittest.TestCase):
     def test_resampled_source_is_accepted(self):
         config = self.configure(self.unet, checkpoint("resampled"), -1)
         self.assertEqual(config["source"], "resampled")
+
+    def test_highpass_constraint_is_loaded_from_checkpoint(self):
+        config = self.configure(self.unet, checkpoint("local", output_constraint="highpass"), -1)
+        self.assertEqual(config["output_constraint"], "highpass")
+        self.assertEqual(self.unet.attn_processors[LAYER].local_detail_adapter.output_constraint, "highpass")
 
     def test_explicit_off_returns_e5_path_without_attaching(self):
         config = self.configure(self.unet, checkpoint("local"), 0)

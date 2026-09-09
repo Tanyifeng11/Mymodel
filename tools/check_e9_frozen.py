@@ -24,7 +24,7 @@ BRANCH_COMPONENTS = ("unet", "texture_adapter")
 ADAPTER_MARKER = ".local_detail_adapter."
 ADAPTER_TENSORS = ("alpha", "context_norm.bias", "context_norm.weight", "query_norm.bias",
                    "query_norm.weight", "to_k.weight", "to_out.weight", "to_q.weight", "to_v.weight")
-VARIANT_SOURCE = {"a": "resampled", "b": "local"}
+VARIANT_SOURCE = {"a": "resampled", "b": "local", "c": "local"}
 TEXTURE_ADAPTER_PREFIX = re.compile(r"^(\d+)\.local_detail_adapter\.")
 # 与 train_GAM_texture_joint.validate_local_detail_base_config 同一组字段。
 BASE_CONFIG_FIELDS = ("texture_num_tokens", "texture_mode", "texture_condition_mode",
@@ -146,6 +146,9 @@ def audit_variant(reference, candidate, label, expected_source):
                                "error": "required_component_missing_or_empty"})
     check_reference(reference, errors)
     check_candidate_meta(reference_meta, candidate_meta, expected_source, errors)
+    if label == "e9_c" and candidate_meta.get("local_detail_output_constraint", "off") != "highpass":
+        errors.append({"checkpoint": label, "error": "e9_c_requires_highpass_output_constraint",
+                       "actual": candidate_meta.get("local_detail_output_constraint", "off")})
     check_branch_weights(candidate, candidate_meta, errors)
 
     # 已核实的旧格式差异：禁用的 AA-TCR 以前不保存，新格式保存空字典。
@@ -183,6 +186,8 @@ def audit_variant(reference, candidate, label, expected_source):
         "local_detail_source": candidate_meta.get("local_detail_source", "off"),
         "local_detail_layer": candidate_meta.get("local_detail_layer", ""),
         "local_detail_grid": candidate_meta.get("local_detail_grid"),
+        "local_detail_output_constraint": candidate_meta.get("local_detail_output_constraint", "off"),
+        "local_detail_highpass_kernel": candidate_meta.get("local_detail_highpass_kernel", 3),
         "train_global_step": candidate_meta.get("train_global_step"),
         "scope": "仅允许新增完整的 local_detail_adapter；所有 E5 已有参数逐值不变，"
                  "量化造成的数值变化也不放行。",
@@ -236,17 +241,19 @@ def main(argv=None):
     parser.add_argument("--e5-ckpt", required=True)
     parser.add_argument("--e9-a-ckpt", help="A 组：局部旁路读取原 16 个纹理 token")
     parser.add_argument("--e9-b-ckpt", help="B 组：局部旁路读取压缩前的局部 token")
+    parser.add_argument("--e9-c-ckpt", help="C 组：B 路局部 token，加高通残差输出约束")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args(argv)
     output = Path(args.output_dir)
     rows = []
     report = {"status": "failed", "check_completed": False, "frozen_passed": False,
               "execution_failed": True, "errors": [], "variants": {}, "parity": {}}
-    candidates = {label: path for label, path in (("e9_a", args.e9_a_ckpt), ("e9_b", args.e9_b_ckpt))
+    candidates = {label: path for label, path in (("e9_a", args.e9_a_ckpt), ("e9_b", args.e9_b_ckpt),
+                                                    ("e9_c", args.e9_c_ckpt))
                   if path}
     try:
         if not candidates:
-            raise ValueError("至少需要 --e9-a-ckpt 或 --e9-b-ckpt 之一")
+            raise ValueError("至少需要 --e9-a-ckpt、--e9-b-ckpt 或 --e9-c-ckpt 之一")
         torch.set_num_threads(4)
         print("[E9] 加载 E5 与 %s，执行 CPU 只读冻结检查。" % "、".join(sorted(candidates)), flush=True)
         reference = load_checkpoint(args.e5_ckpt)

@@ -652,6 +652,8 @@ def local_detail_config(args):
         "local_detail_dim": args.local_detail_dim,
         "local_detail_heads": args.local_detail_heads,
         "local_detail_lr": args.local_detail_lr,
+        "local_detail_output_constraint": getattr(args, "local_detail_output_constraint", "off"),
+        "local_detail_highpass_kernel": getattr(args, "local_detail_highpass_kernel", 3),
         "local_detail_resume": bool(getattr(args, "local_detail_resume", 0)),
         "local_detail_resume_from": getattr(args, "resume_from_checkpoint", ""),
         "local_detail_resume_start_step": getattr(args, "resume_checkpoint_global_step", None),
@@ -714,10 +716,14 @@ def validate_local_detail_resume_source(state_dict, args):
         ("local_detail_layer", "local_detail_layer"),
         ("local_detail_dim", "local_detail_dim"),
         ("local_detail_heads", "local_detail_heads"),
+        ("local_detail_output_constraint", "local_detail_output_constraint"),
+        ("local_detail_highpass_kernel", "local_detail_highpass_kernel"),
     ):
-        if meta.get(saved) != getattr(args, actual):
-            raise ValueError(f"E9-B 续训配置不一致：{saved}={getattr(args, actual)!r}，"
-                             f"checkpoint={meta.get(saved)!r}")
+        saved_value = meta.get(saved, "off" if saved == "local_detail_output_constraint" else 3)
+        actual_value = getattr(args, actual, "off" if actual == "local_detail_output_constraint" else 3)
+        if saved_value != actual_value:
+            raise ValueError(f"E9-B 续训配置不一致：{saved}={actual_value!r}，"
+                             f"checkpoint={saved_value!r}")
     validate_local_detail_base_config(args, meta)
     for component in ("unet", "texture_adapter"):
         if not any("local_detail_adapter." in key for key in state_dict.get(component, {})):
@@ -1726,6 +1732,10 @@ def main():
     ap.add_argument("--local_detail_dim", type=int, default=128)
     ap.add_argument("--local_detail_heads", type=int, default=4)
     ap.add_argument("--local_detail_lr", type=float, default=5e-5)
+    ap.add_argument("--local_detail_output_constraint", choices=["off", "highpass"], default="off",
+                    help="E9-C：限制局部旁路只输出高频残差；off 保持原 E9-B。")
+    ap.add_argument("--local_detail_highpass_kernel", type=int, default=3,
+                    help="E9-C 高通约束的均值池化核，必须为正奇数。")
     ap.add_argument("--local_detail_resume", type=int, default=0, choices=[0, 1],
                     help="E9-B 第二阶段：仅加载并继续训练自身 local checkpoint；优化器和调度器重新初始化")
     ap.add_argument("--seed", type=int, default=None)
@@ -1851,6 +1861,8 @@ def main():
             raise ValueError("E9 首轮不能同时启用其他融合、训练或 CTD 实验")
         if not args.layer_group_enabled or args.local_detail_grid < 1:
             raise ValueError("E9 需要 E5 分层注入和正数 local_detail_grid")
+        if args.local_detail_highpass_kernel < 1 or args.local_detail_highpass_kernel % 2 != 1:
+            raise ValueError("E9 local_detail_highpass_kernel 必须为正奇数")
         # 冻结运行不使用原训练可视化路径，以免误展示没有接新旁路的图。
         if args.val_vis_steps or args.vis_every_n_steps:
             raise ValueError("E9 请使用独立评测入口，训练设置 val_vis_steps=0、vis_every_n_steps=0")
@@ -2163,6 +2175,8 @@ def main():
         local_detail_adapter = attach_local_detail_adapter(
             unet, layer=args.local_detail_layer,
             inner_dim=args.local_detail_dim, num_heads=args.local_detail_heads,
+            output_constraint=args.local_detail_output_constraint,
+            highpass_kernel=args.local_detail_highpass_kernel,
         )
 
     # resume 继续训练
@@ -2344,7 +2358,8 @@ def main():
             (ref_unet, bf, spatial_texture_encoder, spatial_injection, tcpm_lite, palette_token_mlp),
         )
         print(f"[E9] 冻结全部 E5，仅训练 {args.local_detail_layer} 的局部旁路，"
-              f"source={args.local_detail_source}, grid={args.local_detail_grid}")
+              f"source={args.local_detail_source}, grid={args.local_detail_grid}, "
+              f"output_constraint={args.local_detail_output_constraint}")
 
     # 显式构造 trainable params
     trainable_param_groups = []

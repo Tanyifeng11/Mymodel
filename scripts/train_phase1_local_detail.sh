@@ -18,6 +18,8 @@ BASE_CKPT="${BASE_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/j
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
 OUTPUT_DIR="${OUTPUT_DIR:-${OUTPUT_BASE}/phase1_local_detail_${LOCAL_DETAIL_SOURCE}}"
 LOCAL_DETAIL_RESUME_CKPT="${LOCAL_DETAIL_RESUME_CKPT:-}"
+LOCAL_DETAIL_OUTPUT_CONSTRAINT="${LOCAL_DETAIL_OUTPUT_CONSTRAINT:-off}"
+LOCAL_DETAIL_HIGHPASS_KERNEL="${LOCAL_DETAIL_HIGHPASS_KERNEL:-3}"
 TRAIN_JSON="${TRAIN_JSON:-${PROJECT_ROOT}/data/train_bf_texture.json}"
 DATA_ROOT_PATH="${DATA_ROOT_PATH:-${DATASETS_ROOT}/BF/training}"
 SD_MODEL="${SD_MODEL:-${PROJECT_ROOT}/models/stable-diffusion-v1-5}"
@@ -63,6 +65,7 @@ cmd=(
   --output_dir "${OUTPUT_DIR}" --start_global_step "${start_global_step}"
   --local_detail_source "${LOCAL_DETAIL_SOURCE}" --local_detail_grid "${LOCAL_DETAIL_GRID:-16}"
   --local_detail_dim "${LOCAL_DETAIL_DIM:-128}" --local_detail_heads "${LOCAL_DETAIL_HEADS:-4}"
+  --local_detail_output_constraint "${LOCAL_DETAIL_OUTPUT_CONSTRAINT}" --local_detail_highpass_kernel "${LOCAL_DETAIL_HIGHPASS_KERNEL}"
   --local_detail_lr "${LOCAL_DETAIL_LR:-5e-5}" --learning_rate "${LOCAL_DETAIL_LR:-5e-5}"
   --seed "${TRAIN_SEED:-42}"
   --resampler_training off --text_guidance_dim 0

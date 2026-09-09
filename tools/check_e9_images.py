@@ -13,6 +13,7 @@ from PIL import Image
 
 
 EXPERIMENTS = ("e5", "e9_a", "e9_b")
+ALLOWED_EXPERIMENTS = EXPERIMENTS + ("e9_c",)
 COMPARISONS = (("e5", "e9_a"), ("e5", "e9_b"), ("e9_a", "e9_b"))
 INPUT_FIELDS = ("generation_seed", "prompt", "texture_path", "sketch_path")
 ROW_FIELDS = ("comparison", "sample_id", "reference_path", "candidate_path", "width", "height",
@@ -155,7 +156,7 @@ def main(argv=None):
             raise ValueError("expected-count 必须大于 0")
         if len(experiments) < 2 or len(set(experiments)) != len(experiments) or experiments[0] != "e5":
             raise ValueError("experiment-names 必须以 e5 开头，且至少包含一个 E9 组")
-        unknown = set(experiments) - set(EXPERIMENTS)
+        unknown = set(experiments) - set(ALLOWED_EXPERIMENTS)
         if unknown:
             raise ValueError("未知 E9 实验：%s" % sorted(unknown))
         comparisons = tuple(itertools.combinations(experiments, 2))

@@ -99,6 +99,26 @@ class E9ImageTests(unittest.TestCase):
         self.assertEqual(report["status"], "completed")
         self.assertEqual([row["comparison"] for row in report["comparisons"]], ["e9_b_vs_e5"])
 
+    def test_two_way_e5_c_check_is_supported(self):
+        run = self.root / "e9_c"
+        (run / "generated").mkdir(parents=True)
+        self.rows["e9_c"] = []
+        for index, row in enumerate(self.rows["e5"]):
+            filename = "token_%06d.png" % index
+            self.rows["e9_c"].append({**row,
+                                       "target_path": "/server/e9_c/real/%s" % filename,
+                                       "gen_path": "/server/e9_c/generated/%s" % filename})
+        self.save_rows()
+        for index in range(2):
+            self.write_image("e9_c", index, 60 + index)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["--experiments-dir", str(self.root), "--experiment-names", "e5,e9_c",
+                         "--expected-count", "2", "--output-dir", str(self.root / "two_way_c_check")])
+        report = json.loads((self.root / "two_way_c_check/image_check.json").read_text(encoding="utf-8"))
+        self.assertEqual(code, 0)
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual([row["comparison"] for row in report["comparisons"]], ["e9_c_vs_e5"])
+
     def test_downloaded_path_fallback_is_used(self):
         # metrics_per_sample.json 里保留的服务器绝对路径在本地不可用。
         self.assertTrue(all(not Path(row["gen_path"]).is_file()

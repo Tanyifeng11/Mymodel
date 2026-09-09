@@ -137,6 +137,8 @@ def configure_local_detail_from_checkpoint(unet, state, requested=-1):
         "source": "off" if requested == 0 else source,
         "grid": int(meta.get("local_detail_grid", 16)),
         "region_kernel_size": int(meta.get("region_kernel_size", 9)),
+        "output_constraint": meta.get("local_detail_output_constraint", "off"),
+        "highpass_kernel": int(meta.get("local_detail_highpass_kernel", 3)),
     }
     if requested == 0:
         return config
@@ -160,8 +162,13 @@ def configure_local_detail_from_checkpoint(unet, state, requested=-1):
     num_heads = int(meta.get("local_detail_heads", 4))
     module = getattr(unet.attn_processors.get(layer), "local_detail_adapter", None)
     if module is None:
-        module = attach_local_detail_adapter(unet, layer=layer, inner_dim=inner_dim, num_heads=num_heads)
-    elif module.inner_dim != inner_dim or module.num_heads != num_heads:
+        module = attach_local_detail_adapter(
+            unet, layer=layer, inner_dim=inner_dim, num_heads=num_heads,
+            output_constraint=config["output_constraint"], highpass_kernel=config["highpass_kernel"],
+        )
+    elif (module.inner_dim != inner_dim or module.num_heads != num_heads
+          or module.output_constraint != config["output_constraint"]
+          or module.highpass_kernel != config["highpass_kernel"]):
         raise ValueError("已挂载 E9 模块的维度与 checkpoint 元数据不一致")
     prefixes = {
         "unet": layer + ".local_detail_adapter.",
@@ -489,7 +496,8 @@ def prepare(args):
     if pipe.local_detail_source != "off":
         if pipe.bf_texture_conditioner is None or args.texture_condition_mode not in ("token", "hybrid"):
             raise ValueError("E9 局部旁路要求 BF 纹理分支及 token/hybrid 条件模式")
-        print(f"[prepare] local_detail_source={pipe.local_detail_source}, grid={pipe.local_detail_grid}")
+        print(f"[prepare] local_detail_source={pipe.local_detail_source}, grid={pipe.local_detail_grid}, "
+              f"output_constraint={local_detail_config['output_constraint']}")
     if "texture_adapter" in gam_state:
         adapter_sd = gam_state["texture_adapter"]
         checkpoint_has_gate = any(
