@@ -82,7 +82,7 @@ def run_variant(args, name, config):
         "--save_local_detail_trace", "1",
         "--local_detail_scale", str(config.get("scale", 1.0)),
         "--local_detail_step_start", str(config.get("start", 0)),
-        "--local_detail_step_end", str(config.get("end", args.num_inference_steps - 1)),
+        "--local_detail_step_end", str(config.get("end", 49)),
         "--local_detail_token_permutation", config.get("permutation", "none"),
         "--local_detail_permutation_seed", str(args.seed),
         "--local_detail_donor_shift", str(config.get("donor_shift", 0)),

@@ -12,11 +12,12 @@
 #SBATCH -o /share/home/u2515283058/Mymodel/log_e9_b_diag_%j.log
 #SBATCH -e /share/home/u2515283058/Mymodel/log_e9_b_diag_%j.err
 
-set -euo pipefail
+set -eo pipefail
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
   source /share/apps/anaconda3/etc/profile.d/conda.sh
   conda activate Mymodel
 fi
+set -u
 
 export PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 export DATASETS_ROOT="${DATASETS_ROOT:-/share/home/u2515283058/datasets}"
