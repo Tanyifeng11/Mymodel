@@ -109,7 +109,7 @@ for seed in "${seeds[@]}"; do
   done
   run python tools/validate_benchmark_outputs.py --experiments_dir "${EVAL_ROOT}/seed_${seed}" \
     --experiment_names "${EXPERIMENTS}" --expected_count "${NUM_SAMPLES}"
-  if has_experiment e5 && { has_experiment e9_a || has_experiment e9_b; }; then
+if has_experiment e5 && { has_experiment e9_a || has_experiment e9_b || has_experiment e9_c; }; then
     run python tools/check_e9_images.py --experiments-dir "${EVAL_ROOT}/seed_${seed}" \
       --experiment-names "${EXPERIMENTS}" --expected-count "${NUM_SAMPLES}" \
       --output-dir "${EVAL_ROOT}/seed_${seed}/image_check"

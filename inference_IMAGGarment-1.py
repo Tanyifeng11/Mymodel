@@ -6,7 +6,7 @@ import importlib.util
 import torch
 import numpy as np
 
-from PIL import Image
+from PIL import Image, ImageFilter
 from diffusers import UNet2DConditionModel, AutoencoderKL, DDIMScheduler
 from torchvision import transforms
 from transformers import CLIPImageProcessor
@@ -73,6 +73,54 @@ def _save_balanced_gate_trace(pipe, trace_path: str, sample_id: str = ""):
     with open(trace_path, "w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _save_local_detail_trace(pipe, trace_path: str, sample_id: str = ""):
+    if not trace_path:
+        return
+    os.makedirs(os.path.dirname(trace_path) or ".", exist_ok=True)
+    with open(trace_path, "w", encoding="utf-8") as f:
+        for row in getattr(pipe, "local_detail_trace", []):
+            f.write(json.dumps({"sample_id": sample_id, **row}, ensure_ascii=False) + "\n")
+
+
+def _match_chroma_to_reference(donor_image, reference_image):
+    """保留 donor 亮度纹样，仅把 Cb/Cr 的全局统计匹配到原参考图。"""
+    donor = np.asarray(donor_image.convert("YCbCr"), dtype=np.float32)
+    reference = np.asarray(reference_image.convert("YCbCr"), dtype=np.float32)
+    for channel in (1, 2):
+        donor_values = donor[..., channel]
+        reference_values = reference[..., channel]
+        donor_std = donor_values.std()
+        if donor_std > 1e-6:
+            donor[..., channel] = (
+                (donor_values - donor_values.mean())
+                * (reference_values.std() / donor_std)
+                + reference_values.mean()
+            )
+        else:
+            donor[..., channel] = reference_values.mean()
+    return Image.fromarray(np.clip(donor, 0, 255).astype(np.uint8), "YCbCr").convert("RGB")
+
+
+def _local_detail_control_image(texture_image, donor_image, transform):
+    if transform == "none":
+        return donor_image
+    if transform == "lowpass":
+        return texture_image.filter(ImageFilter.GaussianBlur(radius=8))
+    if transform == "highpass_gray":
+        base = np.asarray(texture_image.convert("L"), dtype=np.float32)
+        lowpass = np.asarray(
+            texture_image.convert("L").filter(ImageFilter.GaussianBlur(radius=8)),
+            dtype=np.float32,
+        )
+        highpass = np.clip(base - lowpass + 128.0, 0, 255).astype(np.uint8)
+        return Image.fromarray(highpass, "L").convert("RGB")
+    if transform == "donor_color_matched":
+        if donor_image is None:
+            raise ValueError("donor_color_matched 需要 local_detail_donor_texture_path")
+        return _match_chroma_to_reference(donor_image, texture_image)
+    raise ValueError(f"未知 local detail 输入变换：{transform}")
 
 
 def load_image_encoder_flexible(image_encoder_path, device=None, dtype=None):
@@ -641,6 +689,25 @@ if __name__ == "__main__":
     parser.add_argument('--conflict_threshold', type=float, default=0.70)
     parser.add_argument('--balanced_gate_trace_path', type=str, default="")
     parser.add_argument('--balanced_gate_trace_sample_id', type=str, default="")
+    parser.add_argument('--local_detail_scale', type=float, default=1.0,
+                        help='仅诊断时使用：E9 局部旁路残差倍率。')
+    parser.add_argument('--local_detail_step_start', type=int, default=0,
+                        help='仅诊断时使用：E9 旁路生效的首个去噪步（含）。')
+    parser.add_argument('--local_detail_step_end', type=int, default=10**9,
+                        help='仅诊断时使用：E9 旁路生效的最后去噪步（含）。')
+    parser.add_argument('--local_detail_token_permutation', choices=['none', 'shuffle'], default='none',
+                        help='仅诊断时使用：是否固定随机打乱 E9 的 16x16 局部 token 位置。')
+    parser.add_argument('--local_detail_permutation_seed', type=int, default=42)
+    parser.add_argument('--local_detail_donor_texture_path', type=str, default='',
+                        help='仅诊断时使用：只将 E9 局部 token 换为该参考图，原全局纹理条件不变。')
+    parser.add_argument(
+        '--local_detail_input_transform',
+        choices=['none', 'lowpass', 'highpass_gray', 'donor_color_matched'],
+        default='none',
+        help='仅诊断时使用：局部旁路参考图的受控信息变换。',
+    )
+    parser.add_argument('--local_detail_trace_path', type=str, default='')
+    parser.add_argument('--local_detail_trace_sample_id', type=str, default='')
     parser.add_argument(
         '--fusion_type',
         type=str,
@@ -734,6 +801,13 @@ if __name__ == "__main__":
     
     if args.texture_path is not None:
         texture_image = Image.open(args.texture_path).convert("RGB")
+        donor_image = (
+            Image.open(args.local_detail_donor_texture_path).convert("RGB")
+            if args.local_detail_donor_texture_path else None
+        )
+        local_detail_donor_image = _local_detail_control_image(
+            texture_image, donor_image, args.local_detail_input_transform
+        )
     else:
         texture_embeds = None
         texture_clip_image = None
@@ -775,6 +849,12 @@ if __name__ == "__main__":
         alpha2=args.alpha2,
         alpha3=args.alpha3,
         alpha4=args.alpha4,
+        local_detail_scale=args.local_detail_scale,
+        local_detail_step_start=args.local_detail_step_start,
+        local_detail_step_end=args.local_detail_step_end,
+        local_detail_token_permutation=args.local_detail_token_permutation,
+        local_detail_permutation_seed=args.local_detail_permutation_seed,
+        local_detail_donor_image=local_detail_donor_image,
         spatial_mask=spatial_mask,
         debug_spatial=args.debug_spatial,
         force_texture_num_tokens_override=args.force_texture_num_tokens_override,
@@ -783,6 +863,11 @@ if __name__ == "__main__":
         pipe,
         args.balanced_gate_trace_path,
         sample_id=args.balanced_gate_trace_sample_id,
+    )
+    _save_local_detail_trace(
+        pipe,
+        args.local_detail_trace_path,
+        sample_id=args.local_detail_trace_sample_id,
     )
 
     save_output = []

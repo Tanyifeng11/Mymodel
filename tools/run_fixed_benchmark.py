@@ -651,7 +651,27 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         str(args.alpha3),
         "--alpha4",
         str(args.alpha4),
+        "--local_detail_scale",
+        str(args.local_detail_scale),
+        "--local_detail_step_start",
+        str(args.local_detail_step_start),
+        "--local_detail_step_end",
+        str(args.local_detail_step_end),
+        "--local_detail_token_permutation",
+        args.local_detail_token_permutation,
+        "--local_detail_permutation_seed",
+        str(args.local_detail_permutation_seed),
+        "--local_detail_input_transform",
+        args.local_detail_input_transform,
     ]
+    donor_texture = getattr(args, "_local_detail_donor_textures", {}).get(sample["sample_id"])
+    if donor_texture:
+        cmd.extend(["--local_detail_donor_texture_path", donor_texture])
+    if args.save_local_detail_trace:
+        cmd.extend([
+            "--local_detail_trace_path", os.path.join(sample_out, "local_detail_trace.jsonl"),
+            "--local_detail_trace_sample_id", str(sample["sample_id"]),
+        ])
     if args.save_balanced_gate_trace:
         trace_path = os.path.join(sample_out, "gate_trace.jsonl")
         cmd.extend(
@@ -930,6 +950,16 @@ def run_benchmark(args):
         sample_id_start=args.sample_id_start,
         sample_id_end=sample_id_end,
     )
+    args._local_detail_donor_textures = {}
+    if args.local_detail_donor_shift:
+        if len(split) < 2:
+            raise ValueError("local_detail_donor_shift 至少需要两个固定样本")
+        for index, sample in enumerate(split):
+            donor = split[(index + args.local_detail_donor_shift) % len(split)]
+            donor_texture = sample_paths(args, donor)["texture_path"]
+            if not existing_file(donor_texture):
+                raise FileNotFoundError(f"E9 donor 参考图不存在：{donor_texture}")
+            args._local_detail_donor_textures[sample["sample_id"]] = donor_texture
     run_dir = os.path.join(args.output_dir, args.run_name)
     ensure_dir(run_dir)
     metrics_dir = args.metrics_output_dir or run_dir
@@ -991,6 +1021,15 @@ def run_benchmark(args):
         "conflict_deltae_norm": args.conflict_deltae_norm,
         "conflict_threshold": args.conflict_threshold,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
+        "local_detail_diagnostics": {
+            "scale": args.local_detail_scale,
+            "step_window": [args.local_detail_step_start, args.local_detail_step_end],
+            "token_permutation": args.local_detail_token_permutation,
+            "permutation_seed": args.local_detail_permutation_seed,
+            "donor_shift": args.local_detail_donor_shift,
+            "input_transform": args.local_detail_input_transform,
+            "save_trace": bool(args.save_local_detail_trace),
+        },
         "metrics_only": args.metrics_only,
         "resume_generation": bool(args.resume_generation),
         "skip_existing": bool(args.skip_existing),
@@ -1590,6 +1629,23 @@ def build_argparser():
     parser.add_argument("--conflict_deltae_norm", type=float, default=50.0)
     parser.add_argument("--conflict_threshold", type=float, default=0.70)
     parser.add_argument("--save_balanced_gate_trace", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--save_local_detail_trace", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--local_detail_scale", type=float, default=1.0)
+    parser.add_argument("--local_detail_step_start", type=int, default=0)
+    parser.add_argument("--local_detail_step_end", type=int, default=10**9)
+    parser.add_argument(
+        "--local_detail_token_permutation", choices=["none", "shuffle"], default="none"
+    )
+    parser.add_argument("--local_detail_permutation_seed", type=int, default=42)
+    parser.add_argument(
+        "--local_detail_input_transform",
+        choices=["none", "lowpass", "highpass_gray", "donor_color_matched"],
+        default="none",
+    )
+    parser.add_argument(
+        "--local_detail_donor_shift", type=int, default=0,
+        help="按固定 split 循环移位，只替换 E9 局部 token 的参考纹理；0 表示关闭。",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--modes", default="token,spatial,hybrid,spatial_bfm_like"

@@ -34,6 +34,11 @@ class LocalDetailAdapter(nn.Module):
         # 只将门置零；投影保留随机初始化，第一步即可学习 alpha。
         self.alpha = nn.Parameter(torch.zeros(()))
         self.last_stats = {}
+        # 推理诊断用的运行时控制；不进入 state_dict，不影响训练或既有 checkpoint。
+        self.runtime_scale = 1.0
+        self.runtime_step_index = -1
+        self.runtime_timestep = -1
+        self.runtime_trace = None
 
     def forward(self, hidden_states, local_tokens, garment_mask, spatial_shape):
         input_shape = hidden_states.shape
@@ -76,14 +81,37 @@ class LocalDetailAdapter(nn.Module):
             )
             detail = (detail_map - lowpass).flatten(2).transpose(1, 2)
         # 门乘法用 FP32，最终恢复主分支 dtype；区域外残差严格为零。
-        residual = (self.alpha.float() * detail.float() * mask.float()).to(hidden_states.dtype)
+        runtime_scale = float(self.runtime_scale)
+        residual = (
+            self.alpha.float() * runtime_scale * detail.float() * mask.float()
+        ).to(hidden_states.dtype)
         with torch.no_grad():
             base_rms = hidden_states.detach().float().square().mean().sqrt().clamp_min(1e-8)
+            detail_rms = detail.detach().float().square().mean().sqrt()
             residual_rms = residual.detach().float().square().mean().sqrt()
+            detail_map = detail.detach().float().transpose(1, 2).reshape(
+                batch, self.hidden_dim, height, width
+            )
+            detail_lowpass = F.avg_pool2d(
+                detail_map, kernel_size=3, stride=1, padding=1, count_include_pad=False,
+            )
+            detail_highpass_rms = (detail_map - detail_lowpass).square().mean().sqrt()
             self.last_stats = {
-                "alpha": self.alpha.detach().float(),
-                "residual_relative_rms": residual_rms / base_rms,
+                "alpha": float(self.alpha.detach().float().cpu()),
+                "runtime_scale": runtime_scale,
+                "base_rms": float(base_rms.cpu()),
+                "detail_rms": float(detail_rms.cpu()),
+                "detail_highpass_rms": float(detail_highpass_rms.cpu()),
+                "residual_rms": float(residual_rms.cpu()),
+                "residual_relative_rms": float((residual_rms / base_rms).cpu()),
+                "mask_coverage": float(mask.detach().float().mean().cpu()),
             }
+            if self.runtime_trace is not None:
+                self.runtime_trace.append({
+                    "step_index": int(self.runtime_step_index),
+                    "timestep": int(self.runtime_timestep),
+                    **self.last_stats,
+                })
         if len(input_shape) == 4:
             residual = residual.transpose(1, 2).reshape(input_shape)
         return residual

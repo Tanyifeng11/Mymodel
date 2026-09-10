@@ -140,6 +140,7 @@ class IMAGGarment(StableDiffusionPipeline):
         self.local_detail_grid = 16
         self.local_detail_region_kernel_size = 9
         self._local_detail_tokens = None
+        self.local_detail_trace = []
         self.load_texture_adapter()
 
     def _setup_layer_groups(self):
@@ -662,6 +663,7 @@ class IMAGGarment(StableDiffusionPipeline):
     def get_image_embeds(
         self,
         pil_image=None,
+        local_detail_donor_image=None,
         clip_image_embeds=None,
         width=None,
         height=None,
@@ -715,6 +717,31 @@ class IMAGGarment(StableDiffusionPipeline):
             image_prompt_embeds = positive_outputs[0]
             if local_detail_source != "off":
                 self._local_detail_tokens = positive_outputs[2]
+                if local_detail_donor_image is not None:
+                    if not isinstance(local_detail_donor_image, Image.Image):
+                        raise ValueError("local_detail_donor_image 必须是 PIL 图像")
+                    donor_clip = self.clip_image_processor(
+                        images=[local_detail_donor_image], return_tensors="pt"
+                    ).pixel_values
+                    donor_outputs = self.image_encoder(
+                        donor_clip.to(self.device, dtype=torch.float16),
+                        output_hidden_states=True,
+                    )
+                    donor_texture = self.cond_image_processor.preprocess(
+                        [local_detail_donor_image], height=height, width=width
+                    ).to(self.device, dtype=torch.float16)
+                    donor_texture = donor_texture * 2.0 - 1.0
+                    donor_positive = self.bf_texture_conditioner(
+                        clip_image_embeds=donor_outputs.image_embeds,
+                        texture_images=donor_texture,
+                        clip_vision_tokens=donor_outputs.hidden_states[-1][:, 1:, :],
+                        texture_mode=texture_mode,
+                        text_embeds=text_embeds,
+                        text_mask=text_mask,
+                        local_detail_source=local_detail_source,
+                        local_detail_grid=getattr(self, "local_detail_grid", 16),
+                    )
+                    self._local_detail_tokens = donor_positive[2]
             if self.use_tcpm_lite and text_embeds is not None:
                 image_prompt_embeds = self.tcpm_lite(image_prompt_embeds, text_embeds)
             image_prompt_embeds = self._apply_aa_tcr_fuse(
@@ -782,6 +809,16 @@ class IMAGGarment(StableDiffusionPipeline):
                 attn_processor.use_palette_tokens = bool(enabled)
                 attn_processor.num_palette_tokens = self.num_palette_tokens if enabled else 0
 
+    def set_local_detail_runtime(self, scale, step_index, timestep, trace):
+        """设置 E9 旁路的推理期诊断状态，不改变任何 checkpoint 参数。"""
+        for attn_processor in self.unet.attn_processors.values():
+            adapter = getattr(attn_processor, "local_detail_adapter", None)
+            if adapter is not None:
+                adapter.runtime_scale = float(scale)
+                adapter.runtime_step_index = int(step_index)
+                adapter.runtime_timestep = int(timestep)
+                adapter.runtime_trace = trace
+
     def set_layer_group_enabled(self, enabled: bool):
         """
         Enable/disable Ti-MGD layer-grouped routing.
@@ -846,6 +883,7 @@ class IMAGGarment(StableDiffusionPipeline):
         **kwargs,
     ):
         self._local_detail_tokens = None
+        self.local_detail_trace = []
         self.set_scale(sketch_scale)
         self.set_ipa_scale(ipa_scale)
         self._guidance_scale = guidance_scale
@@ -951,6 +989,7 @@ class IMAGGarment(StableDiffusionPipeline):
                     )
                 image_prompt_embeds, uncond_image_prompt_embeds = self.get_image_embeds(
                     pil_image=texture_clip_image,
+                    local_detail_donor_image=kwargs.get("local_detail_donor_image"),
                     clip_image_embeds=texture_embeds,
                     width=width,
                     height=height,
@@ -962,6 +1001,20 @@ class IMAGGarment(StableDiffusionPipeline):
                     text_mask=text_mask,
                     negative_text_mask=negative_text_mask,
                 )
+                local_detail_permutation = kwargs.get("local_detail_token_permutation", "none")
+                if self._local_detail_tokens is not None and local_detail_permutation != "none":
+                    if local_detail_permutation != "shuffle":
+                        raise ValueError("local_detail_token_permutation 仅支持 none 或 shuffle")
+                    permutation_generator = torch.Generator(device=self._local_detail_tokens.device)
+                    permutation_generator.manual_seed(
+                        int(kwargs.get("local_detail_permutation_seed", 42))
+                    )
+                    indices = torch.randperm(
+                        self._local_detail_tokens.shape[1],
+                        generator=permutation_generator,
+                        device=self._local_detail_tokens.device,
+                    )
+                    self._local_detail_tokens = self._local_detail_tokens[:, indices, :]
                 image_prompt_embeds = image_prompt_embeds * texture_scale
                 uncond_image_prompt_embeds = uncond_image_prompt_embeds * texture_scale
 
@@ -1057,6 +1110,11 @@ class IMAGGarment(StableDiffusionPipeline):
             }
 
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+        local_detail_scale = float(kwargs.get("local_detail_scale", 1.0))
+        local_detail_step_start = int(kwargs.get("local_detail_step_start", 0))
+        local_detail_step_end = int(kwargs.get("local_detail_step_end", len(timesteps) - 1))
+        if local_detail_step_start < 0 or local_detail_step_end < local_detail_step_start:
+            raise ValueError("local detail 时间窗必须满足 0 <= start <= end")
 
         ref_image_tensor = ref_image.to(dtype=self.vae.dtype, device=self.vae.device)
         ref_image_latents = self.vae.encode(ref_image_tensor).latent_dist.mean
@@ -1101,6 +1159,14 @@ class IMAGGarment(StableDiffusionPipeline):
                 balanced_gate_timestep = (
                     t.float().view(1) / float(getattr(self.scheduler.config, "num_train_timesteps", 1000))
                 ).to(device=device)
+                step_scale = (
+                    local_detail_scale
+                    if local_detail_step_start <= i <= local_detail_step_end
+                    else 0.0
+                )
+                self.set_local_detail_runtime(
+                    step_scale, i, t, self.local_detail_trace
+                )
                 cond_cross_attention_kwargs = {
                     "sa_hidden_states": sa_hidden_states,
                     "balanced_gate_timestep": balanced_gate_timestep,
