@@ -21,6 +21,11 @@ def build_argparser():
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--compute-fid", type=int, choices=[0, 1], default=0)
     parser.add_argument("--overwrite", type=int, choices=[0, 1], default=0)
+    parser.add_argument(
+        "--variants",
+        default="all",
+        help="逗号分隔的诊断条件名称；默认 all。",
+    )
     return parser
 
 
@@ -101,7 +106,18 @@ def main():
         raise ValueError("num-samples 至少为 2，donor_shift 需要不同的参考图")
     os.makedirs(args.output_dir, exist_ok=True)
     # 固定评测器与既有 E9 评测一样，使用 inference_IMAGGarment-1.py 的 50 步默认值。
-    for name, config in variants(50).items():
+    available_variants = variants(50)
+    if args.variants == "all":
+        selected_variants = list(available_variants)
+    else:
+        selected_variants = [name.strip() for name in args.variants.split(",") if name.strip()]
+        unknown = sorted(set(selected_variants) - set(available_variants))
+        if unknown:
+            raise ValueError(f"未知诊断条件：{', '.join(unknown)}")
+    if "alpha_100" not in selected_variants:
+        raise ValueError("诊断汇总需要包含 alpha_100 作为配对基线")
+    for name in selected_variants:
+        config = available_variants[name]
         run_variant(args, name, config)
     subprocess.run(
         [
