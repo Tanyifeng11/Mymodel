@@ -708,6 +708,7 @@ if __name__ == "__main__":
     )
     parser.add_argument('--local_detail_trace_path', type=str, default='')
     parser.add_argument('--local_detail_trace_sample_id', type=str, default='')
+    parser.add_argument('--local_detail_probe_dir', default='', help='E9 同 latent 开关传播诊断输出目录')
     parser.add_argument(
         '--fusion_type',
         type=str,
@@ -855,6 +856,7 @@ if __name__ == "__main__":
         local_detail_token_permutation=args.local_detail_token_permutation,
         local_detail_permutation_seed=args.local_detail_permutation_seed,
         local_detail_donor_image=local_detail_donor_image,
+        local_detail_probe_dir=args.local_detail_probe_dir,
         spatial_mask=spatial_mask,
         debug_spatial=args.debug_spatial,
         force_texture_num_tokens_override=args.force_texture_num_tokens_override,

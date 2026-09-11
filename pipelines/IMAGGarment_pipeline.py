@@ -1110,6 +1110,15 @@ class IMAGGarment(StableDiffusionPipeline):
             }
 
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+        local_probe = None
+        if kwargs.get('local_detail_probe_dir'):
+            from models.local_detail_probe import LocalDetailProbe
+            if not local_detail_kwargs or texture_condition_mode != 'token':
+                raise ValueError('E9 传播诊断要求启用局部旁路且使用 token 条件模式')
+            local_probe = LocalDetailProbe(
+                self.unet, kwargs['spatial_mask'], kwargs['local_detail_probe_dir'],
+                kwargs.get('local_detail_probe_steps', [0, 5, 15, 25, 49]),
+            )
         local_detail_scale = float(kwargs.get("local_detail_scale", 1.0))
         local_detail_step_start = int(kwargs.get("local_detail_step_start", 0))
         local_detail_step_end = int(kwargs.get("local_detail_step_end", len(timesteps) - 1))
@@ -1177,6 +1186,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 if self.use_tcpm_lite and spatial_mask is not None:
                     cond_cross_attention_kwargs["tcpm_garment_mask"] = spatial_mask
 
+                if local_probe is not None:
+                    local_probe.step = i
                 noise_pred = self.unet(
                     latent_model_input[0].unsqueeze(0),
                     t,
@@ -1186,6 +1197,14 @@ class IMAGGarment(StableDiffusionPipeline):
                     added_cond_kwargs=None,
                     return_dict=False,
                 )[0]
+
+                if local_probe is not None:
+                    local_probe.compare(noise_pred, lambda: self.unet(
+                        latent_model_input[0].unsqueeze(0), t,
+                        encoder_hidden_states=prompt_embeds,
+                        cross_attention_kwargs=cond_cross_attention_kwargs,
+                        timestep_cond=timestep_cond, added_cond_kwargs=None, return_dict=False,
+                    )[0], t)
 
                 if do_classifier_free_guidance:
                     if spatial_active and self.spatial_injection is not None:
@@ -1219,6 +1238,8 @@ class IMAGGarment(StableDiffusionPipeline):
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
 
+        if local_probe is not None:
+            local_probe.close()
         latents = latents / self.vae.config.scaling_factor
         if self.spatial_injection is not None:
             self.spatial_injection.clear_features()
