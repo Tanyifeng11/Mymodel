@@ -50,7 +50,7 @@ cmd=(
   --gam-ckpt "${E9_B_CKPT}" --texture-ckpt "${TEXTURE_CKPT}"
   --clip-model-path "${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
   --output-dir "${RECHECK_OUTPUT_DIR}" --num-samples 100 --seed 42 --generation-seed 42
-  --variants alpha_000,alpha_100,window_early --device "${DEVICE:-cuda:0}"
+  --variants "${RECHECK_VARIANTS:-alpha_000,alpha_100,window_early}" --device "${DEVICE:-cuda:0}"
   --compute-fid "${COMPUTE_FID:-0}"
 )
 echo "[E9-B 100 张复核] 输出目录：${RECHECK_OUTPUT_DIR}"
@@ -58,4 +58,10 @@ printf '%q ' "${cmd[@]}"
 printf '\n'
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
   "${cmd[@]}"
+  if [[ "${RUN_OUTPUT_BLOCK_AUDIT:-0}" == "1" ]]; then
+    python tools/check_e9_output_block.py --run-dir "${RECHECK_OUTPUT_DIR}/output_block/e9_b_diagnosis"
+    python tools/diagnose_e9_existing_images.py --eval-root "${RECHECK_OUTPUT_DIR}" \
+      --output-dir "${RECHECK_OUTPUT_DIR}/image_audit" --expected-count 100 \
+      --variants alpha_000,alpha_100,output_block
+  fi
 fi

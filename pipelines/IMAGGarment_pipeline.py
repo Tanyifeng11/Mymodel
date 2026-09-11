@@ -1110,6 +1110,10 @@ class IMAGGarment(StableDiffusionPipeline):
             }
 
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+        output_block = bool(kwargs.get('local_detail_output_block', False))
+        self.local_detail_block_trace = []
+        if output_block and (not local_detail_kwargs or texture_condition_mode != 'token'):
+            raise ValueError('输出端阻断要求 E9 旁路开启且使用 token 条件模式')
         local_probe = None
         if kwargs.get('local_detail_probe_dir'):
             from models.local_detail_probe import LocalDetailProbe
@@ -1205,6 +1209,30 @@ class IMAGGarment(StableDiffusionPipeline):
                         cross_attention_kwargs=cond_cross_attention_kwargs,
                         timestep_cond=timestep_cond, added_cond_kwargs=None, return_dict=False,
                     )[0], t)
+
+                if output_block:
+                    from models.local_detail_output_block import block_local_detail_output
+                    adapters = [p.local_detail_adapter for p in self.unet.attn_processors.values()
+                                if getattr(p, 'local_detail_adapter', None) is not None]
+                    states = [(a.runtime_scale, a.runtime_trace, a.last_stats) for a in adapters]
+                    try:
+                        for a in adapters:
+                            a.runtime_scale, a.runtime_trace = 0.0, None
+                        devices = [noise_pred.device.index] if noise_pred.is_cuda else []
+                        with torch.random.fork_rng(devices=devices):
+                            off_prediction = self.unet(
+                                latent_model_input[0].unsqueeze(0), t,
+                                encoder_hidden_states=prompt_embeds,
+                                cross_attention_kwargs=cond_cross_attention_kwargs,
+                                timestep_cond=timestep_cond, added_cond_kwargs=None, return_dict=False,
+                            )[0]
+                    finally:
+                        for a, state in zip(adapters, states):
+                            a.runtime_scale, a.runtime_trace, a.last_stats = state
+                    noise_pred, block_stats = block_local_detail_output(
+                        noise_pred, off_prediction, kwargs['spatial_mask'])
+                    self.local_detail_block_trace.append({
+                        'step_index': i, 'timestep': int(t), **block_stats})
 
                 if do_classifier_free_guidance:
                     if spatial_active and self.spatial_injection is not None:

@@ -38,6 +38,7 @@ def variants(num_steps):
         "alpha_050": {"scale": 0.50},
         "alpha_075": {"scale": 0.75},
         "alpha_100": {"scale": 1.0},
+        "output_block": {"scale": 1.0, "output_block": 1},
         "lowpass_appearance": {"scale": 1.0, "input_transform": "lowpass"},
         "highpass_pattern": {"scale": 1.0, "input_transform": "highpass_gray"},
         "spatial_shuffle": {"scale": 1.0, "permutation": "shuffle"},
@@ -92,6 +93,7 @@ def run_variant(args, name, config):
         "--local_detail_permutation_seed", str(args.seed),
         "--local_detail_donor_shift", str(config.get("donor_shift", 0)),
         "--local_detail_input_transform", config.get("input_transform", "none"),
+        "--local_detail_output_block", str(config.get("output_block", 0)),
         "--output_dir", os.path.join(args.output_dir, name),
         "--run_name", "e9_b_diagnosis",
     ]
@@ -108,7 +110,7 @@ def main():
     # 固定评测器与既有 E9 评测一样，使用 inference_IMAGGarment-1.py 的 50 步默认值。
     available_variants = variants(50)
     if args.variants == "all":
-        selected_variants = list(available_variants)
+        selected_variants = [n for n in available_variants if n != 'output_block']
     else:
         selected_variants = [name.strip() for name in args.variants.split(",") if name.strip()]
         unknown = sorted(set(selected_variants) - set(available_variants))

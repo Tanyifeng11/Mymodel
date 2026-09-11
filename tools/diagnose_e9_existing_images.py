@@ -87,7 +87,7 @@ def panel(image, mask, boundary):
 
 def save_review(path, images, results):
     width, height = next(iter(images.values())).size
-    canvas = Image.new('RGB', (width*3, (height+30)*3), 'white')
+    canvas = Image.new('RGB', (width*3, (height+30)*len(images)), 'white')
     draw = ImageDraw.Draw(canvas)
     for row, (name, image) in enumerate(images.items()):
         _, old, alt, boundary = results[name]
@@ -114,9 +114,12 @@ def main():
     parser.add_argument('--eval-root', required=True, help='包含三组条件的已完成作业目录')
     parser.add_argument('--output-dir', required=True)
     parser.add_argument('--expected-count', type=int, default=100)
+    parser.add_argument('--variants', default='alpha_000,alpha_100,window_early')
     args = parser.parse_args()
     root, out = Path(args.eval_root), Path(args.output_dir)
-    names = ['alpha_000', 'alpha_100', 'window_early']
+    names = args.variants.split(',')
+    if names[0] != 'alpha_000':
+        raise ValueError('第一个条件必须为 alpha_000 基线')
     tables, paths = {}, {}
     for name in names:
         folder = root/name/'e9_b_diagnosis'

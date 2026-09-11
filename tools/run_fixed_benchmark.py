@@ -674,6 +674,7 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         ])
     if args.local_detail_propagation_probe:
         cmd.extend(['--local_detail_probe_dir', os.path.join(sample_out, 'propagation_probe')])
+    cmd.extend(['--local_detail_output_block', str(args.local_detail_output_block)])
     if args.save_balanced_gate_trace:
         trace_path = os.path.join(sample_out, "gate_trace.jsonl")
         cmd.extend(
@@ -1032,6 +1033,7 @@ def run_benchmark(args):
             "input_transform": args.local_detail_input_transform,
             "save_trace": bool(args.save_local_detail_trace),
             "propagation_probe": bool(args.local_detail_propagation_probe),
+            "output_block": bool(args.local_detail_output_block),
             "propagation_probe": bool(args.local_detail_propagation_probe),
         },
         "metrics_only": args.metrics_only,
@@ -1635,6 +1637,7 @@ def build_argparser():
     parser.add_argument("--save_balanced_gate_trace", type=int, choices=[0, 1], default=0)
     parser.add_argument("--save_local_detail_trace", type=int, choices=[0, 1], default=0)
     parser.add_argument('--local_detail_propagation_probe', type=int, choices=[0, 1], default=0)
+    parser.add_argument('--local_detail_output_block', type=int, choices=[0, 1], default=0)
     parser.add_argument("--local_detail_scale", type=float, default=1.0)
     parser.add_argument("--local_detail_step_start", type=int, default=0)
     parser.add_argument("--local_detail_step_end", type=int, default=10**9)
