@@ -28,7 +28,9 @@ def rooted_path(root, value):
             or ".." in relative.parts or relative.parts[0] not in SPLITS):
         raise ValueError("路径必须从 training、validation 或 test 开始且不能越界")
     resolved = (root / relative).resolve()
-    if not resolved.is_relative_to(root):
+    try:
+        resolved.relative_to(root)
+    except ValueError:
         raise ValueError("路径越出 BF 根目录")
     return resolved
 

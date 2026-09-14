@@ -22,14 +22,20 @@ GENERATION_SEEDS="${GENERATION_SEEDS:-42}"
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_XET=1 TOKENIZERS_PARALLELISM=false
 cd "${PROJECT_ROOT}"
-for path in "${DATASET_JSON}" "${SPLIT_PATH}"; do
-  [[ -f "${path}" ]] || { echo "评测清单不存在：${path}" >&2; exit 1; }
-done
+if [[ "${DRY_RUN:-0}" != "1" ]]; then
+  for path in "${DATASET_JSON}" "${SPLIT_PATH}"; do
+    [[ -f "${path}" ]] || { echo "评测清单不存在：${path}" >&2; exit 1; }
+  done
+fi
 run() {
   printf '%q ' "$@"
   printf '\n'
   if [[ "${DRY_RUN:-0}" != "1" ]]; then "$@"; fi
 }
+
+# 固定 split 会保留自己的 prompt，因此源清单和固定 split 都需同步当前 txt。
+run python tools/sync_bf_eval_captions.py --bf-root "${DATA_ROOT_PATH}" --apply \
+  --manifest "${DATASET_JSON}" --manifest "${SPLIT_PATH}"
 
 # 汇总器需要 FID/KID；小样本 FID 仅作参考，不能凭小幅波动判定 FiLM 有效。
 common=(
