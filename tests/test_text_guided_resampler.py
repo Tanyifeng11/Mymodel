@@ -14,6 +14,7 @@ import torch
 
 from models.bf_texture_module import BFTextureConditioner
 from models.tcpm_lite import TCPMLite
+from models.text_texture_film import film_config_from_checkpoint
 from models.text_guided_queries import (
     TextGuidedQueries, guidance_config_from_checkpoint, text_content_mask,
 )
@@ -52,7 +53,8 @@ def training_load_functions():
              "_is_palette_key", "_is_balanced_gate_key"}
     nodes = [node for node in ast.parse(path.read_text(encoding="utf-8")).body
              if isinstance(node, ast.FunctionDef) and node.name in names]
-    namespace = {"nn": torch.nn, "guidance_config_from_checkpoint": guidance_config_from_checkpoint}
+    namespace = {"nn": torch.nn, "guidance_config_from_checkpoint": guidance_config_from_checkpoint,
+                 "film_config_from_checkpoint": film_config_from_checkpoint}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), namespace)
     return namespace
 

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.text_guided_queries import TextGuidedQueries
+from models.text_texture_film import TextTextureFiLM
 
 
 class BFTextureConditioner(nn.Module):
@@ -18,6 +19,7 @@ class BFTextureConditioner(nn.Module):
         text_guidance_dim: int = 0,
         text_guidance_heads: int = 4,
         text_guidance_max_ratio: float = 0.3,
+        film_hidden_dim: int = 0,
     ):
         super().__init__()
         self.num_tokens = num_tokens
@@ -86,6 +88,28 @@ class BFTextureConditioner(nn.Module):
         self.text_guidance_enabled = True
         if text_guidance_dim:
             self.configure_text_guidance(text_guidance_dim, text_guidance_heads, text_guidance_max_ratio)
+        self.film = None
+        self.film_enabled = True
+        self.configure_film(film_hidden_dim)
+
+    def configure_film(self, film_hidden_dim=0):
+        if film_hidden_dim < 0:
+            raise ValueError("film_hidden_dim 不能为负数")
+        self.film = (
+            TextTextureFiLM(self.cross_attention_dim, self.stage3[1].num_channels, film_hidden_dim).to(
+                device=self.resampler_queries.device, dtype=self.resampler_queries.dtype
+            ) if film_hidden_dim else None
+        )
+
+    def film_config(self):
+        return {"film_hidden_dim": self.film.hidden_dim if self.film is not None else 0}
+
+    def train_film_only(self):
+        """冻结原 E5 所有纹理参数，仅训练压缩前的文本 FiLM。"""
+        if self.film is None:
+            raise ValueError("film_only 训练需要先创建 FiLM 模块")
+        self.requires_grad_(False)
+        self.film.requires_grad_(True)
 
     def configure_text_guidance(self, text_guidance_dim=0, text_guidance_heads=4,
                                 text_guidance_max_ratio=0.3):
@@ -123,12 +147,21 @@ class BFTextureConditioner(nn.Module):
         pooled = self.stage_pool(feat)
         return pooled.flatten(2).transpose(1, 2)
 
-    def _build_patch_tokens(self, clip_vision_tokens: torch.Tensor, texture_images: torch.Tensor,
-                            local_detail_grid=None):
+    def _encode_texture_features(self, texture_images, text_embeds=None, text_mask=None, apply_film=True):
         f1 = self.stage1(texture_images)
         f2 = self.stage2(f1)
-        f3 = self.stage3(f2)
+        # 保留 stage3 原始 Sequential 与权重键，在 GN 和 SiLU 之间插入 FiLM。
+        if self.film is not None and self.film_enabled and apply_film:
+            f3 = self.stage3[1](self.stage3[0](f2))
+            f3 = self.stage3[2](self.film(f3, text_embeds, text_mask))
+        else:
+            f3 = self.stage3(f2)
         f4 = self.stage4(f3)
+        return f1, f2, f3, f4
+
+    def _build_patch_tokens(self, clip_vision_tokens: torch.Tensor, texture_images: torch.Tensor,
+                            local_detail_grid=None, text_embeds=None, text_mask=None, apply_film=True):
+        f1, f2, f3, f4 = self._encode_texture_features(texture_images, text_embeds, text_mask, apply_film)
 
         stage_tokens = [
             clip_vision_tokens,
@@ -149,11 +182,8 @@ class BFTextureConditioner(nn.Module):
         return fused_tokens, [f1.shape, f2.shape, f3.shape, f4.shape]
 
     def _build_legacy_tokens(self, clip_image_embeds: torch.Tensor, texture_images: torch.Tensor,
-                             local_detail_grid=None):
-        f1 = self.stage1(texture_images)
-        f2 = self.stage2(f1)
-        f3 = self.stage3(f2)
-        f4 = self.stage4(f3)
+                             local_detail_grid=None, text_embeds=None, text_mask=None, apply_film=True):
+        f1, f2, f3, f4 = self._encode_texture_features(texture_images, text_embeds, text_mask, apply_film)
 
         pooled = [
             torch.mean(f1, dim=(2, 3), keepdim=False),
@@ -187,6 +217,7 @@ class BFTextureConditioner(nn.Module):
         apply_text_guidance: bool = True,
         local_detail_source: str = "off",
         local_detail_grid: int = 16,
+        apply_film: bool = True,
     ):
         if texture_images is None:
             raise ValueError("texture_images is required.")
@@ -204,7 +235,8 @@ class BFTextureConditioner(nn.Module):
                     raise ValueError("patch_resampled mode requires clip_vision_tokens or clip_image_embeds.")
                 clip_vision_tokens = clip_image_embeds.unsqueeze(1)
 
-            built = self._build_patch_tokens(clip_vision_tokens, texture_images, grid)
+            built = self._build_patch_tokens(clip_vision_tokens, texture_images, grid,
+                                             text_embeds, text_mask, apply_film)
 
         elif mode == "legacy_pooled":
             if clip_image_embeds is None:
@@ -212,7 +244,8 @@ class BFTextureConditioner(nn.Module):
                     raise ValueError("legacy_pooled mode requires clip_image_embeds or clip_vision_tokens.")
                 clip_image_embeds = clip_vision_tokens.mean(dim=1)
 
-            built = self._build_legacy_tokens(clip_image_embeds, texture_images, grid)
+            built = self._build_legacy_tokens(clip_image_embeds, texture_images, grid,
+                                              text_embeds, text_mask, apply_film)
 
         else:
             raise ValueError(f"Unsupported texture_mode: {mode}")

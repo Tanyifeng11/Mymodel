@@ -17,7 +17,7 @@ from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 from models.attribute_text_texture_fuser import AttributeTextTextureFuser
-from models.text_guided_queries import guidance_config_from_checkpoint
+from models.text_texture_film import film_config_from_checkpoint
 from models.local_detail_adapter import attach_local_detail_adapter, DEFAULT_LOCAL_DETAIL_LAYER
 import argparse
 from garment_mask_utils import build_sketch_garment_mask
@@ -288,6 +288,30 @@ def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules, use_local_de
             "local_detail_config": local_detail_config}
 
 
+def restore_bf_conditioner_for_inference(pipe, bf_state, metadata, args):
+    """GAM 的完整 BF 状态优先；FiLM 开关只改变新增调制分支。"""
+    film_config_from_checkpoint(bf_state or {}, metadata)
+    if bf_state is not None:
+        missing, unexpected = pipe.load_bf_texture_conditioner(bf_state, metadata)
+        print(
+            "[prepare] restored bf_texture_conditioner from GAM checkpoint after pipe init "
+            f"(missing={len(missing)}, unexpected={len(unexpected)})"
+        )
+    conditioner = getattr(pipe, "bf_texture_conditioner", None)
+    requested_guidance = getattr(args, "use_text_guided_resampler", -1)
+    has_guidance = getattr(conditioner, "text_guidance", None) is not None
+    if requested_guidance == 1 and not has_guidance:
+        raise ValueError("文本引导重采样需要完整的 BF 文本查询 checkpoint")
+    if conditioner is not None:
+        conditioner.text_guidance_enabled = has_guidance and requested_guidance != 0
+        conditioner.film_enabled = (
+            getattr(conditioner, "film", None) is not None
+            and not getattr(args, "disable_texture_film", False)
+        )
+        print(f"[prepare] text_guided_resampler={conditioner.text_guidance_enabled}, "
+              f"texture_film={conditioner.film_enabled}")
+
+
 def prepare(args):
     if not args.texture_ckpt:
         args.texture_ckpt = args.GAM_model_ckpt
@@ -531,6 +555,7 @@ def prepare(args):
                          feature_extractor=CLIPImageProcessor)
     pipe.set_layer_group_enabled(bool(args.layer_group_enabled))
     pipe.tcpm_lite.to(dtype=torch.float16, device=args.device)
+    restore_bf_conditioner_for_inference(pipe, gam_info.get("bf_state"), gam_meta, args)
 
     # IMAGGarment will load args.texture_ckpt in __init__, which can overwrite
     # adapter/BF states already loaded from GAM checkpoint. Restore GAM states here.
@@ -585,26 +610,6 @@ def prepare(args):
         print("[prepare] WARNING: use_texture_gate=1 but checkpoint has no texture_adapter state")
         raise RuntimeError("E2b requires texture_adapter gate parameters in GAM checkpoint")
 
-    bf_state = gam_info.get("bf_state", None)
-    if getattr(args, "use_text_guided_resampler", -1) == 1 and (
-        not bf_state or getattr(pipe, "bf_texture_conditioner", None) is None
-    ):
-        raise ValueError("文本引导重采样需要完整的 BF 纹理分支 checkpoint")
-    if bf_state is not None and getattr(pipe, "bf_texture_conditioner", None) is not None:
-        guidance_config = guidance_config_from_checkpoint(bf_state, gam_meta)
-        pipe.bf_texture_conditioner.configure_text_guidance(**guidance_config)
-        has_guidance = bool(guidance_config["text_guidance_dim"])
-        requested_guidance = getattr(args, "use_text_guided_resampler", -1)
-        if requested_guidance == 1 and not has_guidance:
-            raise ValueError("启用了文本引导，但 GAM checkpoint 中没有对应权重")
-        pipe.bf_texture_conditioner.text_guidance_enabled = has_guidance and requested_guidance != 0
-        missing, unexpected = pipe.bf_texture_conditioner.load_state_dict(bf_state, strict=has_guidance)
-        print(f"[prepare] text_guided_resampler={pipe.bf_texture_conditioner.text_guidance_enabled}, config={guidance_config}")
-        print(
-            "[prepare] restored bf_texture_conditioner from GAM checkpoint after pipe init "
-            f"(missing={len(missing)}, unexpected={len(unexpected)})"
-        )
-
     palette_state = gam_state.get("palette_token_mlp", None)
     if palette_state and getattr(pipe, "palette_token_mlp", None) is None:
         pipe.palette_token_mlp = PaletteTokenMLP(
@@ -635,6 +640,8 @@ def prepare(args):
     pipe.effective_texture_num_tokens = args.texture_num_tokens
     if isinstance(pipe.texture_meta, dict):
         pipe.texture_meta.update(gam_meta)
+        if pipe.bf_texture_conditioner is not None:
+            pipe.texture_meta.update(pipe.bf_texture_conditioner.film_config())
     return pipe, generator
 
 
@@ -679,6 +686,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_aa_tcr_fuse', type=int, default=0, choices=[0, 1])
     parser.add_argument('--use_text_guided_resampler', type=int, default=-1, choices=[-1, 0, 1],
                         help='-1 根据 checkpoint 自动启用，0 关闭文本查询，1 要求文本查询权重存在')
+    parser.add_argument('--disable_texture_film', action='store_true',
+                        help='仅关闭 checkpoint 中的纹理 FiLM 调制，TCPM 等原有分支保持原配置')
     parser.add_argument('--use_local_detail_adapter', type=int, default=-1, choices=[-1, 0, 1],
                         help='-1 根据 checkpoint 自动启用 E9，0 关闭，1 要求完整 E9 权重；A/B 来源读取 checkpoint')
     parser.add_argument('--tcpm_hidden_ratio', type=float, default=0.25)

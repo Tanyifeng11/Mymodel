@@ -1,5 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional, Union
 import inspect
+import json
 import os
 import sys
 
@@ -24,6 +25,7 @@ from diffusers.loaders import LoraLoaderMixin
 from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcessor2_0
 from models.bf_texture_module import BFTextureConditioner
 from models.text_guided_queries import text_content_mask, guidance_config_from_checkpoint
+from models.text_texture_film import film_config_from_checkpoint
 from models.palette_tokenizer import PaletteTokenMLP
 from models.tcpm_lite import TCPMLite
 from models.attribute_token_mask import build_attribute_masks
@@ -199,6 +201,33 @@ class IMAGGarment(StableDiffusionPipeline):
         print(f"[align_clip_embeds_dim] Padding embedding dim from {actual_dim} -> {expected_dim}")
         return F.pad(clip_image_embeds, (0, pad))
 
+    def load_bf_texture_conditioner(self, bf_state, metadata=None):
+        """按权重与架构元数据重建 BF，避免覆盖 checkpoint 时漏掉新增分支。"""
+        metadata = metadata or {}
+        state = {"bf_texture_conditioner": bf_state, "meta": metadata}
+        channels = tuple(int(bf_state[f"stage{i}.0.weight"].shape[0]) for i in range(1, 5))
+        num_tokens = infer_texture_num_tokens(state, default=self.num_tokens)
+        clip_embed_dim = infer_clip_embed_dim(state, fallback=self.image_encoder.config.hidden_size)
+        guidance_config = guidance_config_from_checkpoint(bf_state, metadata)
+        film_config = film_config_from_checkpoint(bf_state, metadata)
+        conditioner = BFTextureConditioner(
+            clip_embeddings_dim=clip_embed_dim,
+            cross_attention_dim=self.unet.config.cross_attention_dim,
+            num_tokens=num_tokens,
+            stage_channels=channels,
+            texture_mode="patch_resampled",
+            **guidance_config,
+            **film_config,
+        ).to(self.device, dtype=torch.float16)
+        # 新模块必须完整恢复；旧 checkpoint 保留原来的宽松兼容加载。
+        strict = bool(guidance_config["text_guidance_dim"] or film_config["film_hidden_dim"])
+        missing, unexpected = conditioner.load_state_dict(bf_state, strict=strict)
+        self.bf_texture_conditioner = conditioner
+        self.bf_clip_embeddings_dim = clip_embed_dim
+        self.effective_texture_num_tokens = num_tokens
+        self.texture_condition_mode = "patch_resampled"
+        return missing, unexpected
+
     def load_texture_adapter(self):
         """
         Compatible with these checkpoint formats:
@@ -250,6 +279,9 @@ class IMAGGarment(StableDiffusionPipeline):
             }
 
             with safe_open(self.texture_ckpt, framework="pt", device="cpu") as f:
+                raw_metadata = f.metadata() or {}
+                nested_metadata = raw_metadata.get("meta", raw_metadata.get("metadata"))
+                state_dict["meta"] = json.loads(nested_metadata) if nested_metadata else raw_metadata
                 for key in f.keys():
                     if key.startswith("image_proj."):
                         state_dict["image_proj"][key.replace("image_proj.", "")] = f.get_tensor(key)
@@ -267,10 +299,11 @@ class IMAGGarment(StableDiffusionPipeline):
             state_dict = torch.load(self.texture_ckpt, map_location="cpu")
 
         self.texture_meta = extract_texture_metadata(state_dict)
+        film_config_from_checkpoint(state_dict.get("bf_texture_conditioner", {}), self.texture_meta)
         if self.texture_meta:
             print(f"[load_texture_adapter] metadata: {self.texture_meta}")
 
-        if "image_proj" in state_dict and len(state_dict["image_proj"]) > 0:
+        if state_dict.get("image_proj") and not state_dict.get("bf_texture_conditioner"):
             self.texture_condition_mode = "patch_resampled"
             try:
                 self.image_proj_model.load_state_dict(state_dict["image_proj"], strict=False)
@@ -284,29 +317,14 @@ class IMAGGarment(StableDiffusionPipeline):
                 )
 
         elif "bf_texture_conditioner" in state_dict and len(state_dict["bf_texture_conditioner"]) > 0:
-            self.texture_condition_mode = "patch_resampled"
             bf_sd = state_dict["bf_texture_conditioner"]
-            c1 = bf_sd["stage1.0.weight"].shape[0]
-            c2 = bf_sd["stage2.0.weight"].shape[0]
-            c3 = bf_sd["stage3.0.weight"].shape[0]
-            c4 = bf_sd["stage4.0.weight"].shape[0]
-            num_tokens = infer_texture_num_tokens(state_dict, default=self.num_tokens)
-            clip_embed_dim = infer_clip_embed_dim(state_dict, fallback=self.image_encoder.config.hidden_size)
-
-            self.bf_texture_conditioner = BFTextureConditioner(
-                clip_embeddings_dim=clip_embed_dim,
-                cross_attention_dim=self.unet.config.cross_attention_dim,
-                num_tokens=num_tokens,
-                stage_channels=(c1, c2, c3, c4),
-                texture_mode="patch_resampled",
-                **guidance_config_from_checkpoint(bf_sd, extract_texture_metadata(state_dict)),
-            ).to(self.device, dtype=torch.float16)
-
-            missing, unexpected = self.bf_texture_conditioner.load_state_dict(bf_sd, strict=False)
-            self.effective_texture_num_tokens = num_tokens
+            missing, unexpected = self.load_bf_texture_conditioner(bf_sd, self.texture_meta)
             print(
                 f"[load_texture_adapter] loaded bf_texture_conditioner from: {self.texture_ckpt} "
-                f"(num_tokens={num_tokens}, clip_embed_dim={clip_embed_dim}, stage_channels={(c1, c2, c3, c4)}, missing={len(missing)}, unexpected={len(unexpected)})"
+                f"(num_tokens={self.effective_texture_num_tokens}, "
+                f"clip_embed_dim={self.bf_clip_embeddings_dim}, "
+                f"film={self.bf_texture_conditioner.film_config()}, "
+                f"missing={len(missing)}, unexpected={len(unexpected)})"
             )
 
         else:
@@ -508,7 +526,9 @@ class IMAGGarment(StableDiffusionPipeline):
         if return_text_masks:
             if prompt_text_mask is None:
                 raise ValueError("预编码 prompt_embeds 用于文本引导时，必须同时传入 prompt_text_mask")
-            prompt_text_mask = prompt_text_mask.to(device).repeat_interleave(num_images_per_prompt, dim=0)
+            if prompt_text_mask.shape != (bs_embed, seq_len):
+                raise ValueError("prompt_text_mask 必须与未复制的 prompt_embeds 的 batch/长度一致")
+            prompt_text_mask = prompt_text_mask.to(device=device, dtype=torch.bool).repeat_interleave(num_images_per_prompt, dim=0)
 
         if do_classifier_free_guidance and negative_prompt_embeds is None:
             if negative_prompt is None:
@@ -556,13 +576,16 @@ class IMAGGarment(StableDiffusionPipeline):
 
         if do_classifier_free_guidance:
             seq_len = negative_prompt_embeds.shape[1]
+            if return_text_masks:
+                if negative_text_mask is None:
+                    raise ValueError("预编码 negative_prompt_embeds 需要对应的 negative_text_mask")
+                if negative_text_mask.shape != negative_prompt_embeds.shape[:2]:
+                    raise ValueError("negative_text_mask 必须与未复制的 negative_prompt_embeds 的 batch/长度一致")
             negative_prompt_embeds = negative_prompt_embeds.to(dtype=prompt_embeds_dtype, device=device)
             negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)
             negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
             if return_text_masks:
-                if negative_text_mask is None:
-                    raise ValueError("预编码 negative_prompt_embeds 需要对应的 negative_text_mask")
-                negative_text_mask = negative_text_mask.to(device).repeat_interleave(num_images_per_prompt, dim=0)
+                negative_text_mask = negative_text_mask.to(device=device, dtype=torch.bool).repeat_interleave(num_images_per_prompt, dim=0)
 
         if isinstance(self, LoraLoaderMixin) and USE_PEFT_BACKEND:
             unscale_lora_layers(self.text_encoder, lora_scale)
@@ -759,6 +782,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 text_embeds=negative_text_embeds,
                 text_mask=negative_text_mask,
                 apply_text_guidance=negative_text_embeds is not None,
+                apply_film=negative_text_embeds is not None,
             )
             if self.use_tcpm_lite and negative_text_embeds is not None:
                 uncond_image_prompt_embeds = self.tcpm_lite(
@@ -904,10 +928,14 @@ class IMAGGarment(StableDiffusionPipeline):
         text_encoder_lora_scale = (
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
         )
-        use_text_guidance = (
+        use_texture_text_masks = (
             self.bf_texture_conditioner is not None
-            and self.bf_texture_conditioner.text_guidance is not None
-            and self.bf_texture_conditioner.text_guidance_enabled
+            and (
+                (getattr(self.bf_texture_conditioner, "text_guidance", None) is not None
+                 and getattr(self.bf_texture_conditioner, "text_guidance_enabled", True))
+                or (getattr(self.bf_texture_conditioner, "film", None) is not None
+                    and getattr(self.bf_texture_conditioner, "film_enabled", True))
+            )
         )
         encoded_prompt = self.encode_prompt(
             prompt,
@@ -919,12 +947,12 @@ class IMAGGarment(StableDiffusionPipeline):
             negative_prompt_embeds=negative_prompt_embeds,
             lora_scale=text_encoder_lora_scale,
             clip_skip=self._clip_skip,
-            return_text_masks=use_text_guidance,
+            return_text_masks=use_texture_text_masks,
             prompt_text_mask=kwargs.get("prompt_text_mask"),
             negative_text_mask=kwargs.get("negative_text_mask"),
         )
         prompt_embeds, negative_prompt_embeds = encoded_prompt[:2]
-        text_mask, negative_text_mask = encoded_prompt[2:] if use_text_guidance else (None, None)
+        text_mask, negative_text_mask = encoded_prompt[2:] if use_texture_text_masks else (None, None)
 
         image_prompt_embeds = None
         uncond_image_prompt_embeds = None
