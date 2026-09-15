@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# E12：冻结 E5，只训练正确文本 Adapter；同一权重在评测时做文本乱序。
+# DRY_RUN=1 bash scripts/train_e12.sh 可查看完整命令。
+PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
+DATASETS_ROOT="${DATASETS_ROOT:-/share/home/u2515283058/datasets}"
+OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
+BASE_CKPT="${BASE_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
+TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
+OUTPUT_DIR="${OUTPUT_DIR:-${OUTPUT_BASE}/phase1_e12_nexus}"
+# 新清单路径包含 training/ 前缀，因此根目录必须指向 BF。
+TRAIN_JSON="${TRAIN_JSON:-${PROJECT_ROOT}/data/processed/bf_film_v1/training_current.json}"
+DATA_ROOT_PATH="${DATA_ROOT_PATH:-${DATASETS_ROOT}/BF}"
+SD_MODEL="${SD_MODEL:-${PROJECT_ROOT}/models/stable-diffusion-v1-5}"
+VAE_MODEL="${VAE_MODEL:-${SD_MODEL}/vae}"
+CLIP_MODEL="${CLIP_MODEL:-${PROJECT_ROOT}/models/clip}"
+MIXED_PRECISION="${MIXED_PRECISION:-fp16}"
+
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_XET=1 TOKENIZERS_PARALLELISM=false
+cd "${PROJECT_ROOT}"
+if [[ "${DRY_RUN:-0}" != "1" ]]; then
+  for path in "${BASE_CKPT}" "${TEXTURE_ADAPTER_CKPT}" "${TRAIN_JSON}" "${DATA_ROOT_PATH}" "${SD_MODEL}" "${VAE_MODEL}" "${CLIP_MODEL}"; do
+    [[ -e "${path}" ]] || { echo "缺少路径：${path}；请先同步清单并设置模型路径" >&2; exit 1; }
+  done
+fi
+
+start_step=0
+resume_args=()
+if [[ -n "${E12_RESUME_CKPT:-}" ]]; then
+  # 只恢复模型权重，优化器和调度器重新初始化。
+  resume_args=(--resume_from_checkpoint "${E12_RESUME_CKPT}")
+  start_step=-1
+fi
+cmd=(
+  accelerate launch --num_processes "${NUM_GPUS:-1}" --main_process_port "${MAIN_PROCESS_PORT:-0}"
+  --mixed_precision "${MIXED_PRECISION}" train_GAM_texture_joint.py
+  --pretrained_model_name_or_path "${SD_MODEL}" --pretrained_vae_model_path "${VAE_MODEL}"
+  --image_encoder_path "${CLIP_MODEL}" --dataset_json_path "${TRAIN_JSON}" --data_root_path "${DATA_ROOT_PATH}"
+  --texture_adapter_ckpt "${TEXTURE_ADAPTER_CKPT}" --gam_init_ckpt "${BASE_CKPT}"
+  --output_dir "${OUTPUT_DIR}" --start_global_step "${start_step}" "${resume_args[@]}"
+  --nexus_dim "${NEXUS_DIM:-256}" --nexus_lr "${NEXUS_LR:-1e-4}"
+  --learning_rate "${NEXUS_LR:-1e-4}" --seed "${TRAIN_SEED:-42}"
+  --resampler_training off --local_detail_source off
+  --texture_condition_mode token --texture_mode patch_resampled --texture_preprocess_mode plain_resize
+  --bf_num_tokens 16 --clip_hidden_layer -1 --use_tcpm_lite 1 --use_texture_gate 1 --layer_group_enabled 1
+  --freeze_for_tcpm_lite 0 --use_aa_tcr_fuse 0 --use_palette_tokens 0
+  --width "${WIDTH:-384}" --height "${HEIGHT:-512}" --force_resolution_override
+  --train_batch_size "${TRAIN_BATCH_SIZE:-1}" --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS:-8}"
+  --max_train_samples "${MAX_TRAIN_SAMPLES:-0}" --max_train_steps "${MAX_TRAIN_STEPS:-500}"
+  --checkpointing_steps "${CHECKPOINTING_STEPS:-250}" --num_warmup_steps "${NUM_WARMUP_STEPS:-50}"
+  --max_grad_norm 1.0 --mixed_precision "${MIXED_PRECISION}"
+  --dataloader_num_workers "${DATALOADER_NUM_WORKERS:-1}"
+  --ddp_find_unused_parameters 1 --disable_gradient_checkpointing 1 --debug_trainable_params
+  --lambda_style 0 --lambda_patch_style 0 --lambda_edge 0
+  --lambda_texture_color 0 --lambda_texture_gram 0 --lambda_region_texture 0
+  --lambda_region_color_lab 0 --lambda_boundary 0 --lambda_leak 0
+  --region_kernel_size 9 --tcpm_mask_inner_only 1
+  --joint_t_drop_rate 0.2 --joint_i_drop_rate 0.05 --joint_ti_drop_rate 0.05
+  --val_vis_steps 0 --vis_every_n_steps 0 --report_to "${REPORT_TO:-none}"
+  --wandb_run_name "e12_nexus"
+)
+printf '%q ' "${cmd[@]}"
+printf '\n'
+if [[ "${DRY_RUN:-0}" != "1" ]]; then
+  "${cmd[@]}"
+fi

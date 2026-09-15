@@ -41,6 +41,7 @@ from adapter.attention_processor import (
 from models.bf_texture_module import BFTextureConditioner
 from models.text_guided_queries import text_content_mask, guidance_config_from_checkpoint
 from models.text_texture_film import film_config_from_checkpoint
+from models.nexus_texture_adapter import nexus_config_from_checkpoint
 from models.local_detail_adapter import DEFAULT_LOCAL_DETAIL_LAYER, attach_local_detail_adapter
 from models.multiscale_texture_encoder import MultiScaleTextureEncoder
 from models.palette_tokenizer import PaletteTokenMLP
@@ -477,6 +478,7 @@ def override_args_from_texture_meta(args, texture_meta):
 def save_training_manifest(args, resolved_image_encoder_path):
     payload = {
         **film_training_config(args),
+        **nexus_training_config(args),
         **local_detail_config(args),
         **training_run_config(args),
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -752,6 +754,8 @@ def validate_film_source(state_dict, args, resume=False):
         raise ValueError("FiLM 需要完整 joint checkpoint")
     meta = state_dict.get("meta", {})
     bf_state = state_dict["bf_texture_conditioner"]
+    if not getattr(args, "nexus_dim", 0) and (meta.get("nexus_dim", 0) or any(k.startswith("nexus.") for k in bf_state)):
+        raise ValueError("E11 不能继承 E12 权重")
     config = film_config_from_checkpoint(bf_state, meta)
     if (meta.get("resampler_training", "off") != "off" or meta.get("text_guidance_dim", 0)
             or meta.get("local_detail_source", "off") != "off"
@@ -804,6 +808,63 @@ def freeze_film_only(bf, frozen_modules):
     # 只将新增可训练参数升到 FP32，保留全部已有参数的值与 dtype。
     bf.film.float()
     return bf.film
+
+
+def nexus_training_config(args):
+    return {
+        "nexus_dim": getattr(args, "nexus_dim", 0),
+        "nexus_heads": 4,
+        "nexus_lr": getattr(args, "nexus_lr", 1e-4),
+        "nexus_base_checkpoint": getattr(args, "gam_init_ckpt", ""),
+    }
+
+
+def validate_nexus_training_args(args):
+    if args.nexus_dim < 0 or args.nexus_dim % 4:
+        raise ValueError("E12 attention 维度必须非负且能被 4 整除")
+    if not args.nexus_dim:
+        return
+    if args.film_hidden_dim or args.film_text_mode != "matched":
+        raise ValueError("E12 只训练正确文本组，不叠加 FiLM；shuffled 在推理时比较")
+    # 共用 E11 的 E5 配置、互斥实验与续训入口检查。
+    common = argparse.Namespace(**vars(args))
+    common.film_hidden_dim, common.film_lr = args.nexus_dim, args.nexus_lr
+    validate_film_training_args(common)
+    if any(getattr(args, name) != 0 for name in (
+        "lambda_style", "lambda_patch_style", "lambda_edge", "lambda_texture_color",
+        "lambda_texture_gram", "lambda_region_texture", "lambda_region_color_lab",
+        "lambda_boundary", "lambda_leak",
+    )):
+        raise ValueError("E12 第一阶段只保留 diffusion noise loss，全部 lambda_* 必须为 0")
+
+
+def validate_nexus_source(state_dict, args, resume=False):
+    # 复用完整 E5 来源及冻结组件配置检查，同时排除已有 FiLM。
+    validate_film_source(state_dict, args, resume=False)
+    meta = state_dict.get("meta", {})
+    config = nexus_config_from_checkpoint(state_dict["bf_texture_conditioner"], meta)
+    if not resume:
+        if config["nexus_dim"]:
+            raise ValueError("E12 新训练必须从未加入 Adapter 的 E5 开始")
+        return None
+    if config != {"nexus_dim": args.nexus_dim, "nexus_heads": 4}:
+        raise ValueError("E12 续训架构不一致")
+    if (meta.get("training_data_sha256") != args.training_data_sha256
+            or meta.get("max_train_samples", 0) != args.max_train_samples):
+        raise ValueError("E12 续训数据清单或样本截断不一致")
+    step = int(meta.get("train_global_step", 0))
+    if step < 1 or args.max_train_steps <= step:
+        raise ValueError("E12 续训目标步数必须大于已有步数")
+    return step
+
+
+def freeze_nexus_only(bf, frozen_modules):
+    for module in frozen_modules:
+        if module is not None:
+            module.requires_grad_(False)
+    bf.train_nexus_only()
+    bf.nexus.float()
+    return bf.nexus
 
 
 def training_run_config(args):
@@ -948,10 +1009,16 @@ def load_joint_checkpoint_into_models(
     )
     if film_config["film_hidden_dim"] and film_config != bf_raw.film_config():
         raise ValueError("恢复的 FiLM 架构与训练参数不一致")
+    nexus_config = nexus_config_from_checkpoint(
+        state_dict.get("bf_texture_conditioner", {}), state_dict.get("meta", {})
+    )
+    if nexus_config["nexus_dim"] and nexus_config != bf_raw.nexus_config():
+        raise ValueError("恢复的 E12 架构与训练参数不一致")
     allowed_missing = [
         key for key in bf_raw.state_dict()
         if (key.startswith("text_guidance.") and not guidance_config["text_guidance_dim"])
         or (key.startswith("film.") and not film_config["film_hidden_dim"])
+        or (key.startswith("nexus.") and not nexus_config["nexus_dim"])
     ]
     load_partial_state(
         bf, state_dict, "bf_texture_conditioner", "bf_texture_conditioner", strict=strict_base,
@@ -1147,6 +1214,7 @@ def save_training_checkpoint(
         "ref_unet": ref_unet_raw.state_dict(),
         "texture_adapter": texture_adapter_raw.state_dict(),
         "bf_texture_conditioner": bf_raw.state_dict(),
+        "nexus_last_stats": dict(bf_raw.nexus.last_stats) if bf_raw.nexus is not None else {},
         "film_last_stats": dict(bf_raw.film.last_stats) if bf_raw.film is not None else {},
         "text_guidance_last_stats": (
             dict(bf_raw.text_guidance.last_stats) if bf_raw.text_guidance is not None else {}
@@ -1174,7 +1242,9 @@ def save_training_checkpoint(
         ),
         "meta": {
             **film_training_config(args),
+            **nexus_training_config(args),
             **bf_raw.film_config(),
+            **bf_raw.nexus_config(),
             **bf_raw.text_guidance_config(),
             **local_detail_config(args),
             **training_run_config(args),
@@ -1884,6 +1954,8 @@ def main():
     ap.add_argument("--resampler_training", choices=["off", "visual", "text", "text_only"], default="off")
     ap.add_argument("--film_hidden_dim", type=int, default=0,
                     help="0 关闭；正数启用 stage3 FiLM 且仅训练新增模块，建议 128")
+    ap.add_argument("--nexus_dim", type=int, default=0, help="E12 attention 维度；0 关闭，首轮 256")
+    ap.add_argument("--nexus_lr", type=float, default=1e-4)
     ap.add_argument("--film_lr", type=float, default=5e-5)
     ap.add_argument("--film_text_mode", choices=["matched", "shuffled"], default="matched",
                     help="shuffled 只错配 FiLM 分支文本，UNet/TCPM 保持正确文本")
@@ -2006,10 +2078,13 @@ def main():
 
     args = ap.parse_args()
     validate_film_training_args(args)
-    is_film = args.film_hidden_dim > 0
+    validate_nexus_training_args(args)
+    is_nexus = args.nexus_dim > 0
+    is_texture_adapter = args.film_hidden_dim > 0 or is_nexus
+    validate_adapter_source = validate_nexus_source if is_nexus else validate_film_source
     is_local_detail = args.local_detail_source != "off"
     args.resume_checkpoint_global_step = None
-    if is_film:
+    if is_texture_adapter:
         if not args.resume_from_checkpoint:
             args.start_global_step = 0
         with open(args.dataset_json_path, "rb") as training_data:
@@ -2102,15 +2177,20 @@ def main():
     # ---- texture ckpt meta ----
     texture_state = load_checkpoint_file(args.texture_adapter_ckpt)
     texture_meta = extract_texture_metadata(texture_state)
-    if is_film and film_config_from_checkpoint(
+    if is_texture_adapter and film_config_from_checkpoint(
         texture_state.get("bf_texture_conditioner", {}), texture_meta
     )["film_hidden_dim"]:
         raise ValueError("FiLM 初始化需使用原始纹理适配器，不能继承已训练 FiLM")
+    if is_texture_adapter and nexus_config_from_checkpoint(
+        texture_state.get("bf_texture_conditioner", {}), texture_meta
+    )["nexus_dim"]:
+        raise ValueError("初始化需使用原始纹理适配器，不能继承已训练 E12")
     if accelerator.is_main_process and texture_meta:
         print(f"[train_GAM_texture_joint] texture checkpoint meta: {texture_meta}")
     override_args_from_texture_meta(args, texture_meta)
-    if is_film:
+    if is_texture_adapter:
         validate_film_training_args(args)
+        validate_nexus_training_args(args)
     if is_local_detail:
         validate_local_detail_base_config(args, {})
 
@@ -2261,6 +2341,7 @@ def main():
         text_guidance_heads=args.text_guidance_heads,
         text_guidance_max_ratio=args.text_guidance_max_ratio,
         film_hidden_dim=args.film_hidden_dim,
+        nexus_dim=args.nexus_dim,
     )
     palette_token_mlp = PaletteTokenMLP(
         cross_attention_dim=unet.config.cross_attention_dim,
@@ -2319,8 +2400,8 @@ def main():
         if accelerator.is_main_process:
             print(f"[resume] loading gam_init_ckpt: {args.gam_init_ckpt}")
         init_state = torch.load(args.gam_init_ckpt, map_location="cpu", weights_only=False)
-        if is_film:
-            validate_film_source(init_state, args)
+        if is_texture_adapter:
+            validate_adapter_source(init_state, args)
         if is_local_detail:
             validate_local_detail_source(init_state)
             validate_local_detail_base_config(args, init_state.get("meta", {}))
@@ -2336,7 +2417,7 @@ def main():
             palette_token_mlp,
             accelerator=accelerator,
             tcpm_lite=tcpm_lite,
-            strict_base=args.resampler_training == "text_only" or is_local_detail or is_film,
+            strict_base=args.resampler_training == "text_only" or is_local_detail or is_texture_adapter,
         )
         if args.reload_texture_adapter_after_gam_init:
             if accelerator.is_main_process:
@@ -2367,9 +2448,9 @@ def main():
         if accelerator.is_main_process:
             print(f"[resume] loading resume_from_checkpoint: {args.resume_from_checkpoint}")
         resume_state = torch.load(args.resume_from_checkpoint, map_location="cpu", weights_only=False)
-        if is_film:
-            args.resume_checkpoint_global_step = validate_film_source(resume_state, args, resume=True)
-            print("[FiLM] 继续加载模型权重；优化器和学习率调度器重新初始化，不是精确断点续训。")
+        if is_texture_adapter:
+            args.resume_checkpoint_global_step = validate_adapter_source(resume_state, args, resume=True)
+            print("[Texture Adapter] 继续加载模型权重；优化器和学习率调度器重新初始化，不是精确断点续训。")
         if is_local_detail:
             args.resume_checkpoint_global_step = validate_local_detail_resume_source(resume_state, args)
             print("[E9] 继续加载 B 组局部旁路；优化器和学习率调度器将重新初始化。")
@@ -2386,7 +2467,7 @@ def main():
             palette_token_mlp,
             accelerator=accelerator,
             tcpm_lite=tcpm_lite,
-            strict_base=args.resampler_training == "text_only" or is_local_detail or is_film,
+            strict_base=args.resampler_training == "text_only" or is_local_detail or is_texture_adapter,
         )
 
     # bf/token + spatial branch 是否训练
@@ -2547,12 +2628,13 @@ def main():
               f"source={args.local_detail_source}, grid={args.local_detail_grid}, "
               f"output_constraint={args.local_detail_output_constraint}")
 
-    if is_film:
-        freeze_film_only(
+    if is_texture_adapter:
+        freeze_adapter = freeze_nexus_only if is_nexus else freeze_film_only
+        trainable_texture_adapter = freeze_adapter(
             bf, (unet, ref_unet, spatial_texture_encoder, spatial_injection,
                  tcpm_lite, palette_token_mlp),
         )
-        print(f"[FiLM] 冻结全部 E5，仅训练 stage3 FiLM；文本组={args.film_text_mode}")
+        print(f"[Texture Adapter] 冻结全部 E5，仅训练 {'E12 Nexus' if is_nexus else 'E11 FiLM'}")
 
     # 显式构造 trainable params
     trainable_param_groups = []
@@ -2606,8 +2688,8 @@ def main():
         add_params(nn.ModuleList(unet.attn_processors.values()).parameters())
 
     # 2. BF token conditioner
-    if is_film:
-        add_params(bf.film.parameters(), lr=args.film_lr)
+    if is_texture_adapter:
+        add_params(trainable_texture_adapter.parameters(), lr=args.nexus_lr if is_nexus else args.film_lr)
     elif args.resampler_training != "off":
         if args.resampler_training != "text_only":
             add_params([bf.resampler_queries], lr=args.resampler_lr)
@@ -2668,13 +2750,13 @@ def main():
                 if parameter.requires_grad:
                     print(f"[E8c] trainable: {name}")
 
-    if is_film:
-        expected = {id(p) for p in bf.film.parameters()}
+    if is_texture_adapter:
+        expected = {id(p) for p in trainable_texture_adapter.parameters()}
         if {id(p) for p in trainable_params} != expected:
-            raise RuntimeError("FiLM 优化器必须且只能包含新增 FiLM 参数")
+            raise RuntimeError("纹理 Adapter 优化器必须且只能包含新增模块参数")
         if accelerator.is_main_process:
-            print(f"[FiLM] optimizer: {sum(p.numel() for p in trainable_params):,} parameters, "
-                  f"lr={args.film_lr}")
+            print(f"[Texture Adapter] optimizer: {sum(p.numel() for p in trainable_params):,} parameters, "
+                  f"lr={args.nexus_lr if is_nexus else args.film_lr}")
 
     if args.debug_trainable_params and accelerator.is_main_process:
         print("[debug] trainable UNet parameters:")
@@ -2943,7 +3025,7 @@ def main():
     while global_step < target_global_step:
         for batch in dl:
             current_epoch = global_step // max(1, steps_per_epoch)
-            with accelerator.accumulate(bf if (is_film or args.resampler_training != "off") else unet):
+            with accelerator.accumulate(bf if (is_texture_adapter or args.resampler_training != "off") else unet):
                 drop_token_branch = False
                 drop_spatial_branch = False
                 if args.texture_condition_mode == "hybrid":
@@ -3007,7 +3089,7 @@ def main():
 
                 bf_input_ids = film_condition_ids(
                     input_ids, batch.get("film_input_ids"), tokenizer.eos_token_id, null_input_ids
-                ) if is_film else input_ids
+                ) if is_texture_adapter else input_ids
 
                 # ---- 用 dropout 后的条件编码 ----
                 with torch.no_grad():
@@ -3021,7 +3103,7 @@ def main():
                     )
                     text_h = text_encoder(input_ids)[0]
                     bf_text_h = (text_encoder(bf_input_ids)[0]
-                                 if is_film and args.film_text_mode == "shuffled" else text_h)
+                                 if is_texture_adapter and args.film_text_mode == "shuffled" else text_h)
                     clip_out = image_encoder(clip_texture, output_hidden_states=True)
 
                 use_token = is_token_mode and (
@@ -3585,10 +3667,11 @@ def main():
                         with open(os.path.join(args.output_dir, "text_guidance_stats.jsonl"),
                                   "a", encoding="utf-8") as handle:
                             handle.write(json.dumps(stats) + "\n")
-                    if is_film:
-                        stats = {"step": global_step, **accelerator.unwrap_model(bf).film.last_stats}
-                        print(f"[FiLM] {stats}")
-                        with open(os.path.join(args.output_dir, "film_stats.jsonl"),
+                    if is_texture_adapter:
+                        adapter = accelerator.unwrap_model(bf).nexus if is_nexus else accelerator.unwrap_model(bf).film
+                        stats = {"step": global_step, **adapter.last_stats}
+                        print(f"[{'E12' if is_nexus else 'FiLM'}] {stats}")
+                        with open(os.path.join(args.output_dir, "nexus_stats.jsonl" if is_nexus else "film_stats.jsonl"),
                                   "a", encoding="utf-8") as handle:
                             handle.write(json.dumps(stats) + "\n")
 

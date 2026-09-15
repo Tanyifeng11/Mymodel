@@ -18,6 +18,7 @@ from models.palette_tokenizer import PaletteTokenMLP
 from models.spatial_injection import SpatialInjectionAdapter
 from models.attribute_text_texture_fuser import AttributeTextTextureFuser
 from models.text_texture_film import film_config_from_checkpoint
+from models.nexus_texture_adapter import nexus_config_from_checkpoint
 from models.local_detail_adapter import attach_local_detail_adapter, DEFAULT_LOCAL_DETAIL_LAYER
 import argparse
 from garment_mask_utils import build_sketch_garment_mask
@@ -291,6 +292,7 @@ def load_gam_checkpoint(ckpt_path, unet, ref_unet, adapter_modules, use_local_de
 def restore_bf_conditioner_for_inference(pipe, bf_state, metadata, args):
     """GAM 的完整 BF 状态优先；FiLM 开关只改变新增调制分支。"""
     film_config_from_checkpoint(bf_state or {}, metadata)
+    nexus_config_from_checkpoint(bf_state or {}, metadata)
     if bf_state is not None:
         missing, unexpected = pipe.load_bf_texture_conditioner(bf_state, metadata)
         print(
@@ -304,6 +306,10 @@ def restore_bf_conditioner_for_inference(pipe, bf_state, metadata, args):
         raise ValueError("文本引导重采样需要完整的 BF 文本查询 checkpoint")
     if conditioner is not None:
         conditioner.text_guidance_enabled = has_guidance and requested_guidance != 0
+        conditioner.nexus_enabled = (
+            getattr(conditioner, "nexus", None) is not None
+            and not getattr(args, "disable_nexus_adapter", False)
+        )
         conditioner.film_enabled = (
             getattr(conditioner, "film", None) is not None
             and not getattr(args, "disable_texture_film", False)
@@ -642,6 +648,7 @@ def prepare(args):
         pipe.texture_meta.update(gam_meta)
         if pipe.bf_texture_conditioner is not None:
             pipe.texture_meta.update(pipe.bf_texture_conditioner.film_config())
+            pipe.texture_meta.update(pipe.bf_texture_conditioner.nexus_config())
     return pipe, generator
 
 
@@ -686,6 +693,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_aa_tcr_fuse', type=int, default=0, choices=[0, 1])
     parser.add_argument('--use_text_guided_resampler', type=int, default=-1, choices=[-1, 0, 1],
                         help='-1 根据 checkpoint 自动启用，0 关闭文本查询，1 要求文本查询权重存在')
+    parser.add_argument('--disable_nexus_adapter', action='store_true', help='关闭 E12，恢复原 E5 路径')
+    parser.add_argument('--nexus_prompt', default=None, help='仅覆盖 E12 Adapter 的文本；原文本通路不变')
     parser.add_argument('--disable_texture_film', action='store_true',
                         help='仅关闭 checkpoint 中的纹理 FiLM 调制，TCPM 等原有分支保持原配置')
     parser.add_argument('--use_local_detail_adapter', type=int, default=-1, choices=[-1, 0, 1],
@@ -831,6 +840,7 @@ if __name__ == "__main__":
     output = pipe(
         ref_image=vae_sketch,
         prompt=prompt,
+        nexus_prompt=args.nexus_prompt,
         texture_clip_image=texture_image,
         texture_embeds=None,
         null_prompt=null_prompt,

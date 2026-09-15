@@ -37,6 +37,7 @@ from eval.metrics import (
     extract_inception_features,
 )
 from garment_mask_utils import mask_backend_info
+from models.nexus_texture_adapter import shuffled_adapter_prompts
 from color_conflict_utils import (
     compute_color_conflict,
     conflict_bucket,
@@ -316,6 +317,7 @@ def experiment_to_flags(run_name, args):
     config.setdefault("use_tcpm_lite", args.use_tcpm_lite)
     config.setdefault("use_aa_tcr_fuse", args.use_aa_tcr_fuse)
     config.setdefault("use_text_guided_resampler", args.use_text_guided_resampler)
+    config.setdefault("disable_nexus_adapter", bool(getattr(args, "disable_nexus_adapter", False)))
     config.setdefault("disable_texture_film", bool(getattr(args, "disable_texture_film", False)))
     config.setdefault("use_local_detail_adapter", args.use_local_detail_adapter)
     config.setdefault("balanced_gate_hidden_dim", args.balanced_gate_hidden_dim)
@@ -406,6 +408,8 @@ def _sample_text_description(args, sample, mode_name, paths, role, image_path, s
         f"generation_status: {status}",
         f"generation_seed: {generation_seed_for_sample(args.generation_seed, sample)}",
         f"prompt: {sample.get('prompt', '')}",
+        f"nexus_prompt: {getattr(args, '_nexus_prompts', {}).get(sample['sample_id'], sample.get('prompt', ''))}",
+        f"disable_nexus_adapter: {int(getattr(args, 'disable_nexus_adapter', False))}",
         f"image_path: {image_path}",
         f"target_path: {paths.get('target_path')}",
         f"sketch_path: {paths.get('sketch_path')}",
@@ -666,6 +670,11 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         "--local_detail_input_transform",
         args.local_detail_input_transform,
     ]
+    if experiment_flags.get("disable_nexus_adapter", False):
+        cmd.append("--disable_nexus_adapter")
+    nexus_prompt = getattr(args, "_nexus_prompts", {}).get(sample["sample_id"])
+    if nexus_prompt is not None:
+        cmd.extend(["--nexus_prompt", nexus_prompt])
     if experiment_flags.get("disable_texture_film", False):
         cmd.append("--disable_texture_film")
     donor_texture = getattr(args, "_local_detail_donor_textures", {}).get(sample["sample_id"])
@@ -957,6 +966,11 @@ def run_benchmark(args):
         sample_id_start=args.sample_id_start,
         sample_id_end=sample_id_end,
     )
+    args._nexus_prompts = {}
+    if args.nexus_text_mode == "shuffled":
+        if args.disable_nexus_adapter:
+            raise ValueError("E12 shuffled 不能同时关闭 Adapter")
+        args._nexus_prompts = shuffled_adapter_prompts(split, args.nexus_shuffle_seed)
     args._local_detail_donor_textures = {}
     if args.local_detail_donor_shift:
         if len(split) < 2:
@@ -1633,6 +1647,9 @@ def build_argparser():
     parser.add_argument("--use_tcpm_lite", type=int, choices=[0, 1], default=0)
     parser.add_argument("--use_aa_tcr_fuse", type=int, choices=[0, 1], default=0)
     parser.add_argument("--use_text_guided_resampler", type=int, choices=[-1, 0, 1], default=-1)
+    parser.add_argument("--disable_nexus_adapter", action="store_true")
+    parser.add_argument("--nexus_text_mode", choices=["correct", "shuffled"], default="correct")
+    parser.add_argument("--nexus_shuffle_seed", type=int, default=42)
     parser.add_argument("--disable_texture_film", action="store_true",
                         help="仅关闭 FiLM 调制，用于与同一 checkpoint 开启 FiLM 的结果对照")
     parser.add_argument("--use_local_detail_adapter", type=int, choices=[-1, 0, 1], default=-1)

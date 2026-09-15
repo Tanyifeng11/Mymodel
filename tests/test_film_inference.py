@@ -17,6 +17,7 @@ from checkpoint_utils import extract_texture_metadata, infer_clip_embed_dim, inf
 from models.bf_texture_module import BFTextureConditioner
 from models.text_guided_queries import guidance_config_from_checkpoint, text_content_mask
 from models.text_texture_film import film_config_from_checkpoint
+from models.nexus_texture_adapter import nexus_config_from_checkpoint
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,8 @@ def actual_functions(path, names, class_name=None, extra=None):
         "extract_texture_metadata": extract_texture_metadata,
         "infer_clip_embed_dim": infer_clip_embed_dim, "infer_texture_num_tokens": infer_texture_num_tokens,
         "guidance_config_from_checkpoint": guidance_config_from_checkpoint,
-        "film_config_from_checkpoint": film_config_from_checkpoint, "text_content_mask": text_content_mask,
+        "film_config_from_checkpoint": film_config_from_checkpoint,
+        "nexus_config_from_checkpoint": nexus_config_from_checkpoint, "text_content_mask": text_content_mask,
         "TextualInversionLoaderMixin": type("TextualInversionLoaderMixin", (), {}),
         "LoraLoaderMixin": type("LoraLoaderMixin", (), {}),
     }

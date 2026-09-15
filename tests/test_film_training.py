@@ -18,6 +18,7 @@ import torch
 from models.local_detail_adapter import DEFAULT_LOCAL_DETAIL_LAYER
 from models.text_guided_queries import guidance_config_from_checkpoint, text_content_mask
 from models.text_texture_film import film_config_from_checkpoint
+from models.nexus_texture_adapter import nexus_config_from_checkpoint
 from test_text_guided_resampler import small_joint_models, joint_state
 
 
@@ -29,6 +30,7 @@ def training_namespace():
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names = {
         "make_film_text_indices", "film_condition_ids", "film_training_config",
+        "nexus_training_config", "validate_nexus_training_args", "validate_nexus_source", "freeze_nexus_only",
         "validate_film_training_args", "validate_film_source", "freeze_film_only",
         "load_partial_state", "load_joint_checkpoint_into_models",
         "_is_palette_key", "_is_balanced_gate_key", "local_detail_config",
@@ -38,6 +40,7 @@ def training_namespace():
     nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
     namespace = {"torch": torch, "nn": torch.nn, "random": random, "os": os,
                  "film_config_from_checkpoint": film_config_from_checkpoint,
+        "nexus_config_from_checkpoint": nexus_config_from_checkpoint,
                  "guidance_config_from_checkpoint": guidance_config_from_checkpoint,
                  "text_content_mask": text_content_mask, "argparse": argparse,
                  "DEFAULT_LOCAL_DETAIL_LAYER": DEFAULT_LOCAL_DETAIL_LAYER}

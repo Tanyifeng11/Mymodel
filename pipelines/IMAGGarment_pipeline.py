@@ -26,6 +26,7 @@ from adapter.attention_processor import LogoRefSAttnProcessor2_0, IPAttnProcesso
 from models.bf_texture_module import BFTextureConditioner
 from models.text_guided_queries import text_content_mask, guidance_config_from_checkpoint
 from models.text_texture_film import film_config_from_checkpoint
+from models.nexus_texture_adapter import nexus_config_from_checkpoint
 from models.palette_tokenizer import PaletteTokenMLP
 from models.tcpm_lite import TCPMLite
 from models.attribute_token_mask import build_attribute_masks
@@ -210,6 +211,7 @@ class IMAGGarment(StableDiffusionPipeline):
         clip_embed_dim = infer_clip_embed_dim(state, fallback=self.image_encoder.config.hidden_size)
         guidance_config = guidance_config_from_checkpoint(bf_state, metadata)
         film_config = film_config_from_checkpoint(bf_state, metadata)
+        nexus_config = nexus_config_from_checkpoint(bf_state, metadata)
         conditioner = BFTextureConditioner(
             clip_embeddings_dim=clip_embed_dim,
             cross_attention_dim=self.unet.config.cross_attention_dim,
@@ -218,9 +220,10 @@ class IMAGGarment(StableDiffusionPipeline):
             texture_mode="patch_resampled",
             **guidance_config,
             **film_config,
+            **nexus_config,
         ).to(self.device, dtype=torch.float16)
         # 新模块必须完整恢复；旧 checkpoint 保留原来的宽松兼容加载。
-        strict = bool(guidance_config["text_guidance_dim"] or film_config["film_hidden_dim"])
+        strict = bool(guidance_config["text_guidance_dim"] or film_config["film_hidden_dim"] or nexus_config["nexus_dim"])
         missing, unexpected = conditioner.load_state_dict(bf_state, strict=strict)
         self.bf_texture_conditioner = conditioner
         self.bf_clip_embeddings_dim = clip_embed_dim
@@ -300,6 +303,7 @@ class IMAGGarment(StableDiffusionPipeline):
 
         self.texture_meta = extract_texture_metadata(state_dict)
         film_config_from_checkpoint(state_dict.get("bf_texture_conditioner", {}), self.texture_meta)
+        nexus_config_from_checkpoint(state_dict.get("bf_texture_conditioner", {}), self.texture_meta)
         if self.texture_meta:
             print(f"[load_texture_adapter] metadata: {self.texture_meta}")
 
@@ -697,6 +701,7 @@ class IMAGGarment(StableDiffusionPipeline):
         aa_tcr_negative_captions=None,
         text_mask=None,
         negative_text_mask=None,
+        nexus_text_embeds=None,
     ):
         # 每次只缓存当前参考图的正条件；负 CFG 继续走原来的 BF 输出。
         self._local_detail_tokens = None
@@ -734,6 +739,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 texture_mode=texture_mode,
                 text_embeds=text_embeds,
                 text_mask=text_mask,
+                nexus_text_embeds=nexus_text_embeds,
                 local_detail_source=local_detail_source,
                 local_detail_grid=getattr(self, "local_detail_grid", 16),
             )
@@ -783,6 +789,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 text_mask=negative_text_mask,
                 apply_text_guidance=negative_text_embeds is not None,
                 apply_film=negative_text_embeds is not None,
+                apply_nexus=negative_text_embeds is not None,
             )
             if self.use_tcpm_lite and negative_text_embeds is not None:
                 uncond_image_prompt_embeds = self.tcpm_lite(
@@ -954,6 +961,17 @@ class IMAGGarment(StableDiffusionPipeline):
         prompt_embeds, negative_prompt_embeds = encoded_prompt[:2]
         text_mask, negative_text_mask = encoded_prompt[2:] if use_texture_text_masks else (None, None)
 
+        nexus_text_embeds = None
+        nexus_prompt = kwargs.get("nexus_prompt")
+        if nexus_prompt is not None:
+            if (getattr(self.bf_texture_conditioner, "nexus", None) is None
+                    or not self.bf_texture_conditioner.nexus_enabled):
+                raise ValueError("nexus_prompt 需要启用 E12 Adapter")
+            nexus_text_embeds = self.encode_prompt(
+                nexus_prompt, device, num_images_per_prompt, False,
+                lora_scale=text_encoder_lora_scale, clip_skip=self._clip_skip,
+            )[0]
+
         image_prompt_embeds = None
         uncond_image_prompt_embeds = None
         spatial_feats = None
@@ -1028,6 +1046,7 @@ class IMAGGarment(StableDiffusionPipeline):
                     aa_tcr_negative_captions=negative_prompt,
                     text_mask=text_mask,
                     negative_text_mask=negative_text_mask,
+                    nexus_text_embeds=nexus_text_embeds,
                 )
                 local_detail_permutation = kwargs.get("local_detail_token_permutation", "none")
                 if self._local_detail_tokens is not None and local_detail_permutation != "none":

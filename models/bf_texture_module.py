@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from models.text_guided_queries import TextGuidedQueries
 from models.text_texture_film import TextTextureFiLM
+from models.nexus_texture_adapter import NexusTextureAdapter
 
 
 class BFTextureConditioner(nn.Module):
@@ -20,6 +21,8 @@ class BFTextureConditioner(nn.Module):
         text_guidance_heads: int = 4,
         text_guidance_max_ratio: float = 0.3,
         film_hidden_dim: int = 0,
+        nexus_dim: int = 0,
+        nexus_heads: int = 4,
     ):
         super().__init__()
         self.num_tokens = num_tokens
@@ -91,6 +94,29 @@ class BFTextureConditioner(nn.Module):
         self.film = None
         self.film_enabled = True
         self.configure_film(film_hidden_dim)
+        self.nexus = None
+        self.nexus_enabled = True
+        self.configure_nexus(nexus_dim, nexus_heads)
+
+    def configure_nexus(self, nexus_dim=0, nexus_heads=4):
+        if nexus_dim and (self.film is not None or self.text_guidance is not None):
+            raise ValueError("E12 不叠加 FiLM 或文本 query 模块")
+        self.nexus = (
+            NexusTextureAdapter(self.cross_attention_dim, self.stage3[1].num_channels,
+                                nexus_dim, nexus_heads).to(
+                device=self.resampler_queries.device, dtype=self.resampler_queries.dtype
+            ) if nexus_dim else None
+        )
+
+    def nexus_config(self):
+        return {"nexus_dim": self.nexus.inner_dim if self.nexus is not None else 0,
+                "nexus_heads": self.nexus.num_heads if self.nexus is not None else 4}
+
+    def train_nexus_only(self):
+        if self.nexus is None:
+            raise ValueError("E12 训练需要先创建 Nexus Adapter")
+        self.requires_grad_(False)
+        self.nexus.requires_grad_(True)
 
     def configure_film(self, film_hidden_dim=0):
         if film_hidden_dim < 0:
@@ -147,7 +173,8 @@ class BFTextureConditioner(nn.Module):
         pooled = self.stage_pool(feat)
         return pooled.flatten(2).transpose(1, 2)
 
-    def _encode_texture_features(self, texture_images, text_embeds=None, text_mask=None, apply_film=True):
+    def _encode_texture_features(self, texture_images, text_embeds=None, text_mask=None, apply_film=True,
+                                 nexus_text_embeds=None, apply_nexus=True):
         f1 = self.stage1(texture_images)
         f2 = self.stage2(f1)
         # 保留 stage3 原始 Sequential 与权重键，在 GN 和 SiLU 之间插入 FiLM。
@@ -156,12 +183,16 @@ class BFTextureConditioner(nn.Module):
             f3 = self.stage3[2](self.film(f3, text_embeds, text_mask))
         else:
             f3 = self.stage3(f2)
+        if self.nexus is not None and self.nexus_enabled and apply_nexus:
+            f3 = self.nexus(f3, text_embeds if nexus_text_embeds is None else nexus_text_embeds)
         f4 = self.stage4(f3)
         return f1, f2, f3, f4
 
     def _build_patch_tokens(self, clip_vision_tokens: torch.Tensor, texture_images: torch.Tensor,
-                            local_detail_grid=None, text_embeds=None, text_mask=None, apply_film=True):
-        f1, f2, f3, f4 = self._encode_texture_features(texture_images, text_embeds, text_mask, apply_film)
+                            local_detail_grid=None, text_embeds=None, text_mask=None, apply_film=True,
+                            nexus_text_embeds=None, apply_nexus=True):
+        f1, f2, f3, f4 = self._encode_texture_features(
+            texture_images, text_embeds, text_mask, apply_film, nexus_text_embeds, apply_nexus)
 
         stage_tokens = [
             clip_vision_tokens,
@@ -182,8 +213,10 @@ class BFTextureConditioner(nn.Module):
         return fused_tokens, [f1.shape, f2.shape, f3.shape, f4.shape]
 
     def _build_legacy_tokens(self, clip_image_embeds: torch.Tensor, texture_images: torch.Tensor,
-                             local_detail_grid=None, text_embeds=None, text_mask=None, apply_film=True):
-        f1, f2, f3, f4 = self._encode_texture_features(texture_images, text_embeds, text_mask, apply_film)
+                             local_detail_grid=None, text_embeds=None, text_mask=None, apply_film=True,
+                             nexus_text_embeds=None, apply_nexus=True):
+        f1, f2, f3, f4 = self._encode_texture_features(
+            texture_images, text_embeds, text_mask, apply_film, nexus_text_embeds, apply_nexus)
 
         pooled = [
             torch.mean(f1, dim=(2, 3), keepdim=False),
@@ -218,6 +251,8 @@ class BFTextureConditioner(nn.Module):
         local_detail_source: str = "off",
         local_detail_grid: int = 16,
         apply_film: bool = True,
+        nexus_text_embeds: torch.Tensor = None,
+        apply_nexus: bool = True,
     ):
         if texture_images is None:
             raise ValueError("texture_images is required.")
@@ -236,7 +271,7 @@ class BFTextureConditioner(nn.Module):
                 clip_vision_tokens = clip_image_embeds.unsqueeze(1)
 
             built = self._build_patch_tokens(clip_vision_tokens, texture_images, grid,
-                                             text_embeds, text_mask, apply_film)
+                                             text_embeds, text_mask, apply_film, nexus_text_embeds, apply_nexus)
 
         elif mode == "legacy_pooled":
             if clip_image_embeds is None:
@@ -245,7 +280,7 @@ class BFTextureConditioner(nn.Module):
                 clip_image_embeds = clip_vision_tokens.mean(dim=1)
 
             built = self._build_legacy_tokens(clip_image_embeds, texture_images, grid,
-                                              text_embeds, text_mask, apply_film)
+                                              text_embeds, text_mask, apply_film, nexus_text_embeds, apply_nexus)
 
         else:
             raise ValueError(f"Unsupported texture_mode: {mode}")
