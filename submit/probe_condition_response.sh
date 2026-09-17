@@ -25,6 +25,9 @@ DATASET_JSON="${DATASET_JSON:-${PROJECT_ROOT}/data/processed/bf_full_audit_v1/va
 # 复用 E12 已固定的 validation 样本顺序，只读取前 N 张。
 SPLIT_PATH="${SPLIT_PATH:-${PROJECT_ROOT}/eval/benchmarks/bf_validation_e12_200.json}"
 NUM_SAMPLES="${NUM_SAMPLES:-32}"
+SAMPLE_ID_START="${SAMPLE_ID_START:-0}"
+SAMPLE_ID_END=$((SAMPLE_ID_START + NUM_SAMPLES))
+read -r -a probe_steps <<< "${PROBE_STEPS:-0 5 15 25 49}"
 GENERATION_SEED="${GENERATION_SEED:-42}"
 E5_CKPT="${E5_CKPT:-${PROJECT_ROOT}/output/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
 TEXTURE_CKPT="${TEXTURE_CKPT:-${PROJECT_ROOT}/output/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
@@ -53,7 +56,7 @@ run cp "${SPLIT_PATH}" "${EVAL_ROOT}/fixed_split.json"
 common=(
   --dataset_json "${EVAL_ROOT}/dataset.json" --data_root "${DATA_ROOT_PATH}"
   --split_path "${EVAL_ROOT}/fixed_split.json" --num_samples "${NUM_SAMPLES}"
-  --sample_id_start 0 --sample_id_end "${NUM_SAMPLES}" --seed 42 --generation_seed "${GENERATION_SEED}"
+  --sample_id_start "${SAMPLE_ID_START}" --sample_id_end "${SAMPLE_ID_END}" --seed 42 --generation_seed "${GENERATION_SEED}"
   --gam_ckpt "${E5_CKPT}" --texture_ckpt "${TEXTURE_CKPT}" --clip_model_path "${CLIP_MODEL}"
   --device cuda:0 --modes token --texture_preprocess_mode plain_resize
   --use_tcpm_lite 1 --use_texture_gate 1 --layer_group_enabled 1 --use_palette_tokens 0
@@ -66,10 +69,11 @@ run python tools/run_fixed_benchmark.py "${common[@]}" --run_name e5 \
   --condition_response_probe 0 --output_dir "${EVAL_ROOT}/off"
 echo '[2/3] 同样本、同 seed，开启局部响应探针'
 run python tools/run_fixed_benchmark.py "${common[@]}" --run_name e5 \
-  --condition_response_probe 1 --condition_response_probe_steps 0 5 15 25 49 \
+  --condition_response_probe 1 --condition_response_probe_steps "${probe_steps[@]}" \
   --condition_response_probe_fractions 0.1 0.2 --condition_response_probe_region_kernel 9 \
   --output_dir "${EVAL_ROOT}/on"
 echo '[3/3] 检查原尺寸输出逐像素一致性、探针完整性并汇总'
 run python tools/report_condition_response_probe.py --baseline-dir "${EVAL_ROOT}/off/e5" \
-  --probe-dir "${EVAL_ROOT}/on/e5" --expected-count "${NUM_SAMPLES}" --output-dir "${EVAL_ROOT}/report"
+  --probe-dir "${EVAL_ROOT}/on/e5" --expected-count "${NUM_SAMPLES}" \
+  --expected-steps "${probe_steps[@]}" --output-dir "${EVAL_ROOT}/report"
 echo "结果：${EVAL_ROOT}/report；验证通过不代表投影方法有效。"
