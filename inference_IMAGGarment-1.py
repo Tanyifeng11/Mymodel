@@ -726,6 +726,9 @@ if __name__ == "__main__":
     )
     parser.add_argument('--local_detail_trace_path', type=str, default='')
     parser.add_argument('--local_detail_trace_sample_id', type=str, default='')
+    parser.add_argument('--condition_intervention', choices=['none', 'baseline', 'boundary', 'weaken_texture', 'strengthen_sketch', 'global'], default='none')
+    parser.add_argument('--condition_intervention_source', default='')
+    parser.add_argument('--condition_intervention_dir', default='')
     parser.add_argument('--condition_response_probe_dir', default='', help='局部条件响应探针输出目录；空值关闭')
     parser.add_argument('--condition_response_probe_steps', type=int, nargs='+', default=[0, 5, 15, 25, 49])
     parser.add_argument('--condition_response_probe_fractions', type=float, nargs='+', default=[0.1, 0.2])
@@ -881,6 +884,9 @@ if __name__ == "__main__":
         local_detail_token_permutation=args.local_detail_token_permutation,
         local_detail_permutation_seed=args.local_detail_permutation_seed,
         local_detail_donor_image=local_detail_donor_image,
+        condition_intervention=args.condition_intervention,
+        condition_intervention_source=args.condition_intervention_source,
+        condition_intervention_dir=args.condition_intervention_dir,
         condition_response_probe_dir=args.condition_response_probe_dir,
         condition_response_probe_steps=args.condition_response_probe_steps,
         condition_response_probe_fractions=args.condition_response_probe_fractions,

@@ -1170,6 +1170,26 @@ class IMAGGarment(StableDiffusionPipeline):
                 self.unet, kwargs['spatial_mask'], kwargs['local_detail_probe_dir'],
                 kwargs.get('local_detail_probe_steps', [0, 5, 15, 25, 49]),
             )
+        intervention = None
+        if kwargs.get('condition_intervention', 'none') != 'none':
+            from models.condition_intervention import ConditionIntervention
+            if (texture_condition_mode != 'token' or local_detail_kwargs or output_block
+                    or local_probe is not None or use_palette_tokens or spatial_active
+                    or kwargs.get('condition_response_probe_dir')):
+                raise ValueError('干预仅支持无额外旁路的 token 模式，不能同时开启观测探针')
+            if batch_size * num_images_per_prompt != 1 or len(timesteps) != 50:
+                raise ValueError('此轮干预仅支持单样本、50 步采样')
+            if self.scheduler.config.prediction_type != 'epsilon':
+                raise ValueError('干预仅支持 epsilon prediction')
+            if not kwargs.get('condition_intervention_dir'):
+                raise ValueError('干预必须指定日志目录')
+            intervention = ConditionIntervention(
+                [p for p in self.unet.attn_processors.values() if isinstance(p, LogoRefSAttnProcessor2_0)],
+                [p for p in self.unet.attn_processors.values() if isinstance(p, IPAttnProcessor2_0)],
+                kwargs.get('spatial_mask'), kwargs['condition_intervention'],
+                kwargs['condition_intervention_source'], kwargs['condition_intervention_dir'],
+                kwargs['condition_response_probe_metadata'],
+            )
         response_probe = None
         if kwargs.get('condition_response_probe_dir'):
             from models.condition_response_probe import ConditionResponseProbe
@@ -1268,6 +1288,14 @@ class IMAGGarment(StableDiffusionPipeline):
                     added_cond_kwargs=None,
                     return_dict=False,
                 )[0]
+
+                if intervention is not None:
+                    noise_pred = intervention.apply(noise_pred, lambda: self.unet(
+                        latent_model_input[0].unsqueeze(0), t,
+                        encoder_hidden_states=prompt_embeds,
+                        cross_attention_kwargs=cond_cross_attention_kwargs,
+                        timestep_cond=timestep_cond, added_cond_kwargs=None, return_dict=False,
+                    )[0], i, t)
 
                 if response_probe is not None:
                     response_probe.observe(noise_pred, lambda: self.unet(

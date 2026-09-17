@@ -532,7 +532,7 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
     dst = output_paths["generated"]
     comparison_path = output_paths["comparison"]
 
-    if getattr(args, 'condition_response_probe', False) and not args.overwrite:
+    if (getattr(args, 'condition_response_probe', False) or getattr(args, 'condition_intervention', 'none') != 'none') and not args.overwrite:
         legacy_source = os.path.join(sample_out, os.path.basename(paths['sketch_path']))
         if existing_candidates or existing_file(legacy_source):
             raise FileExistsError('响应探针不能复用旧生成图；请使用新的 output_dir，或显式 --overwrite 1')
@@ -690,6 +690,15 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
             "--local_detail_trace_path", os.path.join(sample_out, "local_detail_trace.jsonl"),
             "--local_detail_trace_sample_id", str(sample["sample_id"]),
         ])
+    if args.condition_intervention != 'none':
+        from pathlib import Path
+        source_dir = Path(args.condition_intervention_source_root) / f"sample_{int(sample['sample_id']):06d}" / 'on' / 'e5'
+        sources = list(source_dir.rglob('probe.json'))
+        if len(sources) != 1:
+            raise ValueError(f'需要唯一的 50 步基线 probe.json：{source_dir}')
+        cmd.extend(['--condition_intervention', args.condition_intervention,
+                    '--condition_intervention_source', str(sources[0]),
+                    '--condition_intervention_dir', os.path.join(sample_out, 'condition_intervention')])
     if args.condition_response_probe:
         cmd.extend(['--condition_response_probe_dir', os.path.join(sample_out, 'condition_response_probe'),
                     '--condition_response_probe_steps', *map(str, args.condition_response_probe_steps),
@@ -1052,6 +1061,11 @@ def run_benchmark(args):
         "conflict_deltae_norm": args.conflict_deltae_norm,
         "conflict_threshold": args.conflict_threshold,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
+        "condition_intervention": {
+            "mode": args.condition_intervention,
+            "source_root": args.condition_intervention_source_root,
+            "window": [8, 35], "fraction": 0.2,
+        },
         "condition_response_probe": {
             "enabled": bool(args.condition_response_probe),
             "steps": args.condition_response_probe_steps,
@@ -1675,6 +1689,8 @@ def build_argparser():
     parser.add_argument("--conflict_threshold", type=float, default=0.70)
     parser.add_argument("--save_balanced_gate_trace", type=int, choices=[0, 1], default=0)
     parser.add_argument("--save_local_detail_trace", type=int, choices=[0, 1], default=0)
+    parser.add_argument('--condition_intervention', choices=['none', 'baseline', 'boundary', 'weaken_texture', 'strengthen_sketch', 'global'], default='none')
+    parser.add_argument('--condition_intervention_source_root', default='')
     parser.add_argument('--condition_response_probe', type=int, choices=[0, 1], default=0)
     parser.add_argument('--condition_response_probe_steps', type=int, nargs='+', default=[0, 5, 15, 25, 49])
     parser.add_argument('--condition_response_probe_fractions', type=float, nargs='+', default=[0.1, 0.2])
