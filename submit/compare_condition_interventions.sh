@@ -54,15 +54,24 @@ common=(
   --mask_policy sketch_only --evaluation_protocol original_image_size --compute_fid 0 --compute_kid 0
   --write_text_sidecars 1 --resume_generation 0 --skip_existing 0 --overwrite 0
 )
-for sid in 2 5 14 18 22 23; do
+read -r -a sample_ids <<< "${SAMPLE_IDS:-2 5 14 18 22 23}"
+read -r -a variants <<< "${VARIANTS:-baseline boundary weaken_texture strengthen_sketch global}"
+budget_args=()
+report_args=()
+if [[ -n "${BUDGET_ROOT:-}" ]]; then
+  budget_args=(--condition_intervention_budget_root "${BUDGET_ROOT}")
+  report_args=(--matched-budget-root "${BUDGET_ROOT}")
+fi
+for sid in "${sample_ids[@]}"; do
   sample_name=$(printf 'sample_%06d' "${sid}")
-  for variant in baseline boundary weaken_texture strengthen_sketch global; do
+  for variant in "${variants[@]}"; do
     echo "[干预对照] ${sample_name} ${variant}"
     run python tools/run_fixed_benchmark.py "${common[@]}" --run_name e5 \
       --sample_id_start "${sid}" --sample_id_end "$((sid + 1))" \
       --condition_intervention "${variant}" --condition_intervention_source_root "${SOURCE_RUN}" \
+      "${budget_args[@]}" \
       --output_dir "${EVAL_ROOT}/${sample_name}/${variant}"
   done
 done
-run python tools/report_condition_interventions.py --run-dir "${EVAL_ROOT}" --source-run "${SOURCE_RUN}"
+run python tools/report_condition_interventions.py --run-dir "${EVAL_ROOT}" --source-run "${SOURCE_RUN}" "${report_args[@]}"
 echo "结果：${EVAL_ROOT}/report"

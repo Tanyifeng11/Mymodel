@@ -8,7 +8,23 @@ import torch
 from models.condition_response_probe import pair_stats, region_weights
 
 
-MODES = ('none', 'baseline', 'boundary', 'weaken_texture', 'strengthen_sketch', 'global')
+MODES = ('none', 'baseline', 'boundary', 'weaken_texture', 'strengthen_sketch', 'global',
+         'weaken_texture_matched', 'strengthen_sketch_matched')
+
+
+def match_correction(prediction, candidate, target_rms):
+    """固定参考轨迹给出全图 RMS 预算；只缩放当前条件响应方向，不修改注入参数定义。"""
+    direction = candidate.float() - prediction.float()
+    raw_rms = float(direction.square().mean().sqrt())
+    if not torch.isfinite(direction).all() or not 0 <= target_rms < float('inf'):
+        raise ValueError('幅度匹配需要有限修正和非负目标 RMS')
+    if target_rms > 0 and raw_rms == 0:
+        raise ValueError('当前响应为零，无法匹配非零修正幅度')
+    scale = target_rms / raw_rms if target_rms > 0 else 0.0
+    result = (prediction.float() + direction * scale).to(prediction.dtype) if scale else prediction
+    actual = float((result.float() - prediction.float()).square().mean().sqrt())
+    return result, dict(target_rms=target_rms, raw_correction_rms=raw_rms, match_scale=scale,
+                        match_relative_error=abs(actual-target_rms)/target_rms if target_rms else 0.0)
 
 
 def fixed_trigger_steps(source):
@@ -55,7 +71,7 @@ def isolated_forward(processors, prediction):
 
 
 class ConditionIntervention:
-    def __init__(self, sketch, texture, mask, mode, source_path, output_dir, metadata):
+    def __init__(self, sketch, texture, mask, mode, source_path, output_dir, metadata, budget_path=None):
         if mode not in MODES[1:]:
             raise ValueError('未知干预模式')
         source = json.loads(Path(source_path).read_text(encoding='utf-8'))
@@ -77,6 +93,25 @@ class ConditionIntervention:
         self.report = dict(mode=mode, source_probe=str(source_path), metadata=metadata,
                            prediction_space='epsilon_before_cfg', window=[8, 35], fraction=0.2,
                            trigger_steps=sorted(self.steps), records=[])
+        self.budget = None
+        if mode.endswith('_matched'):
+            if not budget_path:
+                raise ValueError('等幅对照需要参考 boundary 干预日志')
+            budget = json.loads(Path(budget_path).read_text(encoding='utf-8'))
+            if (budget['mode'] != 'boundary' or budget['metadata'] != metadata or
+                    budget['trigger_steps'] != sorted(self.steps) or
+                    [r['step_index'] for r in budget['records']] != list(range(50))):
+                raise ValueError('等幅预算与当前样本、条件或触发计划不一致')
+            for r, ref in zip(budget['records'], self.source_records):
+                rms = r['correction_rms']
+                if (r['timestep'] != ref['timestep'] or not 0 <= rms < float('inf') or
+                        bool(rms > 0) != bool(r['applied']) or
+                        (rms > 0 and r['step_index'] not in self.steps)):
+                    raise ValueError('参考修正幅度、时刻或 applied 标志无效')
+            self.budget = budget['records']
+            self.report.update(budget_source=str(budget_path),
+                               budget_space='full_tensor_rms_epsilon_before_cfg',
+                               budget_rms=[r['correction_rms'] for r in self.budget])
 
     @torch.no_grad()
     def apply(self, prediction, forward, step, timestep):
@@ -91,15 +126,22 @@ class ConditionIntervention:
         row = dict(step_index=step, timestep=int(timestep), scheduled=step in self.steps,
                    applied=False, correction_rms=0.0)
         result = prediction
-        if step in self.steps and self.mode != 'baseline':
+        target = self.budget[step]['correction_rms'] if self.budget is not None else None
+        if target is not None:
+            row.update(target_rms=target, raw_correction_rms=0.0, match_scale=0.0, match_relative_error=0.0)
+        if step in self.steps and self.mode != 'baseline' and target != 0:
             processors = self.sketch + self.texture
             with isolated_forward(processors, prediction):
-                if self.mode in ('weaken_texture', 'strengthen_sketch'):
-                    chosen = self.texture if self.mode == 'weaken_texture' else self.sketch
-                    factor = 0.8 if self.mode == 'weaken_texture' else 1.2
+                if self.mode in ('weaken_texture', 'strengthen_sketch', 'weaken_texture_matched', 'strengthen_sketch_matched'):
+                    weaken = self.mode.startswith('weaken_texture')
+                    chosen = self.texture if weaken else self.sketch
+                    factor = 0.8 if weaken else 1.2
                     for p in chosen:
                         p.scale *= factor
                     result = forward()
+                    if target is not None:
+                        result, matching = match_correction(prediction, result, target)
+                        row.update(matching)
                 else:
                     repeat = forward()
                     for p in self.sketch:

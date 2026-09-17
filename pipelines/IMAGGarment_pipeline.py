@@ -1189,6 +1189,7 @@ class IMAGGarment(StableDiffusionPipeline):
                 kwargs.get('spatial_mask'), kwargs['condition_intervention'],
                 kwargs['condition_intervention_source'], kwargs['condition_intervention_dir'],
                 kwargs['condition_response_probe_metadata'],
+                budget_path=kwargs.get('condition_intervention_budget'),
             )
         response_probe = None
         if kwargs.get('condition_response_probe_dir'):

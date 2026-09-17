@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import torch
 
-from models.condition_intervention import ConditionIntervention, fixed_trigger_steps, projected_correction
+from models.condition_intervention import ConditionIntervention, fixed_trigger_steps, projected_correction, match_correction
 
 
 class InterventionTests(unittest.TestCase):
@@ -25,7 +25,14 @@ class InterventionTests(unittest.TestCase):
         path.write_text(json.dumps(source), encoding='utf-8')
         mask = torch.zeros(1, 1, 8, 8)
         mask[:, :, 2:6, 2:6] = 1
-        intervention = ConditionIntervention([sketch], [texture], mask, mode, path, Path(folder)/mode, metadata)
+        budget_path = None
+        if mode.endswith('_matched'):
+            budget_path = Path(folder) / 'budget.json'
+            budget = dict(mode='boundary', metadata=metadata, trigger_steps=[8], records=[
+                dict(step_index=i, timestep=999-i, applied=i == 8, correction_rms=.02 if i == 8 else 0.)
+                for i in range(50)])
+            budget_path.write_text(json.dumps(budget), encoding='utf-8')
+        intervention = ConditionIntervention([sketch], [texture], mask, mode, path, Path(folder)/mode, metadata, budget_path)
         def forward():
             torch.rand(1)
             texture.last_gate = 99
@@ -91,6 +98,46 @@ class InterventionTests(unittest.TestCase):
                     stats['cosine'] = -.2
             source['records'][12]['regions']['boundary']['responses']['0.1']['cosine'] = .1
             self.assertEqual(fixed_trigger_steps(source), [i for i in range(8, 36) if i != 12])
+
+    def test_matched_modes_use_fixed_budget_and_restore_state(self):
+        for mode in ('weaken_texture_matched', 'strengthen_sketch_matched'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                obj, sketch, texture, forward = self.make(folder, mode)
+                pred = torch.full((1, 4, 4, 4), -.4)
+                state = torch.get_rng_state().clone()
+                result = obj.apply(pred, forward, 8, 991)
+                self.assertTrue(torch.allclose(result, torch.full_like(result, -.38)))
+                row = obj.report['records'][0]
+                self.assertLess(row['match_relative_error'], 1e-5)
+                self.assertAlmostEqual(row['correction_rms'], .02, places=6)
+                self.assertEqual((sketch.scale, texture.scale, texture.last_gate), (.6, 1., 7))
+                self.assertTrue(torch.equal(state, torch.get_rng_state()))
+                obj.budget[8]['correction_rms'] = 0.
+                self.assertIs(obj.apply(pred, lambda: self.fail('零预算不应前向'), 8, 991), pred)
+
+    def test_matching_preserves_direction_and_reports_rounding(self):
+        pred = torch.zeros(1, 1, 1, 2)
+        candidate = torch.tensor([[[[3., -4.]]]])
+        result, stats = match_correction(pred, candidate, .01)
+        self.assertAlmostEqual(float(result.square().mean().sqrt()), .01, places=7)
+        self.assertTrue(torch.allclose(result, candidate * stats['match_scale']))
+        self.assertIs(match_correction(pred, candidate, 0.)[0], pred)
+        with self.assertRaises(ValueError):
+            match_correction(pred, pred, .01)
+        low_precision = torch.ones(1, 1, 1, 2, dtype=torch.float16)
+        _, stats = match_correction(low_precision, low_precision * 2, 1e-6)
+        self.assertGreater(stats['match_relative_error'], .05)
+
+    def test_budget_from_different_sample_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            obj, sketch, texture, _ = self.make(folder, 'weaken_texture_matched')
+            path = Path(folder)/'budget.json'
+            budget = json.loads(path.read_text())
+            budget['metadata']['seed'] = 999
+            path.write_text(json.dumps(budget))
+            with self.assertRaisesRegex(ValueError, '预算与当前'):
+                ConditionIntervention([sketch], [texture], obj.mask, obj.mode,
+                    Path(folder)/'source.json', Path(folder)/'bad', obj.report['metadata'], path)
 
 
 if __name__ == '__main__':
