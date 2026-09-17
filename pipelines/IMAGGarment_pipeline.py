@@ -1170,6 +1170,26 @@ class IMAGGarment(StableDiffusionPipeline):
                 self.unet, kwargs['spatial_mask'], kwargs['local_detail_probe_dir'],
                 kwargs.get('local_detail_probe_steps', [0, 5, 15, 25, 49]),
             )
+        response_probe = None
+        if kwargs.get('condition_response_probe_dir'):
+            from models.condition_response_probe import ConditionResponseProbe
+            if (texture_condition_mode != 'token' or local_detail_kwargs or output_block
+                    or local_probe is not None or use_palette_tokens or spatial_active):
+                raise ValueError('局部响应探针仅支持无额外旁路、无 palette 的 token 模式')
+            if batch_size * num_images_per_prompt != 1:
+                raise ValueError('局部响应探针仅支持单样本采样')
+            probe_steps = kwargs.get('condition_response_probe_steps', [0, 5, 15, 25, 49])
+            if any(step >= len(timesteps) for step in probe_steps):
+                raise ValueError('响应探针步骤超出采样步数，请显式指定有效步骤')
+            response_probe = ConditionResponseProbe(
+                [p for p in self.unet.attn_processors.values() if isinstance(p, LogoRefSAttnProcessor2_0)],
+                [p for p in self.unet.attn_processors.values() if isinstance(p, IPAttnProcessor2_0)],
+                kwargs.get('spatial_mask'), kwargs['condition_response_probe_dir'],
+                steps=probe_steps,
+                fractions=kwargs.get('condition_response_probe_fractions', [0.1, 0.2]),
+                region_kernel=kwargs.get('condition_response_probe_region_kernel', 9),
+                metadata=kwargs.get('condition_response_probe_metadata'),
+            )
         local_detail_scale = float(kwargs.get("local_detail_scale", 1.0))
         local_detail_step_start = int(kwargs.get("local_detail_step_start", 0))
         local_detail_step_end = int(kwargs.get("local_detail_step_end", len(timesteps) - 1))
@@ -1248,6 +1268,14 @@ class IMAGGarment(StableDiffusionPipeline):
                     added_cond_kwargs=None,
                     return_dict=False,
                 )[0]
+
+                if response_probe is not None:
+                    response_probe.observe(noise_pred, lambda: self.unet(
+                        latent_model_input[0].unsqueeze(0), t,
+                        encoder_hidden_states=prompt_embeds,
+                        cross_attention_kwargs=cond_cross_attention_kwargs,
+                        timestep_cond=timestep_cond, added_cond_kwargs=None, return_dict=False,
+                    )[0], i, t)
 
                 if local_probe is not None:
                     local_probe.compare(noise_pred, lambda: self.unet(

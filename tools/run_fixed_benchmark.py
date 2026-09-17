@@ -532,6 +532,11 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
     dst = output_paths["generated"]
     comparison_path = output_paths["comparison"]
 
+    if getattr(args, 'condition_response_probe', False) and not args.overwrite:
+        legacy_source = os.path.join(sample_out, os.path.basename(paths['sketch_path']))
+        if existing_candidates or existing_file(legacy_source):
+            raise FileExistsError('响应探针不能复用旧生成图；请使用新的 output_dir，或显式 --overwrite 1')
+
     if existing_candidates and not args.overwrite:
         if not args.skip_existing and not args.resume_generation:
             raise FileExistsError(
@@ -685,6 +690,11 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
             "--local_detail_trace_path", os.path.join(sample_out, "local_detail_trace.jsonl"),
             "--local_detail_trace_sample_id", str(sample["sample_id"]),
         ])
+    if args.condition_response_probe:
+        cmd.extend(['--condition_response_probe_dir', os.path.join(sample_out, 'condition_response_probe'),
+                    '--condition_response_probe_steps', *map(str, args.condition_response_probe_steps),
+                    '--condition_response_probe_fractions', *map(str, args.condition_response_probe_fractions),
+                    '--condition_response_probe_region_kernel', str(args.condition_response_probe_region_kernel)])
     if args.local_detail_propagation_probe:
         cmd.extend(['--local_detail_probe_dir', os.path.join(sample_out, 'propagation_probe')])
     cmd.extend(['--local_detail_output_block', str(args.local_detail_output_block)])
@@ -1042,6 +1052,12 @@ def run_benchmark(args):
         "conflict_deltae_norm": args.conflict_deltae_norm,
         "conflict_threshold": args.conflict_threshold,
         "alpha": [args.alpha1, args.alpha2, args.alpha3, args.alpha4],
+        "condition_response_probe": {
+            "enabled": bool(args.condition_response_probe),
+            "steps": args.condition_response_probe_steps,
+            "fractions": args.condition_response_probe_fractions,
+            "region_kernel_input_pixels": args.condition_response_probe_region_kernel,
+        },
         "local_detail_diagnostics": {
             "scale": args.local_detail_scale,
             "step_window": [args.local_detail_step_start, args.local_detail_step_end],
@@ -1659,6 +1675,10 @@ def build_argparser():
     parser.add_argument("--conflict_threshold", type=float, default=0.70)
     parser.add_argument("--save_balanced_gate_trace", type=int, choices=[0, 1], default=0)
     parser.add_argument("--save_local_detail_trace", type=int, choices=[0, 1], default=0)
+    parser.add_argument('--condition_response_probe', type=int, choices=[0, 1], default=0)
+    parser.add_argument('--condition_response_probe_steps', type=int, nargs='+', default=[0, 5, 15, 25, 49])
+    parser.add_argument('--condition_response_probe_fractions', type=float, nargs='+', default=[0.1, 0.2])
+    parser.add_argument('--condition_response_probe_region_kernel', type=int, default=9)
     parser.add_argument('--local_detail_propagation_probe', type=int, choices=[0, 1], default=0)
     parser.add_argument('--local_detail_output_block', type=int, choices=[0, 1], default=0)
     parser.add_argument("--local_detail_scale", type=float, default=1.0)

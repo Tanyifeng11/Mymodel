@@ -726,6 +726,11 @@ if __name__ == "__main__":
     )
     parser.add_argument('--local_detail_trace_path', type=str, default='')
     parser.add_argument('--local_detail_trace_sample_id', type=str, default='')
+    parser.add_argument('--condition_response_probe_dir', default='', help='局部条件响应探针输出目录；空值关闭')
+    parser.add_argument('--condition_response_probe_steps', type=int, nargs='+', default=[0, 5, 15, 25, 49])
+    parser.add_argument('--condition_response_probe_fractions', type=float, nargs='+', default=[0.1, 0.2])
+    parser.add_argument('--condition_response_probe_region_kernel', type=int, default=9,
+                        help='原图 mask 的区域形态学核尺寸，正奇数')
     parser.add_argument('--local_detail_probe_dir', default='', help='E9 同 latent 开关传播诊断输出目录')
     parser.add_argument('--local_detail_output_block', type=int, choices=[0, 1], default=0)
     parser.add_argument(
@@ -876,6 +881,17 @@ if __name__ == "__main__":
         local_detail_token_permutation=args.local_detail_token_permutation,
         local_detail_permutation_seed=args.local_detail_permutation_seed,
         local_detail_donor_image=local_detail_donor_image,
+        condition_response_probe_dir=args.condition_response_probe_dir,
+        condition_response_probe_steps=args.condition_response_probe_steps,
+        condition_response_probe_fractions=args.condition_response_probe_fractions,
+        condition_response_probe_region_kernel=args.condition_response_probe_region_kernel,
+        condition_response_probe_metadata={
+            'sketch_path': args.sketch_path, 'texture_path': args.texture_path,
+            'prompt': prompt, 'seed': args.seed, 'gam_ckpt': args.GAM_model_ckpt,
+            'guidance_scale': args.guidance_scale, 'texture_scale': args.texture_scale,
+            'num_inference_steps': args.num_inference_steps,
+            'mask_info': spatial_mask_info,
+        },
         local_detail_probe_dir=args.local_detail_probe_dir,
         local_detail_output_block=bool(args.local_detail_output_block),
         spatial_mask=spatial_mask,
