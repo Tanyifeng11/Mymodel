@@ -84,4 +84,5 @@ class FullConditionProbe:
         np.savez_compressed(self.folder/f'step_{step:02d}.npz', **{k:v.cpu().numpy() for k,v in arrays.items()})
         self.report['records'].append(row)
         (self.folder/'probe.json').write_text(json.dumps(self.report, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+        self.last_response = (a, b, floor)
         return prediction

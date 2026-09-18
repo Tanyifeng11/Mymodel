@@ -1192,7 +1192,8 @@ class IMAGGarment(StableDiffusionPipeline):
                 budget_path=kwargs.get('condition_intervention_budget'),
             )
         full_probe = None
-        if kwargs.get('full_condition_probe_dir'):
+        sptg_active = kwargs.get('sptg_mode', 'none') != 'none'
+        if kwargs.get('full_condition_probe_dir') or sptg_active:
             from models.full_condition_probe import FullConditionProbe
             if (texture_condition_mode != 'token' or local_detail_kwargs or output_block
                     or local_probe is not None or use_palette_tokens or spatial_active
@@ -1202,11 +1203,16 @@ class IMAGGarment(StableDiffusionPipeline):
                 raise ValueError('完整分解要求单样本、50 步')
             if self.scheduler.config.prediction_type != 'epsilon':
                 raise ValueError('完整分解要求 epsilon prediction')
-            full_probe = FullConditionProbe(
+            if sptg_active and (kwargs.get('full_condition_probe_dir') or not kwargs.get('sptg_dir')):
+                raise ValueError('SPTG 需要独立日志目录，不能同时开启完整分解探针')
+            from models.sptg import SPTG
+            probe_type = SPTG if sptg_active else FullConditionProbe
+            extra = {'mode': kwargs['sptg_mode']} if sptg_active else {}
+            full_probe = probe_type(
                 [p for p in self.unet.attn_processors.values() if isinstance(p, LogoRefSAttnProcessor2_0)],
                 [p for p in self.unet.attn_processors.values() if isinstance(p, IPAttnProcessor2_0)],
-                kwargs.get('spatial_mask'), kwargs['full_condition_probe_dir'],
-                kwargs['condition_response_probe_metadata'])
+                kwargs.get('spatial_mask'), kwargs.get('sptg_dir') if sptg_active else kwargs['full_condition_probe_dir'],
+                kwargs['condition_response_probe_metadata'], **extra)
         response_probe = None
         if kwargs.get('condition_response_probe_dir'):
             from models.condition_response_probe import ConditionResponseProbe
