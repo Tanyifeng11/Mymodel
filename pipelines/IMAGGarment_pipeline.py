@@ -1191,6 +1191,22 @@ class IMAGGarment(StableDiffusionPipeline):
                 kwargs['condition_response_probe_metadata'],
                 budget_path=kwargs.get('condition_intervention_budget'),
             )
+        full_probe = None
+        if kwargs.get('full_condition_probe_dir'):
+            from models.full_condition_probe import FullConditionProbe
+            if (texture_condition_mode != 'token' or local_detail_kwargs or output_block
+                    or local_probe is not None or use_palette_tokens or spatial_active
+                    or intervention is not None or kwargs.get('condition_response_probe_dir')):
+                raise ValueError('完整分解仅支持 E5 token 路径，不能叠加其他探针或干预')
+            if batch_size * num_images_per_prompt != 1 or len(timesteps) != 50:
+                raise ValueError('完整分解要求单样本、50 步')
+            if self.scheduler.config.prediction_type != 'epsilon':
+                raise ValueError('完整分解要求 epsilon prediction')
+            full_probe = FullConditionProbe(
+                [p for p in self.unet.attn_processors.values() if isinstance(p, LogoRefSAttnProcessor2_0)],
+                [p for p in self.unet.attn_processors.values() if isinstance(p, IPAttnProcessor2_0)],
+                kwargs.get('spatial_mask'), kwargs['full_condition_probe_dir'],
+                kwargs['condition_response_probe_metadata'])
         response_probe = None
         if kwargs.get('condition_response_probe_dir'):
             from models.condition_response_probe import ConditionResponseProbe
@@ -1297,6 +1313,22 @@ class IMAGGarment(StableDiffusionPipeline):
                         cross_attention_kwargs=cond_cross_attention_kwargs,
                         timestep_cond=timestep_cond, added_cond_kwargs=None, return_dict=False,
                     )[0], i, t)
+
+                if full_probe is not None:
+                    def decomposition_forward(sketch_on, scrub_texture):
+                        branch_kwargs = dict(cond_cross_attention_kwargs)
+                        if not sketch_on:
+                            branch_kwargs.pop('sa_hidden_states', None)
+                            branch_kwargs.pop('tcpm_garment_mask', None)
+                        embeds = prompt_embeds
+                        if scrub_texture:
+                            embeds = prompt_embeds.clone()
+                            embeds[:, -texture_num_tokens:, :] = 0
+                        return self.unet(
+                            latent_model_input[0].unsqueeze(0), t,
+                            encoder_hidden_states=embeds, cross_attention_kwargs=branch_kwargs,
+                            timestep_cond=timestep_cond, added_cond_kwargs=None, return_dict=False)[0]
+                    noise_pred = full_probe.observe(noise_pred, decomposition_forward, i, t)
 
                 if response_probe is not None:
                     response_probe.observe(noise_pred, lambda: self.unet(

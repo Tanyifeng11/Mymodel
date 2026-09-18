@@ -532,7 +532,7 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
     dst = output_paths["generated"]
     comparison_path = output_paths["comparison"]
 
-    if (getattr(args, 'condition_response_probe', False) or getattr(args, 'condition_intervention', 'none') != 'none') and not args.overwrite:
+    if (getattr(args, 'condition_response_probe', False) or getattr(args, 'full_condition_probe', False) or getattr(args, 'condition_intervention', 'none') != 'none') and not args.overwrite:
         legacy_source = os.path.join(sample_out, os.path.basename(paths['sketch_path']))
         if existing_candidates or existing_file(legacy_source):
             raise FileExistsError('响应探针不能复用旧生成图；请使用新的 output_dir，或显式 --overwrite 1')
@@ -707,6 +707,8 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         if len(budgets) != 1:
             raise ValueError(f'需要唯一的 boundary 预算日志：{budget_dir}')
         cmd.extend(['--condition_intervention_budget', str(budgets[0])])
+    if args.full_condition_probe:
+        cmd.extend(['--full_condition_probe_dir', os.path.join(sample_out, 'full_condition_probe')])
     if args.condition_response_probe:
         cmd.extend(['--condition_response_probe_dir', os.path.join(sample_out, 'condition_response_probe'),
                     '--condition_response_probe_steps', *map(str, args.condition_response_probe_steps),
@@ -1075,6 +1077,7 @@ def run_benchmark(args):
             "budget_root": args.condition_intervention_budget_root,
             "window": [8, 35], "fraction": 0.2,
         },
+        "full_condition_probe": bool(args.full_condition_probe),
         "condition_response_probe": {
             "enabled": bool(args.condition_response_probe),
             "steps": args.condition_response_probe_steps,
@@ -1701,6 +1704,7 @@ def build_argparser():
     parser.add_argument('--condition_intervention', choices=['none', 'baseline', 'boundary', 'weaken_texture', 'strengthen_sketch', 'global', 'weaken_texture_matched', 'strengthen_sketch_matched'], default='none')
     parser.add_argument('--condition_intervention_budget_root', default='')
     parser.add_argument('--condition_intervention_source_root', default='')
+    parser.add_argument('--full_condition_probe', type=int, choices=[0, 1], default=0)
     parser.add_argument('--condition_response_probe', type=int, choices=[0, 1], default=0)
     parser.add_argument('--condition_response_probe_steps', type=int, nargs='+', default=[0, 5, 15, 25, 49])
     parser.add_argument('--condition_response_probe_fractions', type=float, nargs='+', default=[0.1, 0.2])
