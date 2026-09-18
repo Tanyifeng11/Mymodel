@@ -21,10 +21,43 @@ def match_correction(prediction, candidate, target_rms):
     if target_rms > 0 and raw_rms == 0:
         raise ValueError('当前响应为零，无法匹配非零修正幅度')
     scale = target_rms / raw_rms if target_rms > 0 else 0.0
-    result = (prediction.float() + direction * scale).to(prediction.dtype) if scale else prediction
-    actual = float((result.float() - prediction.float()).square().mean().sqrt())
+    def evaluate(value):
+        result = (prediction.float() + direction * value).to(prediction.dtype) if value else prediction
+        actual = float((result.float() - prediction.float()).square().mean().sqrt())
+        return result, actual
+    result, actual = evaluate(scale)
+    initial_error = abs(actual-target_rms)/target_rms if target_rms else 0.0
+    iterations = 0
+    if target_rms and initial_error > .01:
+        # FP16 舍入使解析缩放失效。沿同一方向的量化后 RMS 单调不减，
+        # 因此只校准一个标量；不增加 UNet 前向、不改变采样 dtype。
+        low, high = 0.0, scale
+        for _ in range(24):
+            if actual >= target_rms:
+                break
+            high *= 2
+            result, actual = evaluate(high)
+        best = (abs(actual-target_rms), high, result, actual)
+        for iterations in range(1, 41):
+            middle = (low + high) / 2
+            candidate_result, candidate_rms = evaluate(middle)
+            error = abs(candidate_rms-target_rms)
+            if error < best[0]:
+                best = (error, middle, candidate_result, candidate_rms)
+            if error <= .01 * target_rms:
+                break
+            if candidate_rms < target_rms:
+                low = middle
+            else:
+                high = middle
+        _, scale, result, actual = best
+    relative_error = abs(actual-target_rms)/target_rms if target_rms else 0.0
+    if relative_error > .05:
+        raise ValueError(f'{prediction.dtype} 量化后无法匹配 RMS：目标={target_rms:.8g}，'
+                         f'实际={actual:.8g}，误差={relative_error:.2%}')
     return result, dict(target_rms=target_rms, raw_correction_rms=raw_rms, match_scale=scale,
-                        match_relative_error=abs(actual-target_rms)/target_rms if target_rms else 0.0)
+                        match_relative_error=relative_error, match_initial_relative_error=initial_error,
+                        match_calibration_iterations=iterations, match_prediction_dtype=str(prediction.dtype))
 
 
 def fixed_trigger_steps(source):

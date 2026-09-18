@@ -125,8 +125,19 @@ class InterventionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             match_correction(pred, pred, .01)
         low_precision = torch.ones(1, 1, 1, 2, dtype=torch.float16)
-        _, stats = match_correction(low_precision, low_precision * 2, 1e-6)
-        self.assertGreater(stats['match_relative_error'], .05)
+        with self.assertRaisesRegex(ValueError, '量化后无法匹配'):
+            match_correction(low_precision, low_precision * 2, 1e-6)
+
+    def test_fp16_calibration_matches_actual_not_analytic_rms(self):
+        generator = torch.Generator().manual_seed(42)
+        pred = torch.randn(1, 4, 64, 48, generator=generator).half()
+        candidate = (pred.float() + .01 * torch.randn(pred.shape, generator=generator)).half()
+        target = 1e-4
+        result, stats = match_correction(pred, candidate, target)
+        self.assertEqual(result.dtype, pred.dtype)
+        self.assertGreater(stats['match_initial_relative_error'], .05)
+        self.assertLessEqual(stats['match_relative_error'], .01)
+        self.assertAlmostEqual(float((result.float()-pred.float()).square().mean().sqrt()), target, delta=target*.01)
 
     def test_budget_from_different_sample_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
