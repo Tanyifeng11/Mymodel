@@ -259,7 +259,8 @@ def extract(args):
                 raise ValueError("相同参考图不能分属不同来源组")
             actual_hashes[digest] = row["source_group"]
             row["pixel_sha256"] = digest
-            clip = vision(processor(images=[image], return_tensors="pt").pixel_values.to(args.device, dtype),
+            clip_pixels = processor(images=[image], return_tensors="pt").pixel_values.to(args.device, dtype)
+            clip = vision(clip_pixels,
                           output_hidden_states=True)
             texture = image_processor.preprocess([image], height=args.height, width=args.width).to(args.device, dtype)
             inputs = dict(clip_image_embeds=clip.image_embeds, clip_vision_tokens=clip.hidden_states[-1][:, 1:, :],
@@ -267,6 +268,14 @@ def extract(args):
             values = capture(bf, tcpm, inputs, neutral, encode(row["caption"]))
             features, shapes = readouts(values, args.seed)
             features.update(image_baselines(image))
+            # 记录真实预处理后的颜色基线，检测缩放/CLIP裁剪重新引入的颜色差异。
+            clip_rgb = clip_pixels[0].float().cpu().numpy().transpose(1, 2, 0)
+            clip_rgb = clip_rgb * np.asarray(processor.image_std) + np.asarray(processor.image_mean)
+            cnn_rgb = texture[0].float().cpu().numpy().transpose(1, 2, 0)
+            for name, pixels in (("clip_input", clip_rgb), ("cnn_input", cnn_rgb)):
+                hist = np.histogramdd(np.clip(pixels, 0, 1).reshape(-1, 3), bins=8,
+                                      range=((0, 1),) * 3)[0].ravel()
+                features[name + "__color_hist"] = (hist / hist.sum()).astype(np.float32)
             if not all(np.isfinite(v).all() for v in features.values()):
                 raise ValueError("特征含 NaN/Inf：" + row["sample_id"])
             row["feature_file"] = f"features/{i:04d}.npz"
