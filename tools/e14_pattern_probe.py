@@ -247,6 +247,12 @@ def extract(args):
         return text_encoder(ids.input_ids, attention_mask=mask)[0]
 
     actual_hashes = {}
+    input_control = getattr(args, 'input_color_control', 'original')
+    control_audit = []
+    signatures = {}
+    if input_control == 'rank_binary':
+        from tools.e14_input_control import rank_binary, channel_signature
+        (out / 'input_previews').mkdir()
     with torch.inference_mode():
         neutral = encode(args.neutral_prompt)
         for i, row in enumerate(rows):
@@ -260,9 +266,30 @@ def extract(args):
             actual_hashes[digest] = row["source_group"]
             row["pixel_sha256"] = digest
             clip_pixels = processor(images=[image], return_tensors="pt").pixel_values.to(args.device, dtype)
+            texture = image_processor.preprocess([image], height=args.height, width=args.width).to(args.device, dtype)
+            if input_control == 'rank_binary':
+                mean = torch.tensor(processor.image_mean, device=args.device, dtype=torch.float32).view(1, 3, 1, 1)
+                std = torch.tensor(processor.image_std, device=args.device, dtype=torch.float32).view(1, 3, 1, 1)
+                clip_rgb_control, clip_stats = rank_binary(clip_pixels.float() * std + mean)
+                texture, cnn_stats = rank_binary(texture)
+                clip_pixels = ((clip_rgb_control - mean) / std).to(dtype)
+                # 在最后一次 dtype 转换/归一化后检查真实输入的两值与占比。
+                for branch, tensor in (('clip', clip_pixels), ('cnn', texture * 2 - 1)):
+                    signature = channel_signature(tensor)
+                    if any(len(c['levels']) != 2 or sorted(c['counts']) !=
+                           [tensor.shape[-2]*tensor.shape[-1]//4, tensor.shape[-2]*tensor.shape[-1]*3//4]
+                           for c in signature):
+                        raise ValueError('预处理后输入颜色控制失败：' + branch)
+                    if branch in signatures and signature != signatures[branch]:
+                        raise ValueError('样本间真实输入颜色分布不一致：' + branch)
+                    signatures[branch] = signature
+                control_audit.append(dict(sample_id=row['sample_id'], clip=clip_stats, cnn=cnn_stats))
+                for branch, tensor in (('clip', clip_rgb_control), ('cnn', texture)):
+                    pixels = tensor[0].float().cpu().numpy().transpose(1, 2, 0)
+                    Image.fromarray(np.rint(pixels*255).clip(0,255).astype('uint8')).save(
+                        out / 'input_previews' / f'{i:04d}_{branch}.png')
             clip = vision(clip_pixels,
                           output_hidden_states=True)
-            texture = image_processor.preprocess([image], height=args.height, width=args.width).to(args.device, dtype)
             inputs = dict(clip_image_embeds=clip.image_embeds, clip_vision_tokens=clip.hidden_states[-1][:, 1:, :],
                           texture_images=texture * 2 - 1, text_embeds=neutral)
             values = capture(bf, tcpm, inputs, neutral, encode(row["caption"]))
@@ -281,6 +308,10 @@ def extract(args):
             row["feature_file"] = f"features/{i:04d}.npz"
             np.savez_compressed(out / row["feature_file"], **features)
             print(f"[E14] {i + 1}/{len(rows)} {row['sample_id']}", flush=True)
+    if input_control == 'rank_binary':
+        write_json(out / 'input_control_audit.json', dict(mode=input_control, samples=control_audit,
+            exact_input_channel_histograms_equal=True, actual_input_signatures=signatures,
+            limitation='仅消除两色灰度边缘分布差异；改变抗锯齿边缘，不控制空间频率/形状差异。并列按空间顺序处理。'))
     write_json(out / "index.json", {"rows": rows, "coverage": coverage(rows), "shapes": shapes,
         "config": {k: v for k, v in vars(args).items() if k != "func"},
         "resolved_base_model": str(base), "bf_training": bf.training,
@@ -469,6 +500,8 @@ def main():
     p.add_argument("--height", type=int, default=512)
     p.add_argument("--width", type=int, default=384)
     p.add_argument("--neutral-prompt", default="a garment")
+    p.add_argument("--input-color-control", choices=['original', 'rank_binary'], default='original',
+                   help='诊断用：预处理后固定两灰度及25%%深色像素；需要重新提取特征')
     p.add_argument("--seed", type=int, default=42)
     p.set_defaults(func=extract)
     p = sub.add_parser("evaluate", help="同色跨来源检索；可选嵌套分组线性探针")

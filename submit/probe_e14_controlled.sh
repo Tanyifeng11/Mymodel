@@ -1,6 +1,7 @@
 #!/bin/bash
 # sbatch submit/probe_e14_controlled.sh
 # DRY_RUN=1 bash submit/probe_e14_controlled.sh
+# 消除预处理灰度混杂：INPUT_COLOR_CONTROL=rank_binary sbatch submit/probe_e14_controlled.sh
 #SBATCH -J E14_controlled
 #SBATCH -p gpu
 #SBATCH -N 1
@@ -34,7 +35,7 @@ extra=()
 run python -m tools.e14_controlled_patterns --output "${EVAL_ROOT}/inputs"
 run python -m tools.e14_pattern_probe extract --labels "${EVAL_ROOT}/inputs/labels.csv" \
   --data-root "${EVAL_ROOT}/inputs" --checkpoint "${E5_CKPT}" --clip-model "${CLIP_MODEL}" \
-  --output "${EVAL_ROOT}/representations" "${extra[@]}"
+  --output "${EVAL_ROOT}/representations" --input-color-control "${INPUT_COLOR_CONTROL:-original}" "${extra[@]}"
 eval_extra=()
 # LINEAR=1 需要环境已有 scikit-learn；默认先做无训练读出。
 [[ "${LINEAR:-0}" != "1" ]] || eval_extra+=(--linear)
