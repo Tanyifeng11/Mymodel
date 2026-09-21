@@ -18,7 +18,7 @@ from models.text_guided_queries import guidance_config_from_checkpoint, text_con
 NEGATIVE_PROMPT = " worst quality, low quality"  # 与实际 inference 入口一致。
 
 
-def build_conditioner(checkpoint, device="cpu", dtype=torch.float32):
+def build_conditioner(checkpoint, device="cpu", dtype=torch.float32, bf_only=False):
     state, meta = checkpoint["bf_texture_conditioner"], checkpoint.get("meta", {})
     query = state["resampler_queries"]
     if int(meta.get("texture_num_tokens", query.shape[1])) != query.shape[1]:
@@ -32,6 +32,8 @@ def build_conditioner(checkpoint, device="cpu", dtype=torch.float32):
         **guidance_config_from_checkpoint(state, meta),
     )
     bf.load_state_dict(state, strict=True)
+    if bf_only:
+        return bf.to(device=device, dtype=dtype).requires_grad_(False), None
     tcpm = TCPMLite(query.shape[-1], hidden_ratio=float(meta.get("tcpm_hidden_ratio", 0.25)))
     tcpm.load_state_dict(checkpoint["tcpm_lite"], strict=True)
     # 正式推理中的 BF/TCPM 保留构造后的 train 状态；禁止擅自切换 MHA 计算路径。

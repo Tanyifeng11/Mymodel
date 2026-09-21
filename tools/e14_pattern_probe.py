@@ -146,8 +146,9 @@ def capture(bf, tcpm, inputs, neutral, caption):
         with torch.inference_mode():
             tokens, _ = bf(**inputs)
             save("tokens_post_ln", tokens)
-            save("tcpm_neutral", tcpm(tokens, neutral))
-            save("tcpm_caption", tcpm(tokens, caption))
+            if tcpm is not None:
+                save("tcpm_neutral", tcpm(tokens, neutral))
+                save("tcpm_caption", tcpm(tokens, caption))
             save("cnn_projected_combined", torch.cat([values[f"cnn{i}_projected"] for i in range(1, 5)], dim=1))
     finally:
         for h in handles:
@@ -220,7 +221,8 @@ def extract(args):
     dtype = torch.float16 if args.dtype == "fp16" else torch.float32
     if args.device == "cpu" and args.dtype == "fp16":
         raise ValueError("CPU 检查请显式使用 --dtype fp32；正式实验使用 GPU FP16")
-    bf, tcpm = build_conditioner(checkpoint, args.device, dtype)
+    bf, tcpm = build_conditioner(checkpoint, args.device, dtype,
+                               bf_only=getattr(args, 'bf_only', False))
     del checkpoint
     base = args.base_model or meta.get("pretrained_model_name_or_path")
     if not base:
@@ -315,7 +317,8 @@ def extract(args):
     write_json(out / "index.json", {"rows": rows, "coverage": coverage(rows), "shapes": shapes,
         "config": {k: v for k, v in vars(args).items() if k != "func"},
         "resolved_base_model": str(base), "bf_training": bf.training,
-        "scope": "冻结 E5 BF/TCPM；无 U-Net；neutral 为受控文本，caption 为部署文本。",
+        "scope": ("历史BF层对照；无TCPM、无U-Net；统一预处理。" if getattr(args, 'bf_only', False)
+                  else "冻结 E5 BF/TCPM；无 U-Net；neutral 为受控文本，caption 为部署文本。"),
         "complete": True})
 
 
@@ -493,6 +496,8 @@ def main():
     p.add_argument("--data-root", required=True)
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--base-model")
+    p.add_argument('--bf-only', action='store_true',
+                   help='历史权重对照：只提取真实BF层，不构造或比较TCPM')
     p.add_argument("--clip-model", required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--device", default="cuda:0")

@@ -75,31 +75,81 @@ def make_splits(rows):
     return folds
 
 
-def probe(x, rows):
+def probe(x, rows, no_pca=False):
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import balanced_accuracy_score, confusion_matrix
     from tools.e14_grouped_linear import transform
+    from sklearn.preprocessing import StandardScaler
     y = np.array([r['orientation'] for r in rows])
     pred = np.empty_like(y)
     folds = []
+    fixed_pred = np.empty_like(y)
     for group, train, test in make_splits(rows):
-        # 固定正则强度，不以外层测试结果挑选参数；标准化/PCA仅拟合训练折。
-        dim = min(16, len(train) - 1, x.shape[1])
-        a, b = transform(x, train, test, dim)
-        model = LogisticRegression(C=1., max_iter=4000, random_state=42)
+        grid = []
+        if no_pca:
+            # 内层同样按来源留出；每次标准化只拟合当前内层训练数据。
+            scores = {c: [] for c in (.0001, .001, .01, .1, 1., 10.)}
+            for _, inner_train, inner_test in make_splits([rows[i] for i in train]):
+                ia, ib = train[inner_train], train[inner_test]
+                scaler = StandardScaler()
+                xa = scaler.fit_transform(x[ia])
+                xb = scaler.transform(x[ib])
+                xa, xb = exact_linear_coordinates(xa, xb)
+                for c in scores:
+                    model = linear_model(c)
+                    model.fit(xa, y[ia])
+                    scores[c].append(float(np.mean(model.predict(xb) == y[ib])))
+            grid = [dict(C=c, inner_accuracy=float(np.mean(v))) for c, v in scores.items()]
+            best = max(grid, key=lambda item: item['inner_accuracy'])['C']
+            scaler = StandardScaler()
+            a, b = scaler.fit_transform(x[train]), scaler.transform(x[test])
+            a, b = exact_linear_coordinates(a, b)
+            model = linear_model(best)
+            control = linear_model(1.)
+            control.fit(a, y[train])
+            fixed_pred[test] = control.predict(b)
+        else:
+            # 固定正则强度，不以外层测试结果挑选参数；标准化/PCA仅拟合训练折。
+            dim = min(16, len(train) - 1, x.shape[1])
+            a, b = transform(x, train, test, dim)
+            model = LogisticRegression(C=1., max_iter=4000, random_state=42)
         model.fit(a, y[train])
         pred[test] = model.predict(b)
         folds.append(dict(source_group=group, accuracy=float(np.mean(pred[test] == y[test]))))
-    return dict(balanced_accuracy=float(balanced_accuracy_score(y, pred)),
+        if no_pca:
+            folds[-1].update(selected_C=best, inner_grid=grid)
+    result = dict(balanced_accuracy=float(balanced_accuracy_score(y, pred)),
                 pairs_both_correct=sum(f['accuracy'] == 1 for f in folds),
                 num_pairs=len(folds), folds=folds,
                 classes=['horizontal', 'vertical'],
                 confusion_matrix=confusion_matrix(y, pred, labels=['horizontal', 'vertical']).tolist(),
                 predictions=[dict(sample_id=r['sample_id'], truth=str(a), prediction=str(b))
                              for r, a, b in zip(rows, y, pred)])
+    if no_pca:
+        result['fixed_C1_control'] = dict(balanced_accuracy=float(balanced_accuracy_score(y, fixed_pred)),
+            predictions=fixed_pred.tolist())
+    return result
 
 
-def evaluate(root):
+def linear_model(c):
+    from sklearn.linear_model import LogisticRegression
+    # 与原PCA探针保持相同分类器；不删除任何特征维度。
+    return LogisticRegression(C=c, solver='lbfgs', max_iter=4000, random_state=42)
+
+
+def exact_linear_coordinates(train, test):
+    # 高维L2线性模型的最优权重位于训练向量张成的空间。
+    # 完整经济型QR只是等距换坐标：不按方差排序、不截断分量，
+    # 保留全部训练内积及测试-训练内积，目标函数与原维度一致。
+    # 测试数据不参与构造基；低维输入直接使用原坐标。
+    if train.shape[1] <= train.shape[0]:
+        return train, test
+    from scipy.linalg import qr
+    basis, r = qr(np.asarray(train, dtype=np.float64).T, mode='economic')
+    return r.T, np.asarray(test, dtype=np.float64) @ basis
+
+
+def evaluate(root, no_pca=False):
     import sklearn
     root = Path(root)
     index = json.loads((root / 'index.json').read_text(encoding='utf-8'))
@@ -119,11 +169,16 @@ def evaluate(root):
         x = np.stack(values)
         if not np.isfinite(x).all():
             raise ValueError('特征非有限：' + key)
-        results[key] = probe(x, rows)
+        results[key] = probe(x, rows, no_pca=no_pca)
         print(key, results[key]['balanced_accuracy'], flush=True)
-    write_json(root / 'real_orientation_report.json', dict(results=results, config=index['config'],
-        protocol=dict(split='leave_one_source_out', C=1., pca_max_components=16,
-                      preprocessing='train_fold_only', sklearn_version=sklearn.__version__),
+    protocol = dict(split='leave_one_source_out', C=1., pca_max_components=16,
+                      preprocessing='train_fold_only', sklearn_version=sklearn.__version__)
+    if no_pca:
+        protocol.update(C='inner_leave_one_source_out', C_grid=[.0001, .001, .01, .1, 1., 10.],
+                        pca_max_components=None, solver='lbfgs', tie_break='smallest_C',
+                        fixed_C1_control=True, coordinates='full_training_span_QR_no_truncation')
+    write_json(root / ('real_orientation_no_pca_report.json' if no_pca else 'real_orientation_report.json'),
+        dict(results=results, config=index['config'], protocol=protocol,
         limits=['仅少量暂定来源组；无显著性结论。',
                 '方向可读出不代表生成器利用；低分也不能证明信息完全丢失。',
                 'meanstd与flatten分别比较；不根据测试分数挑选最佳层或超参数。',
@@ -138,8 +193,9 @@ if __name__ == '__main__':
     p.add_argument('--output', default='eval_outputs/e14_real_orientation_inputs')
     p = sub.add_parser('evaluate')
     p.add_argument('--features', required=True)
+    p.add_argument('--no-pca', action='store_true', help='不降维，内层来源交叉验证选择L2正则强度')
     args = parser.parse_args()
     if args.action == 'prepare':
         prepare(args.candidates, args.output)
     else:
-        evaluate(args.features)
+        evaluate(args.features, args.no_pca)
