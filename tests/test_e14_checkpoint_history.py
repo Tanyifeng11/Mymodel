@@ -1,9 +1,19 @@
 import unittest
 import torch
-from tools.e14_checkpoint_history import CHECKPOINTS, compare, compact, fingerprint
+from tools.e14_checkpoint_history import CHECKPOINTS, compare, compact, fingerprint, checkpoint_paths
 
 
 class HistoryTests(unittest.TestCase):
+    def test_texture_epoch_paths(self):
+        paths = checkpoint_paths('/output', 'texture_epochs')
+        self.assertEqual(list(paths), ['texture_epoch_01', 'texture_epoch_05',
+                                     'texture_epoch_10', 'texture_epoch_20', 'texture_final'])
+        for epoch in (1, 5, 10, 20):
+            self.assertEqual(paths['texture_epoch_%02d' % epoch].as_posix(),
+                '/output/texture_adapter_bf_e20/checkpoint-epoch-%d/texture_adapter.bin' % epoch)
+        self.assertIn('checkpoint-final', paths['texture_final'].as_posix())
+        self.assertEqual(set(checkpoint_paths('/output')), set(CHECKPOINTS))
+
     def test_exact_paths(self):
         self.assertIn('checkpoint-28365/', CHECKPOINTS['e0'])
         self.assertTrue(CHECKPOINTS['texture'].endswith('texture_adapter.bin'))

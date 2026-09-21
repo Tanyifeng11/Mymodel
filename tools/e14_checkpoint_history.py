@@ -21,6 +21,18 @@ CHECKPOINTS = {
     'e5': 'phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt',
 }
 
+TEXTURE_EPOCH_CHECKPOINTS = {
+    'texture_epoch_%02d' % epoch:
+        'texture_adapter_bf_e20/checkpoint-epoch-%d/texture_adapter.bin' % epoch
+    for epoch in (1, 5, 10, 20)
+}
+TEXTURE_EPOCH_CHECKPOINTS['texture_final'] = CHECKPOINTS['texture']
+
+
+def checkpoint_paths(root, suite='history'):
+    selected = TEXTURE_EPOCH_CHECKPOINTS if suite == 'texture_epochs' else CHECKPOINTS
+    return {stage: Path(root) / relative for stage, relative in selected.items()}
+
 
 def module_name(key):
     parts = key.split('.')
@@ -77,7 +89,8 @@ def compact(checkpoint):
 def run(args):
     from checkpoint_utils import load_checkpoint_file
     import torch
-    paths = {stage: Path(args.checkpoint_root) / relative for stage, relative in CHECKPOINTS.items()}
+    suite = getattr(args, 'suite', 'history')
+    paths = checkpoint_paths(args.checkpoint_root, suite)
     # 先检查所有文件，禁止静默跳过或自动选择其他epoch。
     for stage, path in paths.items():
         print(stage, path, flush=True)
@@ -91,7 +104,7 @@ def run(args):
         raise ValueError('本轮要求原来的20张参考图')
     root.mkdir(parents=True, exist_ok=False)
     shutil.copytree(inputs, root / 'inputs')
-    audit = dict(complete=False, stages={}, comparisons=[],
+    audit = dict(complete=False, suite=suite, stages={}, comparisons=[],
                  note='阶段排列用于比较，不代表线性继承链；BF相同不能证明训练来源。',
                  scope='同一输入、预处理和BF层；不加载U-Net，不比较TCPM。')
     previous, previous_stage, seen, jobs = None, None, {}, []
@@ -166,6 +179,8 @@ if __name__ == '__main__':
     sub = parser.add_subparsers(dest='action', required=True)
     p = sub.add_parser('run')
     p.add_argument('--checkpoint-root', required=True)
+    p.add_argument('--suite', choices=['history', 'texture_epochs'], default='history',
+                   help='texture_epochs检查预训练epoch 1/5/10/20及final；缺失直接报错')
     p.add_argument('--inputs', required=True)
     p.add_argument('--output', required=True)
     p.add_argument('--base-model', required=True)
