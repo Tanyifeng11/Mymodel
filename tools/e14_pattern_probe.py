@@ -203,7 +203,7 @@ def extract(args):
 
     rows = read_labels(args.labels)
     eligible = retrieval(np.zeros((len(rows), len(rows))), rows)
-    if not eligible:
+    if not eligible and not getattr(args, 'allow_unmatched_extraction', False):
         raise ValueError("标注集没有同色、跨来源的正负样本组合；请先补齐覆盖")
     print(f"已确认 {len(rows)} 张；可比较查询 {len(eligible)} 张", flush=True)
     checkpoint = load_checkpoint_file(args.checkpoint)
@@ -500,6 +500,8 @@ def main():
     p.add_argument("--height", type=int, default=512)
     p.add_argument("--width", type=int, default=384)
     p.add_argument("--neutral-prompt", default="a garment")
+    p.add_argument('--allow-unmatched-extraction', action='store_true',
+                   help='仅提取配对诊断特征，允许没有类别检索正负样本；不修改标签')
     p.add_argument("--input-color-control", choices=['original', 'rank_binary'], default='original',
                    help='诊断用：预处理后固定两灰度及25%%深色像素；需要重新提取特征')
     p.add_argument("--seed", type=int, default=42)
