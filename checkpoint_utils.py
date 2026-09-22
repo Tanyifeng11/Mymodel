@@ -2,6 +2,30 @@ import os
 import torch
 
 
+def load_texture_warmstart(model, state):
+    """兼容旧预训练中不存在、且当前明确关闭的palette分支。"""
+    expected = model.state_dict()
+    missing = set(expected) - set(state)
+    unexpected = set(state) - set(expected)
+    allowed = ('palette_branch_scale', 'to_k_palette.weight', 'to_v_palette.weight')
+    patches = {}
+    for key in missing:
+        suffix = next((s for s in allowed if key.endswith('.' + s)), None)
+        if suffix is None:
+            raise RuntimeError('完整预训练权重缺少必要参数：' + key)
+        owner = model.get_submodule(key[:-(len(suffix)+1)])
+        if getattr(owner, 'use_palette_tokens', None) is not False:
+            raise RuntimeError('不能为已启用或未知palette分支补权重：' + key)
+        patches[key] = torch.zeros_like(expected[key])
+    if unexpected:
+        raise RuntimeError('完整预训练权重包含未知参数：' + ', '.join(sorted(unexpected)))
+    # 保持其余参数严格加载，包括shape校验；浅拷贝不会复制大权重张量。
+    model.load_state_dict(dict(state, **patches), strict=True)
+    for key in patches:
+        model.get_parameter(key).requires_grad_(False)
+    return sorted(patches)
+
+
 def load_checkpoint_file(path: str):
     ext = os.path.splitext(path)[-1].lower()
     if ext == ".safetensors":

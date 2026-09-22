@@ -26,7 +26,7 @@ from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjec
 from adapter.utils import is_torch2_available
 from models.bf_texture_module import BFTextureConditioner
 from texture_preprocess import preprocess_texture_image
-from checkpoint_utils import extract_texture_metadata
+from checkpoint_utils import extract_texture_metadata, load_texture_warmstart
 
 if is_torch2_available():
     from adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
@@ -595,7 +595,8 @@ def main():
 
     if args.warmstart_full_model:
         full_state = torch.load(args.warmstart_full_model, map_location='cpu')
-        texture_adapter.load_state_dict(full_state, strict=True)
+        filled = load_texture_warmstart(texture_adapter, full_state)
+        accelerator.print(f'[warmstart] 严格加载完成；补齐并冻结关闭的palette参数：{len(filled)}个state键')
         del full_state
 
     weight_dtype = torch.float32
