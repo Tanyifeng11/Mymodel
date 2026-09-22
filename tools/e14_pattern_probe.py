@@ -195,6 +195,16 @@ def image_baselines(image):
     return result
 
 
+def training_preprocess(image, processor, width, height):
+    """与预训练MyDataset一致：FP32归一化后转PIL，再送入CLIP。"""
+    from torchvision import transforms
+    from texture_preprocess import preprocess_texture_image
+    normalized = preprocess_texture_image(image, width=width, height=height, mode='plain_resize')
+    conditioned = transforms.ToPILImage()((normalized * .5 + .5).clamp(0, 1))
+    clip = processor(images=conditioned, return_tensors='pt').pixel_values
+    return normalized.unsqueeze(0), clip
+
+
 def extract(args):
     import torch
     from diffusers.image_processor import VaeImageProcessor
@@ -209,6 +219,10 @@ def extract(args):
     print(f"已确认 {len(rows)} 张；可比较查询 {len(eligible)} 张", flush=True)
     checkpoint = load_checkpoint_file(args.checkpoint)
     meta = checkpoint.get("meta", {})
+    training_input = getattr(args, 'preprocess_protocol', 'probe') == 'texture_train'
+    if training_input and (meta.get('texture_preprocess_mode') != 'plain_resize' or
+                           getattr(args, 'input_color_control', 'original') != 'original'):
+        raise ValueError('训练输入对照仅支持元数据确认的plain_resize且不叠加颜色控制')
     if meta.get("texture_mode", "patch_resampled") != "patch_resampled":
         raise ValueError("E14 要求 E5 patch_resampled checkpoint")
     state = checkpoint["bf_texture_conditioner"]
@@ -267,8 +281,14 @@ def extract(args):
                 raise ValueError("相同参考图不能分属不同来源组")
             actual_hashes[digest] = row["source_group"]
             row["pixel_sha256"] = digest
-            clip_pixels = processor(images=[image], return_tensors="pt").pixel_values.to(args.device, dtype)
-            texture = image_processor.preprocess([image], height=args.height, width=args.width).to(args.device, dtype)
+            if training_input:
+                normalized, clip_pixels = training_preprocess(image, processor, args.width, args.height)
+                cnn_input = normalized.to(args.device, dtype)
+                texture = (normalized * .5 + .5).to(args.device, dtype)
+                clip_pixels = clip_pixels.to(args.device, dtype)
+            else:
+                clip_pixels = processor(images=[image], return_tensors="pt").pixel_values.to(args.device, dtype)
+                texture = image_processor.preprocess([image], height=args.height, width=args.width).to(args.device, dtype)
             if input_control == 'rank_binary':
                 mean = torch.tensor(processor.image_mean, device=args.device, dtype=torch.float32).view(1, 3, 1, 1)
                 std = torch.tensor(processor.image_std, device=args.device, dtype=torch.float32).view(1, 3, 1, 1)
@@ -293,7 +313,7 @@ def extract(args):
             clip = vision(clip_pixels,
                           output_hidden_states=True)
             inputs = dict(clip_image_embeds=clip.image_embeds, clip_vision_tokens=clip.hidden_states[-1][:, 1:, :],
-                          texture_images=texture * 2 - 1, text_embeds=neutral)
+                          texture_images=cnn_input if training_input else texture * 2 - 1, text_embeds=neutral)
             values = capture(bf, tcpm, inputs, neutral, encode(row["caption"]))
             features, shapes = readouts(values, args.seed)
             features.update(image_baselines(image))
@@ -496,6 +516,8 @@ def main():
     p.add_argument("--data-root", required=True)
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--base-model")
+    p.add_argument('--preprocess-protocol', choices=['probe', 'texture_train'], default='probe',
+                   help='texture_train重放预训练plain_resize输入；probe保留原E14协议')
     p.add_argument('--bf-only', action='store_true',
                    help='历史权重对照：只提取真实BF层，不构造或比较TCPM')
     p.add_argument("--clip-model", required=True)

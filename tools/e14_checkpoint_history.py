@@ -31,6 +31,8 @@ TEXTURE_EPOCH_CHECKPOINTS['texture_final'] = CHECKPOINTS['texture']
 
 def checkpoint_paths(root, suite='history'):
     selected = TEXTURE_EPOCH_CHECKPOINTS if suite == 'texture_epochs' else CHECKPOINTS
+    if suite == 'texture_endpoints':
+        selected = {k: TEXTURE_EPOCH_CHECKPOINTS[k] for k in ('texture_epoch_01', 'texture_final')}
     return {stage: Path(root) / relative for stage, relative in selected.items()}
 
 
@@ -147,7 +149,8 @@ def run(args):
                 '--checkpoint', str(slim), '--bf-only', '--allow-unmatched-extraction',
                 '--labels', str(root / 'inputs/feature_labels.csv'), '--data-root', str(root / 'inputs'),
                 '--base-model', args.base_model, '--clip-model', args.clip_model,
-                '--output', str(root / stage / 'representations')]
+                '--output', str(root / stage / 'representations'),
+                '--preprocess-protocol', getattr(args, 'preprocess_protocol', 'probe')]
             subprocess.run(command, check=True)
         write_json(root / 'extraction_complete.json', dict(complete=True,
             feature_stages=[stage for stage, _ in jobs], samples=len(rows)))
@@ -179,9 +182,10 @@ if __name__ == '__main__':
     sub = parser.add_subparsers(dest='action', required=True)
     p = sub.add_parser('run')
     p.add_argument('--checkpoint-root', required=True)
-    p.add_argument('--suite', choices=['history', 'texture_epochs'], default='history',
+    p.add_argument('--suite', choices=['history', 'texture_epochs', 'texture_endpoints'], default='history',
                    help='texture_epochs检查预训练epoch 1/5/10/20及final；缺失直接报错')
     p.add_argument('--inputs', required=True)
+    p.add_argument('--preprocess-protocol', choices=['probe', 'texture_train'], default='probe')
     p.add_argument('--output', required=True)
     p.add_argument('--base-model', required=True)
     p.add_argument('--clip-model', required=True)
