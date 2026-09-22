@@ -18,7 +18,7 @@ from PIL import Image
 from transformers import CLIPImageProcessor
 from accelerate import Accelerator
 from accelerate.logging import get_logger
-from accelerate.utils import ProjectConfiguration
+from accelerate.utils import ProjectConfiguration, set_seed
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
@@ -143,6 +143,7 @@ class MyDataset(torch.utils.data.Dataset):
             "text_input_ids": text_input_ids,
             "clip_texture_image": clip_texture_image,
             "drop_image_embed": drop_image_embed,
+            "sample_index": idx,
         }
 
     def __len__(self):
@@ -190,6 +191,7 @@ def collate_fn(data):
         "text_input_ids": text_input_ids,
         "clip_texture_images": clip_texture_images,
         "drop_image_embeds": drop_image_embeds,
+        "sample_indices": [example['sample_index'] for example in data],
     }
 
 
@@ -212,7 +214,7 @@ class TextureAdapter(torch.nn.Module):
             texture_mode=texture_mode,
         )[0]
 
-    def forward(self, noisy_latents, timesteps, encoder_hidden_states, clip_outputs, texture_images, texture_mode="patch_resampled", **kwargs):
+    def forward(self, noisy_latents, timesteps, encoder_hidden_states, clip_outputs, texture_images, texture_mode="patch_resampled", drop_image_embeds=None, **kwargs):
         if texture_images is None:
             raise ValueError("texture_images must be provided for BF texture conditioning.")
         texture_tokens = self.get_texture_condition_tokens(
@@ -221,6 +223,13 @@ class TextureAdapter(torch.nn.Module):
             texture_mode=texture_mode,
             clip_hidden_layer=kwargs.get("clip_hidden_layer", -1),
         )
+        # 在融合后的token上关闭整个参考条件，覆盖CLIP patch与CNN两条路径。
+        # 不只清零pooled embedding：patch_resampled实际上不使用它。
+        if drop_image_embeds is not None and kwargs.get('image_dropout_mode', 'zero_final_tokens') == 'zero_final_tokens':
+            dropped = torch.as_tensor(drop_image_embeds, device=texture_tokens.device, dtype=torch.bool)
+            if dropped.shape != (texture_tokens.shape[0],):
+                raise ValueError('drop_image_embeds必须是每个batch样本一个标志')
+            texture_tokens = texture_tokens.masked_fill(dropped[:, None, None], 0)
         encoder_hidden_states = torch.cat([encoder_hidden_states, texture_tokens], dim=1)
         noise_pred = self.unet(noisy_latents, timesteps, encoder_hidden_states).sample
         return noise_pred, texture_tokens
@@ -366,6 +375,11 @@ def parse_args():
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-2)
     parser.add_argument("--num_train_epochs", type=int, default=100)
+    parser.add_argument('--max_train_steps', type=int, default=0)
+    parser.add_argument('--training_seed', type=int, default=None)
+    parser.add_argument('--warmstart_full_model', default=None,
+                        help='完整TextureAdapter state_dict；只加载权重，优化器和步数从零开始')
+    parser.add_argument('--image_dropout_mode', choices=['zero_final_tokens', 'legacy_pooled'], default='zero_final_tokens')
     parser.add_argument("--train_batch_size", type=int, default=8)
     parser.add_argument("--dataloader_num_workers", type=int, default=0)
     parser.add_argument("--i_drop_rate", type=float, default=0.05)
@@ -480,12 +494,16 @@ def run_texture_validation(accelerator, args, texture_adapter, tokenizer, text_e
 
 def main():
     args = parse_args()
+    if args.training_seed is not None:
+        set_seed(args.training_seed)
+    if args.warmstart_full_model and (args.resume_from_checkpoint or args.pretrained_texture_adapter_path):
+        raise ValueError('完整权重warmstart不能与resume或adapter初始化叠加')
 
     logging_dir = Path(args.output_dir, args.logging_dir)
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
     accelerator = Accelerator(
         mixed_precision=args.mixed_precision,
-        log_with=args.report_to,
+        log_with=None if args.report_to == 'none' else args.report_to,
         project_config=accelerator_project_config,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
     )
@@ -575,6 +593,11 @@ def main():
         ckpt_path=load_adapter_ckpt_path,
     )
 
+    if args.warmstart_full_model:
+        full_state = torch.load(args.warmstart_full_model, map_location='cpu')
+        texture_adapter.load_state_dict(full_state, strict=True)
+        del full_state
+
     weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
         weight_dtype = torch.float16
@@ -620,7 +643,9 @@ def main():
     )
 
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    max_train_steps = args.max_train_steps or args.num_train_epochs * num_update_steps_per_epoch
+    if args.max_train_steps:
+        args.num_train_epochs = math.ceil(max_train_steps / num_update_steps_per_epoch)
     lr_scheduler = get_scheduler(
         args.lr_scheduler,
         optimizer=optimizer,
@@ -655,6 +680,10 @@ def main():
         "bf_base_channels": args.bf_base_channels,
         "clip_embeddings_dim": image_encoder.config.hidden_size,
         "texture_loss_target_mode": args.texture_loss_target_mode,
+        "image_dropout_mode": args.image_dropout_mode,
+        "training_seed": args.training_seed,
+        "warmstart_full_model": args.warmstart_full_model,
+        "training_args": vars(args),
     }
 
     global_step = 0
@@ -683,6 +712,9 @@ def main():
         )
     elif pretrained_adapter_path is not None:
         global_step = parse_step_from_ckpt_path(pretrained_adapter_path)
+
+    if args.warmstart_full_model:
+        global_step = 0
 
     with open(args.data_json_file, "r", encoding="utf-8") as f:
         raw_items = json.load(f)
@@ -727,12 +759,9 @@ def main():
                     output_hidden_states=True,
                 )
 
-                image_embeds = clip_outputs.image_embeds
-                image_embeds_ = []
-                for image_embed, drop_image_embed in zip(image_embeds, batch["drop_image_embeds"]):
-                    image_embeds_.append(torch.zeros_like(image_embed) if drop_image_embed == 1 else image_embed)
-                image_embeds = torch.stack(image_embeds_)
-                clip_outputs.image_embeds = image_embeds
+                if args.image_dropout_mode == 'legacy_pooled':
+                    dropped = torch.as_tensor(batch['drop_image_embeds'], device=clip_outputs.image_embeds.device, dtype=torch.bool)
+                    clip_outputs.image_embeds = clip_outputs.image_embeds.masked_fill(dropped[:, None], 0)
 
                 with torch.no_grad():
                     encoder_hidden_states = text_encoder(batch["text_input_ids"].to(accelerator.device))[0]
@@ -745,6 +774,8 @@ def main():
                     texture_images=batch["texture_images"].to(accelerator.device, dtype=weight_dtype),
                     texture_mode=args.texture_mode,
                     clip_hidden_layer=args.clip_hidden_layer,
+                    drop_image_embeds=batch["drop_image_embeds"],
+                    image_dropout_mode=args.image_dropout_mode,
                 )
 
                 loss_eps = compute_loss(noise_pred, noise, loss_type=args.loss_type, huber_c=args.huber_c)
@@ -782,6 +813,13 @@ def main():
 
                 if accelerator.sync_gradients:
                     global_step += 1
+                    checkpoint_meta['train_global_step'] = global_step
+                    if accelerator.is_main_process:
+                        with open(os.path.join(args.output_dir, 'training_metrics.jsonl'), 'a', encoding='utf-8') as log:
+                            log.write(json.dumps(dict(step=global_step, loss=avg_loss,
+                                loss_eps=float(loss_eps.detach()), loss_style=float(loss_style.detach()),
+                                drop_flags=batch['drop_image_embeds'], sample_indices=batch['sample_indices'],
+                                token_abs_mean=texture_tokens.detach().float().abs().mean((1,2)).cpu().tolist()))+'\n')
                     accelerator.log(
                         {
                             "train/loss": avg_loss,
@@ -803,7 +841,7 @@ def main():
                             f"loss={avg_loss:.4f} lr={optimizer.param_groups[0]['lr']:.2e}"
                         )
 
-                    if accelerator.is_main_process and global_step % args.validation_steps == 0:
+                    if accelerator.is_main_process and args.validation_steps > 0 and global_step % args.validation_steps == 0:
                         run_texture_validation(
                             accelerator,
                             args,
@@ -823,10 +861,14 @@ def main():
                         save_training_checkpoint(accelerator, texture_adapter, save_dir, meta=checkpoint_meta)
 
             begin = time.perf_counter()
+            if args.max_train_steps and global_step >= max_train_steps:
+                break
 
         epoch_save_dir = os.path.join(args.output_dir, f"checkpoint-epoch-{epoch + 1}")
         save_training_checkpoint(accelerator, texture_adapter, epoch_save_dir, meta=checkpoint_meta)
         accelerator.print(f"[train] epoch {epoch + 1}/{args.num_train_epochs} saved to {epoch_save_dir}")
+        if args.max_train_steps and global_step >= max_train_steps:
+            break
 
     final_dir = os.path.join(args.output_dir, "checkpoint-final")
     save_training_checkpoint(accelerator, texture_adapter, final_dir, meta=checkpoint_meta)
