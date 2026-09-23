@@ -8,6 +8,24 @@ from PIL import Image, ImageDraw
 from tools.e14_pattern_probe import pixel_hash, write_json
 
 
+def install_source_balance(resampler, clip_factor, cnn_factor):
+    """仅在本次推理的 resampler 上加来源 logit bias，不修改模型权重。"""
+    from tools.e14_source_balance import source_bias
+    if (clip_factor, cnn_factor) == (1., 1.):
+        return None
+
+    def before(module, positional, kwargs):
+        query, key = positional[:2]
+        if kwargs.get('attn_mask') is not None:
+            raise ValueError('来源对照不应叠加其他 attention mask')
+        kwargs = dict(kwargs)
+        kwargs['attn_mask'] = source_bias(key.shape[1], query.shape[1],
+            clip_factor, cnn_factor, query.device).to(dtype=query.dtype)
+        return positional, kwargs
+
+    return resampler.register_forward_pre_hook(before, with_kwargs=True)
+
+
 def generate(args):
     import torch
     from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel
@@ -17,9 +35,16 @@ def generate(args):
     from checkpoint_utils import load_texture_warmstart
     from tools.e14_pattern_probe import training_preprocess, read_labels
     root, inputs = Path(args.output), Path(args.inputs)
-    paths = {'baseline': Path(args.baseline),
-             'legacy_pooled': Path(args.ab_root)/'legacy_pooled/checkpoint-final/pytorch_model.bin',
-             'zero_final_tokens': Path(args.ab_root)/'zero_final_tokens/checkpoint-final/pytorch_model.bin'}
+    balance = getattr(args, 'source_balance', False)
+    factors = {'baseline': (1.,1.), 'clip_2': (2.,1.), 'clip_2_cnn1_075': (2.,.75)}
+    if balance:
+        paths = {stage: Path(args.baseline) for stage in factors}
+    else:
+        if not args.ab_root:
+            raise ValueError('dropout 对照需要 --ab-root')
+        paths = {'baseline': Path(args.baseline),
+                 'legacy_pooled': Path(args.ab_root)/'legacy_pooled/checkpoint-final/pytorch_model.bin',
+                 'zero_final_tokens': Path(args.ab_root)/'zero_final_tokens/checkpoint-final/pytorch_model.bin'}
     for p in paths.values():
         if not p.is_file(): raise FileNotFoundError(str(p))
     rows = {r['sample_id']: r for r in read_labels(inputs/'feature_labels.csv')}
@@ -39,7 +64,8 @@ def generate(args):
     processor=CLIPImageProcessor()
     ids=tokenizer(args.prompt,padding='max_length',max_length=tokenizer.model_max_length,truncation=True,return_tensors='pt').input_ids.to(device)
     with torch.inference_mode(): text_h=text(ids)[0]
-    manifest=dict(complete=False,config=vars(args),records=[],
+    manifest=dict(complete=False,config=vars(args),records=[],stages=list(paths),
+        source_balance_factors=factors if balance else None,
         protocol='DDIM eta=0; guidance_scale=1; no negative/unconditional branch; no sketch; fixed CPU noise per seed',
         limits=['仅texture预训练系统，不能直接代表E5联合模型。',
                 '比较同seed下原图和旋转；方向判断需服装内部人工ROI，不能用全图轮廓替代纹理。'])
@@ -65,6 +91,7 @@ def generate(args):
         # 与训练相同保留BF的train路径（MHA实现路径），冻结全部参数。
         model.to(device=device,dtype=dtype).requires_grad_(False)
         model.unet.eval()
+        balance_handle = install_source_balance(bf.resampler, *factors[stage]) if balance else None
         for seed in (42,142):
             noise=torch.randn((1,4,64,48),generator=torch.Generator().manual_seed(seed))
             noise_hash=hashlib.sha256(noise.numpy().tobytes()).hexdigest()
@@ -76,6 +103,8 @@ def generate(args):
                 with torch.inference_mode():
                     visual=vision(clip.to(device,dtype),output_hidden_states=True)
                     tokens=model.get_texture_condition_tokens(visual,cnn.to(device,dtype))
+                    if not torch.isfinite(tokens).all():
+                        raise ValueError('纹理 tokens 非有限')
                     context=torch.cat([text_h,tokens],dim=1)
                     latents=noise.to(device,dtype)*scheduler.init_noise_sigma
                     for t in scheduler.timesteps:
@@ -88,9 +117,14 @@ def generate(args):
                 Image.fromarray(array).save(root/target)
                 manifest['records'].append(dict(stage=stage,checkpoint=str(path),seed=seed,
                     sample_id=row['sample_id'],orientation=row['orientation'],image=str(target),
-                    noise_sha256=noise_hash,reference_sha256=row['pixel_sha256'],filled_palette_keys=filled))
+                    noise_sha256=noise_hash,reference_sha256=row['pixel_sha256'],filled_palette_keys=filled,
+                    source_factors=factors[stage] if balance else None,
+                    texture_token_rms=float(tokens.float().square().mean().sqrt()),
+                    texture_token_sha256=hashlib.sha256(tokens.detach().cpu().numpy().tobytes()).hexdigest()))
                 write_json(root/'manifest.json',manifest)
                 print(stage,seed,row['sample_id'],flush=True)
+        if balance_handle is not None:
+            balance_handle.remove()
         del model,unet,bf,procs,context,tokens
         torch.cuda.empty_cache()
     manifest['complete']=True
@@ -107,7 +141,7 @@ def report(root):
         for seed in (42,142):
             canvas=Image.new('RGB',(3*384,2*540),'white');draw=ImageDraw.Draw(canvas)
             hashes=set()
-            for col,stage in enumerate(['baseline','legacy_pooled','zero_final_tokens']):
+            for col,stage in enumerate(data.get('stages',['baseline','legacy_pooled','zero_final_tokens'])):
                 for j,variant in enumerate(['original','rot90']):
                     sid='ref_%04d_%s'%(ref,variant);r=lookup[stage,seed,sid];hashes.add(r['noise_sha256'])
                     with Image.open(root/r['image']) as im: canvas.paste(im,(col*384,j*540+28))
@@ -123,7 +157,9 @@ def report(root):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
     q=sub.add_parser('run')
-    for name in ['baseline','ab-root','inputs','base-model','clip-model','output']:q.add_argument('--'+name,required=True)
+    for name in ['baseline','inputs','base-model','clip-model','output']:q.add_argument('--'+name,required=True)
+    q.add_argument('--ab-root')
+    q.add_argument('--source-balance',action='store_true',help='同一baseline权重的三组来源配比，24张')
     q.add_argument('--device',default='cuda:0');q.add_argument('--steps',type=int,default=50)
     q.add_argument('--prompt',default='a sleeveless dress on a plain white background')
     q=sub.add_parser('report');q.add_argument('--root',required=True)
