@@ -692,6 +692,10 @@ class IPAttnProcessor2_0(torch.nn.Module):
                     self.last_tcpm_mask_inner_norm = inner.norm(dim=-1).mean()
                     self.last_tcpm_mask_outer_norm = outer.norm(dim=-1).mean()
                 texture_residual = texture_residual * mask_flat
+            # 可选诊断回调：观察实际加入 attention 的纹理残差，不修改计算。
+            observer = getattr(self, "texture_probe_observer", None)
+            if observer is not None:
+                observer(texture_residual)
             hidden_states = hidden_states + texture_residual
 
         if use_palette_adapter and palette_hidden_states is not None:
