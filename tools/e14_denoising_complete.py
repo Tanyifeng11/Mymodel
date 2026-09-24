@@ -29,11 +29,12 @@ def color_pairs(rows,indices,hashes,root):
 
 def aggregate(records):
     if not records:return {}
-    conditions=[k for k in records[0]['losses'] if k!='matched']+['wrong_average']
+    conditions=sorted({k for r in records for k in r['losses'] if k!='matched'})+['wrong_average']
     result={}
     for condition in conditions:
         samples={}
         for r in records:
+            if condition!='wrong_average' and condition not in r['losses']:continue
             loss=(r['losses']['wrong_1']+r['losses']['wrong_2'])/2 if condition=='wrong_average' else r['losses'][condition]
             samples.setdefault(r['sample_index'],[]).append(loss-r['losses']['matched'])
         means={str(i):float(np.mean(v)) for i,v in samples.items()}

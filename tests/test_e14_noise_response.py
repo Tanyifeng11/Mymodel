@@ -33,6 +33,13 @@ class NoiseResponseTests(unittest.TestCase):
         proc.scale = 0
         disabled = proc(attn,x,encoder_hidden_states=context)
         torch.testing.assert_close(zero,disabled,rtol=0,atol=0)
+        # 真正processor路径：全零区域干预等价于关闭纹理分支。
+        proc.scale = 1
+        proc.texture_probe_transform = lambda residual: residual * 0
+        masked = proc(attn,x,encoder_hidden_states=context)
+        torch.testing.assert_close(masked,disabled,rtol=0,atol=0)
+        proc.texture_probe_transform = lambda residual: residual
+        torch.testing.assert_close(proc(attn,x,encoder_hidden_states=context),original,rtol=0,atol=0)
 
 
 if __name__ == '__main__':

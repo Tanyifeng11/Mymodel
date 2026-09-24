@@ -45,7 +45,8 @@ def run(args):
     from models.bf_texture_module import BFTextureConditioner
     from checkpoint_utils import load_texture_warmstart
     device,dtype=args.device,torch.float16
-    full=getattr(args,'complete_suite',False)
+    causal=getattr(args,'causal_suite',False)
+    full=getattr(args,'complete_suite',False) or causal
     if full:
         from tools.e14_denoising_complete import color_pairs,FULL_STEPS,analyze
         args.regions=True
@@ -61,6 +62,21 @@ def run(args):
         with Image.open(Path(args.data_root)/row.get('texture',row.get('color'))) as im:hashes[i]=pixel_hash(im.convert('RGB'))
     pairs=choose_pairs(dataset.data,indices,hashes)
     colors=color_pairs(dataset.data,indices,hashes,args.data_root) if full else {}
+    pair_review={};verified={}
+    if causal:
+        if not args.mask_root or not args.previous_report:raise ValueError('统一诊断需要已修正mask与前次report')
+        from tools.e14_causal_suite import load_masks,configure_gate,verdict,generate_fixed,GENERATION_IDS
+        from tools.e14_dropout_generation import install_source_balance
+        if not all(i in indices for i in GENERATION_IDS):raise ValueError('固定生成样本不在清单中')
+        if args.pair_review:
+            pair_review=json.loads(Path(args.pair_review).read_text(encoding='utf-8'))
+            for entry in pair_review.get('pairs',[]):
+                if entry.get('status')!='verified_same_color_different_pattern':continue
+                i,j=entry['sample_index'],entry['reference_index']
+                if i not in indices or j not in indices or i==j or hashes[i]==hashes[j]:raise ValueError('已核验配对不合法')
+                if not entry.get('reviewer') or not entry.get('notes'):raise ValueError('核验配对缺少审核人/依据')
+                if entry.get('target_reference_hash')!=hashes[i] or entry.get('donor_reference_hash')!=hashes[j]:raise ValueError('审核图像hash不符')
+                verified[i]=j
     previous=None
     if getattr(args,'previous_report',None):
         previous=json.loads(Path(args.previous_report).read_text(encoding='utf-8'))
@@ -90,6 +106,11 @@ def run(args):
     model=TextureAdapter(unet,torch.nn.ModuleList(unet.attn_processors.values()),bf)
     state=torch.load(args.checkpoint,map_location='cpu');filled=load_texture_warmstart(model,state);del state
     model.to(device=device,dtype=dtype).requires_grad_(False);unet.eval()
+    if causal:
+        base_unet=UNet2DConditionModel.from_pretrained(args.base_model,subfolder='unet',local_files_only=True).to(device,dtype).eval().requires_grad_(False)
+        causal_masks,corrected_parts=load_masks(args.mask_root,indices,out,device)
+        (out/'token_cache').mkdir()
+    balanced={};balanced_rotated={}
     tokens={};targets={};texts={};regions={};rotated={}
     spatial=getattr(args,'regions',False)
     if spatial:
@@ -101,6 +122,9 @@ def run(args):
                 '全latent epsilon MSE不是生成质量或服装局部指标；无CFG、无sketch、不训练。',
                 '每目标固定一次VAE后验采样；各条件共用目标、噪声、时间步和文本。',
                 '按样本汇总；两个seed和多个时间步不是独立样本。'])
+    if causal:
+        report['verified_pair_review']=dict(verified_count=len(verified),total=len(indices),
+            status='available' if verified else 'unresolved_no_verified_pairs',review=pair_review)
     with torch.inference_mode():
         for i in indices:
             batch=dataset[i]
@@ -119,11 +143,23 @@ def run(args):
                 cnn,clip=training_preprocess(rotation,dataset.clip_image_processor,384,512)
                 visual_rot=vision(clip.to(device,dtype),output_hidden_states=True)
                 rotated[i]=model.get_texture_condition_tokens(visual_rot,cnn.to(device,dtype)).detach()
+            if causal:
+                handle=install_source_balance(bf.resampler,2.,.75)
+                try:
+                    balanced[i]=model.get_texture_condition_tokens(visual,batch['texture_image'][None].to(device,dtype)).detach()
+                    balanced_rotated[i]=model.get_texture_condition_tokens(visual_rot,cnn.to(device,dtype)).detach()
+                finally:handle.remove()
+                np.savez_compressed(out/'token_cache'/('%05d.npz'%i),matched=tokens[i].float().cpu().numpy(),
+                    rot90=rotated[i].float().cpu().numpy(),balanced=balanced[i].float().cpu().numpy(),balanced_rot90=balanced_rotated[i].float().cpu().numpy())
             report['samples'].append(dict(sample_index=i,cloth=row['cloth'],caption=row['caption'],
                 matched_texture=row.get('texture',row.get('color')),reference_hash=hashes[i],wrong_indices=pairs[i]))
             if full:report['samples'][-1]['color_nearest']=colors[i]
             if spatial:
-                regions[i],info=prepare(row,args.data_root,out,i,tuple(targets[i].shape[-2:]))
+                if causal:
+                    regions[i]=corrected_parts[i]
+                    info=dict(mask_source='reviewed_113719',manual_review='assistant_coarse_not_ground_truth',
+                        mask_low_confidence=False,latent_region_pixels={k:int(v.sum()) for k,v in regions[i].items()})
+                else:regions[i],info=prepare(row,args.data_root,out,i,tuple(targets[i].shape[-2:]))
                 report['samples'][-1]['region_diagnostics']=info
             canvas=Image.new('RGB',((6 if full else 4)*192,280),'white');draw=ImageDraw.Draw(canvas)
             items=[('target',row['cloth'])]+[(label,dataset.data[j].get('texture',dataset.data[j].get('color')))
@@ -137,12 +173,17 @@ def run(args):
             if full:
                 canvas.paste(rotation.resize((192,256)),(5*192,24));draw.text((5*192+3,4),'rot90',fill='black')
             canvas.save(out/'pairs'/('%05d.png'%i))
-        del vae,vision,text
+        del vision,text
+        if not causal:del vae
         torch.cuda.empty_cache()
         for i in indices:
             conditions={'matched':tokens[i],'wrong_1':tokens[pairs[i][0]],'wrong_2':tokens[pairs[i][1]],'zero_tokens':torch.zeros_like(tokens[i])}
             if full:
                 conditions.update(color_nearest=tokens[colors[i]['index']],rot90=rotated[i])
+                if causal:
+                    conditions.update(balanced=balanced[i],balanced_rot90=balanced_rotated[i],
+                        region_all=tokens[i],region_window=tokens[i],base_unet=tokens[i])
+                    if i in verified:conditions['verified_pattern']=tokens[verified[i]]
                 if not all(bool(torch.isfinite(v).all()) for v in conditions.values()):raise ValueError('条件tokens非有限')
                 report['samples'][indices.index(i)]['token_checks']={name:dict(
                     finite=bool(torch.isfinite(token).all()),
@@ -156,7 +197,10 @@ def run(args):
                     noisy=scheduler.add_noise(targets[i],noise,t)
                     losses={};reference=None;response={};maps={}
                     for name,token in conditions.items():
-                        pred=unet(noisy,t,encoder_hidden_states=torch.cat([texts[i],token],1)).sample
+                        gate=configure_gate(unet,causal_masks[i],name,timestep) if causal else None
+                        pred=(base_unet(noisy,t,encoder_hidden_states=texts[i]).sample if causal and name=='base_unet'
+                              else unet(noisy,t,encoder_hidden_states=torch.cat([texts[i],token],1)).sample)
+                        if gate is not None and gate.calls!=len([p for p in unet.attn_processors.values() if hasattr(p,'to_k_ip')]):raise ValueError('区域mask未覆盖所有纹理层')
                         if not torch.isfinite(pred).all():raise ValueError('预测非有限')
                         losses[name]=float((pred.float()-noise.float()).square().mean())
                         if spatial:
@@ -165,11 +209,13 @@ def run(args):
                         response[name]=float((pred.float()-reference).square().mean().sqrt())
                     repeat_error=None
                     if full and seed==42 and timestep==181:
+                        if causal:configure_gate(unet,None,'matched',timestep)
                         repeat=unet(noisy,t,encoder_hidden_states=torch.cat([texts[i],tokens[i]],1)).sample
                         repeat_error=float((repeat.float()-reference).abs().max())
                     report['records'].append(dict(sample_index=i,seed=seed,timestep=timestep,losses=losses,
                         prediction_delta_rms=response,noise_sha256=hashlib.sha256(cpu_noise.numpy().tobytes()).hexdigest()))
                     if full:report['records'][-1]['matched_repeat_max_abs']=repeat_error
+                    if causal:report['records'][-1]['region_window_expected_active']=141<=timestep<=261
                     if spatial:
                         filename='error_maps/%05d_seed%d_t%d.npz'%(i,seed,timestep)
                         np.savez_compressed(out/filename,**maps)
@@ -195,6 +241,12 @@ def run(args):
         report['previous_replay_close']=max(errors)<1e-5
     report['complete']=True;write_json(out/'denoising_report.json',report)
     if full:analyze(out)
+    if causal:
+        verdict(out)
+        from diffusers import DDIMScheduler
+        del base_unet
+        torch.cuda.empty_cache()
+        with torch.inference_mode():generate_fixed(args,unet,vae,DDIMScheduler,texts,tokens,balanced,causal_masks,out)
 
 
 if __name__=='__main__':
@@ -204,4 +256,7 @@ if __name__=='__main__':
     p.add_argument('--regions',action='store_true')
     p.add_argument('--previous-report')
     p.add_argument('--complete-suite',action='store_true')
+    p.add_argument('--causal-suite',action='store_true')
+    p.add_argument('--mask-root')
+    p.add_argument('--pair-review')
     run(p.parse_args())
