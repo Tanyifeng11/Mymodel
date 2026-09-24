@@ -48,8 +48,9 @@ def build_inference_args(args):
     return argparse.Namespace(
         GAM_model_ckpt=args.checkpoint,
         texture_ckpt=args.texture_ckpt or args.checkpoint,
-        base_model_path=args.base_model,
-        vae_model_path=args.base_model,
+        # auto 表示沿用 checkpoint metadata 的 SD 根目录与 VAE 子目录。
+        base_model_path=args.base_model_path,
+        vae_model_path=args.vae_model_path,
         image_encoder_path=args.clip_model,
         device=args.device,
         width=None, height=None,  # None = 沿用 checkpoint metadata 的分辨率
@@ -328,6 +329,8 @@ if __name__ == "__main__":
     for name in ["manifest", "data-root", "checkpoint", "texture-ckpt", "base-model",
                  "clip-model", "mask-root", "output"]:
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--base-model-path", default="auto")
+    parser.add_argument("--vae-model-path", default="auto")
     parser.add_argument("--count", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--steps", type=int, default=50)
