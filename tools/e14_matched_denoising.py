@@ -45,6 +45,10 @@ def run(args):
     from models.bf_texture_module import BFTextureConditioner
     from checkpoint_utils import load_texture_warmstart
     device,dtype=args.device,torch.float16
+    full=getattr(args,'complete_suite',False)
+    if full:
+        from tools.e14_denoising_complete import color_pairs,FULL_STEPS,analyze
+        args.regions=True
     tokenizer=CLIPTokenizer.from_pretrained(args.base_model,subfolder='tokenizer',local_files_only=True)
     dataset=MyDataset(args.manifest,tokenizer,height=512,width=384,image_root_path=args.data_root,
                       texture_preprocess_mode='plain_resize',t_drop_rate=0,i_drop_rate=0,ti_drop_rate=0)
@@ -56,6 +60,17 @@ def run(args):
         row=dataset.data[i]
         with Image.open(Path(args.data_root)/row.get('texture',row.get('color'))) as im:hashes[i]=pixel_hash(im.convert('RGB'))
     pairs=choose_pairs(dataset.data,indices,hashes)
+    colors=color_pairs(dataset.data,indices,hashes,args.data_root) if full else {}
+    previous=None
+    if getattr(args,'previous_report',None):
+        previous=json.loads(Path(args.previous_report).read_text(encoding='utf-8'))
+        if not previous['complete']:raise ValueError('前次结果不完整')
+        if [r['sample_index'] for r in previous['samples']]!=indices:raise ValueError('样本清单与前次不一致')
+        for r in previous['samples']:
+            i=r['sample_index'];row=dataset.data[i]
+            if (r['reference_hash']!=hashes[i] or r['wrong_indices']!=pairs[i]
+                or r['cloth']!=row['cloth'] or r['caption']!=row['caption']):
+                raise ValueError('配对/数据与前次不一致')
     out=Path(args.output);out.mkdir(parents=True,exist_ok=False);(out/'pairs').mkdir()
     scheduler=DDPMScheduler.from_pretrained(args.base_model,subfolder='scheduler',local_files_only=True)
     if scheduler.config.prediction_type!='epsilon':raise ValueError('当前训练损失要求epsilon预测')
@@ -75,7 +90,11 @@ def run(args):
     model=TextureAdapter(unet,torch.nn.ModuleList(unet.attn_processors.values()),bf)
     state=torch.load(args.checkpoint,map_location='cpu');filled=load_texture_warmstart(model,state);del state
     model.to(device=device,dtype=dtype).requires_grad_(False);unet.eval()
-    tokens={};targets={};texts={}
+    tokens={};targets={};texts={};regions={};rotated={}
+    spatial=getattr(args,'regions',False)
+    if spatial:
+        from tools.e14_denoising_regions import prepare,regional_summary
+        (out/'error_maps').mkdir()
     report=dict(complete=False,config=vars(args),records=[],samples=[],filled_palette_keys=filled,
         limits=['训练集清单配对不保证人工语义正确；不同路径/像素不保证独立布料。',
                 '随机错误参考未匹配颜色，优势可能来自颜色；不能直接证明局部图案保真。',
@@ -93,42 +112,96 @@ def run(args):
             targets[i]=(posterior.mean+posterior.std*eta)*vae.config.scaling_factor
             if not torch.isfinite(targets[i]).all():raise ValueError('VAE输出非有限')
             row=dataset.data[i]
+            if full:
+                from tools.e14_pattern_probe import training_preprocess
+                with Image.open(Path(args.data_root)/row.get('texture',row.get('color'))) as im:
+                    rotation=im.convert('RGB').transpose(Image.ROTATE_90)
+                cnn,clip=training_preprocess(rotation,dataset.clip_image_processor,384,512)
+                visual_rot=vision(clip.to(device,dtype),output_hidden_states=True)
+                rotated[i]=model.get_texture_condition_tokens(visual_rot,cnn.to(device,dtype)).detach()
             report['samples'].append(dict(sample_index=i,cloth=row['cloth'],caption=row['caption'],
                 matched_texture=row.get('texture',row.get('color')),reference_hash=hashes[i],wrong_indices=pairs[i]))
-            canvas=Image.new('RGB',(4*192,280),'white');draw=ImageDraw.Draw(canvas)
+            if full:report['samples'][-1]['color_nearest']=colors[i]
+            if spatial:
+                regions[i],info=prepare(row,args.data_root,out,i,tuple(targets[i].shape[-2:]))
+                report['samples'][-1]['region_diagnostics']=info
+            canvas=Image.new('RGB',((6 if full else 4)*192,280),'white');draw=ImageDraw.Draw(canvas)
             items=[('target',row['cloth'])]+[(label,dataset.data[j].get('texture',dataset.data[j].get('color')))
                   for label,j in [('matched',i),('wrong1',pairs[i][0]),('wrong2',pairs[i][1])]]
+            if full:
+                donor=dataset.data[colors[i]['index']]
+                items.append(('color_nearest',donor.get('texture',donor.get('color'))))
             for col,(label,path) in enumerate(items):
                 with Image.open(Path(args.data_root)/path) as im:canvas.paste(im.convert('RGB').resize((192,256)),(col*192,24))
                 draw.text((col*192+3,4),label,fill='black')
+            if full:
+                canvas.paste(rotation.resize((192,256)),(5*192,24));draw.text((5*192+3,4),'rot90',fill='black')
             canvas.save(out/'pairs'/('%05d.png'%i))
         del vae,vision,text
         torch.cuda.empty_cache()
         for i in indices:
             conditions={'matched':tokens[i],'wrong_1':tokens[pairs[i][0]],'wrong_2':tokens[pairs[i][1]],'zero_tokens':torch.zeros_like(tokens[i])}
+            if full:
+                conditions.update(color_nearest=tokens[colors[i]['index']],rot90=rotated[i])
+                if not all(bool(torch.isfinite(v).all()) for v in conditions.values()):raise ValueError('条件tokens非有限')
+                report['samples'][indices.index(i)]['token_checks']={name:dict(
+                    finite=bool(torch.isfinite(token).all()),
+                    relative_change=float((token.float()-tokens[i].float()).norm()/tokens[i].float().norm().clamp_min(1e-12)))
+                    for name,token in conditions.items()}
             for seed in [42,142]:
                 cpu_noise=torch.randn(targets[i].shape,generator=torch.Generator().manual_seed(seed+i*1000))
                 noise=cpu_noise.to(device,dtype)
-                for timestep in [1,181,481,781,981]:
+                for timestep in (FULL_STEPS if full else [1,181,481,781,981]):
                     t=torch.tensor([timestep],device=device,dtype=torch.long)
                     noisy=scheduler.add_noise(targets[i],noise,t)
-                    losses={};reference=None;response={}
+                    losses={};reference=None;response={};maps={}
                     for name,token in conditions.items():
                         pred=unet(noisy,t,encoder_hidden_states=torch.cat([texts[i],token],1)).sample
                         if not torch.isfinite(pred).all():raise ValueError('预测非有限')
                         losses[name]=float((pred.float()-noise.float()).square().mean())
+                        if spatial:
+                            maps[name]=(pred.float()-noise.float()).square().mean(1)[0].cpu().numpy()
                         if reference is None:reference=pred.float()
                         response[name]=float((pred.float()-reference).square().mean().sqrt())
+                    repeat_error=None
+                    if full and seed==42 and timestep==181:
+                        repeat=unet(noisy,t,encoder_hidden_states=torch.cat([texts[i],tokens[i]],1)).sample
+                        repeat_error=float((repeat.float()-reference).abs().max())
                     report['records'].append(dict(sample_index=i,seed=seed,timestep=timestep,losses=losses,
                         prediction_delta_rms=response,noise_sha256=hashlib.sha256(cpu_noise.numpy().tobytes()).hexdigest()))
-            report['summary']=summary(report['records'])
+                    if full:report['records'][-1]['matched_repeat_max_abs']=repeat_error
+                    if spatial:
+                        filename='error_maps/%05d_seed%d_t%d.npz'%(i,seed,timestep)
+                        np.savez_compressed(out/filename,**maps)
+                        report['records'][-1]['error_maps']=filename
+                        report['records'][-1]['region_losses']={
+                            region:{name:float(error[mask].mean()) if mask.any() else None for name,error in maps.items()}
+                            for region,mask in regions[i].items()}
+            base_records=[r for r in report['records'] if r['timestep'] in [1,181,481,781,981]]
+            report['summary']=summary(base_records)
+            if spatial:report['region_summary']=regional_summary(base_records)
             write_json(out/'denoising_report.json',report)
             print('completed',i,flush=True)
+    if previous is not None:
+        old={(r['sample_index'],r['seed'],r['timestep']):r for r in previous['records']}
+        errors=[]
+        for r in report['records']:
+            key=(r['sample_index'],r['seed'],r['timestep'])
+            if key not in old:continue
+            prior=old[key]
+            if prior['noise_sha256']!=r['noise_sha256']:raise ValueError('噪声与前次不一致')
+            errors.extend(abs(r['losses'][k]-prior['losses'][k]) for k in prior['losses'])
+        report['previous_replay_max_abs_loss_difference']=max(errors)
+        report['previous_replay_close']=max(errors)<1e-5
     report['complete']=True;write_json(out/'denoising_report.json',report)
+    if full:analyze(out)
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     for name in ['manifest','data-root','checkpoint','base-model','clip-model','output']:p.add_argument('--'+name,required=True)
     p.add_argument('--count',type=int,default=32);p.add_argument('--device',default='cuda:0')
+    p.add_argument('--regions',action='store_true')
+    p.add_argument('--previous-report')
+    p.add_argument('--complete-suite',action='store_true')
     run(p.parse_args())
