@@ -23,7 +23,7 @@ E15_ROOT="${E15_ROOT:-${PROJECT_ROOT}/e15}"
 CMD=(python -m tools.e15_linear_probe
   --manifest "${VAL_JSON:-${PROJECT_ROOT}/data/processed/bf_full_audit_v1/validation_clean.json}"
   --data-root "${DATA_ROOT:-/share/home/u2515283058/datasets/BF}"
-  --checkpoint "${CHECKPOINT:-${PROJECT_ROOT}/output/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
+  --checkpoint "${CHECKPOINT:-${PROJECT_ROOT}/output/texture_adapter_bf_e20/checkpoint-final/pytorch_model.bin}"
   --base-model "${PROJECT_ROOT}/models/stable-diffusion-v1-5"
   --clip-model "${PROJECT_ROOT}/models/clip"
   --labels "${LABELS:-${PROJECT_ROOT}/eval_outputs/e14_candidates/candidates/labels.csv}"
