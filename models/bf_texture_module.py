@@ -290,7 +290,12 @@ class BFTextureConditioner(nn.Module):
         query = self.resampler_queries.expand(bsz, -1, -1)
         if self.text_guidance is not None and self.text_guidance_enabled and apply_text_guidance:
             query = self.text_guidance(query, text_embeds, text_mask)
-        tokens, _ = self.resampler(query, fused_tokens, fused_tokens, need_weights=False)
+        capture_attention = bool(getattr(self, "probe_capture_resampler_attention", False))
+        tokens, resampler_attention = self.resampler(
+            query, fused_tokens, fused_tokens, need_weights=capture_attention)
+        if capture_attention:
+            # Only installed by diagnostic scripts: head-averaged [B, num_queries, num_sources].
+            self.last_resampler_attention = resampler_attention.detach()
         tokens = tokens + self.token_mlp(tokens)
         tokens = self.token_norm(tokens)
         if local_detail_source != "off":

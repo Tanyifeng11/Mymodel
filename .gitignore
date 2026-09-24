@@ -5,6 +5,7 @@ output/
 output_eval/
 output_sd_base/
 outputs/
+eval_e14/
 eval_outputs/
 eval_output/
 *.zip
@@ -37,3 +38,5 @@ e9_split_test_*/
 # 屏蔽 Python 编译缓存
 __pycache__/
 *.pyc
+e15/**/*.npz
+e15/**/*.png
