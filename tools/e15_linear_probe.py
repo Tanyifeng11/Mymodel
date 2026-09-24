@@ -20,6 +20,10 @@ from tools.e15_common import (LayerCapture, compact_table, flatten_representatio
 
 # 只探测压缩前后的关键层；cnn1-4 的响应强度已由 E15-D1 覆盖。
 PROBE_LAYERS = ["clip_patch", "fused", "resampler_out", "mlp_out", "pre_ln", "final"]
+# cnn1-4 单样本约 5.7MB，只做内存探针、不落盘，用于定位方向信息在哪一级消失。
+EXTRA_LAYERS = ["cnn1", "cnn2", "cnn3", "cnn4"]
+PROBED_LAYERS = PROBE_LAYERS + EXTRA_LAYERS
+TASKS = ("color", "orientation", "pattern")
 IMAGE_FEATURES = ["image__color_hist", "image__gray_fft128"]
 COLOR_BASELINE = "lab_mean__3d"
 AXES = (("vertical", 0.0), ("horizontal", 90.0))
@@ -136,8 +140,9 @@ def extract(args, ctx, dataset, indices, output):
             captured = dict(capture.current)
             captured["clip_patch"] = visual.hidden_states[-1][:, 1:, :]
             arrays = {name: flatten_representation(captured[name]).astype(np.float16)
-                      for name in PROBE_LAYERS}
-            np.savez(features_dir / ("%05d.npz" % index), **arrays)
+                      for name in PROBED_LAYERS}
+            np.savez(features_dir / ("%05d.npz" % index),
+                     **{name: arrays[name] for name in PROBE_LAYERS})
             model_features[index] = arrays
             row = dataset.data[index]
             entries = image_labels(texture)
@@ -293,7 +298,7 @@ def classification_task(entry, features, positions, target, folds, args, cs, des
     return entry
 
 
-def analyse(args, indices, labels, features, output):
+def analyse(args, indices, labels, features, output, tasks=TASKS):
     alphas = [1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1000.0]
     cs = [0.03, 0.1, 0.3, 1.0, 3.0]
     location = {index: position for position, index in enumerate(indices)}
@@ -307,6 +312,8 @@ def analyse(args, indices, labels, features, output):
               "features": {name: describe(matrix) for name, matrix in features.items()},
               "tasks": {}}
 
+    if "color" not in tasks:
+        return report
     colour_target = np.array([labels[key]["lab_mean"] for key in indices], dtype=np.float64)
     print("task color_lab_mean", flush=True)
     entry = {"metric": "r2", "target": "参考图 Lab 均值", "samples": len(indices), "results": {}}
@@ -317,6 +324,8 @@ def analyse(args, indices, labels, features, output):
         entry["results"][name] = regression_scores(prepared, colour_target, alphas, args.seed)
     report["tasks"]["color_lab_mean"] = entry
 
+    if "orientation" not in tasks:
+        return report
     ordered = sorted(indices, key=lambda key: -labels[key]["anisotropy"])
     orientation = [key for key in ordered if labels[key]["axis"]][:args.orientation_count]
     if len(orientation) < 40:
@@ -327,6 +336,8 @@ def analyse(args, indices, labels, features, output):
         np.array([labels[key]["axis"] for key in orientation]), args.folds, args, cs,
         "竖条纹 vs 横条纹（各向异性 top %d）" % len(orientation))
 
+    if "pattern" not in tasks:
+        return report
     tagged = [key for key in indices if labels[key].get("pattern")]
     report["protocol"]["labelled_samples"] = len(tagged)
     positions = [location[key] for key in tagged]
@@ -350,12 +361,15 @@ def summarise(report, output):
                 report["protocol"]["permutations"]),
              "- 特征全部来自冻结的 BF 纹理条件分支；分类探针先做核空间 PCA（<= %d 维）。"
              % report["protocol"]["components"], ""]
-    rows = [[name, report["features"][name]["dimension"],
-             report["features"][name]["effective_rank"], item["r2"]]
-            for name, item in report["tasks"]["color_lab_mean"]["results"].items()]
-    lines += ["## 颜色：Lab 均值回归（R^2）", "", "```",
-              compact_table(["feature", "dim", "erank", "R2"], rows), "```", ""]
+    if "color_lab_mean" in report["tasks"]:
+        rows = [[name, report["features"][name]["dimension"],
+                 report["features"][name]["effective_rank"], item["r2"]]
+                for name, item in report["tasks"]["color_lab_mean"]["results"].items()]
+        lines += ["## 颜色：Lab 均值回归（R^2）", "", "```",
+                  compact_table(["feature", "dim", "erank", "R2"], rows), "```", ""]
     for task in ("orientation_axis", "pattern_class", "pattern_solid_binary"):
+        if task not in report["tasks"]:
+            continue
         entry = report["tasks"][task]
         rows = [[name, report["features"][name]["dimension"],
                  report["features"][name]["effective_rank"], item["balanced_accuracy"],
@@ -370,6 +384,10 @@ def summarise(report, output):
 
 
 def run(args):
+    args.tasks = tuple(name for name in args.tasks.split(",") if name)
+    unknown = set(args.tasks) - set(TASKS)
+    if unknown or not args.tasks:
+        raise ValueError("不支持的探针任务：%s" % sorted(unknown))
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     dataset = build_dataset(args)
@@ -387,7 +405,7 @@ def run(args):
 
     torch.cuda.empty_cache()
     features = {name: np.stack([model_features[index][name] for index in indices])
-                for name in PROBE_LAYERS}
+                for name in PROBED_LAYERS}
     for name in IMAGE_FEATURES:
         features[name] = np.stack([image_features[index][name] for index in indices])
     features[COLOR_BASELINE] = np.array([labels[index]["lab_mean"] for index in indices],
@@ -395,7 +413,7 @@ def run(args):
     for index in indices:
         labels[index]["pattern"] = labelled.get(labels[index]["texture"], "")
     del model_features, image_features
-    report = analyse(args, indices, labels, features, output)
+    report = analyse(args, indices, labels, features, output, args.tasks)
     write_json(output / "report.json", report)
     write_json(output / "labels.json", {str(index): labels[index] for index in indices})
     summarise(report, output)
@@ -413,6 +431,7 @@ def main():
     parser.add_argument("--components", type=int, default=64, help="分类探针保留的核主成分")
     parser.add_argument("--permutations", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--tasks", default=",".join(TASKS), help="逗号分隔：color/orientation/pattern")
     parser.add_argument("--device", default="cuda:0")
     run(parser.parse_args())
 
