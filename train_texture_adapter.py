@@ -248,6 +248,24 @@ class TextureAdapter(torch.nn.Module):
         print(f"Successfully loaded weights from checkpoint {ckpt_path}")
 
 
+def expand_warmstart_queries(state, num_tokens):
+    """E16-A1：把 16 个 resampler query 等倍复制到更多 token。
+
+    复制后 query 有重复项，注意力对重复 K/V 的加权和与单份相同，因此 64 token 模型
+    在初始化时与 16 token 模型等价；之后任何差异都只能来自多出的容量。
+    """
+    key = "bf_texture_conditioner.resampler_queries"
+    if key not in state:
+        raise ValueError("完整权重缺少 %s" % key)
+    original = int(state[key].shape[1])
+    if original == num_tokens:
+        return 0
+    if num_tokens % original:
+        raise ValueError("token 数必须是原权重的整数倍：%d -> %d" % (original, num_tokens))
+    state[key] = state[key].repeat(1, num_tokens // original, 1).contiguous()
+    return original
+
+
 def save_texture_adapter_checkpoint(accelerator, model, save_path, meta=None):
     unwrapped = accelerator.unwrap_model(model)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -595,6 +613,11 @@ def main():
 
     if args.warmstart_full_model:
         full_state = torch.load(args.warmstart_full_model, map_location='cpu')
+        expanded = expand_warmstart_queries(full_state, args.bf_num_tokens)
+        if expanded:
+            accelerator.print(
+                f'[warmstart] resampler_queries 由 {expanded} 复制到 {args.bf_num_tokens} 个；'
+                '初始化与 16 token 模型等价')
         filled = load_texture_warmstart(texture_adapter, full_state)
         accelerator.print(f'[warmstart] 严格加载完成；补齐并冻结关闭的palette参数：{len(filled)}个state键')
         del full_state

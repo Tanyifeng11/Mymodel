@@ -7,6 +7,7 @@ D4 分组层消融。全部只读前向，不训练、不改权重。
 import argparse
 from pathlib import Path
 
+from checkpoint_utils import infer_texture_num_tokens
 from tools.e15_common import CONDITIONS, FULL_STEPS, REGIONS, sample_indices, write_json
 
 
@@ -80,6 +81,9 @@ def build_models(args, ctx):
                                         local_files_only=True).to(device, dtype).eval()
     unet = UNet2DConditionModel.from_pretrained(args.base_model, subfolder="unet",
                                                 local_files_only=True)
+    state = torch.load(args.checkpoint, map_location="cpu")
+    # E16 的 64 token 检查点必须能被 D1 复用，token 数从权重而不是命令行决定。
+    tokens = infer_texture_num_tokens(state)
     processors = {}
     for name in unet.attn_processors:
         if name.endswith("attn1.processor"):
@@ -93,13 +97,12 @@ def build_models(args, ctx):
             hidden = unet.config.block_out_channels[int(name.split(".")[1])]
         processors[name] = IPAttnProcessor(hidden_size=hidden,
                                            cross_attention_dim=unet.config.cross_attention_dim,
-                                           num_tokens=16)
+                                           num_tokens=tokens)
     unet.set_attn_processor(processors)
     conditioner = BFTextureConditioner(clip_embeddings_dim=vision.config.hidden_size,
                                        cross_attention_dim=unet.config.cross_attention_dim,
-                                       num_tokens=16)
+                                       num_tokens=tokens)
     model = TextureAdapter(unet, torch.nn.ModuleList(unet.attn_processors.values()), conditioner)
-    state = torch.load(args.checkpoint, map_location="cpu")
     filled = load_texture_warmstart(model, state)
     del state
     model.to(device=device, dtype=dtype).requires_grad_(False)
