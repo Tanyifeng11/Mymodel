@@ -123,5 +123,45 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(len(heat.splitlines()), 3)
 
 
+
+class D5Tests(unittest.TestCase):
+    """D5 只做真实生成，这里只校验层配置与参数契约，不加载模型。"""
+
+    def test_configs_match_group_definition(self):
+        from tools.e15_d5_generation import CONFIGS, REGIONS
+        from tools.e15_common import GROUP_RANGES
+
+        def spec(text):
+            return {int(item) for item in text.split(",") if item}
+
+        self.assertEqual(sorted(CONFIGS),
+                         ["baseline", "no_g3", "no_g4", "no_texture", "only_g3"])
+        self.assertEqual(CONFIGS["baseline"], "")
+        self.assertEqual(spec(CONFIGS["no_g4"]), set(GROUP_RANGES["G4"]))
+        self.assertEqual(spec(CONFIGS["no_g3"]), set(GROUP_RANGES["G3"]))
+        self.assertEqual(spec(CONFIGS["only_g3"]), set(range(16)) - set(GROUP_RANGES["G3"]))
+        self.assertEqual(spec(CONFIGS["no_texture"]), set(range(16)))
+        self.assertEqual(REGIONS, ["interior", "boundary", "background"])
+
+    def test_namespace_covers_every_referenced_arg(self):
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "inference_IMAGGarment-1.py").read_text(encoding="utf-8")
+        used = set()
+        for function in ["generate_one", "prepare", "resolve_image_encoder_path",
+                         "restore_bf_conditioner_for_inference"]:
+            match = re.search(r"def " + function + r"\(.*?\n(?=\ndef |\nclass |\Z)",
+                              source, re.S)
+            self.assertIsNotNone(match, function)
+            used |= set(re.findall(r"args\.([A-Za-z_0-9]+)", match.group(0)))
+            used |= set(re.findall(r"getattr\(args, .([A-Za-z_0-9]+).", match.group(0)))
+        namespace = (root / "tools/e15_d5_generation.py").read_text(encoding="utf-8")
+        block = namespace[namespace.index("def build_inference_args"):
+                          namespace.index("def build_samples")]
+        provided = set(re.findall(r"([A-Za-z_0-9]+)=", block))
+        self.assertEqual(sorted(used - provided), [])
+
 if __name__ == "__main__":
     unittest.main()

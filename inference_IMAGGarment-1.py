@@ -318,6 +318,168 @@ def restore_bf_conditioner_for_inference(pipe, bf_state, metadata, args):
               f"texture_film={conditioner.film_enabled}")
 
 
+def _zero_texture_residual(residual):
+    """E15-D5：把该层 texture residual 置零，等价于关闭该层注入（不改权重）。"""
+    import torch
+    return torch.zeros_like(residual)
+
+
+def apply_texture_layer_disable(pipe, spec):
+    """按 0-based 索引关闭 texture attention 层；spec 为空表示全部恢复。"""
+    layers = [(name, proc) for name, proc in pipe.unet.attn_processors.items()
+              if isinstance(proc, IPAttnProcessor2_0)]
+    for _name, proc in layers:
+        proc.texture_probe_transform = None
+    indices = [int(item) for item in str(spec or "").split(",") if item.strip()]
+    for position in indices:
+        if not 0 <= position < len(layers):
+            raise ValueError(f"texture 层索引越界：{position}（共 {len(layers)} 层）")
+        layers[position][1].texture_probe_transform = _zero_texture_residual
+    names = [layers[position][0] for position in sorted(indices)]
+    print(f"[texture-layers] disabled={sorted(indices)} total={len(layers)}")
+    for name in names:
+        print(f"[texture-layers]   {name}")
+    return {"disabled": sorted(indices), "names": names, "total": len(layers)}
+
+
+def generate_one(pipe, generator, args, output_path, sketch_path=None, texture_path=None,
+                 prompt=None, out_name=None):
+    """单张生成：与原主流程逐字一致；sketch/texture/prompt/out_name 可覆盖。"""
+    sketch_path = args.sketch_path if sketch_path is None else sketch_path
+    texture_path = args.texture_path if texture_path is None else texture_path
+    prompt = args.prompt if prompt is None else prompt
+    out_name = os.path.basename(sketch_path) if out_name is None else out_name
+    num_samples = 1
+    clip_image_processor = CLIPImageProcessor()
+
+    img_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize([0.5], [0.5]),
+    ])
+
+    
+    #单图片
+    null_prompt = ''
+    negative_prompt = ' worst quality, low quality'
+
+    sketch_img = Image.open(sketch_path).convert("RGB").resize((args.width, args.height), Image.BILINEAR)
+    vae_sketch = img_transform(sketch_img).unsqueeze(0)
+    spatial_mask_img, spatial_mask_info = build_sketch_garment_mask(
+        sketch_img, args.width, args.height
+    )
+    print(
+        "spatial mask: "
+        f"source={spatial_mask_info['mask_source']}, "
+        f"confidence={spatial_mask_info['mask_confidence']:.4f}, "
+        f"area={spatial_mask_info['mask_area_ratio']:.4f}, "
+        f"fallback={spatial_mask_info['mask_fallback']}"
+    )
+    spatial_mask = transforms.ToTensor()(spatial_mask_img).unsqueeze(0)
+    
+    if texture_path is not None:
+        texture_image = Image.open(texture_path).convert("RGB")
+        donor_image = (
+            Image.open(args.local_detail_donor_texture_path).convert("RGB")
+            if args.local_detail_donor_texture_path else None
+        )
+        local_detail_donor_image = _local_detail_control_image(
+            texture_image, donor_image, args.local_detail_input_transform
+        )
+    else:
+        texture_embeds = None
+        texture_clip_image = None
+    
+    print(f"texture mode: {args.texture_mode}")
+    print(f"fusion type: {args.fusion_type}")
+    print(f"texture token count: {args.texture_num_tokens}")
+    print(f"texture ckpt path: {args.texture_ckpt}")
+
+    output = pipe(
+        ref_image=vae_sketch,
+        prompt=prompt,
+        nexus_prompt=args.nexus_prompt,
+        texture_clip_image=texture_image,
+        texture_embeds=None,
+        null_prompt=null_prompt,
+        negative_prompt=negative_prompt,
+        width=args.width,
+        height=args.height,
+        num_images_per_prompt=num_samples,
+        guidance_scale=args.guidance_scale,
+        sketch_scale=args.sketch_scale,
+        ipa_scale=args.ipa_scale,
+        generator=generator,
+        num_inference_steps=args.num_inference_steps,
+        texture_mode=args.texture_mode,
+        texture_num_tokens=args.texture_num_tokens,
+        texture_scale=args.texture_scale,
+        texture_condition_mode=args.texture_condition_mode,
+        use_palette_tokens=bool(args.use_palette_tokens),
+        num_palette_tokens=args.num_palette_tokens,
+        use_conflict_aware_gate=bool(args.use_conflict_aware_gate),
+        conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
+        conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
+        conflict_deltae_norm=args.conflict_deltae_norm,
+        conflict_threshold=args.conflict_threshold,
+        fusion_type=args.fusion_type,
+        texture_preprocess_mode=args.texture_preprocess_mode,
+        alpha1=args.alpha1,
+        alpha2=args.alpha2,
+        alpha3=args.alpha3,
+        alpha4=args.alpha4,
+        local_detail_scale=args.local_detail_scale,
+        local_detail_step_start=args.local_detail_step_start,
+        local_detail_step_end=args.local_detail_step_end,
+        local_detail_token_permutation=args.local_detail_token_permutation,
+        local_detail_permutation_seed=args.local_detail_permutation_seed,
+        local_detail_donor_image=local_detail_donor_image,
+        condition_intervention=args.condition_intervention,
+        condition_intervention_budget=args.condition_intervention_budget,
+        condition_intervention_source=args.condition_intervention_source,
+        condition_intervention_dir=args.condition_intervention_dir,
+        sptg_mode=args.sptg_mode, sptg_dir=args.sptg_dir,
+        full_condition_probe_dir=args.full_condition_probe_dir,
+        condition_response_probe_dir=args.condition_response_probe_dir,
+        condition_response_probe_steps=args.condition_response_probe_steps,
+        condition_response_probe_fractions=args.condition_response_probe_fractions,
+        condition_response_probe_region_kernel=args.condition_response_probe_region_kernel,
+        condition_response_probe_metadata={
+            'sketch_path': sketch_path, 'texture_path': texture_path,
+            'prompt': prompt, 'seed': args.seed, 'gam_ckpt': args.GAM_model_ckpt,
+            'guidance_scale': args.guidance_scale, 'texture_scale': args.texture_scale,
+            'num_inference_steps': args.num_inference_steps,
+            'mask_info': spatial_mask_info,
+        },
+        local_detail_probe_dir=args.local_detail_probe_dir,
+        local_detail_output_block=bool(args.local_detail_output_block),
+        spatial_mask=spatial_mask,
+        debug_spatial=args.debug_spatial,
+        force_texture_num_tokens_override=args.force_texture_num_tokens_override,
+    )
+    _save_balanced_gate_trace(
+        pipe,
+        args.balanced_gate_trace_path,
+        sample_id=args.balanced_gate_trace_sample_id,
+    )
+    _save_local_detail_trace(
+        pipe,
+        args.local_detail_trace_path,
+        sample_id=args.local_detail_trace_sample_id,
+    )
+
+    save_output = []
+    if args.local_detail_output_block:
+        with open(os.path.join(output_path, 'output_block_trace.json'), 'w', encoding='utf-8') as f:
+            json.dump(pipe.local_detail_block_trace, f, indent=2)
+    save_output.append(output[0])
+    save_output.insert(0, texture_image.resize((args.width, args.height), Image.BICUBIC))
+    save_output.insert(0, sketch_img.resize((args.width, args.height), Image.BICUBIC))
+    grid = image_grid(save_output, 1, 3)
+    grid.save(output_path + "/" + out_name)
+    spatial_mask_img.save(output_path + "/" + os.path.splitext(out_name)[0] + "_mask.png")
+    
+    print(output_path + "/" + out_name)
+    return output[0], grid, spatial_mask_img
 def prepare(args):
     if not args.texture_ckpt:
         args.texture_ckpt = args.GAM_model_ckpt
@@ -644,6 +806,8 @@ def prepare(args):
             raise RuntimeError("use_tcpm_lite=1 but GAM checkpoint has no tcpm_lite state")
 
     pipe.effective_texture_num_tokens = args.texture_num_tokens
+    if str(getattr(args, 'disable_texture_layers', '') or '').strip():
+        apply_texture_layer_disable(pipe, args.disable_texture_layers)
     if isinstance(pipe.texture_meta, dict):
         pipe.texture_meta.update(gam_meta)
         if pipe.bf_texture_conditioner is not None:
@@ -660,6 +824,8 @@ if __name__ == "__main__":
     parser.add_argument('--texture_path',type=str,required=True)
     parser.add_argument('--output_path', type=str, default="./output_sd_base")
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--disable_texture_layers', type=str, default='',
+                        help='逗号分隔的 texture attention 层索引(0-based)，空=全开')
     parser.add_argument(
         '--texture_ckpt',
         type=str,
@@ -803,135 +969,4 @@ if __name__ == "__main__":
     print('====================== pipe load finish ===================')
     _set_balanced_gate_trace(pipe, bool(args.balanced_gate_trace_path))
 
-    num_samples = 1
-    clip_image_processor = CLIPImageProcessor()
-
-    img_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize([0.5], [0.5]),
-    ])
-
-    
-    #单图片
-    prompt = args.prompt
-    null_prompt = ''
-    negative_prompt = ' worst quality, low quality'
-
-    sketch_img = Image.open(args.sketch_path).convert("RGB").resize((args.width, args.height), Image.BILINEAR)
-    vae_sketch = img_transform(sketch_img).unsqueeze(0)
-    spatial_mask_img, spatial_mask_info = build_sketch_garment_mask(
-        sketch_img, args.width, args.height
-    )
-    print(
-        "spatial mask: "
-        f"source={spatial_mask_info['mask_source']}, "
-        f"confidence={spatial_mask_info['mask_confidence']:.4f}, "
-        f"area={spatial_mask_info['mask_area_ratio']:.4f}, "
-        f"fallback={spatial_mask_info['mask_fallback']}"
-    )
-    spatial_mask = transforms.ToTensor()(spatial_mask_img).unsqueeze(0)
-    
-    if args.texture_path is not None:
-        texture_image = Image.open(args.texture_path).convert("RGB")
-        donor_image = (
-            Image.open(args.local_detail_donor_texture_path).convert("RGB")
-            if args.local_detail_donor_texture_path else None
-        )
-        local_detail_donor_image = _local_detail_control_image(
-            texture_image, donor_image, args.local_detail_input_transform
-        )
-    else:
-        texture_embeds = None
-        texture_clip_image = None
-    
-    print(f"texture mode: {args.texture_mode}")
-    print(f"fusion type: {args.fusion_type}")
-    print(f"texture token count: {args.texture_num_tokens}")
-    print(f"texture ckpt path: {args.texture_ckpt}")
-
-    output = pipe(
-        ref_image=vae_sketch,
-        prompt=prompt,
-        nexus_prompt=args.nexus_prompt,
-        texture_clip_image=texture_image,
-        texture_embeds=None,
-        null_prompt=null_prompt,
-        negative_prompt=negative_prompt,
-        width=args.width,
-        height=args.height,
-        num_images_per_prompt=num_samples,
-        guidance_scale=args.guidance_scale,
-        sketch_scale=args.sketch_scale,
-        ipa_scale=args.ipa_scale,
-        generator=generator,
-        num_inference_steps=args.num_inference_steps,
-        texture_mode=args.texture_mode,
-        texture_num_tokens=args.texture_num_tokens,
-        texture_scale=args.texture_scale,
-        texture_condition_mode=args.texture_condition_mode,
-        use_palette_tokens=bool(args.use_palette_tokens),
-        num_palette_tokens=args.num_palette_tokens,
-        use_conflict_aware_gate=bool(args.use_conflict_aware_gate),
-        conflict_texture_suppress_strength=args.conflict_texture_suppress_strength,
-        conflict_palette_suppress_strength=args.conflict_palette_suppress_strength,
-        conflict_deltae_norm=args.conflict_deltae_norm,
-        conflict_threshold=args.conflict_threshold,
-        fusion_type=args.fusion_type,
-        texture_preprocess_mode=args.texture_preprocess_mode,
-        alpha1=args.alpha1,
-        alpha2=args.alpha2,
-        alpha3=args.alpha3,
-        alpha4=args.alpha4,
-        local_detail_scale=args.local_detail_scale,
-        local_detail_step_start=args.local_detail_step_start,
-        local_detail_step_end=args.local_detail_step_end,
-        local_detail_token_permutation=args.local_detail_token_permutation,
-        local_detail_permutation_seed=args.local_detail_permutation_seed,
-        local_detail_donor_image=local_detail_donor_image,
-        condition_intervention=args.condition_intervention,
-        condition_intervention_budget=args.condition_intervention_budget,
-        condition_intervention_source=args.condition_intervention_source,
-        condition_intervention_dir=args.condition_intervention_dir,
-        sptg_mode=args.sptg_mode, sptg_dir=args.sptg_dir,
-        full_condition_probe_dir=args.full_condition_probe_dir,
-        condition_response_probe_dir=args.condition_response_probe_dir,
-        condition_response_probe_steps=args.condition_response_probe_steps,
-        condition_response_probe_fractions=args.condition_response_probe_fractions,
-        condition_response_probe_region_kernel=args.condition_response_probe_region_kernel,
-        condition_response_probe_metadata={
-            'sketch_path': args.sketch_path, 'texture_path': args.texture_path,
-            'prompt': prompt, 'seed': args.seed, 'gam_ckpt': args.GAM_model_ckpt,
-            'guidance_scale': args.guidance_scale, 'texture_scale': args.texture_scale,
-            'num_inference_steps': args.num_inference_steps,
-            'mask_info': spatial_mask_info,
-        },
-        local_detail_probe_dir=args.local_detail_probe_dir,
-        local_detail_output_block=bool(args.local_detail_output_block),
-        spatial_mask=spatial_mask,
-        debug_spatial=args.debug_spatial,
-        force_texture_num_tokens_override=args.force_texture_num_tokens_override,
-    )
-    _save_balanced_gate_trace(
-        pipe,
-        args.balanced_gate_trace_path,
-        sample_id=args.balanced_gate_trace_sample_id,
-    )
-    _save_local_detail_trace(
-        pipe,
-        args.local_detail_trace_path,
-        sample_id=args.local_detail_trace_sample_id,
-    )
-
-    save_output = []
-    if args.local_detail_output_block:
-        with open(os.path.join(output_path, 'output_block_trace.json'), 'w', encoding='utf-8') as f:
-            json.dump(pipe.local_detail_block_trace, f, indent=2)
-    save_output.append(output[0])
-    save_output.insert(0, texture_image.resize((args.width, args.height), Image.BICUBIC))
-    save_output.insert(0, sketch_img.resize((args.width, args.height), Image.BICUBIC))
-    grid = image_grid(save_output, 1, 3)
-    out_name = os.path.basename(args.sketch_path)
-    grid.save(output_path + "/" + out_name)
-    spatial_mask_img.save(output_path + "/" + os.path.splitext(out_name)[0] + "_mask.png")
-    
-    print(output_path + "/" + out_name)
+    generate_one(pipe, generator, args, output_path)
