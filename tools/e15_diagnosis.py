@@ -222,7 +222,8 @@ def run(args):
         if "d1" in stages:
             # D1 仍需要 CLIP vision 编码参考图，因此在其后才释放编码器。
             results["d1"] = d1_reference_trace(ctx)
-        del ctx["vision"], ctx["text"]
+        # D2/D4 仍需 text encoder 构造条件；只有 CLIP 图像编码器可以提前释放。
+        del ctx["vision"]
         import torch
 
         torch.cuda.empty_cache()
