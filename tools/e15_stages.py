@@ -18,7 +18,7 @@ def texture_processors(unet):
 
 
 def reference_batch(condition, index, ctx):
-    """返回 (clip_tensor, cnn_tensor)；zero_image 为全零参考输入。"""
+    """返回 (clip_tensor, cnn_tensor)，两者均为 4D (1,C,H,W)；zero_image 为全零参考输入。"""
     import torch
     from PIL import Image
     from tools.e14_pattern_probe import training_preprocess
@@ -27,7 +27,7 @@ def reference_batch(condition, index, ctx):
     if condition == "zero_image":
         batch = dataset[index]
         return (torch.zeros_like(batch["clip_texture_image"]),
-                torch.zeros_like(batch["texture_image"]))
+                torch.zeros_like(batch["texture_image"])[None])
     if condition == "rot90":
         row = dataset.data[index]
         path = Path(ctx["args"]["data_root"]) / row.get("texture", row.get("color"))
@@ -42,7 +42,7 @@ def reference_batch(condition, index, ctx):
     elif condition == "random":
         donor = ctx["pairs"][index][0]
     batch = dataset[donor]
-    return batch["clip_texture_image"], batch["texture_image"]
+    return batch["clip_texture_image"], batch["texture_image"][None]
 
 
 def condition_tokens(ctx, index):
@@ -72,10 +72,10 @@ def build_token_bank(ctx):
         for index in ctx["indices"]:
             for condition in ("matched", "rot90"):
                 clip_input, cnn_input = reference_batch(condition, index, ctx)
-                visual = ctx["vision"](clip_input[None].to(ctx["device"], ctx["dtype"]),
+                visual = ctx["vision"](clip_input.to(ctx["device"], ctx["dtype"]),
                                        output_hidden_states=True)
                 bank[condition][index] = ctx["model"].get_texture_condition_tokens(
-                    visual, cnn_input[None].to(ctx["device"], ctx["dtype"])).detach()
+                    visual, cnn_input.to(ctx["device"], ctx["dtype"])).detach()
     ctx["token_bank"] = bank
     return bank
 
@@ -97,10 +97,10 @@ def d1_reference_trace(ctx):
                 for condition in CONDITIONS:
                     clip_input, cnn_input = reference_batch(condition, index, ctx)
                     capture.reset()
-                    visual = ctx["vision"](clip_input[None].to(ctx["device"], ctx["dtype"]),
+                    visual = ctx["vision"](clip_input.to(ctx["device"], ctx["dtype"]),
                                            output_hidden_states=True)
                     tokens = ctx["model"].get_texture_condition_tokens(
-                        visual, cnn_input[None].to(ctx["device"], ctx["dtype"]))
+                        visual, cnn_input.to(ctx["device"], ctx["dtype"]))
                     if not torch.isfinite(tokens).all():
                         raise ValueError("参考 tokens 非有限")
                     captured = dict(capture.current)
