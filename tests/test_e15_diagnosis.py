@@ -128,20 +128,33 @@ class D5Tests(unittest.TestCase):
     """D5 只做真实生成，这里只校验层配置与参数契约，不加载模型。"""
 
     def test_configs_match_group_definition(self):
-        from tools.e15_d5_generation import CONFIGS, REGIONS
+        from tools.e15_d5_generation import LAYER_CONFIGS, REFERENCE_CONFIGS, REGIONS
         from tools.e15_common import GROUP_RANGES
 
         def spec(text):
             return {int(item) for item in text.split(",") if item}
 
-        self.assertEqual(sorted(CONFIGS),
+        self.assertEqual(sorted(LAYER_CONFIGS),
                          ["baseline", "no_g3", "no_g4", "no_texture", "only_g3"])
-        self.assertEqual(CONFIGS["baseline"], "")
-        self.assertEqual(spec(CONFIGS["no_g4"]), set(GROUP_RANGES["G4"]))
-        self.assertEqual(spec(CONFIGS["no_g3"]), set(GROUP_RANGES["G3"]))
-        self.assertEqual(spec(CONFIGS["only_g3"]), set(range(16)) - set(GROUP_RANGES["G3"]))
-        self.assertEqual(spec(CONFIGS["no_texture"]), set(range(16)))
+        self.assertEqual(LAYER_CONFIGS["baseline"], "")
+        self.assertEqual(spec(LAYER_CONFIGS["no_g4"]), set(GROUP_RANGES["G4"]))
+        self.assertEqual(spec(LAYER_CONFIGS["no_g3"]), set(GROUP_RANGES["G3"]))
+        self.assertEqual(spec(LAYER_CONFIGS["only_g3"]),
+                         set(range(16)) - set(GROUP_RANGES["G3"]))
+        self.assertEqual(spec(LAYER_CONFIGS["no_texture"]), set(range(16)))
+        self.assertEqual([name for name, _ in REFERENCE_CONFIGS],
+                         ["matched", "rot90", "color_near", "wrong_ref", "matched_seed1"])
         self.assertEqual(REGIONS, ["interior", "boundary", "background"])
+
+    def test_options_default_and_seed_offset(self):
+        from tools.e15_d5_generation import normalize_options
+
+        self.assertEqual(normalize_options({}),
+                         {"spec": "", "texture": "matched", "seed_offset": 0})
+        merged = normalize_options({"texture": "rot90", "seed_offset": 1})
+        self.assertEqual(merged["texture"], "rot90")
+        self.assertEqual(merged["seed_offset"], 1)
+        self.assertEqual(merged["spec"], "")
 
     def test_namespace_covers_every_referenced_arg(self):
         import re

@@ -32,6 +32,8 @@ CMD=(python -m tools.e15_d5_generation
  --seed "${SEED:-42}"
  --steps "${STEPS:-50}"
  --device "${DEVICE:-cuda:0}"
- --output "${E15_ROOT}/d5_generation")
+ --suite "${SUITES:-layers,reference}"
+ --output "${E15_ROOT}/d5_generation"
+ --output-reference "${E15_ROOT}/d5_reference")
 printf '%q ' "${CMD[@]}"; printf '\n'
 if [[ "${DRY_RUN:-0}" != 1 ]]; then "${CMD[@]}"; fi

@@ -1,12 +1,18 @@
-"""E15-D5 生成验证：固定 32 样本、单 seed，只改 texture attention 层开关。
+"""E15-D5 生成验证：固定 32 样本、单 seed，比较 texture 层开关与参考条件。
 
-D1-D4 把故障定位到 fused -> resampler 的表示压缩与 G4 层的边界副作用，但都停在
-单步前向。D5 是唯一一步真实生成：同 latent、同 prompt、同 sketch，只换 texture 层
-配置，比较 CLIP-texture / TPF / Edge / IoU / Leak 以及内部-边界-背景三个区域。
+两个套件共用一次模型加载、同 latent、同 prompt、同 sketch：
+
+- layers：只改 texture attention 层开关（baseline/no_g4/no_g3/only_g3/no_texture），
+  验证 D4 的分组结论在真实生成上是否成立。
+- reference：只改喂给模型的参考图（matched/rot90/color_near/wrong_ref），
+  外加一个换 seed 的基线用于标定随机波动尺度，回答"生成结果是否真的取决于参考纹样"。
+
+两套件都输出生成图、全套标准指标、区域指标与相对参考配置的逐像素差异。
 """
 
 import argparse
 import importlib.util
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -18,19 +24,26 @@ from tools.e15_common import sample_indices, write_json
 
 # 层索引与 D4 的 G1-G4 分组一致（0-based，共 16 层 texture cross-attention）。
 # 空串表示全开；其余为「要关闭的层」。
-CONFIGS = {
+LAYER_CONFIGS = {
     "baseline": "",
     "no_g4": "12,13,14,15",
     "no_g3": "8,9,10,11",
     "only_g3": "0,1,2,3,4,5,6,7,12,13,14,15",
     "no_texture": ",".join(str(i) for i in range(16)),
 }
+# 参考条件套件：不改层，只换喂进去的参考图；matched_seed1 用于标定噪声尺度。
+REFERENCE_CONFIGS = [("matched", {}), ("rot90", {"texture": "rot90"}),
+                     ("color_near", {"texture": "color_near"}),
+                     ("wrong_ref", {"texture": "wrong_ref"}),
+                     ("matched_seed1", {"seed_offset": 1})]
+DEFAULT_OPTIONS = {"spec": "", "texture": "matched", "seed_offset": 0}
 REGIONS = ["interior", "boundary", "background"]
 # 汇总表列：与文档要求的 CLIP-texture / TPF / Edge / IoU / Leak 对齐。
 KEY_METRICS = ["clip_texture", "tpf_patch_sim", "tpf_gram_l1", "tcf_lab_delta", "ssim",
                "struct_edge_f1", "struct_iou", "leak_colored_frac", "leak_mean_saturation",
                "leak_edge_density", "region_l1_interior", "region_l1_boundary",
-               "region_l1_background", "interior_tpf", "interior_gram_l1"]
+               "region_l1_background", "interior_tpf", "interior_gram_l1",
+               "pixel_diff_vs_ref"]
 
 
 def load_inference_module():
@@ -116,7 +129,47 @@ def build_samples(args):
             "texture": str(root / row.get("texture", row.get("color"))),
             "cloth": str(root / row["cloth"]),
         })
-    return samples
+    return dataset, samples
+
+
+def build_reference_variants(args, dataset, samples):
+    """按 D1-D3 的同一配对协议准备 rot90 / 同色异纹 / 完全错误参考三种纹理。"""
+    from PIL import Image as PILImage
+
+    from tools.e14_denoising_complete import color_pairs
+    from tools.e14_matched_denoising import choose_pairs
+    from tools.e14_pattern_probe import pixel_hash
+
+    root = Path(args.data_root)
+    rows = dataset.data
+    indices = [sample["index"] for sample in samples]
+    hashes = {}
+    for index in indices:
+        with PILImage.open(root / rows[index].get("texture", rows[index].get("color"))) as image:
+            hashes[index] = pixel_hash(image.convert("RGB"))
+    wrong = choose_pairs(rows, indices, hashes)
+    nearest = color_pairs(rows, indices, hashes, root)
+    folder = Path(args.output_reference or args.output) / "_textures"
+    folder.mkdir(parents=True, exist_ok=True)
+    variants, detail = {}, {}
+    for sample in samples:
+        index = sample["index"]
+        rotated = folder / ("%05d_rot90.png" % index)
+        with PILImage.open(sample["texture"]) as image:
+            image.convert("RGB").rotate(90, expand=True).save(rotated)
+        color_index = nearest[index]["index"]
+        wrong_index = wrong[index][0]
+        variants[index] = {
+            "matched": sample["texture"],
+            "rot90": str(rotated),
+            "color_near": str(root / rows[color_index].get("texture",
+                                                          rows[color_index].get("color"))),
+            "wrong_ref": str(root / rows[wrong_index].get("texture",
+                                                         rows[wrong_index].get("color"))),
+        }
+        detail[index] = {"color_near_index": color_index, "wrong_ref_index": wrong_index,
+                         "hellinger_distance": nearest[index]["hellinger_distance"]}
+    return variants, detail
 
 
 def load_regions(mask_root, samples, size):
@@ -161,31 +214,43 @@ def config_layers(pipe, module):
             if isinstance(proc, module.IPAttnProcessor2_0)]
 
 
-def generate_config(args, module, pipe, namespace, samples, name, spec):
-    """一个层配置跑满全部样本；逐样本重置 generator 保证跨配置 latent 相同。"""
+def normalize_options(options):
+    merged = dict(DEFAULT_OPTIONS)
+    merged.update(options)
+    return merged
+
+
+def generate_config(args, module, pipe, namespace, samples, name, options,
+                    variants, output):
+    """一个配置跑满全部样本；逐样本重置 generator 保证跨配置 latent 相同。"""
     import torch
 
-    folder = Path(args.output) / name
+    options = normalize_options(options)
+    folder = Path(output) / name
     folder.mkdir(parents=True, exist_ok=True)
-    info = module.apply_texture_layer_disable(pipe, spec)
+    info = module.apply_texture_layer_disable(pipe, options["spec"])
     records = []
     for position, sample in enumerate(samples):
+        texture = (variants or {}).get(sample["index"], {}).get(options["texture"],
+                                                              sample["texture"])
+        seed = args.seed + options["seed_offset"]
         namespace.sketch_path = sample["sketch"]
-        namespace.texture_path = sample["texture"]
+        namespace.texture_path = texture
         namespace.prompt = sample["caption"]
         gen_path = folder / ("%05d_gen.png" % sample["index"])
         started = time.time()
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
-        generator = torch.Generator(device=args.device).manual_seed(args.seed)
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        generator = torch.Generator(device=args.device).manual_seed(seed)
         with torch.inference_mode():
             image, _grid, _mask = module.generate_one(
                 pipe, generator, namespace, str(folder),
-                sketch_path=sample["sketch"], texture_path=sample["texture"],
+                sketch_path=sample["sketch"], texture_path=texture,
                 prompt=sample["caption"], out_name="%05d_grid.png" % sample["index"])
         image.save(gen_path)
         records.append({"config": name, "index": sample["index"], "gen": str(gen_path),
-                        "caption": sample["caption"],
+                        "caption": sample["caption"], "seed": seed,
+                        "texture_used": texture,
                         "seconds": round(time.time() - started, 2)})
         print("[d5] %s %d/%d index=%d %.1fs" % (name, position + 1, len(samples),
                                                 sample["index"], records[-1]["seconds"]),
@@ -218,6 +283,22 @@ def evaluate_config(args, samples, records, regions):
     return records
 
 
+def add_pixel_diff(records, reference):
+    """把每个配置与参考配置的逐像素差异补进指标，作为"改动有多大"的直接尺度。"""
+    base = {record["index"]: record["gen"] for record in records
+            if record["config"] == reference}
+    for record in records:
+        if record["config"] == reference or record["index"] not in base:
+            record["metrics"]["pixel_diff_vs_ref"] = 0.0
+            continue
+        with Image.open(record["gen"]) as image:
+            mine = np.asarray(image.convert("RGB"), dtype=np.float32)
+        with Image.open(base[record["index"]]) as image:
+            theirs = np.asarray(image.convert("RGB"), dtype=np.float32)
+        record["metrics"]["pixel_diff_vs_ref"] = float(np.abs(mine - theirs).mean())
+    return records
+
+
 def aggregate(records):
     keys = sorted({key for record in records for key, value in record["metrics"].items()
                    if isinstance(value, (int, float))})
@@ -232,95 +313,124 @@ def aggregate(records):
     return result
 
 
-def contact_sheet(args, records, samples):
+def contact_sheet(names, records, samples, output):
     """每样本一行、每配置一列的缩略对照图，供人工核验纹样方向。"""
-    order = list(CONFIGS)
     cell = (192, 256)
-    sheet = Image.new("RGB", (cell[0] * len(order), cell[1] * len(samples) + 12), "white")
+    sheet = Image.new("RGB", (cell[0] * len(names), cell[1] * len(samples) + 12), "white")
     draw = ImageDraw.Draw(sheet)
-    for column, name in enumerate(order):
+    for column, name in enumerate(names):
         draw.text((column * cell[0] + 4, 1), name, fill="black")
+    lookup = {(record["config"], record["index"]): record["gen"] for record in records}
     for row, sample in enumerate(samples):
-        for column, name in enumerate(order):
-            path = Path(args.output) / name / ("%05d_gen.png" % sample["index"])
+        for column, name in enumerate(names):
+            path = lookup.get((name, sample["index"]))
+            if path is None or not Path(path).is_file():
+                continue
             with Image.open(path) as image:
                 sheet.paste(image.convert("RGB").resize(cell, Image.BILINEAR),
                             (column * cell[0], row * cell[1] + 12))
-    path = Path(args.output) / "contact_sheet.png"
+    path = Path(output) / "contact_sheet.png"
     sheet.save(path)
     return str(path)
 
 
-def write_summary(args, results):
+def write_summary(output, suite, results, names):
     """配置对比表；delta 表里正号只表示数值更大，方向由指标语义决定。"""
-    metrics = [key for key in KEY_METRICS if key in results["aggregate"]["baseline"]]
-    lines = ["# E15-D5 生成验证", "",
+    metrics = [key for key in KEY_METRICS if key in results["aggregate"][names[0]]]
+    lines = ["# E15-D5 生成验证（%s）" % suite, "",
              "协议：%d 样本（与 D1-D4 同索引）、seed=%d、同 latent/prompt/sketch、%d 步。" %
              (results["protocol"]["samples"], results["protocol"]["seed"],
-              results["protocol"]["steps"]), "",
+              results["protocol"]["steps"]),
+             "参考配置：%s；pixel_diff_vs_ref 是同 latent 下与参考配置的逐像素平均差。" %
+             results["protocol"]["reference"], "",
              "| config | " + " | ".join(metrics) + " |",
              "|---" * (len(metrics) + 1) + "|"]
-    for name in CONFIGS:
+    for name in names:
         entry = results["aggregate"][name]
         lines.append("| %s | %s |" % (name, " | ".join(
             "-" if entry[key]["mean"] is None else "%.4f" % entry[key]["mean"]
             for key in metrics)))
-    lines += ["", "## 相对 baseline 的变化", "",
+    lines += ["", "## 相对参考配置的变化", "",
               "| config | " + " | ".join(metrics) + " |",
               "|---" * (len(metrics) + 1) + "|"]
-    for name in CONFIGS:
-        if name == "baseline":
+    for name in names:
+        if name == results["protocol"]["reference"]:
             continue
-        entry, base = results["aggregate"][name], results["aggregate"]["baseline"]
+        entry, base = results["aggregate"][name], results["aggregate"][results["protocol"]["reference"]]
         lines.append("| %s | %s |" % (name, " | ".join(
             "-" if entry[key]["mean"] is None or base[key]["mean"] is None
             else "%+.4f" % (entry[key]["mean"] - base[key]["mean"]) for key in metrics)))
     text = "\n".join(lines) + "\n"
-    (Path(args.output) / "SUMMARY.md").write_text(text, encoding="utf-8")
+    (Path(output) / "SUMMARY.md").write_text(text, encoding="utf-8")
     print(text, flush=True)
     return text
+
+
+def run_suite(args, module, pipe, namespace, dataset, samples, regions, suite, output):
+    """跑一个套件：逐配置生成 + 评测 + 汇总。"""
+    if suite == "layers":
+        configs = [(name, {"spec": spec}) for name, spec in LAYER_CONFIGS.items()]
+        variants, detail = None, {}
+        reference = "baseline"
+    elif suite == "reference":
+        configs = REFERENCE_CONFIGS
+        variants, detail = build_reference_variants(args, dataset, samples)
+        reference = "matched"
+    else:
+        raise ValueError("未知套件：%s" % suite)
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    records = []
+    info = {}
+    for name, options in configs:
+        config_records, layer_info = generate_config(args, module, pipe, namespace,
+                                                    samples, name, options, variants,
+                                                    output)
+        info[name] = dict(normalize_options(options), **layer_info)
+        evaluate_config(args, samples, config_records, regions)
+        records.extend(config_records)
+    add_pixel_diff(records, reference)
+    names = [name for name, _ in configs]
+    for name in names:
+        write_json(output / name / "metrics.json",
+                   [record for record in records if record["config"] == name])
+    results = {
+        "protocol": {"suite": suite, "samples": len(samples), "seed": args.seed,
+                     "steps": args.steps, "reference": reference,
+                     "indices": [sample["index"] for sample in samples],
+                     "texture_layers": config_layers(pipe, module), "configs": info,
+                     "pairing_detail": detail,
+                     "note": "只改 texture 层开关或参考图；latent/prompt/sketch 固定。"},
+        "per_sample": records,
+        "aggregate": {name: aggregate([record for record in records
+                                       if record["config"] == name]) for name in names},
+        "contact_sheet": contact_sheet(names, records, samples, output),
+    }
+    write_json(output / "report.json", results)
+    write_summary(output, suite, results, names)
+    return results
 
 
 def run(args):
     import torch
 
-    output = Path(args.output)
-    output.mkdir(parents=True, exist_ok=True)
     module = load_inference_module()
-    samples = build_samples(args)
+    dataset, samples = build_samples(args)
     namespace = build_inference_args(args)
     pipe, _generator = module.prepare(namespace)
     for value in vars(pipe).values():
         if isinstance(value, torch.nn.Module):
             value.eval()
     torch.backends.cudnn.benchmark = False
-    layers = config_layers(pipe, module)
     print("[d5] resolution %dx%d, texture layers=%d" %
-          (namespace.width, namespace.height, len(layers)), flush=True)
+          (namespace.width, namespace.height, len(config_layers(pipe, module))), flush=True)
     regions = load_regions(args.mask_root, samples, (namespace.width, namespace.height))
-
-    records = []
-    config_info = {}
-    for name, spec in CONFIGS.items():
-        config_records, info = generate_config(args, module, pipe, namespace, samples,
-                                              name, spec)
-        config_info[name] = dict(info, spec=spec)
-        evaluate_config(args, samples, config_records, regions)
-        write_json(output / name / "metrics.json", config_records)
-        records.extend(config_records)
-
-    results = {
-        "protocol": {"samples": len(samples), "seed": args.seed, "steps": args.steps,
-                     "indices": [sample["index"] for sample in samples],
-                     "texture_layers": layers, "configs": config_info,
-                     "note": "只改 texture attention 层开关；latent/prompt/sketch 固定。"},
-        "per_sample": records,
-        "aggregate": {name: aggregate([record for record in records
-                                       if record["config"] == name]) for name in CONFIGS},
-        "contact_sheet": contact_sheet(args, records, samples),
-    }
-    write_json(output / "report.json", results)
-    write_summary(args, results)
+    for suite in [item.strip() for item in args.suite.split(",") if item.strip()]:
+        output = args.output if suite == "layers" else args.output_reference
+        if suite != "layers" and not output:
+            raise ValueError("套件 %s 需要 --output-reference" % suite)
+        print("[d5] suite=%s output=%s" % (suite, output), flush=True)
+        run_suite(args, module, pipe, namespace, dataset, samples, regions, suite, output)
     print("E15-D5 finished", flush=True)
 
 
@@ -329,6 +439,8 @@ if __name__ == "__main__":
     for name in ["manifest", "data-root", "checkpoint", "texture-ckpt", "base-model",
                  "clip-model", "mask-root", "output"]:
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--output-reference")
+    parser.add_argument("--suite", default="layers")
     parser.add_argument("--base-model-path", default="auto")
     parser.add_argument("--vae-model-path", default="auto")
     parser.add_argument("--count", type=int, default=32)
