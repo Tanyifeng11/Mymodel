@@ -83,8 +83,11 @@ def main():
     processor = CLIPImageProcessor()
     head = nn.Sequential(nn.Linear(768, 16), nn.GELU(), nn.Flatten(),
                          nn.Linear(4 * 64 * 16, 128), nn.GELU(), nn.Linear(128, 4)).to(args.device)
+    token_head = nn.Sequential(nn.LayerNorm(1536), nn.Linear(1536, 128), nn.GELU(),
+                               nn.Linear(128, 4)).to(args.device)
     optimizer = torch.optim.AdamW([{"params": encoder_params, "lr": 2e-5},
-                                   {"params": head.parameters(), "lr": 1e-3}], weight_decay=0.01)
+                                   {"params": list(head.parameters()) + list(token_head.parameters()),
+                                    "lr": 1e-3}], weight_decay=0.01)
     by_axis = {axis: [row for row in examples if row[1] == axis] for axis in (0, 1)}
     losses = []
     for step in range(1, args.steps + 1):
@@ -104,10 +107,13 @@ def main():
         # Only the four spatial BF sources feed the supervision head.
         spatial = fused[:, -4 * 64:]
         logits = head(spatial)
+        direct = bf.direct_readout(fused, bf.stage_token_hw)
+        token_logits = token_head(torch.cat([direct.mean(1), direct.std(1)], dim=1))
         axis_target = torch.tensor([r[1] for r in batch_rows], device=args.device)
         freq_target = torch.tensor([r[2] for r in batch_rows], device=args.device)
-        loss = (nn.functional.cross_entropy(logits[:, :2], axis_target)
-                + nn.functional.cross_entropy(logits[:, 2:], freq_target))
+        loss = sum(nn.functional.cross_entropy(pred[:, :2], axis_target)
+                   + nn.functional.cross_entropy(pred[:, 2:], freq_target)
+                   for pred in (logits, token_logits))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -130,6 +136,7 @@ def main():
         "examples": len(examples), "axis_counts": {str(k): len(v) for k, v in by_axis.items()},
         "frequency_threshold": threshold, "train_manifest": args.manifest,
         "direct_checkpoint": args.direct_checkpoint, "losses": losses,
+        "supervised_readouts": ["spatial fused CNN tokens", "frozen direct texture tokens"],
         "trained_modules": ["stage1", "stage2", "stage3", "stage4", "token_source_proj.1-4"],
         "frozen_modules": ["CLIP vision", "direct_readout", "resampler", "U-Net", "TCPM"]})
 
