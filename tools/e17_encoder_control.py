@@ -129,7 +129,7 @@ def main():
     baseline = torch.load(args.base_checkpoint, map_location="cpu", weights_only=False)
     for key, value in updated.items():
         flat_key = "bf_texture_conditioner." + key
-        if flat_key in baseline and (key.startswith("stage") or key.startswith("token_source_proj.")):
+        if flat_key in baseline:
             baseline[flat_key] = value
     torch.save(baseline, output / "pytorch_model.bin")
     write_json(output / "train_report.json", {
