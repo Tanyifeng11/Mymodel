@@ -60,13 +60,23 @@ def extract_texture_metadata(state_dict: dict):
 
 
 def infer_texture_num_tokens(state_dict: dict, default: int = 16) -> int:
+    """Infer texture token count from meta or from resampler_queries shape.
+
+    train_texture_adapter writes a flat state_dict, so the key looks like
+    'bf_texture_conditioner.resampler_queries'; GAM checkpoints are nested.
+    """
     meta = extract_texture_metadata(state_dict)
     if "texture_num_tokens" in meta:
         return int(meta["texture_num_tokens"])
 
-    bf_sd = state_dict.get("bf_texture_conditioner", {}) if isinstance(state_dict, dict) else {}
-    if isinstance(bf_sd, dict) and "resampler_queries" in bf_sd:
-        return int(bf_sd["resampler_queries"].shape[1])
+    if isinstance(state_dict, dict):
+        for key in ("bf_texture_conditioner.resampler_queries", "resampler_queries"):
+            queries = state_dict.get(key)
+            if hasattr(queries, "shape"):
+                return int(queries.shape[1])
+        bf_sd = state_dict.get("bf_texture_conditioner", {})
+        if isinstance(bf_sd, dict) and "resampler_queries" in bf_sd:
+            return int(bf_sd["resampler_queries"].shape[1])
     return default
 
 
