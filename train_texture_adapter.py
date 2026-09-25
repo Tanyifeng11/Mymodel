@@ -411,6 +411,8 @@ def parse_args():
     parser.add_argument("--wandb_entity", type=str, default=None)
     parser.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"])
     parser.add_argument("--bf_num_tokens", type=int, default=16)
+    parser.add_argument("--bf_query_layout", default="global", choices=["global", "spatial"],
+                        help="resampler query layout: free global queries or 8x8 spatial priors")
     parser.add_argument("--bf_base_channels", type=int, default=32)
     parser.add_argument("--texture_mode", type=str, default="patch_resampled", choices=["patch_resampled", "legacy_pooled"])
     parser.add_argument("--texture_preprocess_mode", type=str, default="crop_tile", choices=["plain_resize", "crop_tile", "plain"])
@@ -567,6 +569,7 @@ def main():
         num_tokens=args.bf_num_tokens,
         base_channels=args.bf_base_channels,
         texture_mode=args.texture_mode,
+        query_layout=args.bf_query_layout,
     )
 
     attn_procs = {}
@@ -696,6 +699,7 @@ def main():
     unwrapped_texture_adapter = accelerator.unwrap_model(texture_adapter)
     checkpoint_meta = {
         "texture_num_tokens": args.bf_num_tokens,
+        "texture_query_layout": args.bf_query_layout,
         "texture_mode": args.texture_mode,
         "image_encoder_path": args.image_encoder_path,
         "clip_hidden_layer": args.clip_hidden_layer,

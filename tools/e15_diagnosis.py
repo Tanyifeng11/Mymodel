@@ -7,7 +7,7 @@ D4 分组层消融。全部只读前向，不训练、不改权重。
 import argparse
 from pathlib import Path
 
-from checkpoint_utils import infer_texture_num_tokens
+from checkpoint_utils import infer_texture_num_tokens, infer_texture_query_layout
 from tools.e15_common import CONDITIONS, FULL_STEPS, REGIONS, sample_indices, write_json
 
 
@@ -84,6 +84,7 @@ def build_models(args, ctx):
     state = torch.load(args.checkpoint, map_location="cpu")
     # E16 的 64 token 检查点必须能被 D1 复用，token 数从权重而不是命令行决定。
     tokens = infer_texture_num_tokens(state)
+    layout = infer_texture_query_layout(state)
     processors = {}
     for name in unet.attn_processors:
         if name.endswith("attn1.processor"):
@@ -101,7 +102,8 @@ def build_models(args, ctx):
     unet.set_attn_processor(processors)
     conditioner = BFTextureConditioner(clip_embeddings_dim=vision.config.hidden_size,
                                        cross_attention_dim=unet.config.cross_attention_dim,
-                                       num_tokens=tokens)
+                                       num_tokens=tokens,
+                                       query_layout=layout)
     model = TextureAdapter(unet, torch.nn.ModuleList(unet.attn_processors.values()), conditioner)
     filled = load_texture_warmstart(model, state)
     del state

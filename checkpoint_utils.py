@@ -80,6 +80,13 @@ def infer_texture_num_tokens(state_dict: dict, default: int = 16) -> int:
     return default
 
 
+def infer_texture_query_layout(state_dict: dict, default: str = "global") -> str:
+    """Read the resampler query layout recorded in checkpoint meta."""
+    meta = extract_texture_metadata(state_dict)
+    value = meta.get("texture_query_layout", default)
+    return str(value or default)
+
+
 def infer_clip_embed_dim(state_dict: dict, fallback: int) -> int:
     meta = extract_texture_metadata(state_dict)
     if "clip_embeddings_dim" in meta:

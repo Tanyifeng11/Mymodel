@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,6 +7,20 @@ import torch.nn.functional as F
 from models.text_guided_queries import TextGuidedQueries
 from models.text_texture_film import TextTextureFiLM
 from models.nexus_texture_adapter import NexusTextureAdapter
+
+
+def sinusoidal_2d_grid(height, width, dim):
+    """Fixed 2D sinusoidal position encoding, shape [height*width, dim]."""
+    if dim % 4:
+        raise ValueError("position dim must be divisible by 4: %d" % dim)
+    y, x = torch.meshgrid(torch.arange(height), torch.arange(width), indexing="ij")
+    coords = torch.stack([x.reshape(-1), y.reshape(-1)], dim=1).float()
+    coords = coords / torch.tensor([max(width - 1, 1), max(height - 1, 1)]).float()
+    quarter = dim // 4
+    freqs = torch.exp(torch.arange(quarter).float() * -(math.log(10000.0) / max(quarter - 1, 1)))
+    args = coords[:, :, None] * freqs[None, None, :]
+    return torch.cat([args[:, 0].sin(), args[:, 0].cos(),
+                      args[:, 1].sin(), args[:, 1].cos()], dim=1)
 
 
 class BFTextureConditioner(nn.Module):
@@ -23,9 +39,24 @@ class BFTextureConditioner(nn.Module):
         film_hidden_dim: int = 0,
         nexus_dim: int = 0,
         nexus_heads: int = 4,
+        query_layout: str = "global",
     ):
         super().__init__()
+        if query_layout not in {"global", "spatial"}:
+            raise ValueError("query_layout must be global or spatial: %s" % query_layout)
         self.num_tokens = num_tokens
+        self.query_layout = query_layout
+        if query_layout == "spatial":
+            side = int(round(num_tokens ** 0.5))
+            if side * side != num_tokens:
+                raise ValueError("spatial queries need a square token count: %d" % num_tokens)
+            self.register_buffer("query_pos_embed",
+                                 sinusoidal_2d_grid(side, side, cross_attention_dim).unsqueeze(0),
+                                 persistent=False)
+            self.register_buffer("stage_pos_embed",
+                                 sinusoidal_2d_grid(stage_token_hw[0], stage_token_hw[1],
+                                                    cross_attention_dim).unsqueeze(0),
+                                 persistent=False)
         self.cross_attention_dim = cross_attention_dim
         self.texture_mode = texture_mode
         self.stage_token_hw = stage_token_hw
@@ -173,6 +204,15 @@ class BFTextureConditioner(nn.Module):
         pooled = self.stage_pool(feat)
         return pooled.flatten(2).transpose(1, 2)
 
+    def _stage_position(self, fused_tokens: torch.Tensor) -> torch.Tensor:
+        """Position encoding for the four CNN stage blocks; the CLIP prefix stays zero."""
+        stage = self.stage_pos_embed.repeat(1, 4, 1).to(fused_tokens.dtype)
+        clip_len = fused_tokens.shape[1] - stage.shape[1]
+        if clip_len < 0:
+            raise ValueError("fused tokens too short for four stage blocks")
+        prefix = torch.zeros(1, clip_len, stage.shape[-1], dtype=stage.dtype, device=stage.device)
+        return torch.cat([prefix, stage], dim=1)
+
     def _encode_texture_features(self, texture_images, text_embeds=None, text_mask=None, apply_film=True,
                                  nexus_text_embeds=None, apply_nexus=True):
         f1 = self.stage1(texture_images)
@@ -288,6 +328,9 @@ class BFTextureConditioner(nn.Module):
         fused_tokens, feature_shapes = built[:2]
         bsz = fused_tokens.shape[0]
         query = self.resampler_queries.expand(bsz, -1, -1)
+        if self.query_layout == "spatial":
+            query = query + self.query_pos_embed.to(query.dtype)
+            fused_tokens = fused_tokens + self._stage_position(fused_tokens)
         if self.text_guidance is not None and self.text_guidance_enabled and apply_text_guidance:
             query = self.text_guidance(query, text_embeds, text_mask)
         capture_attention = bool(getattr(self, "probe_capture_resampler_attention", False))
