@@ -23,6 +23,39 @@ def sinusoidal_2d_grid(height, width, dim):
                       args[:, 1].sin(), args[:, 1].cos()], dim=1)
 
 
+class FusedDirectReadout(nn.Module):
+    """Equal-source spatial fusion before a small learned token readout."""
+
+    def __init__(self, dim, num_tokens):
+        super().__init__()
+        self.source_norm = nn.ModuleList(nn.LayerNorm(dim) for _ in range(5))
+        self.query = nn.Parameter(torch.randn(1, num_tokens, dim) * 0.02)
+        self.attention = nn.MultiheadAttention(dim, 8, batch_first=True)
+        self.output = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim), nn.SiLU(),
+                                    nn.Linear(dim, dim), nn.LayerNorm(dim))
+
+    def forward(self, fused, stage_hw):
+        area = stage_hw[0] * stage_hw[1]
+        clip_count = fused.shape[1] - 4 * area
+        side = math.isqrt(clip_count)
+        if side * side != clip_count:
+            raise ValueError("CLIP patch count must form a square: %d" % clip_count)
+        sources = [fused[:, :clip_count]] + [fused[:, clip_count + i * area:
+                                                  clip_count + (i + 1) * area] for i in range(4)]
+        spatial = []
+        for index, tokens in enumerate(sources):
+            width = side if index == 0 else stage_hw[1]
+            height = side if index == 0 else stage_hw[0]
+            grid = tokens.transpose(1, 2).reshape(len(tokens), tokens.shape[-1], height, width)
+            grid = F.adaptive_avg_pool2d(grid, stage_hw)
+            spatial.append(self.source_norm[index](grid.flatten(2).transpose(1, 2)))
+        # Each source contributes exactly one fifth before readout; CNN1 cannot win by token count.
+        mixed = torch.stack(spatial).mean(0)
+        query = self.query.expand(len(fused), -1, -1)
+        tokens, _ = self.attention(query, mixed, mixed, need_weights=False)
+        return self.output(tokens)
+
+
 class BFTextureConditioner(nn.Module):
     def __init__(
         self,
@@ -126,6 +159,7 @@ class BFTextureConditioner(nn.Module):
             nn.Linear(cross_attention_dim, cross_attention_dim),
         )
         self.pattern_loss_enabled = False
+        self.direct_readout = None
         self.last_pattern_pred = None
         self.last_pattern_target = None
         self.text_guidance = None
@@ -202,6 +236,11 @@ class BFTextureConditioner(nn.Module):
         self.resampler.requires_grad_(True)
         if self.text_guidance is not None:
             self.text_guidance.requires_grad_(True)
+
+    def configure_direct_readout(self):
+        self.direct_readout = FusedDirectReadout(self.cross_attention_dim, self.num_tokens).to(
+            device=self.resampler_queries.device, dtype=self.resampler_queries.dtype)
+        return self.direct_readout
 
     def train_text_guidance_only(self):
         """E8c：原 E5 包括 query/resampler 全部冻结，只训练新增文本模块。"""
@@ -344,6 +383,10 @@ class BFTextureConditioner(nn.Module):
             raise ValueError(f"Unsupported texture_mode: {mode}")
 
         fused_tokens, feature_shapes = built[:2]
+        if self.direct_readout is not None:
+            if local_detail_source != "off":
+                raise ValueError("direct readout requires local_detail_source=off")
+            return self.direct_readout(fused_tokens, self.stage_token_hw), feature_shapes
         # 目标用未加位置编码的局部块，避免位置常数项把余弦损失刷高。
         pattern_target = self.pattern_target(fused_tokens) if self.pattern_loss_enabled else None
         bsz = fused_tokens.shape[0]

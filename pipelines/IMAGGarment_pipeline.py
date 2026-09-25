@@ -222,8 +222,11 @@ class IMAGGarment(StableDiffusionPipeline):
             **film_config,
             **nexus_config,
         ).to(self.device, dtype=torch.float16)
+        if any(key.startswith("direct_readout.") for key in bf_state):
+            conditioner.configure_direct_readout()
         # 新模块必须完整恢复；旧 checkpoint 保留原来的宽松兼容加载。
-        strict = bool(guidance_config["text_guidance_dim"] or film_config["film_hidden_dim"] or nexus_config["nexus_dim"])
+        strict = bool(guidance_config["text_guidance_dim"] or film_config["film_hidden_dim"]
+                      or nexus_config["nexus_dim"] or conditioner.direct_readout is not None)
         missing, unexpected = conditioner.load_state_dict(bf_state, strict=strict)
         self.bf_texture_conditioner = conditioner
         self.bf_clip_embeddings_dim = clip_embed_dim

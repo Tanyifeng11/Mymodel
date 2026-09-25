@@ -1951,7 +1951,7 @@ def main():
     ap.add_argument("--tcpm_scale_lr", type=float, default=1e-5)
     ap.add_argument("--tcpm_mask_inner_only", type=int, default=1, choices=[0, 1])
     ap.add_argument("--freeze_for_tcpm_lite", type=int, default=1, choices=[0, 1])
-    ap.add_argument("--resampler_training", choices=["off", "visual", "text", "text_only"], default="off")
+    ap.add_argument("--resampler_training", choices=["off", "visual", "text", "text_only", "e17_direct"], default="off")
     ap.add_argument("--film_hidden_dim", type=int, default=0,
                     help="0 关闭；正数启用 stage3 FiLM 且仅训练新增模块，建议 128")
     ap.add_argument("--nexus_dim", type=int, default=0, help="E12 attention 维度；0 关闭，首轮 256")
@@ -2433,6 +2433,11 @@ def main():
                 debug=args.debug_checkpoint_load,
             )
 
+    if args.resampler_training == "e17_direct":
+        if not args.gam_init_ckpt or args.resume_from_checkpoint:
+            raise ValueError("E17 direct readout requires a complete GAM checkpoint and a fresh run")
+        bf.configure_direct_readout()
+
     # 先逐值加载全部 E5，再创建新旁路，旧权重的严格加载不需要放宽白名单。
     local_detail_adapter = None
     if is_local_detail:
@@ -2612,7 +2617,10 @@ def main():
         for module in (unet, ref_unet, bf, spatial_texture_encoder, spatial_injection,
                        tcpm_lite, palette_token_mlp):
             module.requires_grad_(False)
-        if args.resampler_training == "text_only":
+        if args.resampler_training == "e17_direct":
+            bf.direct_readout.requires_grad_(True)
+            print("[E17] only fused direct readout is trainable")
+        elif args.resampler_training == "text_only":
             bf.train_text_guidance_only()
             print("[E8c] 完全冻结 E5（含原 query/resampler），仅训练新增 text_guidance。")
         else:
@@ -2691,10 +2699,12 @@ def main():
     if is_texture_adapter:
         add_params(trainable_texture_adapter.parameters(), lr=args.nexus_lr if is_nexus else args.film_lr)
     elif args.resampler_training != "off":
-        if args.resampler_training != "text_only":
+        if args.resampler_training == "e17_direct":
+            add_params(bf.direct_readout.parameters(), lr=args.resampler_lr)
+        elif args.resampler_training != "text_only":
             add_params([bf.resampler_queries], lr=args.resampler_lr)
             add_params(bf.resampler.parameters(), lr=args.resampler_lr)
-        if bf.text_guidance is not None:
+        if bf.text_guidance is not None and args.resampler_training != "e17_direct":
             add_params(bf.text_guidance.parameters(), lr=args.text_guidance_lr)
     else:
         add_params(bf.parameters())
@@ -2749,6 +2759,11 @@ def main():
             for name, parameter in bf.named_parameters():
                 if parameter.requires_grad:
                     print(f"[E8c] trainable: {name}")
+
+    if args.resampler_training == "e17_direct":
+        expected = {id(p) for p in bf.direct_readout.parameters()}
+        if {id(p) for p in trainable_params} != expected:
+            raise RuntimeError("E17 optimizer must contain only direct readout parameters")
 
     if is_texture_adapter:
         expected = {id(p) for p in trainable_texture_adapter.parameters()}

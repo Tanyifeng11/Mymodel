@@ -5,7 +5,7 @@ set -euo pipefail
 PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 DATASETS_ROOT="${DATASETS_ROOT:-/share/home/u2515283058/datasets}"
 RESAMPLER_MODE="${RESAMPLER_MODE:-text}"
-case "${RESAMPLER_MODE}" in visual|text|text_only) ;; *) echo "RESAMPLER_MODE 必须为 visual、text 或 text_only" >&2; exit 1 ;; esac
+case "${RESAMPLER_MODE}" in visual|text|text_only|e17_direct) ;; *) echo "RESAMPLER_MODE 不支持：${RESAMPLER_MODE}" >&2; exit 1 ;; esac
 OUTPUT_BASE="${OUTPUT_BASE:-${PROJECT_ROOT}/output}"
 BASE_CKPT="${BASE_CKPT:-${OUTPUT_BASE}/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt}"
 TEXTURE_ADAPTER_CKPT="${TEXTURE_ADAPTER_CKPT:-${OUTPUT_BASE}/texture_adapter_bf_e20/checkpoint-final/texture_adapter.bin}"
