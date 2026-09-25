@@ -2,14 +2,19 @@ import os
 import torch
 
 
-def load_texture_warmstart(model, state):
+def load_texture_warmstart(model, state, keep_init_prefixes=('bf_texture_conditioner.pattern_head.',)):
     """兼容旧预训练中不存在、且当前明确关闭的palette分支。"""
     expected = model.state_dict()
     missing = set(expected) - set(state)
     unexpected = set(state) - set(expected)
     allowed = ('palette_branch_scale', 'to_k_palette.weight', 'to_v_palette.weight')
     patches = {}
-    for key in missing:
+    keep_init = set()
+    for key in sorted(missing):
+        if any(key.startswith(prefix) for prefix in keep_init_prefixes):
+            # E16-C 新增的纹样保持头：旧权重里没有，保留当前初始化并照常训练。
+            keep_init.add(key)
+            continue
         suffix = next((s for s in allowed if key.endswith('.' + s)), None)
         if suffix is None:
             raise RuntimeError('完整预训练权重缺少必要参数：' + key)
@@ -20,7 +25,11 @@ def load_texture_warmstart(model, state):
     if unexpected:
         raise RuntimeError('完整预训练权重包含未知参数：' + ', '.join(sorted(unexpected)))
     # 保持其余参数严格加载，包括shape校验；浅拷贝不会复制大权重张量。
-    model.load_state_dict(dict(state, **patches), strict=True)
+    # keep_init 的键只跳过加载，shape 差异仍由下面的严格校验拦住。
+    model.load_state_dict(dict(state, **patches), strict=False)
+    unresolved = set(model.state_dict()) - set(state) - keep_init - set(patches)
+    if unresolved:
+        raise RuntimeError('存在未被解释的缺失参数：' + ', '.join(sorted(unresolved)))
     for key in patches:
         model.get_parameter(key).requires_grad_(False)
     return sorted(patches)

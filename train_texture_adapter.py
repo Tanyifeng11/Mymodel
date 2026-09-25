@@ -413,6 +413,8 @@ def parse_args():
     parser.add_argument("--bf_num_tokens", type=int, default=16)
     parser.add_argument("--bf_query_layout", default="global", choices=["global", "spatial"],
                         help="resampler query layout: free global queries or 8x8 spatial priors")
+    parser.add_argument("--bf_pattern_loss_weight", type=float, default=0.0,
+                        help="E16-C 纹样重建辅助监督的权重，0 表示关闭")
     parser.add_argument("--bf_base_channels", type=int, default=32)
     parser.add_argument("--texture_mode", type=str, default="patch_resampled", choices=["patch_resampled", "legacy_pooled"])
     parser.add_argument("--texture_preprocess_mode", type=str, default="crop_tile", choices=["plain_resize", "crop_tile", "plain"])
@@ -571,6 +573,7 @@ def main():
         texture_mode=args.texture_mode,
         query_layout=args.bf_query_layout,
     )
+    bf_texture_conditioner.pattern_loss_enabled = args.bf_pattern_loss_weight > 0
 
     attn_procs = {}
     unet_sd = unet.state_dict()
@@ -700,6 +703,7 @@ def main():
     checkpoint_meta = {
         "texture_num_tokens": args.bf_num_tokens,
         "texture_query_layout": args.bf_query_layout,
+        "texture_pattern_loss_weight": args.bf_pattern_loss_weight,
         "texture_mode": args.texture_mode,
         "image_encoder_path": args.image_encoder_path,
         "clip_hidden_layer": args.clip_hidden_layer,
@@ -827,7 +831,19 @@ def main():
                 else:
                     loss_global = torch.tensor(0.0, device=decoded_pred.device, dtype=decoded_pred.dtype)
 
-                loss = loss_eps + args.lambda_texture_style * loss_style + args.lambda_texture_global * loss_global
+                # E16-C：纹样保持监督。目标来自参考图自身的局部纹样块，
+                # 只提高 resampler 输出的信息量，不加分类器、频谱或对比损失。
+                if args.bf_pattern_loss_weight > 0:
+                    conditioner = unwrapped_texture_adapter.bf_texture_conditioner
+                    loss_pattern = (1.0 - F.cosine_similarity(
+                        conditioner.last_pattern_pred.float(),
+                        conditioner.last_pattern_target.float(), dim=-1)).mean()
+                else:
+                    loss_pattern = torch.tensor(0.0, device=decoded_pred.device, dtype=decoded_pred.dtype)
+
+                loss = (loss_eps + args.lambda_texture_style * loss_style
+                        + args.lambda_texture_global * loss_global
+                        + args.bf_pattern_loss_weight * loss_pattern)
 
                 avg_loss = accelerator.gather(loss.detach().repeat(bsz)).mean().item()
                 accelerator.backward(loss)
@@ -846,6 +862,7 @@ def main():
                         with open(os.path.join(args.output_dir, 'training_metrics.jsonl'), 'a', encoding='utf-8') as log:
                             log.write(json.dumps(dict(step=global_step, loss=avg_loss,
                                 loss_eps=float(loss_eps.detach()), loss_style=float(loss_style.detach()),
+                                loss_pattern=float(loss_pattern.detach()),
                                 drop_flags=batch['drop_image_embeds'], sample_indices=batch['sample_indices'],
                                 token_abs_mean=texture_tokens.detach().float().abs().mean((1,2)).cpu().tolist()))+'\n')
                     accelerator.log(
@@ -854,6 +871,7 @@ def main():
                             "train/loss_eps": loss_eps.detach().item(),
                             "train/loss_style": loss_style.detach().item(),
                             "train/loss_global": loss_global.detach().item(),
+                            "train/loss_pattern": loss_pattern.detach().item(),
                             "train/texture_token_count": texture_tokens.shape[1],
                             "train/lr": optimizer.param_groups[0]["lr"],
                             "train/data_time": load_data_time,

@@ -118,6 +118,16 @@ class BFTextureConditioner(nn.Module):
             nn.Linear(cross_attention_dim * 2, cross_attention_dim),
         )
         self.token_norm = nn.LayerNorm(cross_attention_dim)
+        # E16-C：纹样保持辅助头。把 resampler 输出映回 fused 里的局部纹样块，
+        # 迫使 token 携带位置相关的纹样信息，而不是只做全局外观摘要。
+        self.pattern_head = nn.Sequential(
+            nn.Linear(cross_attention_dim, cross_attention_dim),
+            nn.SiLU(),
+            nn.Linear(cross_attention_dim, cross_attention_dim),
+        )
+        self.pattern_loss_enabled = False
+        self.last_pattern_pred = None
+        self.last_pattern_target = None
         self.text_guidance = None
         self.text_guidance_enabled = True
         if text_guidance_dim:
@@ -212,6 +222,14 @@ class BFTextureConditioner(nn.Module):
             raise ValueError("fused tokens too short for four stage blocks")
         prefix = torch.zeros(1, clip_len, stage.shape[-1], dtype=stage.dtype, device=stage.device)
         return torch.cat([prefix, stage], dim=1)
+
+    def pattern_target(self, fused_tokens: torch.Tensor) -> torch.Tensor:
+        """E16-C：取 fused 中 stage3 的 8×8 局部纹样块作为重建目标。"""
+        stage_tokens = self.stage_token_hw[0] * self.stage_token_hw[1]
+        start = fused_tokens.shape[1] - 2 * stage_tokens
+        if start < 0:
+            raise ValueError("fused token 数不足以定位 stage3 纹样块")
+        return fused_tokens[:, start:start + stage_tokens]
 
     def _encode_texture_features(self, texture_images, text_embeds=None, text_mask=None, apply_film=True,
                                  nexus_text_embeds=None, apply_nexus=True):
@@ -326,6 +344,8 @@ class BFTextureConditioner(nn.Module):
             raise ValueError(f"Unsupported texture_mode: {mode}")
 
         fused_tokens, feature_shapes = built[:2]
+        # 目标用未加位置编码的局部块，避免位置常数项把余弦损失刷高。
+        pattern_target = self.pattern_target(fused_tokens) if self.pattern_loss_enabled else None
         bsz = fused_tokens.shape[0]
         query = self.resampler_queries.expand(bsz, -1, -1)
         if self.query_layout == "spatial":
@@ -341,6 +361,12 @@ class BFTextureConditioner(nn.Module):
             self.last_resampler_attention = resampler_attention.detach()
         tokens = tokens + self.token_mlp(tokens)
         tokens = self.token_norm(tokens)
+        if pattern_target is not None:
+            if pattern_target.shape[1] != tokens.shape[1]:
+                raise ValueError("纹样重建目标与 token 数不一致：%d vs %d"
+                                 % (pattern_target.shape[1], tokens.shape[1]))
+            self.last_pattern_pred = self.pattern_head(tokens)
+            self.last_pattern_target = pattern_target.detach()
         if local_detail_source != "off":
             # A 组复用原始 16 token；B 组绕过 8×8 stage_pool 和 resampler。
             local_tokens = tokens if local_detail_source == "resampled" else built[2]
