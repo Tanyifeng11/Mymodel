@@ -1250,6 +1250,7 @@ def save_training_checkpoint(
             **training_run_config(args),
             "train_global_step": int(global_step),
             "resampler_training": args.resampler_training,
+            "e17_readout_layout": args.e17_readout_layout,
             "text_guidance_lr": args.text_guidance_lr,
             "resampler_lr": args.resampler_lr,
             "seed": args.seed,
@@ -1952,6 +1953,7 @@ def main():
     ap.add_argument("--tcpm_mask_inner_only", type=int, default=1, choices=[0, 1])
     ap.add_argument("--freeze_for_tcpm_lite", type=int, default=1, choices=[0, 1])
     ap.add_argument("--resampler_training", choices=["off", "visual", "text", "text_only", "e17_direct"], default="off")
+    ap.add_argument("--e17_readout_layout", choices=["mean", "select"], default="mean")
     ap.add_argument("--film_hidden_dim", type=int, default=0,
                     help="0 关闭；正数启用 stage3 FiLM 且仅训练新增模块，建议 128")
     ap.add_argument("--nexus_dim", type=int, default=0, help="E12 attention 维度；0 关闭，首轮 256")
@@ -2436,7 +2438,7 @@ def main():
     if args.resampler_training == "e17_direct":
         if not args.gam_init_ckpt or args.resume_from_checkpoint:
             raise ValueError("E17 direct readout requires a complete GAM checkpoint and a fresh run")
-        bf.configure_direct_readout()
+        bf.configure_direct_readout(source_layout=args.e17_readout_layout)
 
     # 先逐值加载全部 E5，再创建新旁路，旧权重的严格加载不需要放宽白名单。
     local_detail_adapter = None

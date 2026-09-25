@@ -70,7 +70,8 @@ def main():
     bf = BFTextureConditioner(clip_embeddings_dim=source["token_source_proj.0.0.weight"].shape[0],
                               num_tokens=source["resampler_queries"].shape[1],
                               stage_channels=channels)
-    bf.configure_direct_readout()
+    layout = "select" if "direct_readout.selection_marker" in source else "mean"
+    bf.configure_direct_readout(source_layout=layout)
     bf.load_state_dict(source, strict=True)
     bf.to(args.device, dtype=torch.float32).eval().requires_grad_(False)
     encoder_params = []

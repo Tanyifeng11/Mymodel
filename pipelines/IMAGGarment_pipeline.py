@@ -223,7 +223,8 @@ class IMAGGarment(StableDiffusionPipeline):
             **nexus_config,
         ).to(self.device, dtype=torch.float16)
         if any(key.startswith("direct_readout.") for key in bf_state):
-            conditioner.configure_direct_readout()
+            layout = "select" if "direct_readout.selection_marker" in bf_state else "mean"
+            conditioner.configure_direct_readout(source_layout=layout)
         # 新模块必须完整恢复；旧 checkpoint 保留原来的宽松兼容加载。
         strict = bool(guidance_config["text_guidance_dim"] or film_config["film_hidden_dim"]
                       or nexus_config["nexus_dim"] or conditioner.direct_readout is not None)

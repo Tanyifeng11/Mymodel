@@ -24,10 +24,13 @@ def sinusoidal_2d_grid(height, width, dim):
 
 
 class FusedDirectReadout(nn.Module):
-    """Equal-source spatial fusion before a small learned token readout."""
+    """Small learned readout with equal spatial token counts per source."""
 
-    def __init__(self, dim, num_tokens):
+    def __init__(self, dim, num_tokens, source_layout="mean"):
         super().__init__()
+        self.source_layout = source_layout
+        if source_layout == "select":
+            self.register_buffer("selection_marker", torch.tensor(1, dtype=torch.uint8))
         self.source_norm = nn.ModuleList(nn.LayerNorm(dim) for _ in range(5))
         self.query = nn.Parameter(torch.randn(1, num_tokens, dim) * 0.02)
         self.attention = nn.MultiheadAttention(dim, 8, batch_first=True)
@@ -49,8 +52,8 @@ class FusedDirectReadout(nn.Module):
             grid = tokens.transpose(1, 2).reshape(len(tokens), tokens.shape[-1], height, width)
             grid = F.adaptive_avg_pool2d(grid, stage_hw)
             spatial.append(self.source_norm[index](grid.flatten(2).transpose(1, 2)))
-        # Each source contributes exactly one fifth before readout; CNN1 cannot win by token count.
-        mixed = torch.stack(spatial).mean(0)
+        # The original mean variant is retained so its in-flight checkpoint stays readable.
+        mixed = torch.cat(spatial, dim=1) if self.source_layout == "select" else torch.stack(spatial).mean(0)
         query = self.query.expand(len(fused), -1, -1)
         tokens, _ = self.attention(query, mixed, mixed, need_weights=False)
         return self.output(tokens)
@@ -237,8 +240,9 @@ class BFTextureConditioner(nn.Module):
         if self.text_guidance is not None:
             self.text_guidance.requires_grad_(True)
 
-    def configure_direct_readout(self):
-        self.direct_readout = FusedDirectReadout(self.cross_attention_dim, self.num_tokens).to(
+    def configure_direct_readout(self, source_layout="mean"):
+        self.direct_readout = FusedDirectReadout(self.cross_attention_dim, self.num_tokens,
+                                                source_layout=source_layout).to(
             device=self.resampler_queries.device, dtype=self.resampler_queries.dtype)
         return self.direct_readout
 

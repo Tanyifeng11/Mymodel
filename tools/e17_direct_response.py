@@ -29,7 +29,8 @@ def main():
                                     clip_model=args.clip_model, device=args.device), ctx)
     state = torch.load(args.direct_checkpoint, map_location="cpu", weights_only=False)
     bf_state = state["bf_texture_conditioner"]
-    ctx["bf"].configure_direct_readout()
+    layout = "select" if "direct_readout.selection_marker" in bf_state else "mean"
+    ctx["bf"].configure_direct_readout(source_layout=layout)
     missing, unexpected = ctx["bf"].load_state_dict(bf_state, strict=True)
     if missing or unexpected:
         raise RuntimeError("E17 BF state mismatch: %s %s" % (missing, unexpected))

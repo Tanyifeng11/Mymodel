@@ -42,7 +42,7 @@ cmd=(
   --texture_adapter_ckpt "${TEXTURE_ADAPTER_CKPT}" --gam_init_ckpt "${BASE_CKPT}"
   --output_dir "${OUTPUT_DIR}"
   --start_global_step "${START_GLOBAL_STEP:-${start_step}}" "${resume_args[@]}"
-  --resampler_training "${RESAMPLER_MODE}" --text_guidance_dim "${TGR_DIM:-256}"
+  --resampler_training "${RESAMPLER_MODE}" --e17_readout_layout "${E17_READOUT_LAYOUT:-mean}" --text_guidance_dim "${TGR_DIM:-256}"
   --text_guidance_heads "${TGR_HEADS:-4}" --text_guidance_max_ratio "${TGR_MAX_RATIO:-0.3}"
   --text_guidance_lr "${TGR_LR:-5e-5}" --resampler_lr "${RESAMPLER_LR:-1e-5}"
   --learning_rate "${RESAMPLER_LR:-1e-5}" --seed "${TRAIN_SEED:-42}"

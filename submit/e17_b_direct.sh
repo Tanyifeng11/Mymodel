@@ -17,8 +17,10 @@ cd "${PROJECT_ROOT}"
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}" PYTHONUNBUFFERED=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=4
 export BASE_CKPT TEXTURE_ADAPTER_CKPT="${TEXTURE_CKPT}"
-export OUTPUT_DIR="${E17_ROOT}/direct_train"
+SUFFIX="${E17_VARIANT_TAG:+_${E17_VARIANT_TAG}}"
+export OUTPUT_DIR="${E17_ROOT}/direct_train${SUFFIX}"
 export RESAMPLER_MODE=e17_direct RESAMPLER_LR="${RESAMPLER_LR:-1e-4}"
+export E17_READOUT_LAYOUT="${E17_READOUT_LAYOUT:-mean}"
 export MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-1000}" CHECKPOINTING_STEPS=0
 export START_GLOBAL_STEP=0 TGR_RESUME_CKPT="" REPORT_TO=none
 if [[ "${DRY_RUN:-0}" != 1 ]]; then
@@ -39,8 +41,8 @@ for TAG in baseline direct; do
     --mask-root "${PROJECT_ROOT}/eval_outputs/e14_causal_inputs/regions"
     --count "${GEN_COUNT:-32}" --seed 42 --steps "${GEN_STEPS:-50}"
     --device cuda:0 --suite reference
-    --output "${E17_ROOT}/unused_layers_${TAG}"
-    --output-reference "${E17_ROOT}/generation_${TAG}")
+    --output "${E17_ROOT}/unused_layers_${TAG}${SUFFIX}"
+    --output-reference "${E17_ROOT}/generation_${TAG}${SUFFIX}")
   printf '%q ' "${CMD[@]}"; printf '\n'
   if [[ "${DRY_RUN:-0}" != 1 ]]; then "${CMD[@]}"; fi
 done
@@ -51,6 +53,6 @@ CMD=(python -m tools.e17_direct_response
   --direct-checkpoint "${DIRECT_CKPT}"
   --base-model "${PROJECT_ROOT}/models/stable-diffusion-v1-5"
   --clip-model "${PROJECT_ROOT}/models/clip"
-  --count "${GEN_COUNT:-32}" --device cuda:0 --output "${E17_ROOT}/direct_response")
+  --count "${GEN_COUNT:-32}" --device cuda:0 --output "${E17_ROOT}/direct_response${SUFFIX}")
 printf '%q ' "${CMD[@]}"; printf '\n'
 if [[ "${DRY_RUN:-0}" != 1 ]]; then "${CMD[@]}"; fi
