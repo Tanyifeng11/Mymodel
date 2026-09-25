@@ -14,6 +14,6 @@ PROJECT_ROOT="${PROJECT_ROOT:-/share/home/u2515283058/Mymodel}"
 cd "${PROJECT_ROOT}"
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}" PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=4
-for TAG in baseline c_pattern64; do
+for TAG in ${E17_SOURCE_TAGS:-baseline c_pattern64 gam}; do
   python -m tools.e17_source_probe --probe-dir "${PROJECT_ROOT}/e17/a_${TAG}" --device cuda:0
 done
