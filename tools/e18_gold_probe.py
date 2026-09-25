@@ -25,7 +25,10 @@ def conditioner(source):
                               num_tokens=source["resampler_queries"].shape[1], stage_channels=channels)
     if "direct_readout.selection_marker" in source:
         bf.configure_direct_readout(source_layout="select")
-    bf.load_state_dict(source, strict=True)
+    missing, unexpected = bf.load_state_dict(source, strict=False)
+    if set(missing) - {"pattern_head.0.weight", "pattern_head.0.bias",
+                        "pattern_head.2.weight", "pattern_head.2.bias"} or unexpected:
+        raise ValueError("unexpected BF checkpoint keys: %s %s" % (missing, unexpected))
     return bf
 
 
