@@ -67,7 +67,8 @@ def bootstrap(values):
     return {"mean": float(values.mean()), "ci95": np.percentile(means, [2.5, 97.5]).tolist()}
 
 
-def residual_response(pipe, dataset, indices, args, original, current, mapper, constant, clean_rows=None):
+def residual_response(pipe, dataset, indices, args, original, current, mapper, constant,
+                      clean_rows=None, feature_fn=pattern_features, branch_name="handcrafted"):
     """固定 target/noise/text/sketch；采样前向而非完整生成，记录实际注入残差。"""
     from garment_mask_utils import build_sketch_garment_mask
     from tools.e15_stages import ResidualProbe, texture_processors
@@ -87,13 +88,13 @@ def residual_response(pipe, dataset, indices, args, original, current, mapper, c
             with Image.open(reference) as im:
                 image = im.convert("RGB")
             rotated = image.transpose(Image.Transpose.ROTATE_90)
-            raw = [pattern_features(rgb(im, pipe.device)) for im in (image, rotated)]
+            raw = [feature_fn(rgb(im, pipe.device)) for im in (image, rotated)]
             patterns = [mapper(x).half() for x in raw]
             gam = [bf_tokens(pipe, original, im, text, args.width, args.height) for im in (image, rotated)]
             bf = [bf_tokens(pipe, current, im, text, args.width, args.height) for im in (image, rotated)]
             constant_tokens = mapper(constant).half()
             banks = {"gam": gam, "bf_only": bf,
-                     "handcrafted": [torch.cat([b, p], 1) for b, p in zip(bf, patterns)],
+                     branch_name: [torch.cat([b, p], 1) for b, p in zip(bf, patterns)],
                      "constant_pattern": [torch.cat([b, constant_tokens], 1) for b in bf]}
             tokens = {}
             for arm, pair in banks.items():
@@ -119,7 +120,7 @@ def residual_response(pipe, dataset, indices, args, original, current, mapper, c
                     for proc in texture_processors(pipe.unet):
                         proc.num_tokens = triplet[0].shape[1]
                     captured, preds = [], []
-                    for value in triplet + ([pattern_only] if arm == "handcrafted" else []):
+                    for value in triplet + ([pattern_only] if arm == branch_name else []):
                         probe.reset()
                         pred = pipe.unet(noisy, t, encoder_hidden_states=torch.cat([text, value], 1),
                                          cross_attention_kwargs={"sa_hidden_states": cached, "tcpm_garment_mask": mask}).sample
@@ -138,7 +139,7 @@ def residual_response(pipe, dataset, indices, args, original, current, mapper, c
                             "token_d_rot": float((triplet[0] - triplet[1]).float().norm() / triplet[0].float().norm().clamp_min(1e-8)),
                             "token_rms": float(triplet[0].float().square().mean().sqrt()),
                             "mask_source": mask_info["mask_source"]}
-                    if arm == "handcrafted":
+                    if arm == branch_name:
                         item["pattern_only_r_rot"] = float(np.mean([float(
                             (captured[0][l].float() - captured[3][l].float()).norm() /
                             (captured[0][l].float() - captured[2][l].float()).norm().clamp_min(1e-8)) for l in active]))
@@ -149,13 +150,13 @@ def residual_response(pipe, dataset, indices, args, original, current, mapper, c
     finally:
         probe.remove()
     aggregates = {}
-    for arm in ("gam", "bf_only", "handcrafted", "constant_pattern"):
+    for arm in ("gam", "bf_only", branch_name, "constant_pattern"):
         per_sample = [np.mean([r["r_rot"] for r in records if r["sample"] == i and r["arm"] == arm]) for i in indices]
         aggregates[arm] = {"r_rot": bootstrap(per_sample), "per_sample": per_sample,
                            "d_rot": float(np.mean([r["token_d_rot"] for r in records if r["arm"] == arm]))}
     for arm in ("bf_only", "constant_pattern"):
-        difference = np.array(aggregates["handcrafted"]["per_sample"]) - aggregates[arm]["per_sample"]
-        aggregates["handcrafted_vs_" + arm] = bootstrap(difference)
+        difference = np.array(aggregates[branch_name]["per_sample"]) - aggregates[arm]["per_sample"]
+        aggregates[branch_name + "_vs_" + arm] = bootstrap(difference)
     return {"records": records, "aggregate": aggregates, "indices": indices, "timesteps": args.timesteps,
             "reference_domain": "held-out clean stripes" if clean_rows is not None else "fixed real references",
             "note": "E5/GAM sketch, TCPM and learned injection gates active; R averaged only over active texture layers; inactive semantic layers excluded"}
