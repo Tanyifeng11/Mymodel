@@ -67,7 +67,7 @@ def bootstrap(values):
     return {"mean": float(values.mean()), "ci95": np.percentile(means, [2.5, 97.5]).tolist()}
 
 
-def residual_response(pipe, dataset, indices, args, original, current, mapper, constant):
+def residual_response(pipe, dataset, indices, args, original, current, mapper, constant, clean_rows=None):
     """固定 target/noise/text/sketch；采样前向而非完整生成，记录实际注入残差。"""
     from garment_mask_utils import build_sketch_garment_mask
     from tools.e15_stages import ResidualProbe, texture_processors
@@ -79,10 +79,12 @@ def residual_response(pipe, dataset, indices, args, original, current, mapper, c
     pipe.set_scale(.6)
     pipe.set_ipa_scale(1.0)
     try:
-        for index in indices:
+        for position, index in enumerate(indices):
             row, batch = dataset.data[index], dataset[index]
             text = pipe.text_encoder(batch["text_input_ids"].to(pipe.device))[0]
-            with Image.open(Path(args.data_root) / row.get("texture", row.get("color"))) as im:
+            reference = (Path(args.clean) / clean_rows[position]["texture"] if clean_rows is not None
+                         else Path(args.data_root) / row.get("texture", row.get("color")))
+            with Image.open(reference) as im:
                 image = im.convert("RGB")
             rotated = image.transpose(Image.Transpose.ROTATE_90)
             raw = [pattern_features(rgb(im, pipe.device)) for im in (image, rotated)]
@@ -141,8 +143,9 @@ def residual_response(pipe, dataset, indices, args, original, current, mapper, c
                             (captured[0][l].float() - captured[3][l].float()).norm() /
                             (captured[0][l].float() - captured[2][l].float()).norm().clamp_min(1e-8)) for l in active]))
                     records.append(item)
-            print("[e19-a-response] sample", index, flush=True)
-            write_json(Path(args.output) / "response_partial.json", records)
+            domain = "clean" if clean_rows is not None else "real"
+            print("[e19-a-response]", domain, "sample", index, flush=True)
+            write_json(Path(args.output) / ("response_%s_partial.json" % domain), records)
     finally:
         probe.remove()
     aggregates = {}
@@ -154,6 +157,7 @@ def residual_response(pipe, dataset, indices, args, original, current, mapper, c
         difference = np.array(aggregates["handcrafted"]["per_sample"]) - aggregates[arm]["per_sample"]
         aggregates["handcrafted_vs_" + arm] = bootstrap(difference)
     return {"records": records, "aggregate": aggregates, "indices": indices, "timesteps": args.timesteps,
+            "reference_domain": "held-out clean stripes" if clean_rows is not None else "fixed real references",
             "note": "E5/GAM sketch, TCPM and learned injection gates active; R averaged only over active texture layers; inactive semantic layers excluded"}
 
 
@@ -182,6 +186,8 @@ def main():
     args.seed, args.steps = 42, 50
     infer = load_inference_module()
     namespace = build_inference_args(args)
+    namespace.texture_num_tokens = 16
+    namespace.force_texture_num_tokens_override = False
     pipe, _ = infer.prepare(namespace)
     args.width, args.height = namespace.width, namespace.height
     original = pipe.bf_texture_conditioner.eval().requires_grad_(False)
@@ -199,6 +205,7 @@ def main():
                 "amplitude": "each pattern token RMS equals train-only mean BF token RMS; no scale sweep",
                 "interface": "concat appearance+pattern BEFORE frozen TCPM; dynamic processor token count",
                 "training": "none", "primary_mapping_seed": 42,
+                "primary_response": "32 held-out clean stripe references paired with fixed 32 target/sketch/noise cases; real references reported separately",
                 "checkpoints": {"gam": args.checkpoint, "appearance": args.appearance_checkpoint},
                 "preprocess": "actual generation path; CLIP original PIL, BF CNN plain resize to checkpoint dimensions",
                 "gates": {"geometry": "all mapping seeds and all unseen frequency/phase groups final margin > .01; final global margin exceeds BF-only by .01",
@@ -250,8 +257,11 @@ def main():
                                 image_root_path=args.data_root, texture_preprocess_mode="plain_resize",
                                 t_drop_rate=0, i_drop_rate=0, ti_drop_rate=0)
             response = residual_response(pipe, dataset, sample_indices(dataset, 32), args,
-                                         original, current, mappers[42], constant)
+                                         original, current, mappers[42], constant, rows)
             write_json(out / "response.json", response)
+            real_response = residual_response(pipe, dataset, sample_indices(dataset, 32), args,
+                                              original, current, mappers[42], constant)
+            write_json(out / "response_real.json", real_response)
         response_pass = False
         if response:
             a = response["aggregate"]
@@ -264,6 +274,7 @@ def main():
     report = {"geometry": geometry, "response": response["aggregate"] if response else None,
               "freeze_audit": freeze, "calibration_rms": rms, "geometry_pass": geometry_pass,
               "response_pass": response_pass, "a_pass": geometry_pass and response_pass,
+              "real_response": real_response["aggregate"] if response else None,
               "next": "evaluate learned pattern encoder" if geometry_pass and response_pass else "stop before E19-B; inspect conditioning interface",
               "complete": not args.geometry_only}
     write_json(out / "report.json", report)
