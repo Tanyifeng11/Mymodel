@@ -115,10 +115,13 @@ def main():
             geometry[str(seed)] = {"pattern": summary(token_vector(patterns).cpu(), rows),
                                    "final": summary(finals, rows)}
         write_json(out / "geometry.json", geometry)
-        geometry_pass = all(geometry[str(seed)]["final"]["minimum_group_margin"] > .01 and
-                            geometry[str(seed)]["final"]["margin"] >= .5 * a_report["geometry"]["final_42"]["margin"] and
-                            feature_results[str(seed)]["validation"]["cosine"] >= .9 and
-                            feature_results[str(seed)]["validation"]["spectrum_cosine"] >= .8 for seed in encoders)
+        direction_geometry_pass = all(geometry[str(seed)]["final"]["minimum_group_margin"] > .01 and
+                                      geometry[str(seed)]["final"]["margin"] >= .5 * a_report["geometry"]["final_42"]["margin"]
+                                      for seed in encoders)
+        feature_fidelity_pass = all(feature_results[str(seed)]["validation"]["cosine"] >= .9 and
+                                    feature_results[str(seed)]["validation"]["spectrum_cosine"] >= .8
+                                    for seed in encoders)
+        geometry_pass = direction_geometry_pass and feature_fidelity_pass
         response = None
         if geometry_pass:
             dataset = MyDataset(args.manifest, pipe.tokenizer, height=args.height, width=args.width,
@@ -137,6 +140,7 @@ def main():
     assert all(freeze.values())
     report = {"features": feature_results, "geometry": geometry, "freeze_audit": freeze,
               "parameters": sum(p.numel() for p in encoders[42].parameters()),
+              "direction_geometry_pass": direction_geometry_pass, "feature_fidelity_pass": feature_fidelity_pass,
               "geometry_pass": geometry_pass, "response_pass": response_pass,
               "b_pass": geometry_pass and response_pass, "complete": True,
               "response": response["aggregate"] if response else None,
