@@ -37,9 +37,9 @@ def motif_mask(size, frequency, angle, phase):
     return result.reshape(size, size)
 
 
-def make_data(output):
+def make_data(output, settings=None):
     output.mkdir(parents=True, exist_ok=True)
-    settings = {"train": ((3, 5, 8, 12), (0., .23, .47), (0, 30, 90)),
+    settings = settings or {"train": ((3, 5, 8, 12), (0., .23, .47), (0, 30, 90)),
                 "primary": ((4, 10), (.11, .36), (0, 45, 90)),
                 "extra": ((6, 14), (.07, .19, .41), (15, 60, 105))}
     data = {}
@@ -69,7 +69,7 @@ def make_data(output):
     draw = ImageDraw.Draw(sheet)
     for k, kind in enumerate(PATTERNS):
         for c in range(4):
-            row = next(r for r in data["primary"] if r["pattern"] == kind and r["palette"] == c and r["angle"] == 0)
+            row = next(r for r in data["primary"] if r["pattern"] == kind and r["palette"] == c)
             sheet.paste(Image.open(output / row["texture"]).resize((160, 160)), (k * 160, c * 185))
             draw.text((k * 160 + 2, c * 185 + 160), "%s c%d" % (kind, c), fill="black")
     sheet.save(output / "preview.png")
