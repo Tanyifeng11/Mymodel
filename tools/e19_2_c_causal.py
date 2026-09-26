@@ -97,7 +97,23 @@ def main():
     dataset = MyDataset(str(root / "data/processed/bf_full_audit_v1/validation_clean.json"), pipe.tokenizer,
                         height=height, width=width, image_root_path=args.data_root,
                         texture_preprocess_mode="plain_resize", t_drop_rate=0, i_drop_rate=0, ti_drop_rate=0)
-    indices = sample_indices(dataset, len(cases))
+    from torchvision.transforms.functional import to_tensor
+    requested = sample_indices(dataset, len(cases))
+    indices, excluded = [], []
+    # 先检查轮廓有效性，再固定纹样配对；不按模型表现筛选案例。
+    candidates = requested + [i for i in range(len(dataset)) if i not in requested]
+    for index in candidates:
+        sketch = Image.open(Path(args.data_root) / dataset.data[index]["sketch"]).convert("RGB").resize((width, height), Image.BILINEAR)
+        mask_image, info = build_sketch_garment_mask(sketch, width, height)
+        body = build_region_masks(to_tensor(mask_image)[None], 17)[0]
+        area = float(F.interpolate(body, size=(height // 8, width // 8), mode="area").sum())
+        if area <= 4:
+            excluded.append({"index": index, "reason": "invalid garment interior", "latent_interior_area": area, "mask_source": info["mask_source"]})
+            continue
+        indices.append(index)
+        if len(indices) == len(cases):
+            break
+    assert len(indices) == len(cases)
     protocol = {"stage": "C controlled causal sanity check; no training or full sampling",
                 "target": "held-out pattern image plain-resized onto fixed real sketch garment mask; white background; target and reference share known identity/color/orientation/period",
                 "scope": "synthetic flat garment targets, not photorealistic garment success; repeated_print is chevron prototype; orientation gate only on stripes",
@@ -107,7 +123,10 @@ def main():
                 "readouts": "regional noise MSE; wrong-minus-matched; residual response; x0 latent delta projection onto known counterfactual target attribute delta",
                 "projection_limit": "latent counterfactual signature is descriptive, not an independently validated semantic classifier; all cross-attribute projections reported",
                 "gate": "identity, stripe orientation and period all have case-bootstrap lower95CI interior advantage>0, positive mean at every timestep, and positive mean target-attribute projection; otherwise stop before D",
-                "mask_backend": mask_backend_info(), "sketch_indices": indices, "cases": cases}
+                "mask_backend": mask_backend_info(), "sketch_indices": indices,
+                "requested_sketch_indices": requested, "excluded_invalid_masks": excluded,
+                "mask_selection": "original fixed indices first, then ascending manifest order; eligibility uses mask area only, before U-Net evaluation",
+                "cases": cases}
     write_json(out / "protocol.json", protocol)
     pipe.set_scale(.6)
     pipe.set_ipa_scale(1.)
@@ -142,7 +161,6 @@ def main():
                 tokens["gam"] = pipe.tcpm_lite(bf_tokens(pipe, pipe.bf_texture_conditioner, images["matched"], text, width, height), text)
                 sketch = Image.open(Path(args.data_root) / dataset.data[index]["sketch"]).convert("RGB").resize((width, height), Image.BILINEAR)
                 mask_image, info = build_sketch_garment_mask(sketch, width, height)
-                from torchvision.transforms.functional import to_tensor
                 mask = to_tensor(mask_image)[None].to(device, torch.float16)
                 full_regions = build_region_masks(mask, 17)
                 targets = {}
