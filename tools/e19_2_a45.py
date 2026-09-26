@@ -29,6 +29,22 @@ from tools.e19_handcrafted import digest
 SCALES = (.5, .75, 1., 1.25, 1.5, 2.)
 
 
+def centered_mask(kind, frequency, angle, phase):
+    # 所有尺度固定中心处的纹样相位，避免尺度压力测试额外混入平移。
+    y, x = np.mgrid[:256, :256].astype(float)
+    x, y = x - 127.5, y - 127.5
+    a = np.deg2rad(angle)
+    u = ((x * np.cos(a) + y * np.sin(a)) * frequency / 256 + phase + .5) % 1 - .5
+    v = ((-x * np.sin(a) + y * np.cos(a)) * frequency / 256 + phase + .5) % 1 - .5
+    if kind == "repeated_print":
+        score = np.abs(v - (.30 - 1.2 * np.abs(u))) + 4 * np.maximum(np.abs(u) - .30, 0) + 4 * np.maximum(np.abs(v) - .35, 0)
+    else:
+        score = {"stripe": np.abs(u), "plaid": np.minimum(np.abs(u), np.abs(v)), "dots": u ** 2 + v ** 2}[kind]
+    mask = np.zeros(65536, dtype=bool)
+    mask[np.argsort(score.ravel(), kind="stable")[:16384]] = True
+    return mask.reshape(256, 256)
+
+
 def make_stress(folder):
     folder.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -40,8 +56,7 @@ def make_stress(folder):
                     for kind in PATTERNS:
                         for scale in SCALES:
                             frequency = base / scale
-                            mask = (motif_mask(256, frequency, angle, phase) if kind == "repeated_print"
-                                    else pattern_mask(kind, 256, frequency, angle, phase, fraction=.25))
+                            mask = centered_mask(kind, frequency, angle, phase)
                             for color, palette in enumerate(PALETTES):
                                 image = Image.fromarray(np.where(mask[..., None], palette[0], palette[1]).astype("uint8"))
                                 name = "%d_%s_f%d_p%d_a%d_s%.2f_c%d.png" % (seed, kind, base, phase_id, angle, scale, color)
@@ -125,7 +140,7 @@ def main():
                 "probe": "A3-1 original train-only probe deterministically reconstructed once, baseline verified, then fixed across A4/A5",
                 "a4": {"S0": "rotation only", "S1": "actual rotation_scale code with scale=1; same warp/crop and encoder resize, no artificial extra resampling",
                        "S2": "oracle period scale normalization", "S3": "harmonic-aware period scale normalization"},
-                "a5": "analytic rerender of same template with frequency=base_frequency/magnification; avoids input resize artifacts; orientations 30/45/60 and exact 25% foreground/color balance",
+                "a5": "analytic rerender with frequency=base_frequency/magnification and fixed phase at image CENTER; avoids input resize artifacts and extra translation; orientations 30/45/60, exact 25% foreground/color balance",
                 "a5_scales": SCALES, "a5_base_frequencies": [4, 10], "a5_phase_seeds": [142, 143, 144],
                 "gate": "all model seeds: each normal .75/1/1.25/1.5 scale BA>=.85, per-class recall>=.75, anchor cosine>=.8; normal cross-scale cosine>=.8 and identity margin>=.3; geometry unchanged",
                 "routing": "normal pass -> B with stated scale range; normal fail -> equal-budget A6; full pass additionally covers .5/2 extremes",
