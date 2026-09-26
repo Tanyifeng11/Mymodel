@@ -43,3 +43,35 @@ def rotation_only(images, angles):
     crop = int(size / math.sqrt(2))
     start = (size - crop) // 2
     return rotated[..., start:start + crop, start:start + crop]
+
+
+@torch.no_grad()
+def fft_period(images):
+    """读出原图主频半径（全图周期数）；独立审计后用于尺度归一化。"""
+    gray = (images.float() * images.new_tensor([.299, .587, .114])[None, :, None, None]).sum(1)
+    gray = gray - gray.mean((-2, -1), keepdim=True)
+    size = gray.shape[-1]
+    window = torch.hann_window(size, periodic=False, device=images.device)
+    power = torch.fft.fftshift(torch.fft.fft2(gray * window[:, None] * window[None, :]), dim=(-2, -1)).abs().square()
+    freq = torch.fft.fftshift(torch.fft.fftfreq(size, device=images.device)) * size
+    fy, fx = torch.meshgrid(freq, freq, indexing="ij")
+    radius = (fx.square() + fy.square()).sqrt()
+    power = power * ((radius >= 2) & (radius <= size / 4))
+    peak = power.flatten(1).argmax(1)
+    return radius.flatten()[peak].round()
+
+
+def rotation_scale(images, angles, frequencies, target_frequency=3.):
+    """同一次重采样中旋转并归一化周期；目标取训练最小频率，避免虚构图外内容。"""
+    scale = target_frequency / frequencies
+    assert bool((scale <= 1).all()), "target frequency must not require extrapolation"
+    c, s = angles.cos() * scale, angles.sin() * scale
+    affine = images.new_zeros((len(images), 2, 3))
+    affine[:, 0, 0], affine[:, 0, 1] = c, -s
+    affine[:, 1, 0], affine[:, 1, 1] = s, c
+    grid = F.affine_grid(affine, images.shape, align_corners=False)
+    rotated = F.grid_sample(images, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+    size = images.shape[-1]
+    crop = int(size / math.sqrt(2))
+    start = (size - crop) // 2
+    return rotated[..., start:start + crop, start:start + crop]
