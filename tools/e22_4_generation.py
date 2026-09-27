@@ -147,7 +147,15 @@ def main():
 
     def check_pipe(pipe, w, h):
         assert (w, h) == (old_protocol["width"], old_protocol["height"])
-        assert json.loads(json.dumps(dict(pipe.scheduler.config))) == old_protocol["scheduler_config"]
+        current = json.loads(json.dumps(dict(pipe.scheduler.config)))
+        previous = dict(old_protocol["scheduler_config"])
+        # diffusers 从集合创建默认字段列表；跨进程顺序可能不同，不属于采样参数。
+        for config in (current, previous):
+            if "_use_default_values" in config:
+                config["_use_default_values"] = sorted(config["_use_default_values"])
+        assert pipe.scheduler.__class__.__name__ == old_protocol["scheduler"]
+        assert current == previous, {k: (current.get(k), previous.get(k)) for k in current.keys() | previous.keys()
+                                     if current.get(k) != previous.get(k)}
 
     def reproduce(pipe, name, w, h, bank=None, injection=None):
         short = {**cases, "references": cases["references"][:1], "sketches": cases["sketches"][:1]}
