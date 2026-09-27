@@ -175,7 +175,7 @@ def qualified_cache(root, pipe, bf, pattern, full, width, height, out):
     return saved
 
 
-def train(pipe, scorer, parameters, cache, aligned, steps, out):
+def train(pipe, scorer, parameters, cache, aligned, steps, out, components=None):
     rng = random.Random(2121)
     optimizer = torch.optim.AdamW(parameters, lr=1e-4, weight_decay=.01)
     scaler = torch.cuda.amp.GradScaler(init_scale=16., growth_interval=100000)
@@ -194,7 +194,11 @@ def train(pipe, scorer, parameters, cache, aligned, steps, out):
         # 对等轴格纹/点阵不伪造横竖方向监督。
         pattern_loss = scores["identity"] + scores["period"] + (scores["orientation"] if ex["row"]["pattern"] == "stripe" else 0. * scores["orientation"])
         diffusion = (eps.float() - noise.float()).square().mean()
-        loss = diffusion + (.1 if aligned else 0.) * pattern_loss
+        if components is None:
+            loss = diffusion + (.1 if aligned else 0.) * pattern_loss
+        else:
+            selected = sum((scores[k] if k != "orientation" or ex["row"]["pattern"] == "stripe" else 0. * scores[k]) for k in components)
+            loss = diffusion + .1 * selected
         optimizer.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
