@@ -147,7 +147,7 @@ def main():
 
     def check_pipe(pipe, w, h):
         assert (w, h) == (old_protocol["width"], old_protocol["height"])
-        assert dict(pipe.scheduler.config) == old_protocol["scheduler_config"]
+        assert json.loads(json.dumps(dict(pipe.scheduler.config))) == old_protocol["scheduler_config"]
 
     def reproduce(pipe, name, w, h, bank=None, injection=None):
         short = {**cases, "references": cases["references"][:1], "sketches": cases["sketches"][:1]}
