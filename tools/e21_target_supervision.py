@@ -216,7 +216,7 @@ def train(pipe, scorer, parameters, cache, aligned, steps, out, components=None)
 
 
 @torch.no_grad()
-def evaluate(pipe, scorer, cache, out):
+def evaluate(pipe, scorer, cache, out, include_local=False):
     records = []
     text = cache["text"].to(pipe.device)
     for ex in cache["eval"]:
@@ -241,7 +241,7 @@ def evaluate(pipe, scorer, cache, out):
                     fg = (image.detach().clamp(0, 1).mean(1, keepdim=True) < .95).float()
                     struct = structure(image, mask, sketch_image)
                     hard_period = float(harmonic_period(predicted)["scalar"])
-                    records.append({"case": ex["case"], "seed": seed, "t": step, "intervention": name,
+                    row = {"case": ex["case"], "seed": seed, "t": step, "intervention": name,
                                     "pattern": ex["row"]["pattern"], "scores": {k: float(v) for k, v in losses.items()},
                                     "identity_correct": int(scorer(predicted).argmax(-1)) == PATTERNS.index(ex["row"]["pattern"]),
                                     "direction_correct": bool((direction(predicted)[:, 0]*direction(ex["target_patch"].to(pipe.device))[:, 0]>0).item()) if ex["row"]["pattern"] == "stripe" else None,
@@ -249,7 +249,11 @@ def evaluate(pipe, scorer, cache, out):
                                     "period_pixel_mae": abs(128/max(hard_period, 1)-128/ex["row"]["frequency"]),
                                     "epsilon": {k: float(masked_mse(eps, noise, v)) for k, v in regions.items()},
                                     "rgb": {k: float(masked_mse(image, ex["rgb"].to(pipe.device), v)) for k, v in fullregions.items()},
-                                    **struct, "leakage": float((fg*fullregions["background"]).sum()/fullregions["background"].sum().clamp_min(1))})
+                                    **struct, "leakage": float((fg*fullregions["background"]).sum()/fullregions["background"].sum().clamp_min(1))}
+                    if include_local:
+                        from models.local_pattern_geometry import losses as local_losses
+                        row["local"] = {k: float(v) for k, v in local_losses(predicted, ex["target_patch"].to(pipe.device), ex["row"]["frequency"]).items()}
+                    records.append(row)
         write_json(out / "records_partial.json", records)
         print("[e21-eval]", out.name, ex["case"], flush=True)
     write_json(out / "records.json", records)
