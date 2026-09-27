@@ -146,7 +146,7 @@ def current_tokens(pipe,bf,pattern,image,width,height):
 
 
 @torch.no_grad()
-def current_null(pipe,bf,width,height):
+def current_null(pipe,bf,width,height,pattern_tokens=8):
     negative = text_tokens(pipe,[" worst quality, low quality"])
     pixels = pipe.clip_image_processor(images=[Image.new("RGB",(256,256))],return_tensors="pt").pixel_values
     vision = pipe.image_encoder(pixels.to(pipe.device,torch.float16),output_hidden_states=True)
@@ -156,10 +156,11 @@ def current_null(pipe,bf,width,height):
              texture_mode="patch_resampled",text_embeds=negative,
              apply_text_guidance=True,apply_film=True,apply_nexus=True)[0]
     # No reference enters CFG negative: current BF zero-input + eight null pattern tokens.
-    return pipe.tcpm_lite(torch.cat([app,torch.zeros_like(app[:,:8])],1),negative)
+    return pipe.tcpm_lite(torch.cat([app,torch.zeros_like(app[:,:pattern_tokens])],1),negative)
 
 
-def generate_arm(pipe,arm,cases,out,width,height,bank=None,injection=None):
+def generate_arm(pipe,arm,cases,out,width,height,bank=None,injection=None,num_tokens=None):
+    num_tokens = (16 if arm=="E5" else 24) if num_tokens is None else num_tokens
     folder = out/arm
     folder.mkdir(exist_ok=True)
     rows = []
@@ -199,8 +200,8 @@ def generate_arm(pipe,arm,cases,out,width,height,bank=None,injection=None):
                                          width=width,height=height,num_inference_steps=50,guidance_scale=7.,
                                          sketch_scale=.6,ipa_scale=1.,texture_mode="patch_resampled",
                                          texture_condition_mode="token",texture_preprocess_mode="plain_resize",
-                                         texture_num_tokens=16 if arm=="E5" else 24,
-                                         force_texture_num_tokens_override=arm!="E5",texture_scale=1.,
+                                         texture_num_tokens=num_tokens,
+                                         force_texture_num_tokens_override=num_tokens!=16,texture_scale=1.,
                                          spatial_mask=mask,generator=torch.Generator(device=pipe.device).manual_seed(seed))[0]
                     generated.save(folder/(name+".png"))
                     row = {"arm":arm,"reference":ref["id"],"sketch":sk["id"],"seed":seed,"variant":v["variant"],
