@@ -61,12 +61,36 @@ def accuracy(rows):
     return case_stat([(r["case"], float(r["period_correct"])) for r in rows if r["variant"]=="matched"])
 
 
+def next_step(result):
+    carrier = result["groups"]["P2_carrier"]
+    if result["pass"]:
+        return "E22.3 joint only after independent carrier and phase gates"
+    if not carrier["geometry_pass"]:
+        return "stop additive period encoding; inspect frequency-modulated synthesis rather than more encoding variants"
+    failures = []
+    if not carrier["safety_pass"]:
+        failures.append("period adapter boundary/background localization")
+    if not carrier["period_nondegrading"]:
+        failures.append("target period accuracy preservation")
+    if not result["phase_pass"]:
+        failures.append("phase dependence")
+    return "positive period epsilon advantage, but stop before joint; resolve " + ", ".join(failures)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
+    parser.add_argument("--refresh-conclusion", action="store_true")
     args = parser.parse_args()
     root, out = Path(args.root), Path(args.root)/"e22_2"
     out.mkdir(exist_ok=True)
+    if args.refresh_conclusion:
+        # Metadata-only correction; preserve every numerical result and checkpoint.
+        result = json.loads((out/"report.json").read_text())
+        result["next"] = next_step(result)
+        write_json(out/"report.json", result)
+        print(result["next"], flush=True)
+        return
     safe_report = json.loads((root/"e22_1/report.json").read_text())
     assert safe_report["pass"], "E22.1 safety must pass before period training"
     safe = torch.load(root/"e22_1/safe_orientation.pt", map_location="cpu", weights_only=False)
@@ -173,7 +197,7 @@ def main():
               "pass":reports[name]["pass"] and phase_pass, "schedule_identical":True,
               "frozen_pass":True, "orientation_checkpoint_unchanged":True,
               "generation_executed":False, "joint_executed":False}
-    result["next"] = "E22.3 joint only after independent carrier and phase gates" if result["pass"] else "stop additive period encoding; inspect frequency-modulated synthesis rather than more encoding variants"
+    result["next"] = next_step(result)
     write_json(out/"report.json", result)
     print("[e22.2-final]", result["pass"], result["next"], flush=True)
 
