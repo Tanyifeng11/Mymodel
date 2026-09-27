@@ -13,6 +13,8 @@ from PIL import Image
 from torchvision.transforms.functional import to_tensor
 
 from garment_mask_utils import build_region_masks
+from eval.eval_utils import estimate_foreground_mask
+from eval.metrics import _binary_edges, _dilate_binary
 from models.harmonic_period import harmonic_period
 from models.pattern_utilization import PatternKVLoRA
 from models.target_pattern_score import TargetScorer, direction, interior_rectangle, patch
@@ -24,6 +26,20 @@ from tools.e20_utilization import WRONG, REGIONS, case_stat, context, frozen_dig
 
 
 ATTRS = ("identity", "orientation", "period")
+
+
+def structure(image, mask, sketch):
+    """复用 E15 的边缘阈值、容差与前景估计，输入为单步 x0 而非完整生成。"""
+    array = (image[0].detach().clamp(0, 1).permute(1, 2, 0).cpu().numpy()*255).round().astype(np.uint8)
+    pil = Image.fromarray(array)
+    edge = _binary_edges(np.asarray(pil.convert("L"), dtype=np.float32), .08, .16)
+    reference = _binary_edges(np.asarray(sketch.convert("L"), dtype=np.float32), .04, .12)
+    precision = float((edge & _dilate_binary(reference, 5)).sum() / max(edge.sum(), 1))
+    recall = float((reference & _dilate_binary(edge, 5)).sum() / max(reference.sum(), 1))
+    fg = estimate_foreground_mask(pil, pil.size)
+    truth = mask.squeeze().cpu().numpy() > .5
+    return {"sketch_iou": float((fg & truth).sum()/max((fg | truth).sum(), 1)),
+            "edge_f1": 2*precision*recall/max(precision+recall, 1e-8)}
 
 
 def decode(pipe, latent):
@@ -164,6 +180,7 @@ def evaluate(pipe, scorer, cache, out):
     text = cache["text"].to(pipe.device)
     for ex in cache["eval"]:
         sketch = context(pipe, ex)
+        sketch_image = Image.open(out.parent.parent / ("e19_2_c/cases/%02d_sketch.png" % ex["case"])).convert("RGB")
         target, mask = ex["target"].to(pipe.device), ex["mask"].to(pipe.device)
         regions = {k: v.to(pipe.device) for k, v in ex["regions"].items()}
         fullregions = dict(zip(REGIONS, build_region_masks(mask.float(), 17)))
@@ -181,14 +198,17 @@ def evaluate(pipe, scorer, cache, out):
                     losses = scorer.losses(predicted, ex["target_patch"].to(pipe.device), PATTERNS.index(ex["row"]["pattern"]))
                     # 白色背景受控目标上的软前景；阈值仅用于报告结构，训练不依赖它。
                     fg = (image.detach().clamp(0, 1).mean(1, keepdim=True) < .95).float()
-                    truth = (mask > .5).float()
-                    iou = (fg*truth).sum() / ((fg+truth)>0).sum().clamp_min(1)
+                    struct = structure(image, mask, sketch_image)
+                    hard_period = float(harmonic_period(predicted)["scalar"])
                     records.append({"case": ex["case"], "seed": seed, "t": step, "intervention": name,
                                     "pattern": ex["row"]["pattern"], "scores": {k: float(v) for k, v in losses.items()},
                                     "identity_correct": int(scorer(predicted).argmax(-1)) == PATTERNS.index(ex["row"]["pattern"]),
+                                    "direction_correct": bool((direction(predicted)[:, 0]*direction(ex["target_patch"].to(pipe.device))[:, 0]>0).item()) if ex["row"]["pattern"] == "stripe" else None,
+                                    "period_correct": abs(hard_period-ex["row"]["frequency"]) < .5,
+                                    "period_pixel_mae": abs(128/max(hard_period, 1)-128/ex["row"]["frequency"]),
                                     "epsilon": {k: float(masked_mse(eps, noise, v)) for k, v in regions.items()},
                                     "rgb": {k: float(masked_mse(image, ex["rgb"].to(pipe.device), v)) for k, v in fullregions.items()},
-                                    "sketch_iou": float(iou), "leakage": float((fg*fullregions["background"]).sum()/fullregions["background"].sum().clamp_min(1))})
+                                    **struct, "leakage": float((fg*fullregions["background"]).sum()/fullregions["background"].sum().clamp_min(1))})
         write_json(out / "records_partial.json", records)
         print("[e21-eval]", out.name, ex["case"], flush=True)
     write_json(out / "records.json", records)
@@ -198,7 +218,7 @@ def evaluate(pipe, scorer, cache, out):
 def compare(a, b):
     index = lambda rows: {(r["case"], r["seed"], r["t"], r["intervention"]): r for r in rows}
     aa, bb = index(a), index(b)
-    report = {"matched_improvement": {}, "target_advantage": {}, "epsilon_advantage": {}, "preservation": {}}
+    report = {"matched_improvement": {}, "target_advantage": {}, "epsilon_advantage": {}, "preservation": {}, "hard_metrics": {}}
     for attr, wrong in zip(ATTRS, WRONG):
         valid = lambda r: attr != "orientation" or r["pattern"] == "stripe"
         report["matched_improvement"][attr] = case_stat([(r["case"], bb[k]["scores"][attr]-r["scores"][attr]) for k, r in aa.items() if r["intervention"] == "matched" and valid(r)])
@@ -207,9 +227,11 @@ def compare(a, b):
             report[dest][attr] = case_stat([(r["case"], r[metric][field]-aa[k[:3]+("matched",)][metric][field]) for k, r in aa.items() if r["intervention"] == wrong and valid(r)])
     for region in ("boundary", "background"):
         report["preservation"][region] = case_stat([(r["case"], (r["rgb"][region]-bb[k]["rgb"][region])/max(bb[k]["rgb"][region], 1e-8)) for k, r in aa.items()])
-    for field in ("sketch_iou", "leakage"):
+    for field in ("sketch_iou", "edge_f1", "leakage"):
         report["preservation"][field] = case_stat([(r["case"], r[field]-bb[k][field]) for k, r in aa.items()])
-    report["preservation_pass"] = all(report["preservation"][r]["ci95"][1] <= .02 for r in ("boundary", "background", "leakage")) and report["preservation"]["sketch_iou"]["ci95"][0] >= -.02
+    for field in ("identity_correct", "direction_correct", "period_correct", "period_pixel_mae"):
+        report["hard_metrics"][field] = {name: case_stat([(r["case"], float(r[field])) for r in rows if r["intervention"] == "matched" and r[field] is not None]) for name, rows in (("aligned", a), ("control", b))}
+    report["preservation_pass"] = all(report["preservation"][r]["ci95"][1] <= .02 for r in ("boundary", "background", "leakage")) and all(report["preservation"][r]["ci95"][0] >= -.02 for r in ("sketch_iou", "edge_f1"))
     report["improved_attributes"] = [k for k, v in report["matched_improvement"].items() if v["ci95"][0] > 0]
     report["A_pass"] = bool(report["improved_attributes"]) and report["preservation_pass"]
     return report
@@ -256,6 +278,10 @@ def main():
     parameters = [p for m in adapters.values() for p in m.parameters() if p.requires_grad]
     initial = {k: copy.deepcopy(m.state_dict()) for k, m in adapters.items()}
     frozen = {k: frozen_digest(m) for k, m in modules.items()}
+    baseline_dir = out/"frozen_baseline"
+    baseline_dir.mkdir(exist_ok=True)
+    baseline = (json.loads((baseline_dir/"records.json").read_text()) if (baseline_dir/"records.json").exists()
+                else evaluate(pipe, scorer, cache, baseline_dir))
     records, schedules = {}, {}
     for variant in (0, 1):
         name = "A"+str(variant)
@@ -263,12 +289,23 @@ def main():
         folder.mkdir(exist_ok=True)
         for k, m in adapters.items():
             m.load_state_dict(initial[k])
-        schedules[name] = train(pipe, scorer, parameters, cache, variant == 1, args.steps, folder)
+        if (folder/"adapter.pt").exists():
+            checkpoint = torch.load(folder/"adapter.pt", map_location=args.device, weights_only=False)
+            assert checkpoint["protocol"] == protocol and checkpoint["source_hashes"] == original
+            for k, m in adapters.items():
+                missing, unexpected = m.load_state_dict(checkpoint["adapters"][k], strict=False)
+                assert missing == ["base.weight"] and not unexpected
+            schedules[name] = json.loads((folder/"train_report.json").read_text())["schedule"]
+        else:
+            schedules[name] = train(pipe, scorer, parameters, cache, variant == 1, args.steps, folder)
         torch.save({"adapters": {k: {n: v for n, v in m.state_dict().items() if n.startswith("adapter_")} for k, m in adapters.items()}, "protocol": protocol, "source_hashes": original}, folder/"adapter.pt")
-        records[name] = evaluate(pipe, scorer, cache, folder)
+        records[name] = (json.loads((folder/"records.json").read_text()) if (folder/"records.json").exists()
+                         else evaluate(pipe, scorer, cache, folder))
         assert all(frozen_digest(m) == frozen[k] for k, m in modules.items())
     assert schedules["A0"] == schedules["A1"]
     result = compare(records["A1"], records["A0"])
+    result["versus_frozen"] = {k: compare(v, baseline) for k, v in records.items()}
+    result["A_pass"] &= result["versus_frozen"]["A1"]["preservation_pass"]
     result.update(freeze_pass=True, schedule_identical=True, generation_executed=False,
                   next="B isolated attribute hard negatives" if result["A_pass"] else "stop A: no reliable target-side improvement with preservation")
     write_json(out/"report.json", result)
