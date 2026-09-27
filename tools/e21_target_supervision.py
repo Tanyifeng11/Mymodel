@@ -21,7 +21,8 @@ from models.target_pattern_score import TargetScorer, direction, interior_rectan
 from tools.e15_common import write_json
 from tools.e15_stages import texture_processors
 from tools.e19_2_identity import PATTERNS
-from tools.e19_handcrafted import digest
+from tools.e19_handcrafted import digest, bf_tokens, rgb
+from models.pattern_canonicalization import fft_orientation, rotation_only
 from tools.e20_utilization import WRONG, REGIONS, case_stat, context, frozen_digest, load_pipeline, masked_mse, predict
 
 
@@ -87,7 +88,7 @@ def prepare(root, pipe, old, out):
 
 
 @torch.no_grad()
-def calibrate(pipe, pattern, cache, out):
+def calibrate(pipe, pattern, cache, out, evaluation_classes=PATTERNS):
     scorer = TargetScorer(pattern).to(pipe.device).eval()
     features, labels, images = [], [], {"train": [], "eval": []}
     for split in ("train", "eval"):
@@ -116,9 +117,9 @@ def calibrate(pipe, pattern, cache, out):
                 rows.append(row)
         result[split] = {}
         for name in ("clean", "vae"):
-            selected = [r for r in rows if r["source"] == name]
+            selected = [r for r in rows if r["source"] == name and r["class"] in evaluation_classes]
             result[split][name] = {"identity_accuracy": float(np.mean([r["id_correct"] for r in selected])),
-                                  "identity_by_class": {k: float(np.mean([r["id_correct"] for r in selected if r["class"] == k])) for k in PATTERNS},
+                                  "identity_by_class": {k: float(np.mean([r["id_correct"] for r in selected if r["class"] == k])) for k in evaluation_classes},
                                   "direction_accuracy": float(np.mean([r["orientation_correct"] for r in selected if r["class"] == "stripe"])),
                                   "period_accuracy": float(np.mean([r["period_correct"] for r in selected])),
                                   "period_mae": float(np.mean([r["period_mae"] for r in selected]))}
@@ -132,10 +133,46 @@ def calibrate(pipe, pattern, cache, out):
         grad = torch.autograd.grad(loss, x)[0]
         result["image_gradient_finite_nonzero"] = bool(torch.isfinite(grad).all() and grad.abs().sum() > 0)
     result["pass"] &= result["image_gradient_finite_nonzero"]
+    result["evaluation_classes"] = list(evaluation_classes)
+    result["head_training"] = "all four classes, training split only; no evaluation samples used in head fit"
     torch.save(scorer.state_dict(), out / "scorer.pt")
     write_json(out / "scorer_audit.json", result)
     print("[e21-scorer]", result, flush=True)
     return scorer, result
+
+
+@torch.no_grad()
+def qualified_cache(root, pipe, bf, pattern, full, width, height, out):
+    """整类排除评分未通过的 dots；identity donor 也限定在三个可靠类别内。"""
+    path = out/"cache.pt"
+    if path.exists():
+        return torch.load(path, map_location="cpu", weights_only=False)
+    classes = ("stripe", "plaid", "repeated_print")
+    saved = {**full, "root": str(root), "classes": classes}
+    manifest = json.loads((root/"e19_2_b/data/manifest.json").read_text())["splits"]
+    text = full["text"].to(pipe.device)
+    for split in ("train", "eval"):
+        saved[split] = [copy.deepcopy(e) for e in full[split] if e["row"]["pattern"] in classes]
+        lookup = {(r["pattern"], r["palette"], r["frequency"], r["angle"], r["phase"]): r for r in manifest["train" if split == "train" else "primary"]}
+        for ex in saved[split]:
+            row = ex["row"]
+            # 原 stripe->plaid / print->stripe 不变，只将 plaid->dots 改为 plaid->print。
+            if row["pattern"] != "plaid":
+                continue
+            donor = lookup[("repeated_print", row["palette"], row["frequency"], row["angle"], row["phase"])]
+            image = Image.open(root/"e19_2_b/data"/row["texture"]).convert("RGB")
+            other = Image.open(root/"e19_2_b/data"/donor["texture"]).convert("RGB")
+            appearance = bf_tokens(pipe, bf, image, text, width, height)
+            source, changed = rgb(image, pipe.device), rgb(other, pipe.device)
+            geom = pattern.geometry_tokens(source).half()
+            matched_id = pattern.identity_tokens(rotation_only(source, fft_orientation(source)[0])).half()
+            matched = pipe.tcpm_lite(torch.cat([appearance, matched_id, geom], 1), text)
+            assert torch.allclose(matched, ex["tokens"]["matched"].to(pipe.device), atol=2e-3, rtol=1e-3)
+            identity = pattern.identity_tokens(rotation_only(changed, fft_orientation(changed)[0])).half()
+            ex["tokens"]["wrong_identity"] = pipe.tcpm_lite(torch.cat([appearance, identity, geom], 1), text).cpu()
+    torch.save(saved, path)
+    write_json(out/"subset.json", {s: [{"case": e["case"], "row": e["row"], "roi": e["roi"]} for e in saved[s]] for s in ("train", "eval")})
+    return saved
 
 
 def train(pipe, scorer, parameters, cache, aligned, steps, out):
@@ -180,7 +217,7 @@ def evaluate(pipe, scorer, cache, out):
     text = cache["text"].to(pipe.device)
     for ex in cache["eval"]:
         sketch = context(pipe, ex)
-        sketch_image = Image.open(out.parent.parent / ("e19_2_c/cases/%02d_sketch.png" % ex["case"])).convert("RGB")
+        sketch_image = Image.open(Path(cache["root"]) / ("e19_2_c/cases/%02d_sketch.png" % ex["case"])).convert("RGB")
         target, mask = ex["target"].to(pipe.device), ex["mask"].to(pipe.device)
         regions = {k: v.to(pipe.device) for k, v in ex["regions"].items()}
         fullregions = dict(zip(REGIONS, build_region_masks(mask.float(), 17)))
@@ -243,8 +280,10 @@ def main():
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--steps", type=int, default=600)
     p.add_argument("--audit-only", action="store_true")
+    p.add_argument("--qualified-three-class", action="store_true")
     args = p.parse_args()
-    root, out = Path(args.root), Path(args.root)/"e21"
+    root, base = Path(args.root), Path(args.root)/"e21"
+    out = base/"qualified_three_class" if args.qualified_three_class else base
     out.mkdir(exist_ok=True)
     torch.set_num_threads(4)
     torch.manual_seed(42)
@@ -258,15 +297,21 @@ def main():
                 "selection": "fixed600steps final checkpoint, no validation sweep; A0 computes same pattern graph with coefficient0",
                 "generation": "not before B stable all3 attributes; no automatic new architecture"}
     write_json(out/"protocol.json", protocol)
-    pipe, bf, pattern, modules, _, _ = load_pipeline(root, args.device)
+    protocol["class_scope"] = ["stripe", "plaid", "repeated_print"] if args.qualified_three_class else list(PATTERNS)
+    protocol["scope_reason"] = "full four-class oracle: dots62.5% on clean and VAE target; whole class excluded before generator training" if args.qualified_three_class else "four-class calibration"
+    write_json(out/"protocol.json", protocol)
+    pipe, bf, pattern, modules, width, height = load_pipeline(root, args.device)
     original = {k: digest(m) for k, m in modules.items()}
     pipe.vae.float()
-    cache = prepare(root, pipe, torch.load(root/"e20/cache.pt", map_location="cpu", weights_only=False), out)
-    scorer, audit = calibrate(pipe, pattern, cache, out)
+    cache = prepare(root, pipe, torch.load(root/"e20/cache.pt", map_location="cpu", weights_only=False), base)
+    cache["root"] = str(root)
+    scorer, audit = calibrate(pipe, pattern, cache, out, protocol["class_scope"])
     if not audit["pass"] or args.audit_only:
         write_json(out/"status.json", {"stage": "scorer_audit", "pass": audit["pass"], "training_executed": False,
                                       "next": "A0/A1" if audit["pass"] else "repair target measurement; not a GAM training failure"})
         return
+    if args.qualified_three_class:
+        cache = qualified_cache(root, pipe, bf, pattern, cache, width, height, out)
     adapters = {}
     for i, proc in enumerate(texture_processors(pipe.unet)):
         if proc.layer_group == "semantic":
