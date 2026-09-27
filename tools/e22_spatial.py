@@ -105,7 +105,7 @@ def audit_maps(cache, banks, output):
     return result
 
 
-def evaluate(pipe, injection, adapter, cache, banks, output, mode, variants):
+def evaluate(pipe, injection, adapter, cache, banks, output, mode, variants, selector=select_map, measure=None):
     records, text = [], cache["text"].to(pipe.device)
     if adapter is not None:
         adapter.eval()
@@ -126,7 +126,7 @@ def evaluate(pipe, injection, adapter, cache, banks, output, mode, variants):
                     for variant in variants:
                         if variant == "wrong_orientation" and example["row"]["pattern"] != "stripe":
                             continue
-                        geo = None if mode == "base" else select_map(example, banks, variant, mode)
+                        geo = None if mode == "base" else selector(example, banks, variant, mode)
                         eps = predict(pipe, injection, example, geo, noisy, t, text, sketch, mask)
                         image = decode(pipe, clean_prediction(pipe, noisy, eps, step))
                         struct = structure(image, mask, sketch_image)
@@ -137,13 +137,15 @@ def evaluate(pipe, injection, adapter, cache, banks, output, mode, variants):
                                         "rgb": {r: float(masked_mse(image, target_image, m)) for r,m in full.items()},
                                         **struct,
                                         "leakage": float((fg*full["background"]).sum()/full["background"].sum().clamp_min(1))})
+                        if measure is not None:
+                            records[-1].update(measure(image, example))
             write_json(output / "records_partial.json", records)
             print("[e22-eval]", output.name, case, flush=True)
     write_json(output / "records.json", records)
     return records
 
 
-def train(pipe, injection, adapter, cache, banks, output, mode):
+def train(pipe, injection, adapter, cache, banks, output, mode, selector=select_map):
     adapter.train()
     rng = random.Random(2222 if mode in ("orientation", "constant") else
                         2224 if mode in ("period", "period_constant") else 2223)
@@ -166,8 +168,8 @@ def train(pipe, injection, adapter, cache, banks, output, mode):
         noisy = pipe.scheduler.add_noise(target, noise, t)
         sketch = context(pipe, example)
         region = example["regions"]["interior"].to(pipe.device)
-        right = select_map(example, banks, "matched", mode)
-        incorrect = select_map(example, banks, wrong, mode)
+        right = selector(example, banks, "matched", mode)
+        incorrect = selector(example, banks, wrong, mode)
         eps = predict(pipe, injection, example, right, noisy, t, text, sketch, mask)
         bad = predict(pipe, injection, example, incorrect, noisy, t, text, sketch, mask)
         diffusion = (eps.float()-noise.float()).square().mean()
