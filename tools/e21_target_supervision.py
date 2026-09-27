@@ -88,7 +88,7 @@ def prepare(root, pipe, old, out):
 
 @torch.no_grad()
 def calibrate(pipe, pattern, cache, out):
-    scorer = TargetScorer(pattern.identity).to(pipe.device).eval()
+    scorer = TargetScorer(pattern).to(pipe.device).eval()
     features, labels, images = [], [], {"train": [], "eval": []}
     for split in ("train", "eval"):
         for ex in cache[split]:
@@ -252,7 +252,7 @@ def main():
                 "t": [181, 481, 781], "capacity": "E20 B rank4 texture K/V, last8 pattern tokens, original E19 start",
                 "target": "controlled garment: complete reference in maximal eroded-interior 3:4 rectangle, periodic extension outside; >=8 image pixels/period; same saved train/eval sketches and condition tokens as E20",
                 "freeze": "all representations, TCPM, sketch/text, base U-Net and VAE; VAE float32 for differentiable x0 decode",
-                "scorer": "frozen A3-1 identity + train-only logistic head; gradient direction stripes only; separate radial FFT cosine; hard harmonic period calibration",
+                "scorer": "frozen A3-1 identity TOKENS + train-only StandardScaler/PCA32/logistic C1; gradient direction stripes only; separate radial FFT cosine; hard harmonic period calibration",
                 "oracle_gate": "clean and VAE eval: id>=90%, eachclass>=75%, stripe direction100%, period>=90%; finite nonzero image gradients",
                 "A_gate": "paired case-bootstrap target-score improvement A1 over A0 for at least one attribute; RGB boundary/background upperCI<=2%, leakage<=2pp, IoU drop<=2pp",
                 "selection": "fixed600steps final checkpoint, no validation sweep; A0 computes same pattern graph with coefficient0",

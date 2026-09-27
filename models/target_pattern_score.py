@@ -56,12 +56,13 @@ class TargetScorer(nn.Module):
     def __init__(self, identity):
         super().__init__()
         self.identity = identity.eval().requires_grad_(False)
-        self.register_buffer("center", torch.zeros(72))
-        self.register_buffer("scale", torch.ones(72))
-        self.head = nn.Linear(72, 4).requires_grad_(False)
+        self.register_buffer("center", torch.zeros(1536))
+        self.register_buffer("scale", torch.ones(1536))
+        self.head = nn.Linear(1536, 4).requires_grad_(False)
 
     def features(self, images):
-        tokens = self.identity(rotation_only(images, fft_orientation(images)[0]))
+        # 与 E19 A3/A4 的 identity token probe 完全同口径；映射前 std 不等价。
+        tokens = self.identity.identity_tokens(rotation_only(images, fft_orientation(images)[0]))
         return F.normalize(torch.cat([tokens.mean(1), tokens.std(1)], -1), dim=-1)
 
     def forward(self, images):
@@ -70,11 +71,16 @@ class TargetScorer(nn.Module):
     def fit(self, features, labels):
         from sklearn.preprocessing import StandardScaler
         from sklearn.linear_model import LogisticRegression
+        from sklearn.decomposition import PCA
         scaler = StandardScaler().fit(features)
-        clf = LogisticRegression(C=1., max_iter=3000).fit(scaler.transform(features), labels)
+        pca = PCA(n_components=32, random_state=42).fit(scaler.transform(features))
+        clf = LogisticRegression(C=1., max_iter=3000).fit(pca.transform(scaler.transform(features)), labels)
+        # 把冻结 PCA 折叠到线性头，保留到图像的可微路径。
+        weight = clf.coef_ @ pca.components_
+        bias = clf.intercept_ - weight @ pca.mean_
         with torch.no_grad():
             for tensor, value in ((self.center, scaler.mean_), (self.scale, scaler.scale_),
-                                  (self.head.weight, clf.coef_), (self.head.bias, clf.intercept_)):
+                                  (self.head.weight, weight), (self.head.bias, bias)):
                 tensor.copy_(torch.as_tensor(value, device=tensor.device, dtype=tensor.dtype))
 
     def losses(self, images, target, label):
