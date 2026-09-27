@@ -53,7 +53,7 @@ def paired_maps(root, cache, output, device):
 
 def select_map(example, banks, name, mode):
     correct = banks[example["geometry_keys"]["matched"]].float()
-    if mode in ("constant", "constant_all"):
+    if mode in ("constant", "period_constant", "constant_all"):
         result = torch.ones_like(correct)
     else:
         result = correct.clone()
@@ -62,7 +62,11 @@ def select_map(example, banks, name, mode):
         if name == "wrong_period":
             result[:, 2:4] = banks[example["geometry_keys"][name]][:, 2:4]
             result[:, 5:6] = banks[example["geometry_keys"][name]][:, 5:6]
-    return result[:, [0, 1, 4]] if mode in ("orientation", "constant") else result
+    if mode in ("orientation", "constant"):
+        return result[:, [0, 1, 4]]
+    if mode in ("period", "period_constant"):
+        return result[:, [2, 3, 5]]
+    return result
 
 
 def predict(pipe, injection, example, geometry, noisy, t, text, sketch, mask):
@@ -141,7 +145,8 @@ def evaluate(pipe, injection, adapter, cache, banks, output, mode, variants):
 
 def train(pipe, injection, adapter, cache, banks, output, mode):
     adapter.train()
-    rng = random.Random(2222 if mode == "orientation" or mode == "constant" else 2223)
+    rng = random.Random(2222 if mode in ("orientation", "constant") else
+                        2224 if mode in ("period", "period_constant") else 2223)
     parameters = list(adapter.parameters())
     optimizer = torch.optim.AdamW(parameters, lr=1e-4, weight_decay=.01)
     scaler = torch.cuda.amp.GradScaler(init_scale=16., growth_interval=100000)
@@ -149,7 +154,9 @@ def train(pipe, injection, adapter, cache, banks, output, mode):
     schedule, logs = [], []
     orientation = [e for e in cache["train"] if e["row"]["pattern"] == "stripe"]
     for step in range(600):
-        wrong = "wrong_orientation" if mode in ("orientation", "constant") else ("wrong_orientation" if step%2==0 else "wrong_period")
+        wrong = ("wrong_orientation" if mode in ("orientation", "constant") else
+                 "wrong_period" if mode in ("period", "period_constant") else
+                 ("wrong_orientation" if step%2==0 else "wrong_period"))
         pool = orientation if wrong == "wrong_orientation" else cache["train"]
         example = pool[rng.randrange(len(pool))]
         timestep, seed = (181, 481)[step%2], 500000+step
@@ -234,10 +241,15 @@ def main():
     base = json.loads((base_dir/"records.json").read_text()) if (base_dir/"records.json").exists() else evaluate(pipe, None, None, cache, banks, base_dir, "base", ("matched",))
     reports, schedules = {}, {}
     for name, mode in (("S1_constant", "constant"), ("S2_orientation", "orientation")):
+        folder = output/name
+        if (folder/"records.json").exists() and (folder/"train_report.json").exists():
+            schedules[name] = json.loads((folder/"train_report.json").read_text())["schedule"]
+            records = json.loads((folder/"records.json").read_text())
+            reports[name] = summarize(records, base, ("wrong_orientation",) if mode=="orientation" else ())
+            continue
         torch.manual_seed(42)
         adapter = SpatialAdapter(640, 3).to(pipe.device)
         injection = SpatialInjection(pipe.unet, adapter)
-        folder = output/name
         folder.mkdir(exist_ok=True)
         schedules[name] = train(pipe, injection, adapter, cache, banks, folder, mode)
         variants = ("matched",) if mode=="constant" else ("matched", "wrong_orientation")
@@ -249,16 +261,44 @@ def main():
         write_json(output/"report_partial.json", {"map_audit":map_report, "groups":reports})
     # Constant and correct arms have identical train schedule and pair-forward budget.
     assert schedules["S1_constant"] == schedules["S2_orientation"]
-    orientation_pass = reports["S2_orientation"]["pass"]
+    orientation_pass = reports["S2_orientation"]["geometry_pass"]
     result = {"stage":"A1_orientation", "map_audit":map_report, "groups":reports,
               "schedule_identical":True, "frozen_pass":True, "orientation_pass":orientation_pass,
+              "orientation_safety_pass":reports["S2_orientation"]["safety_pass"],
               "generation_executed":False,
               "next":"A3 period positive control" if orientation_pass else "stop E22-A; inspect training target rather than train an encoder"}
     write_json(output/"report.json", result)
     print("[e22-A1]", orientation_pass, flush=True)
     if not orientation_pass:
         return
-    # A3/A4 are conditional: both attributes use the same six-channel explicit map.
+    # A3 keeps period isolated from orientation; A4 runs only if both geometry gates pass.
+    for name, mode in (("S1_period_constant", "period_constant"), ("S2_period", "period")):
+        folder = output/name
+        folder.mkdir(exist_ok=True)
+        if (folder/"records.json").exists() and (folder/"train_report.json").exists():
+            schedules[name] = json.loads((folder/"train_report.json").read_text())["schedule"]
+            records = json.loads((folder/"records.json").read_text())
+        else:
+            torch.manual_seed(42)
+            adapter = SpatialAdapter(640, 3).to(pipe.device)
+            injection = SpatialInjection(pipe.unet, adapter)
+            schedules[name] = train(pipe, injection, adapter, cache, banks, folder, mode)
+            records = evaluate(pipe, injection, adapter, cache, banks, folder, mode,
+                               ("matched",) if mode=="period_constant" else ("matched", "wrong_period"))
+            injection.close()
+            del adapter, injection
+            assert all(frozen_digest(m)==frozen[k] for k,m in modules.items())
+        reports[name] = summarize(records, base, ("wrong_period",) if mode=="period" else ())
+        write_json(output/"report_partial.json", {"map_audit":map_report, "groups":reports})
+    assert schedules["S1_period_constant"] == schedules["S2_period"]
+    period_pass = reports["S2_period"]["geometry_pass"]
+    result.update(stage="A3_period", groups=reports, period_pass=period_pass,
+                  period_safety_pass=reports["S2_period"]["safety_pass"],
+                  next="A4 orientation+period" if period_pass else "stop E22-A3; no joint or learned geometry encoder")
+    write_json(output/"report.json", result)
+    if not period_pass:
+        return
+    # A4 combines the two explicit maps, with the final safety gate.
     for name, mode in (("S1_OP_constant", "constant_all"), ("S2_OP", "all")):
         torch.manual_seed(42)
         adapter = SpatialAdapter(640, 6).to(pipe.device)
@@ -274,10 +314,10 @@ def main():
         assert all(frozen_digest(m)==frozen[k] for k,m in modules.items())
         write_json(output/"report_partial.json", {"map_audit":map_report, "groups":reports})
     assert schedules["S1_OP_constant"] == schedules["S2_OP"]
-    result.update(stage="A4_orientation_period", groups=reports, period_pass=reports["S2_OP"]["pass"],
+    result.update(stage="A4_orientation_period", groups=reports, joint_pass=reports["S2_OP"]["pass"],
                   next="E22-B spatial utilization / learned-map distillation" if reports["S2_OP"]["pass"] else "stop at spatial positive control; no learned encoder")
     write_json(output/"report.json", result)
-    print("[e22-A4]", result["period_pass"], flush=True)
+    print("[e22-A4]", result["joint_pass"], flush=True)
 
 
 if __name__ == "__main__":
