@@ -73,8 +73,8 @@ def prepare(root, pipe, old, out):
         for ex in old[split]:
             ex = copy.deepcopy(ex)
             roi = interior_rectangle(build_region_masks(ex["mask"].float(), 17)[0])
-            if roi is None:
-                saved["excluded"].append({"split": split, "case": ex["case"], "reason": "no complete 48x64 interior rectangle"})
+            if roi is None or roi[2] / ex["row"]["frequency"] < 8:
+                saved["excluded"].append({"split": split, "case": ex["case"], "reason": "no complete interior rectangle or less than 8 image pixels per period"})
                 continue
             image = canvas(root, ex["row"], roi, ex["mask"].float())
             latent = pipe.vae.encode((image.to(pipe.device) * 2 - 1)).latent_dist.mean * pipe.vae.config.scaling_factor
@@ -250,7 +250,7 @@ def main():
     torch.manual_seed(42)
     protocol = {"version": 1, "training_steps": args.steps, "lr": 1e-4, "pattern_weight": .1,
                 "t": [181, 481, 781], "capacity": "E20 B rank4 texture K/V, last8 pattern tokens, original E19 start",
-                "target": "controlled garment: complete reference in maximal eroded-interior 3:4 rectangle, periodic extension outside; same saved train/eval sketches and condition tokens as E20",
+                "target": "controlled garment: complete reference in maximal eroded-interior 3:4 rectangle, periodic extension outside; >=8 image pixels/period; same saved train/eval sketches and condition tokens as E20",
                 "freeze": "all representations, TCPM, sketch/text, base U-Net and VAE; VAE float32 for differentiable x0 decode",
                 "scorer": "frozen A3-1 identity + train-only logistic head; gradient direction stripes only; separate radial FFT cosine; hard harmonic period calibration",
                 "oracle_gate": "clean and VAE eval: id>=90%, eachclass>=75%, stripe direction100%, period>=90%; finite nonzero image gradients",
