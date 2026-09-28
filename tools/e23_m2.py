@@ -14,8 +14,8 @@ from PIL import Image
 
 from tools import e23_mechanism as old
 from tools.e15_common import write_json
-from tools.e20_utilization import case_stat
-from tools.e22_4_generation import native_pipeline, paired
+from tools.e20_utilization import case_stat, load_pipeline
+from tools.e22_4_generation import paired
 from tools.e22_4_genealogy import file_hash
 
 
@@ -152,7 +152,8 @@ def common_state(pipe, source, cases, banks, out, start, stop, include_decollaps
                             prediction[variant][group] = old.forward(pipe, z, timestep, context,
                                 old.tree(pair, pipe.device), probe=probe if group in TOKEN_GROUPS else None)
                     baseline = prediction["original"]["E5"]
-                    assert old.rms(baseline[0] - trace["epsilon"][step].to(pipe.device)) < 1e-5
+                    replay_error = old.rms(baseline[0] - trace["epsilon"][step].to(pipe.device))
+                    assert replay_error < 1e-5, f"E5 replay differs at case={case} seed={seed} step={step}: {replay_error}"
                     row = {"case": case, "seed": seed, "step_index": step,
                            "timestep": int(timestep), "arms": {}, "tokens": {},
                            "calibration": intervention_info}
@@ -327,7 +328,7 @@ def main():
     torch.set_num_threads(4)
     torch.manual_seed(42)
     source, cases, banks = load_inputs(root, out)
-    pipe, modules, width, height = native_pipeline(root, "E5")
+    pipe, _, _, modules, width, height = load_pipeline(root, "cuda:0")
     pipe.set_progress_bar_config(disable=True)
     frozen = old.module_hashes(modules)
     assert pipe.scheduler.__class__.__name__ == "DDIMScheduler"
