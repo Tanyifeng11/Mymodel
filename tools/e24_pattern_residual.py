@@ -102,7 +102,12 @@ def build_training_pairs(root, pipe, out, width, height):
     saved = find_source(root, "e20/cache.pt")
     rows = json.loads((clean / "train.json").read_text())
     cache = torch.load(saved, map_location="cpu", weights_only=False)
-    sketches = cache["train"]
+    valid_sketches = []
+    for sketch in cache["train"]:
+        roi = interior_rectangle(build_region_masks(sketch["mask"].float(), 17)[0])
+        if roi is not None:
+            valid_sketches.append((sketch, roi))
+    assert valid_sketches, "E20 训练集没有可用于完整方向监督的内部区域"
     groups = {}
     for row in rows:
         groups.setdefault(row["source_group"], {})[row["variant"]] = row
@@ -111,11 +116,9 @@ def build_training_pairs(root, pipe, out, width, height):
                                  return_text_masks=True)
     result = []
     for index, (key, pair_rows) in enumerate(sorted(groups.items())):
-        sketch = sketches[index % min(64, len(sketches))]
+        sketch, roi = valid_sketches[index % len(valid_sketches)]
         mask = sketch["mask"].float()
         mask_image = Image.fromarray((mask[0, 0].numpy() * 255).round().astype(np.uint8), "L")
-        roi = interior_rectangle(build_region_masks(mask, 17)[0])
-        assert roi is not None
         pair = {"id": index, "source_group": key, "mask": mask.half(),
                 "sketch": sketch["sketch"], "roi": roi, "variants": {}}
         for variant, row in pair_rows.items():
@@ -141,7 +144,8 @@ def build_training_pairs(root, pipe, out, width, height):
     validation_frequencies = {r["frequency"] for r in validation_cases["references"]}
     assert train_frequencies.isdisjoint(validation_frequencies)
     write_json(out / "train_split.json", {"source": str(clean), "groups": list(groups),
-        "sketch_source": str(saved), "validation_source": "output_eval/e23_m/cases.json",
+        "sketch_source": str(saved), "usable_train_sketches": len(valid_sketches),
+        "validation_source": "output_eval/e23_m/cases.json",
         "train_frequencies": sorted(train_frequencies),
         "validation_frequencies": sorted(validation_frequencies),
         "frequency_disjoint_from_validation": True,
