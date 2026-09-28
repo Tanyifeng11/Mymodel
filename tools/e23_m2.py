@@ -343,7 +343,8 @@ def main():
     for start, stop in ((0, 8), (8, 32)):
         if start and not report["gates"]["confirm"]:
             break
-        common_state(pipe, source, cases, banks, out, start, stop, include_decollapse=False)
+        common_state(pipe, source, cases, banks, out, start, stop,
+                     include_decollapse=bool(start and report["gates"]["B1_positive"]))
         a3 = generate_groups(pipe, source, cases, banks, out, start, stop, GROUPS)
         common = summarize_common(records(out, stop))
         if common["gates"]["B1_positive"]:
