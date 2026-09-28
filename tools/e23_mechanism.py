@@ -163,7 +163,7 @@ class Trace:
 
 
 @torch.inference_mode()
-def generate(pipe, arm, ref, sk, seed, v, bank, out, width, height, trace=True, window=None):
+def generate(pipe, arm, ref, sk, seed, v, bank, out, width, height, trace=True, window=None, guidance_scale=7.):
     folder = out/arm
     folder.mkdir(exist_ok=True)
     name = "c%02d_s%d_%s" % (ref["id"], seed, v["variant"])
@@ -196,7 +196,7 @@ def generate(pipe, arm, ref, sk, seed, v, bank, out, width, height, trace=True, 
     try:
         generated = pipe(prompt="a cloth", null_prompt="", negative_prompt=" worst quality, low quality",
             ref_image=to_tensor(sketch)[None]*2-1, texture_clip_image=image,
-            width=width, height=height, num_inference_steps=50, guidance_scale=7., sketch_scale=.6,
+            width=width, height=height, num_inference_steps=50, guidance_scale=guidance_scale, sketch_scale=.6,
             ipa_scale=1., texture_mode="patch_resampled", texture_condition_mode="token",
             texture_preprocess_mode="plain_resize", texture_num_tokens=n, force_texture_num_tokens_override=n != 16,
             texture_scale=1., spatial_mask=mask,

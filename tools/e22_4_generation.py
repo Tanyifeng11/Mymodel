@@ -21,7 +21,10 @@ from tools.e22_o4_metrics import axial_distance
 
 
 def native_pipeline(root, name):
-    checkpoint = str(root / SOURCES[name])
+    checkpoint_path = root / SOURCES[name]
+    if not checkpoint_path.exists():
+        checkpoint_path = root / "output_eval" / SOURCES[name]
+    checkpoint = str(checkpoint_path)
     args = argparse.Namespace(checkpoint=checkpoint, texture_ckpt=checkpoint,
                               base_model_path=str(root / "models/stable-diffusion-v1-5"),
                               vae_model_path=str(root / "models/stable-diffusion-v1-5/vae"),

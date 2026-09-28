@@ -51,12 +51,18 @@ def load_pipeline(root, device):
     ns = build_inference_args(args)
     ns.texture_num_tokens, ns.force_texture_num_tokens_override = 16, False
     pipe, _ = load_inference_module().prepare(ns)
-    state = torch.load(root / "e18_2/b2/joint_model.pt", map_location="cpu", weights_only=False)
+    e18_path = root / "e18_2/b2/joint_model.pt"
+    if not e18_path.exists():
+        e18_path = root / "output_eval/e18_2/b2/joint_model.pt"
+    state = torch.load(e18_path, map_location="cpu", weights_only=False)
     bf = conditioner(state["bf_texture_conditioner"]).to(device, torch.float16)
     pipe.tcpm_lite.load_state_dict(state["tcpm_lite"], strict=True)
     del state
     pattern = IdentityGeometryPattern().to(device)
-    pattern.load_state_dict(torch.load(root / "e19_2_a3/fft_rotation_42.pt", map_location=device, weights_only=False)["model"])
+    pattern_path = root / "e19_2_a3/fft_rotation_42.pt"
+    if not pattern_path.exists():
+        pattern_path = root / "output_eval/e19_2_a3/fft_rotation_42.pt"
+    pattern.load_state_dict(torch.load(pattern_path, map_location=device, weights_only=False)["model"])
     modules = {"unet": pipe.unet, "sketch": pipe.reference_unet, "bf": bf, "pattern": pattern,
                "clip": pipe.image_encoder, "text": pipe.text_encoder, "vae": pipe.vae, "tcpm": pipe.tcpm_lite,
                "gam_bf": pipe.bf_texture_conditioner}
