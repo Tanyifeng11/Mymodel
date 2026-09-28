@@ -93,8 +93,8 @@ def main():
             curve(axes[0, j], steps, [group["by_step"][str(i)]["D"][region] for i in steps], arm)
             all_steps = sorted(map(int, group["F_by_step"]))
             curve(axes[1, j], all_steps, [group["F_by_step"][str(i)][region] for i in all_steps], arm)
-        axes[0, j].set_title("Common-state texture-response deviation: "+region)
-        axes[1, j].set_title("Free-running latent deviation: "+region)
+        axes[0, j].set_title("Common-state texture deviation\n"+region)
+        axes[1, j].set_title("Free-running latent deviation\n"+region)
         for ax in axes[:, j]:
             ax.set_xlabel("Inference step (high -> low noise)")
             ax.set_ylabel("RMS relative to E5")
