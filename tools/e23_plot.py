@@ -21,6 +21,43 @@ def curve(ax, steps, stats, label):
     ax.fill_between(steps, low, high, alpha=.15, color=line.get_color())
 
 
+def attention_summary(out, count):
+    # 按 case 聚合 seed、timestep；逐层保留，避免层宽差异被总平均掩盖。
+    values, relative = {}, {}
+    for case in range(count):
+        for seed in (42, 43):
+            data = json.loads((out/"common_state"/("c%02d_s%d.json" % (case, seed))).read_text())
+            for row in data["common_state"]:
+                baseline = row["models"]["E5"]["attention"]
+                for arm, model in row["models"].items():
+                    for branch, layers in model["attention"].items():
+                        for layer, stats in layers.items():
+                            if not stats:
+                                continue  # 未调用的 processor 不属于本次 active layers。
+                            for metric in ("k_norm", "v_norm", "attention_output_rms", "texture_residual_rms"):
+                                key = arm, branch, layer, metric
+                                values.setdefault(key, []).append((case, stats[metric]))
+                                denominator = baseline[branch][layer][metric]
+                                relative.setdefault(key, []).append((case, stats[metric]/max(denominator, 1e-8)))
+    detail, compact = {}, {}
+    for arm in ("E5", "E17_direct", "S0"):
+        detail[arm], compact[arm] = {}, {}
+        for branch in ("conditional", "unconditional"):
+            detail[arm][branch], compact[arm][branch] = {}, {}
+            layer_ids = sorted({key[2] for key in values if key[:2] == (arm, branch)}, key=int)
+            for layer in layer_ids:
+                detail[arm][branch][layer] = {
+                    metric: {"value": case_stat(values[arm, branch, layer, metric]),
+                             "ratio_to_E5": case_stat(relative[arm, branch, layer, metric])}
+                    for metric in ("k_norm", "v_norm", "attention_output_rms", "texture_residual_rms")}
+            for metric in ("k_norm", "v_norm", "attention_output_rms", "texture_residual_rms"):
+                compact[arm][branch][metric] = {
+                    "layer_mean": case_stat([v for layer in layer_ids for v in values[arm, branch, layer, metric]]),
+                    "ratio_to_E5": case_stat([v for layer in layer_ids for v in relative[arm, branch, layer, metric]])}
+    write_json(out/"attention_statistics.json", {"bootstrap_unit": "case", "per_layer": detail})
+    return compact
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
@@ -74,6 +111,7 @@ def main():
                 draw.text((j*128+1, i*184+161), label, fill="black")
         sheet.save(folder/("pilot_seed%d.jpg" % seed), quality=92)
     condition = json.loads((out/"condition_audit.json").read_text())
+    attention = attention_summary(out, report["cases"])
     summary = {"cases": report["cases"], "first_failure_candidate": report["first_failure_candidate"],
                "H1_supported": report["H1_supported"], "H2_candidate": report["H2_candidate"],
                "time_interval_difference": report["time_interval_difference"],
@@ -85,6 +123,7 @@ def main():
         subset = [v for v in condition["records"] if v["arm"] == arm]
         summary["groups"][arm] = {k: group[k] for k in ("D", "conditional_D", "unconditional_D", "LR", "I", "A", "rotation_rms", "D_over_E5_score_rms", "D_over_E5_texture_rms", "final")}
         summary["groups"][arm]["condition"] = {k: case_stat([(v["case"], v[k]) for v in subset]) for k in ("rms", "pairwise_cosine", "effective_rank", "empirical_E5_affine_OOR")}
+        summary["groups"][arm]["attention"] = attention[arm]
     write_json(out/"decision_summary.json", summary)
     print(json.dumps(summary), flush=True)
 
