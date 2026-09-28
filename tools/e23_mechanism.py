@@ -265,6 +265,8 @@ def forward(pipe, z, t, context, pair, disabled=False, probe=None):
     outputs, stats = [], {}
     for b, branch in enumerate(("conditional", "unconditional")):
         kwargs = dict(context[branch])
+        kwargs["cross_attention_kwargs"] = dict(kwargs["cross_attention_kwargs"])
+        kwargs["cross_attention_kwargs"]["balanced_gate_timestep"] = t.float().view(1)/float(pipe.scheduler.config.num_train_timesteps)
         kwargs["encoder_hidden_states"] = torch.cat([kwargs["encoder_hidden_states"], pair[b]], 1)
         if probe:
             probe.reset()
@@ -340,10 +342,12 @@ def common_state(pipe, banks, cases, out, start, stop):
                            "no_tex_max_abs_difference": off_error, "models": {}}
                     e5_tex = predictions["E5"][0][0]-predictions["E5"][1][0]
                     e5_tex_cond = predictions["E5"][0][1]-predictions["E5"][1][1]
+                    e5_tex_uncond = predictions["E5"][0][2]-predictions["E5"][1][2]
                     e5_score = regional(predictions["E5"][0][0], masks)
                     e5_tex_rms = regional(e5_tex, masks)
                     for arm, (full, off, rotation) in predictions.items():
                         delta, delta_cond = full[0]-off[0], full[1]-off[1]
+                        delta_uncond = full[2]-off[2]
                         D = regional(delta-e5_tex, masks)
                         strength = regional(delta, masks)
                         update = pipe.scheduler.step(full[0], t, z, eta=0., return_dict=False)[0]
@@ -356,6 +360,8 @@ def common_state(pipe, banks, cases, out, start, stop):
                                  "rotation_rms": regional(rotation[0]-full[0], masks),
                                  "conditional_texture_rms": regional(delta_cond, masks),
                                  "conditional_D": regional(delta_cond-e5_tex_cond, masks),
+                                 "unconditional_texture_rms": regional(delta_uncond, masks),
+                                 "unconditional_D": regional(delta_uncond-e5_tex_uncond, masks),
                                  "conditional_rotation_rms": regional(rotation[1]-full[1], masks),
                                  "I": injection, "F": accumulated,
                                  "A": {r: accumulated[r]/max(injection[r], 1e-8) for r in REGIONS},
@@ -411,7 +417,7 @@ def summarize(cases, out, count):
     groups = {}
     for arm in ARMS:
         groups[arm] = {}
-        for metric in ("D", "texture_rms", "rotation_rms", "I", "F", "A", "D_over_E5_score_rms", "D_over_E5_texture_rms"):
+        for metric in ("D", "conditional_D", "unconditional_D", "texture_rms", "rotation_rms", "I", "F", "A", "D_over_E5_score_rms", "D_over_E5_texture_rms"):
             groups[arm][metric] = {r: stat([(v["case"], v["models"][arm][metric][r]) for v in rows]) for r in REGIONS}
         groups[arm]["LR"] = stat([(v["case"], v["models"][arm]["LR"]) for v in rows])
         groups[arm]["by_step"] = {str(i): {m: {r: stat([(v["case"], v["models"][arm][m][r]) for v in rows if v["step_index"] == i]) for r in REGIONS} for m in ("D", "I", "rotation_rms")} for i in POSITIONS}
@@ -553,6 +559,11 @@ def main():
         report["windows"] = run_windows(pipe, banks, cases, out, count, w, h)
         assert module_hashes(modules) == before
     report["freeze_pass"] = all(v["frozen_pass"] for v in audits.values())
+    for seed in gen.SEEDS:
+        hashes = {json.loads(p.read_text())["initial_latent_sha256"] for arm in ARMS for p in (out/arm).glob("c*.json")
+                  if "_s%d_" % seed in p.name and int(p.name[1:3]) < count}
+        assert len(hashes) == 1, "Initial latent differs across models/cases"
+    report["same_initial_latent"] = True
     report["stage4_attention_statistics"] = "per-layer actual K/V/attention output/texture residual in common_state/*.json"
     report["stopped_after_localization"] = True
     write_json(out/"report.json", report)
