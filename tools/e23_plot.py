@@ -7,6 +7,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image, ImageDraw
 
 from tools.e20_utilization import case_stat
 from tools.e15_common import write_json
@@ -57,6 +58,21 @@ def main():
     axes[0].legend()
     fig.savefig(folder/"injection_and_rotation.png", dpi=160)
     plt.close(fig)
+    cases = json.loads((out/"cases.json").read_text())
+    for seed in (42, 43):
+        sheet = Image.new("RGB", (8*128, 8*184), "white")
+        draw = ImageDraw.Draw(sheet)
+        for ref in cases["references"][:8]:
+            i = ref["id"]
+            sources = [(out/v["path"], v["variant"]) for v in ref["variants"]]
+            sources += [(out/arm/("c%02d_s%d_%s.png" % (i, seed, variant)), arm+" "+variant)
+                        for arm in ("E5", "E17_direct", "S0") for variant in ("original", "rot90")]
+            for j, (path, label) in enumerate(sources):
+                image = Image.open(path).convert("RGB")
+                image.thumbnail((128, 160))
+                sheet.paste(image, (j*128, i*184))
+                draw.text((j*128+1, i*184+161), label, fill="black")
+        sheet.save(folder/("pilot_seed%d.jpg" % seed), quality=92)
     condition = json.loads((out/"condition_audit.json").read_text())
     summary = {"cases": report["cases"], "first_failure_candidate": report["first_failure_candidate"],
                "H1_supported": report["H1_supported"], "H2_candidate": report["H2_candidate"],
