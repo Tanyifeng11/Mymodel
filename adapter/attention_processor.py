@@ -649,6 +649,11 @@ class IPAttnProcessor2_0(torch.nn.Module):
             ip_hidden_states = ip_hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
             ip_hidden_states = ip_hidden_states.to(query.dtype)
 
+            # E23-M 只读诊断：观察门控前的真实 texture attention 输出。
+            attention_observer = getattr(self, "texture_attention_observer", None)
+            if attention_observer is not None:
+                attention_observer(ip_hidden_states)
+
             gate = 1.0
             balanced_texture_gate, balanced_palette_gate = self._balanced_branch_gates(
                 gate_text_states,
