@@ -353,7 +353,11 @@ def report(out,stage):
     proofs={(r['case'],r['variant']):r for r in json.loads((out/'A_audit/report.json').read_text())['proofs']}
     audit=metric_eligibility(out)
     stage_dir={'B':'B_baseline','C':'C_oracle','D':'D_automatic'}[stage]
+    generation_protocol=json.loads((out/stage_dir/'protocol.json').read_text())
+    actual_arms=sorted({p.parent.name for p in (out/stage_dir).glob('*/c*_s*.json')})
     write(out/stage_dir/'evaluation_protocol.json',{'evaluation_git_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=out,text=True).strip(),
+        'actual_arms':actual_arms,'declared_generation_arms':generation_protocol['arms'],
+        'arm_label_note':'实际执行臂由逐图 metadata / 目录确认；C 初版 protocol 误继承 B 的 arms 标签，保留原记录并在此纠正。',
         'pre_generation_audit_sha256':file_sha(out/'A_audit/audit.csv'),
         'geometry_eligibility':'预先审核的 orientation_readable / period_readable，之后才使用共同 prototype patch 可读性。',
         'raw_geometry_retained':'每张 metadata 的 unfiltered_geometry 与 geometry_expected_valid_unfiltered。',
