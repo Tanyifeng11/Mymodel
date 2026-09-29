@@ -244,6 +244,9 @@ def revise(out):
         if path.exists() and not (archive/name).exists(): shutil.copy2(path, archive/name)
     path = out/'decision_summary.json'
     if path.exists() and not (archive/path.name).exists(): shutil.copy2(path, archive/path.name)
+    for name in ('frozen_check.json', 'noise_manifest.json'):
+        path = out/name
+        if path.exists() and not (archive/name).exists(): shutil.copy2(path, archive/name)
 
 
 def generate(root, out):
@@ -478,13 +481,18 @@ def report(root, out):
                          and mean('B2_auto_warp', 'leakage') <= mean('B1_oracle', 'leakage')+.01)
     b2_warp = any(recovery('B2_auto_warp', key) is not None and recovery('B2_auto_warp', key) < .6
                   for key in ('theta_error', 'identity')) and b2_structure_safe
+    b2_close = (mean('B2_auto_warp', 'identity') >= mean('B1_oracle', 'identity')-.03
+                and mean('B2_auto_warp', 'theta_error') <= mean('B1_oracle', 'theta_error')+5
+                and b2_structure_safe and not b2_warp)
     b3_ownership = (summary['B3_auto_ownership']['follow']['mean'] <
                     summary['B1_oracle']['follow']['mean']-.05 and
                     (paa['mean'] < .85 or mixed['mean'] < .75 or
-                     (margins and np.median(margins) <= 0)))
+                     (margins and np.median(margins) <= 0))) and b2_close
     b4_panel = (summary['B4_auto_panel']['follow']['mean'] <
                 summary['B1_oracle']['follow']['mean']-.05 and
-                (panel_iou['mean'] < .75 or panel_coverage['mean'] < .9))
+                (panel_iou['mean'] < .75 or panel_coverage['mean'] < .9)
+                and summary['B3_auto_ownership']['follow']['mean'] >= summary['B1_oracle']['follow']['mean']-.05
+                and paa['mean'] >= .85 and b2_close)
     b5_comp = (mean('B5_auto_composition', 'contour_f1') < mean('B1_oracle', 'contour_f1')-.02
                and mean('B5_auto_composition', 'identity') >= mean('B1_oracle', 'identity')-.03
                and summary['B5_auto_composition']['follow']['mean'] >=
@@ -494,15 +502,23 @@ def report(root, out):
     elif b4_panel: route = 'panel_parser'
     elif b5_comp: route = 'boundary_safe_composition'
     else: route = 'stop_no_stable_gain'
+    oracle_reproduced = bool((summary['B1_oracle']['follow']['mean']-summary['B0_global_anchor']['follow']['mean'] >= .10
+                or mean('B1_oracle', 'theta_error') <= .8*mean('B0_global_anchor', 'theta_error'))
+                and mean('B1_oracle', 'contour_f1') >= mean('B0_global_anchor', 'contour_f1')-.02
+                and mean('B1_oracle', 'leakage') <= mean('B0_global_anchor', 'leakage')+.01)
+    if not oracle_reproduced: route = 'stop_no_stable_gain'
     decision = {'A_audit_pass': True, 'B_oracle_reproduced': bool(
-                summary['B1_oracle']['follow']['mean']-summary['B0_global_anchor']['follow']['mean'] >= .10
-                or (mean('B1_oracle', 'theta_error') <= .8*mean('B0_global_anchor', 'theta_error'))),
+                oracle_reproduced),
                 'warp_bottleneck': bool(b2_warp), 'ownership_bottleneck': bool(b3_ownership),
                 'panel_bottleneck': bool(b4_panel), 'composition_bottleneck': bool(b5_comp),
                 'primary_bottleneck': route, 'selected_repair': route if route in ('ownership_matching','panel_parser','boundary_safe_composition') else None,
                 'next_route': route, 'experiment': 'E28', 'repair_pilot_pass': None,
                 'confirmation_pass': None, 'structure_safe': bool(b2_structure_safe),
-                'rotation_pass': None, 'component_check_pass': _load(out/'B_decomposition/component_check.json')['pass']}
+                'rotation_pass': None, 'component_check_pass': _load(out/'B_decomposition/component_check.json')['pass'],
+                'warp_close_to_oracle': bool(b2_close),
+                'gate_thresholds': {'pattern_follow_drop': .05, 'identity_close': .03, 'theta_close_deg': 5,
+                      'warp_recovery': .6, 'paa': .85, 'mixed_paa': .75, 'panel_miou': .75,
+                      'coverage': .9, 'contour_drop': .02, 'leakage_increase': .01}}
     diagnostics = intermediate_diagnostics(root, out, cases, groups, rows)
     write(out/'B_decomposition/report.json', {'summary': summary, 'panel_miou': panel_iou,
           'panel_miou_by_name': panel_by_name, 'panel_boundary_f1': panel_boundary,
