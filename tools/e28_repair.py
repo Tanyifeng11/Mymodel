@@ -18,6 +18,59 @@ def load(path):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
+def finalize(root, out):
+    from tools.e28_experiment import ARM_NAMES, CASE_IDS, SEEDS, VARIANTS
+    audit = load(root/'data/e28_visual_audit.json')
+    expected = {(c, s, v) for c in CASE_IDS for s in SEEDS for v in VARIANTS}
+    shared = {}
+    counts = {}
+    for arm in (*ARM_NAMES, 'C2_panel_repair'):
+        directory = out/('C_repair/pilot' if arm == 'C2_panel_repair' else 'B_decomposition')/arm
+        rows = [load(p) for p in sorted(directory.glob('c*_s*_*.json'))]
+        assert {(r['case'], r['seed'], r['variant']) for r in rows} == expected
+        assert len(rows) == 32
+        for r in rows:
+            image_path = directory/f"c{r['case']:02d}_s{r['seed']}_{r['variant']}.png"
+            assert file_sha(image_path) == r['output_sha256']
+            key = (r['case'], r['seed'], r['variant'])
+            hashes = tuple(r[k] for k in ('noise_sha256', 'condition_sha256', 'checkpoint_sha256',
+                                          'target_mask_sha256', 'sketch_sha256'))
+            if key in shared: assert shared[key] == hashes
+            else: shared[key] = hashes
+        counts[arm] = len(rows)
+    assert load(out/'frozen_check.json')['pass']
+    assert load(out/'C_repair/pilot/frozen_check.json')['pass']
+    assert load(out/'B_decomposition/component_check.json')['pass']
+    for c in audit['cases']:
+        assert (out/'review_images'/f'c{c:02d}.jpg').is_file()
+        assert (out/'review_images'/f'c{c:02d}_C2.jpg').is_file()
+    write(out/'visual_audit.json', audit)
+    proposal = load(out/'C_repair/panel_proposal.json')['rows']
+    write(out/'C_repair/panel_micro_descriptive.json', {
+          'note': '仅描述值，Gate 使用 report.json 中 case 内聚合后的 macro 值。',
+          **{k: float(np.mean([r[k] for r in proposal]))
+             for k in ('iou', 'coverage', 'boundary_f1_3px', 'boundary_f1_5px')}})
+    decision = load(out/'decision_summary.json')
+    if not decision['repair_pilot_pass']:
+        assert load(out/'D_confirmation/report.json')['status'] == 'not_run'
+    integrity = {'pass': True, 'final_images': sum(counts.values()), 'images_per_arm': counts,
+                 'output_sha_verified': True, 'shared_noise_and_conditions': True,
+                 'frozen_models': True, 'manual_component_equivalence': True,
+                 'visual_review_cases': audit['cases'], 'next_route': decision['next_route']}
+    write(out/'completion_check.json', integrity)
+    index = load(out/'artifact_index.json')
+    index.update(visual_audit='visual_audit.json', completion='completion_check.json',
+                 repair_review_images=[f'review_images/c{c:02d}_C2.jpg' for c in audit['cases']])
+    write(out/'artifact_index.json', index)
+    with zipfile.ZipFile(out/'e28_review_results.zip', 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for pattern in ('review_images/*.jpg', '*.json', 'A_audit/report.json',
+                        'B_decomposition/*report.json', 'B_decomposition/component_check.json',
+                        'C_repair/*.json', 'C_repair/pilot/*manifest.json',
+                        'C_repair/pilot/frozen_check.json', 'D_confirmation/*.json'):
+            for path in out.glob(pattern): archive.write(path, path.relative_to(out))
+    print('[E28 complete]', json.dumps(integrity), flush=True)
+
+
 def scaffold(root, out):
     from tools.e28_experiment import _boundary_f1
     decision = load(out/'decision_summary.json')

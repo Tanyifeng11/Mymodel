@@ -1,0 +1,25 @@
+{
+  "reviewer": "Codex 对服务器正式审阅图逐图目视检查",
+  "cases": [13, 6, 7, 12, 17],
+  "scope": "B0–B6 的 original S0/S1/S2、seed42 rot90；C2 与 B6 同列对照。未逐张审阅 seed43。",
+  "labels_are_qualitative": true,
+  "observations": [
+    {"case": 13, "arms": ["B1_oracle", "B2_auto_warp", "B3_auto_ownership"], "tags": [], "note": "左侧星形、右侧条纹归属保留，S0 到 S2 大体一致。"},
+    {"case": 13, "arms": ["B4_auto_panel", "B6_full_auto", "C2_panel_repair"], "tags": ["F5", "F7", "F11"], "first_stage": "S0", "note": "original 衣身大部分由条纹占据，星形主要在袖部或窄暗带；C2 仍未恢复左衣身星形。"},
+    {"case": 6, "arms": ["B4_auto_panel", "B6_full_auto"], "tags": ["F1", "F3"], "first_stage": "S0", "note": "自动 crop 带入源领肩特征，条纹周期与人工 canonical crop 不同，袖部有密集重复三角形。"},
+    {"case": 6, "arms": ["C2_panel_repair"], "tags": ["F3", "F8"], "first_stage": "S0", "note": "新增下部区域的周期明显过密，横向接缝突变；S1/S2 沿用。"},
+    {"case": 7, "arms": ["B4_auto_panel", "B6_full_auto"], "tags": ["F1"], "first_stage": "S0", "note": "源粉色领口及密集领肩纹样被带入目标领肩；衣身横条纹和 rot90 竖条纹大体保留。"},
+    {"case": 7, "arms": ["C2_panel_repair"], "tags": [], "note": "粉色源领口干扰减少，衣身方向响应保留；仍可见袖身接缝，空标签不表示所有局部细节均正确。"},
+    {"case": 12, "arms": ["B4_auto_panel", "B6_full_auto"], "tags": ["F1", "F3", "F8"], "first_stage": "S0", "note": "源装饰边缘、下摆被拉入目标衣身；rot90 出现横向亮带和块状拼接。"},
+    {"case": 12, "arms": ["C2_panel_repair"], "tags": ["F1", "F4", "F8"], "first_stage": "S0", "note": "衣身多次重复源领口/开襟，低部白色细密纹样和横缝明显；S2 未修复。"},
+    {"case": 17, "arms": ["B4_auto_panel", "B6_full_auto"], "tags": ["F3", "F4", "F8"], "first_stage": "S0", "note": "白色下摆和格纹一起重复成大横带，原衣身格纹身份受损。"},
+    {"case": 17, "arms": ["C2_panel_repair"], "tags": ["F1", "F3", "F8"], "first_stage": "S0", "note": "格纹衣身和白下摆归属改善，但出现重复深色源颈口轮廓及周期/接缝错误。"}
+  ],
+  "shared_observations": [
+    "B0 五个样例的纹样均明显弱于局部对应组，部分结果近于白色或纯色。",
+    "B1–B3 五个样例视觉一致；B5 归属大体保留，局部纹样较软。",
+    "未发现上述主要失败由 S1 到 S2 首次引入的证据；不能据此排除其他图像的 refinement 问题。",
+    "B4 干预包括自动区域和自动 canonical crop 输出，不能将全部损失解释为纯边界分割误差。",
+    "这些标签描述可见失败，不替代 case bootstrap 指标，也不是 dense UV 真值。"
+  ]
+}

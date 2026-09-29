@@ -586,7 +586,7 @@ def main():
     p.add_argument('--e27', type=Path, default=Path('output_eval/e27_20260929'))
     p.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
     p.add_argument('--out', type=Path, default=Path('output_eval/e28_20260929'))
-    p.add_argument('--stage', choices=('A', 'revise', 'scaffold', 'generate', 'report', 'C_scaffold', 'C_generate', 'C_report'), required=True)
+    p.add_argument('--stage', choices=('A', 'revise', 'scaffold', 'generate', 'report', 'C_scaffold', 'C_generate', 'C_report', 'finalize'), required=True)
     args = p.parse_args()
     args.root = args.root.resolve(); args.e27 = args.e27.resolve()
     args.dataset = args.dataset.resolve(); args.out = args.out.resolve()
@@ -601,6 +601,9 @@ def main():
     elif args.stage == 'C_report':
         from tools.e28_repair import report as repair_report
         repair_report(args.root, args.out)
+    elif args.stage == 'finalize':
+        from tools.e28_repair import finalize
+        finalize(args.root, args.out)
     else:
         import torch
         with torch.inference_mode():
