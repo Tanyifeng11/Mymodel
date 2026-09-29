@@ -1,6 +1,7 @@
 """E28 的四个可替换环节。人工信息只在指定 semi-oracle 臂中使用。"""
 
 from dataclasses import dataclass
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -17,10 +18,10 @@ class PanelRegion:
     mask: np.ndarray
     bbox: tuple
     confidence: float
-    parent_id: str | None
+    parent_id: Optional[str]
     semantic_type: str
-    motif_group: str | None = None
-    crop: tuple | None = None
+    motif_group: Optional[str] = None
+    crop: Optional[tuple] = None
 
 
 @dataclass
