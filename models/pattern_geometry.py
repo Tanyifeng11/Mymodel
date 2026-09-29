@@ -135,9 +135,8 @@ def estimate_pattern_geometry(image):
 
 
 def render_estimated_stripe(geometry, garment_mask):
-    size = garment_mask.size[0]
-    if garment_mask.size != (size, size):
-        raise ValueError("当前 renderer 需要方形服装画布")
+    # 与 E25 一致：先在 256x256 参考平面渲染，再映射到目标 mask 的实际尺寸。
+    size = 256
     angle = 0 if axial_distance(geometry.orientation, 90) < 45 else 90
     binary = pattern_mask("stripe", size, int(round(geometry.frequency)), angle,
                           geometry.phase, fraction=.25)
