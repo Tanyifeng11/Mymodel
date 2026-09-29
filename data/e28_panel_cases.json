@@ -1,0 +1,10 @@
+{
+  "6": {"body": "stripe", "left_sleeve": "stripe", "right_sleeve": "stripe"},
+  "7": {"body": "stripe", "left_sleeve": "stripe", "right_sleeve": "stripe"},
+  "9": {"body": "plaid", "left_sleeve": "plaid", "right_sleeve": "plaid", "left_pocket": "diagonal_plaid", "right_pocket": "diagonal_plaid"},
+  "10": {"body": "plaid", "left_sleeve": "plaid", "right_sleeve": "plaid"},
+  "12": {"body": "stripe", "left_sleeve": "stripe", "right_sleeve": "stripe", "collar": "collar", "lower": "ribbed_trim", "body_left": "stripe", "body_right": "stripe"},
+  "13": {"body_left": "star", "body_right": "stripe", "left_sleeve": "star", "right_sleeve": "stripe"},
+  "14": {"body": "floral_stripe", "left_sleeve": "sleeve_stripe", "right_sleeve": "sleeve_stripe", "upper": "floral_upper", "lower": "solid"},
+  "17": {"body": "plaid", "left_sleeve": "solid_sleeve", "right_sleeve": "solid_sleeve", "lower": "white_lower"}
+}
