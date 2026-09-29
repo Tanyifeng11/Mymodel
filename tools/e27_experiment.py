@@ -433,6 +433,12 @@ def report_automatic(out,baselines):
         'identity_preserved':identity_preserved,'noise_hash_pass':noise_check({**groups,'B1':baseline}),'frozen_pass':frozen,
         'scope':'预注册6例 pilot，2/难度；4个无训练自动化消融；B0/B1 复用相同 case 的既有结果。',
         'scale_gate':'至少4个 reference 有可读方向、pair coverage>=2/3；成对局部 rotation follow >75% 且 case CI lower>.5，并满足结构/背景安全，才进入 scale。'})
+    raw=stats([r for r in baselines['B0_raw_global'] if r['case'] in ids])
+    write(out/'F_ablation/pilot_report.json',{'reference_ids':sorted(ids),'cases':6,'difficulty_counts':{'Easy':2,'Medium':2,'Hard':2},
+        'methods':{'global_raw':raw,'global_rectified':base_stats,**summaries},'new_images':96,'reused_baseline_images':48,
+        'confirmation_expanded':False,'scope':'固定6例消融；尚无12–18例自动化确认，不能声称全C3自动对应通过。',
+        'scale_identity_gate_open':bool(auto_gain and rotation_pass),'frozen_pass':frozen,
+        'prototype_limit':'采用人工 canonical crop 的周期延拓和归一化 panel UV 作为共同转移 recipe。crop 内部接续会影响 motif；没有真实 target 图或 dense UV ground truth。'})
     decision=json.loads((out/'decision_summary.json').read_text())
     decision.update(automatic_local_gain=bool(auto_gain),rotation_pass=rotation_pass,structure_safe=structure,background_safe=background,
         next_route='test_scale' if auto_gain and rotation_pass else 'train_correspondence_predictor' if auto_gain else 'identity_preservation' if not identity_preserved else 'nonrigid_dense_correspondence',
