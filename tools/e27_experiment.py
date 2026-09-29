@@ -248,7 +248,7 @@ def stats(rows):
                 'leakage','boundary_rgb_deviation','boundary_occupancy','boundary_occupancy_error','contour_displacement_px','background_rgb_deviation'):
         values=[(r['case'],r[key]) for r in rows if r.get(key) is not None]
         result[key]=case_stat(values) if values else None
-    pairs=[]
+    pairs=[];rotation_pairs=[];rotation_eligible_pairs=0
     for case in sorted(set(r['case'] for r in rows)):
         for seed in SEEDS:
             pair=[r for r in rows if r['case']==case and r['seed']==seed]
@@ -257,7 +257,32 @@ def stats(rows):
             follow=all(r['local_geometry_follow'] for r in valid_geometry) and all(r['identity']>=THRESHOLDS['identity_min'] for r in pair)
             # 非定向花卉可报 identity，而不声称旋转几何成功。
             pairs.append((case,float(follow)))
+            original=next(r for r in pair if r['variant']=='original')
+            rotated=next(r for r in pair if r['variant']=='rot90')
+            other={(p['panel'],tuple(p['roi'])):p for p in rotated['patches']}
+            localpairs=[]
+            for pa in original['patches']:
+                pb=other.get((pa['panel'],tuple(pa['roi'])))
+                if pb is None or not(pa['expected_valid'] and pb['expected_valid']):continue
+                distance=lambda a,b:abs((a-b+90)%180-90)
+                expected_delta=distance(pa['theta_expected'],pb['theta_expected'])
+                if expected_delta<45:continue
+                actual_delta=distance(pa['theta_output'],pb['theta_output'])
+                passed=pa['output_valid'] and pb['output_valid'] and max(pa['theta_error'],pb['theta_error'])<=20 and abs(actual_delta-expected_delta)<=20
+                localpairs.append(float(passed))
+            if localpairs:
+                rotation_pairs.append((case,float(np.mean(localpairs)>=.75)))
+                rotation_eligible_pairs+=1
     result['follow']=case_stat(pairs)
+    result['rotation_follow']=case_stat(rotation_pairs) if rotation_pairs else None
+    result['rotation_pair_coverage']=rotation_eligible_pairs/max(len(pairs),1)
+    result['follow_definition']='同一 case 的 original/rot90 各自局部方向符合共同 prototype 且 identity>=.65；非方向 case 只评 identity。rotation_follow 单独评成对局部响应。'
+    result['panels']={}
+    for panel in sorted({p['panel'] for r in rows for p in r['patches']}):
+        result['panels'][panel]={}
+        for key in ('identity','self_similarity','theta_error','period_error'):
+            values=[(r['case'],p[key]) for r in rows for p in r['patches'] if p['panel']==panel and (key not in ('theta_error','period_error') or p['expected_valid'])]
+            result['panels'][panel][key]=case_stat(values) if values else None
     result.update(cases=len(set(r['case'] for r in rows)),images=len(rows),geometry_images=sum(r['theta_error'] is not None for r in rows))
     return result
 
