@@ -161,7 +161,12 @@ def generate(root,out,stage):
     from tools.e26_audit import structural_drift
     torch.set_num_threads(4);torch.manual_seed(42)
     cases=json.loads((out/'cases.json').read_text())
-    if stage=='C':
+    if stage=='D':
+        decision=json.loads((out/'decision_summary.json').read_text())
+        if not decision['oracle_panel_gain']:raise RuntimeError('oracle 未通过，停止自动化')
+        from models.confidence_local_correspondence import MODES
+        refs=[r for r in cases['references'] if r['pilot']];arms=MODES;base=out/'D_automatic'
+    elif stage=='C':
         decision=json.loads((out/'decision_summary.json').read_text())
         if decision['next_route']!='test_oracle_panel':raise RuntimeError('B 门槛未允许 oracle panel')
         refs=[r for r in cases['references'] if r['oracle']];arms=('C_oracle_panel',);base=out/'C_oracle'
@@ -172,7 +177,7 @@ def generate(root,out,stage):
     assert type(pipe.scheduler).__name__=='DDIMScheduler'
     frozen=module_hashes(modules);start=e25.timestep_for(pipe.scheduler,.15)
     bank=e23.token_bank(pipe,{'references':refs},out,width,height,'E5')
-    p=protocol(root);p.update(frozen_model_hashes=frozen,checkpoint_sha256=file_sha(root/'output/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt'),
+    p=protocol(root);p.update(stage=stage,arms=list(arms),reference_ids=[r['reference_id'] for r in refs],frozen_model_hashes=frozen,checkpoint_sha256=file_sha(root/'output/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt'),
         actual_canvas=[width,height],refinement_timesteps=start,scheduler_config=e23.normalize_scheduler(pipe))
     write(base/'protocol.json',p)
     sk=cases['sketches'][0];mask=Image.open(out/sk['mask']).convert('L');sketch=Image.open(out/sk['path']).convert('RGB')
@@ -190,7 +195,15 @@ def generate(root,out,stage):
                 folder=base/arm;folder.mkdir(exist_ok=True)
                 scaffold=None;z0=None
                 if arm!='B2_original_E5':
-                    if stage=='C':
+                    if stage=='D':
+                        from models.confidence_local_correspondence import build_scaffold
+                        # 自动生成接口只接收当前 reference RGB 和 target mask。
+                        scaffold,arrays,auto_info=build_scaffold(reference,maskarray,arm)
+                        scaffold_dir=base/'scaffolds';scaffold_dir.mkdir(exist_ok=True)
+                        scaffold.save(scaffold_dir/f'{prefix}_{arm}.png')
+                        np.savez_compressed(scaffold_dir/f'{prefix}_{arm}_fields.npz',**arrays)
+                        write(scaffold_dir/f'{prefix}_{arm}.json',auto_info)
+                    elif stage=='C':
                         scaffold_dir=base/'scaffolds';scaffold_dir.mkdir(exist_ok=True)
                         source_mask=np.load(out/'B_baseline/scaffolds'/f'{prefix}_fields.npz')['source_mask']
                         scaffold,_,panel_info=oracle_scaffold(original,maskarray,ref['panels'],name,rectified=True,
@@ -317,8 +330,12 @@ def report(out,stage):
     for arm in ARMS:
         for path in sorted((out/'B_baseline'/arm).glob('c*.json')):
             raw=json.loads(path.read_text());row=finite_json(raw)
-            row['undefined_metrics']=[k for k,v in raw.items() if isinstance(v,float) and not np.isfinite(v)]
+            row['undefined_metrics']=sorted(set(raw.get('undefined_metrics',[])+[k for k,v in raw.items() if isinstance(v,float) and not np.isfinite(v)]))
             write(path,row);b[arm].append(row)
+    if stage=='D':
+        report_automatic(out,b)
+        previews(out,stage,config)
+        return
     if stage=='B':
         byarm={}
         failures=[]
@@ -386,16 +403,59 @@ def noise_check(methods):
     return True
 
 
+def report_automatic(out,baselines):
+    from tools.e20_utilization import case_stat
+    from models.confidence_local_correspondence import MODES
+    groups={arm:[finite_json(json.loads(p.read_text())) for p in sorted((out/'D_automatic'/arm).glob('c*.json'))] for arm in MODES}
+    assert all(len(rows)==24 for rows in groups.values())
+    ids={r['case'] for r in groups['full_CALPC']}
+    baseline=[r for r in baselines['B1_global_rectified'] if r['case'] in ids]
+    summaries={arm:stats(rows) for arm,rows in groups.items()}
+    base_stats=stats(baseline);current=summaries['full_CALPC']
+    index={(r['case'],r['seed'],r['variant']):r for r in baseline}
+    contrast={key:case_stat([(r['case'],r[key]-index[r['case'],r['seed'],r['variant']][key]) for r in groups['full_CALPC'] if r.get(key) is not None and index[r['case'],r['seed'],r['variant']].get(key) is not None]) for key in ('contour_f1','leakage','identity','theta_error','period_error','background_rgb_deviation')}
+    theta_reduction=1-current['theta_error']['mean']/max(base_stats['theta_error']['mean'],1e-9) if current['theta_error'] and base_stats['theta_error'] else 0.
+    gain=current['follow']['mean']-base_stats['follow']['mean']
+    rotation=current['rotation_follow']
+    rotation_pass=bool(rotation and rotation['mean']>.75 and rotation['ci95'][0]>.5)
+    structure=contrast['contour_f1']['mean']>=-.02;background=contrast['leakage']['mean']<=.01
+    identity_preserved=contrast['identity']['mean']>=-.02
+    auto_gain=(gain>=.10 or theta_reduction>=.20) and structure and background and identity_preserved
+    differences={}
+    for case in ids:
+        a=stats([r for r in groups['full_CALPC'] if r['case']==case]);z=stats([r for r in baseline if r['case']==case])
+        differences[case]=a['follow']['mean']-z['follow']['mean']
+    frozen=json.loads((out/'D_automatic/frozen_check.json').read_text())['pass']
+    write(out/'D_automatic/report.json',{'methods':summaries,'matched_B1':base_stats,'contrasts':contrast,'follow_gain':gain,
+        'theta_error_reduction_fraction':theta_reduction,'paired_follow_gain':case_stat(list(differences.items())),
+        'automatic_local_gain':auto_gain,'rotation_pass':rotation_pass,'structure_safe':structure,'background_safe':background,
+        'identity_preserved':identity_preserved,'noise_hash_pass':noise_check({**groups,'B1':baseline}),'frozen_pass':frozen,
+        'scope':'预注册6例 pilot，2/难度；4个无训练自动化消融；B0/B1 复用相同 case 的既有结果。',
+        'scale_gate':'成对局部 rotation follow >75% 且 case CI lower>.5，并满足结构/背景安全，才进入 scale。'})
+    decision=json.loads((out/'decision_summary.json').read_text())
+    decision.update(automatic_local_gain=bool(auto_gain),rotation_pass=rotation_pass,structure_safe=structure,background_safe=background,
+        next_route='test_scale' if auto_gain and rotation_pass else 'train_correspondence_predictor' if auto_gain else 'identity_preservation' if not identity_preserved else 'nonrigid_dense_correspondence',
+        stopping_reason=None if auto_gain and rotation_pass else '自动局部 pilot 未同时达到稳定 rotation 与安全收益，E scale/identity 和 F 大规模确认不运行。')
+    write(out/'decision_summary.json',decision)
+    print('[D decision]',json.dumps(decision,ensure_ascii=False),flush=True)
+
+
 def previews(out,stage,cases):
-    base=out/('B_baseline' if stage=='B' else 'C_oracle');folder=base/'previews';folder.mkdir(exist_ok=True)
-    refs=cases['references'] if stage=='B' else [r for r in cases['references'] if r['oracle']]
+    base=out/('B_baseline' if stage=='B' else 'D_automatic' if stage=='D' else 'C_oracle');folder=base/'previews';folder.mkdir(exist_ok=True)
+    if stage=='B':refs=cases['references']
+    elif stage=='D':refs=[r for r in cases['references'] if r['pilot']]
+    else:refs=[r for r in cases['references'] if r['oracle']]
     for ref in refs:
-        cols=5 if stage=='B' else 4;sheet=Image.new('RGB',(cols*192,2*284),'white');draw=ImageDraw.Draw(sheet)
+        cols=7 if stage=='D' else 5 if stage=='B' else 4;sheet=Image.new('RGB',(cols*192,2*284),'white');draw=ImageDraw.Draw(sheet)
         for y,name in enumerate(('original','rot90')):
             paths=[out/'A_audit/inputs'/f"c{ref['id']:02d}_{name}.png",out/'expected'/f"c{ref['id']:02d}_{name}.png"]
             labels=['reference '+name,'common prototype']
             if stage=='B':
                 paths += [out/'B_baseline'/arm/f"c{ref['id']:02d}_s42_{name}.png" for arm in ARMS];labels+=list(ARMS)
+            elif stage=='D':
+                from models.confidence_local_correspondence import MODES
+                paths += [out/'B_baseline/B1_global_rectified'/f"c{ref['id']:02d}_s42_{name}.png"]+[base/arm/f"c{ref['id']:02d}_s42_{name}.png" for arm in MODES]
+                labels+=['B1 global rect']+list(MODES)
             else:
                 paths += [out/'B_baseline/B1_global_rectified'/f"c{ref['id']:02d}_s42_{name}.png",out/'C_oracle/C_oracle_panel'/f"c{ref['id']:02d}_s42_{name}.png"]
                 labels+=['B1 global rect','C oracle panel']
@@ -406,7 +466,7 @@ def previews(out,stage,cases):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
-    p.add_argument('--dataset',type=Path);p.add_argument('--stage',choices=('A','B','C','report_B','report_C'),required=True);args=p.parse_args()
+    p.add_argument('--dataset',type=Path);p.add_argument('--stage',choices=('A','B','C','D','report_B','report_C','report_D'),required=True);args=p.parse_args()
     args.out.mkdir(parents=True,exist_ok=True)
     if args.stage=='A':prepare(args.root,args.out,args.dataset)
     elif args.stage.startswith('report_'):report(args.out,args.stage[-1])
