@@ -89,24 +89,29 @@ def build_scaffold(image,target_mask,mode='full_CALPC',region_proposer=None):
     source_mask,regions,decision=(region_proposer or infer_regions)(image)
     target_labels,u,v=target_parts(target_mask)
     gy,gx=np.indices(target_mask.shape,dtype=np.float32)
-    rgb_samples=[];supports=[];confidence=[];uvs=[];records=[]
+    rgb_samples=[];supports=[];confidence=[];uvs=[];records=[];target_masks=[]
     existing={r['name'] for r in regions}
+    body_target=target_labels=='body'
+    if region_proposer is not None:
+        for extra in ('left_sleeve','right_sleeve','collar'):
+            if extra not in existing:body_target|=target_labels==extra
     for region in regions:
         name=region['name'];area=region['area'];crop=image.crop(region['crop'])
         if 'target_u_range' in region:
-            lo,hi=region['target_u_range'];target=(target_labels=='body')&(u>=lo)&(u<hi)
+            lo,hi=region['target_u_range'];target=body_target&(u>=lo)&((u<=hi) if hi==1 else (u<hi))
         elif 'target_v_range' in region:
-            lo,hi=region['target_v_range'];target=(target_labels=='body')&(v>=lo)&(v<hi)
-        elif name=='body':target=target_labels=='body'
+            lo,hi=region['target_v_range'];target=body_target&(v>=lo)&((v<=hi) if hi==1 else (v<hi))
+        elif name=='body':target=body_target
         elif name=='body_left':target=(target_labels=='body')&(u<.5)
         elif name=='body_right':target=(target_labels=='body')&(u>=.5)
         elif name=='body_upper':target=(target_labels=='body')&(v<.5)
         elif name=='body_lower':target=(target_labels=='body')&(v>=.5)
         else:target=target_labels==name
-        if name.startswith('body'):
+        if name.startswith('body') and region_proposer is None:
             for extra in ('left_sleeve','right_sleeve','collar'):
                 if extra not in existing:target|=target_labels==extra
         if not target.any():continue
+        target_masks.append(target)
         rect_info=None;canonical=crop
         if mode not in ('confidence_no_rectification','geometry_only') and region['geometry']['valid'] and min(crop.size)>=32:
             canonical,_,rect_info=rectify_reference(crop)
@@ -144,8 +149,12 @@ def build_scaffold(image,target_mask,mode='full_CALPC',region_proposer=None):
     rgb=(weights[...,None]*np.stack(rgb_samples)).sum(0);rgb[~target_mask]=255
     conf=(weights*np.array(confidence)[:,None,None]).sum(0);conf[~target_mask]=0
     arrays={'source_mask':source_mask,'automatic_source_masks':np.stack([r['area'] for r in regions]),
+            'automatic_target_masks':np.stack(target_masks),
             'automatic_target_supports':np.stack(supports),'automatic_patch_uv':np.stack(uvs),
             'composition_weights':weights,'confidence':conf}
     info={'version':VERSION,'mode':mode,'source_access':'RGB image only; no manual boxes/masks/IDs/family labels',
           'region_rule':decision,'regions':records,'confidence_coverage':float((conf[target_mask]>.5).mean())}
+    if region_proposer is not None:
+        assert np.all(np.stack(target_masks).sum(0)[target_mask]==1)
+        info['target_graph_partition_pass']=True
     return Image.fromarray(np.clip(np.rint(rgb),0,255).astype(np.uint8)),arrays,info
