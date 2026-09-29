@@ -249,7 +249,7 @@ def revise(out):
         if path.exists() and not (archive/name).exists(): shutil.copy2(path, archive/name)
 
 
-def generate(root, out):
+def generate(root, out, arms=ARM_NAMES, stage_dir='B_decomposition'):
     import torch
     from torchvision.transforms.functional import to_tensor
     from tools import e23_mechanism as e23
@@ -300,8 +300,8 @@ def generate(root, out):
                                     device=pipe.device, dtype=pipe.vae.dtype)
                 nsha = e25.sha(noise.cpu().numpy().tobytes())
                 noise_manifest[f'{prefix}_s{seed}'] = nsha
-                for arm in ARM_NAMES:
-                    folder = out/'B_decomposition'/arm
+                for arm in arms:
+                    folder = out/stage_dir/arm
                     final_path = folder/f'c{case["id"]:02d}_s{seed}_{variant}.png'
                     if final_path.exists() and final_path.with_suffix('.json').exists():
                         old = _load(final_path.with_suffix('.json'))
@@ -339,7 +339,8 @@ def generate(root, out):
                            'sketch_sha256': condition_manifest['sketch_sha256'],
                            'target_mask_sha256': condition_manifest['target_mask_sha256'],
                            'scaffold_sha256': file_sha(folder/f'{prefix}_scaffold.png'),
-                           'component_modes': ARMS.get(arm, ('global',)*5),
+                           'component_modes': ARMS.get(arm, ('automatic_repaired','automatic','automatic','automatic_local','current_calpc')
+                                             if arm == 'C2_panel_repair' else ('global',)*5),
                            'selected_assignments': _load((folder/f'{prefix}_scaffold.png').with_suffix('.json'))['assignments'],
                            'scaffold_metrics': _stage_metrics(scaffold_image, mask, sketch, reference, expected, sk['roi']),
                            'vae_metrics': _stage_metrics(reconstruction if seed == SEEDS[0] else Image.open(folder/f'{prefix}_vae.png').convert('RGB'), mask, sketch, reference, expected, sk['roi']),
@@ -350,11 +351,12 @@ def generate(root, out):
                     write(final_path.with_suffix('.json'), row)
                     print('[E28 final]', arm, prefix, seed, flush=True)
     after = module_hashes(modules)
-    write(out/'frozen_check.json', {'pass': before == after, 'before': before, 'after': after,
+    evidence_dir = out if stage_dir == 'B_decomposition' else out/stage_dir
+    write(evidence_dir/'frozen_check.json', {'pass': before == after, 'before': before, 'after': after,
                                    'checkpoint_sha256': checkpoint_sha, 'training_steps': 0})
     assert before == after
-    write(out/'noise_manifest.json', noise_manifest)
-    write(out/'condition_manifest.json', condition_manifest)
+    write(evidence_dir/'noise_manifest.json', noise_manifest)
+    write(evidence_dir/'condition_manifest.json', condition_manifest)
 
 
 def report(root, out):
@@ -507,14 +509,23 @@ def report(root, out):
                 and mean('B1_oracle', 'contour_f1') >= mean('B0_global_anchor', 'contour_f1')-.02
                 and mean('B1_oracle', 'leakage') <= mean('B0_global_anchor', 'leakage')+.01)
     if not oracle_reproduced: route = 'stop_no_stable_gain'
+    full_auto_structure = (mean('B6_full_auto', 'contour_f1') >= mean('B0_global_anchor', 'contour_f1')-.02
+                           and mean('B6_full_auto', 'leakage') <= mean('B0_global_anchor', 'leakage')+.01)
+    rotation_case_n = sum(stats([r for r in rows['B6_full_auto'] if r['case']==cid])['rotation_follow'] is not None
+                          for cid in CASE_IDS)
+    rotation_stat = summary['B6_full_auto']['rotation_follow']
+    rotation_pass = bool(rotation_stat and summary['B6_full_auto']['rotation_pair_coverage'] >= 2/3
+                         and rotation_stat['mean'] > .75) if rotation_case_n >= 4 else None
     decision = {'A_audit_pass': True, 'B_oracle_reproduced': bool(
                 oracle_reproduced),
                 'warp_bottleneck': bool(b2_warp), 'ownership_bottleneck': bool(b3_ownership),
                 'panel_bottleneck': bool(b4_panel), 'composition_bottleneck': bool(b5_comp),
                 'primary_bottleneck': route, 'selected_repair': route if route in ('ownership_matching','panel_parser','boundary_safe_composition') else None,
                 'next_route': route, 'experiment': 'E28', 'repair_pilot_pass': None,
-                'confirmation_pass': None, 'structure_safe': bool(b2_structure_safe),
-                'rotation_pass': None, 'component_check_pass': _load(out/'B_decomposition/component_check.json')['pass'],
+                'confirmation_pass': None, 'structure_safe': bool(full_auto_structure),
+                'warp_structure_safe': bool(b2_structure_safe),
+                'rotation_pass': rotation_pass, 'rotation_case_n': rotation_case_n,
+                'component_check_pass': _load(out/'B_decomposition/component_check.json')['pass'],
                 'warp_close_to_oracle': bool(b2_close),
                 'gate_thresholds': {'pattern_follow_drop': .05, 'identity_close': .03, 'theta_close_deg': 5,
                       'warp_recovery': .6, 'paa': .85, 'mixed_paa': .75, 'panel_miou': .75,
@@ -575,7 +586,7 @@ def main():
     p.add_argument('--e27', type=Path, default=Path('output_eval/e27_20260929'))
     p.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
     p.add_argument('--out', type=Path, default=Path('output_eval/e28_20260929'))
-    p.add_argument('--stage', choices=('A', 'revise', 'scaffold', 'generate', 'report'), required=True)
+    p.add_argument('--stage', choices=('A', 'revise', 'scaffold', 'generate', 'report', 'C_scaffold', 'C_generate', 'C_report'), required=True)
     args = p.parse_args()
     args.root = args.root.resolve(); args.e27 = args.e27.resolve()
     args.dataset = args.dataset.resolve(); args.out = args.out.resolve()
@@ -584,9 +595,17 @@ def main():
     elif args.stage == 'revise': revise(args.out)
     elif args.stage == 'scaffold': scaffold(args.root, args.e27, args.out)
     elif args.stage == 'report': report(args.root, args.out)
+    elif args.stage == 'C_scaffold':
+        from tools.e28_repair import scaffold as repair_scaffold
+        repair_scaffold(args.root, args.out)
+    elif args.stage == 'C_report':
+        from tools.e28_repair import report as repair_report
+        repair_report(args.root, args.out)
     else:
         import torch
-        with torch.inference_mode(): generate(args.root, args.out)
+        with torch.inference_mode():
+            if args.stage == 'C_generate': generate(args.root, args.out, ('C2_panel_repair',), 'C_repair/pilot')
+            else: generate(args.root, args.out)
 
 
 if __name__ == '__main__': main()

@@ -84,16 +84,20 @@ def infer_regions(image):
     return mask,records,{'body_split':split,'vertical_similarity':vertical,'horizontal_similarity':horizontal}
 
 
-def build_scaffold(image,target_mask,mode='full_CALPC'):
+def build_scaffold(image,target_mask,mode='full_CALPC',region_proposer=None):
     assert mode in MODES
-    source_mask,regions,decision=infer_regions(image)
+    source_mask,regions,decision=(region_proposer or infer_regions)(image)
     target_labels,u,v=target_parts(target_mask)
     gy,gx=np.indices(target_mask.shape,dtype=np.float32)
     rgb_samples=[];supports=[];confidence=[];uvs=[];records=[]
     existing={r['name'] for r in regions}
     for region in regions:
         name=region['name'];area=region['area'];crop=image.crop(region['crop'])
-        if name=='body':target=target_labels=='body'
+        if 'target_u_range' in region:
+            lo,hi=region['target_u_range'];target=(target_labels=='body')&(u>=lo)&(u<hi)
+        elif 'target_v_range' in region:
+            lo,hi=region['target_v_range'];target=(target_labels=='body')&(v>=lo)&(v<hi)
+        elif name=='body':target=target_labels=='body'
         elif name=='body_left':target=(target_labels=='body')&(u<.5)
         elif name=='body_right':target=(target_labels=='body')&(u>=.5)
         elif name=='body_upper':target=(target_labels=='body')&(v<.5)
