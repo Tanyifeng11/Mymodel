@@ -91,12 +91,23 @@ def prepare(root, out):
                 rect_cycle_error = float(np.linalg.norm(rect_uv - inverse_displacement - grid, axis=-1).max())
                 composed = cv2.remap(rect_uv, field.uv[..., 0], field.uv[..., 1], cv2.INTER_LINEAR,
                                     borderMode=cv2.BORDER_REFLECT_101)
+                reference_theta = cv2.remap(local.orientation, field.uv[..., 0], field.uv[..., 1],
+                                            cv2.INTER_NEAREST, borderMode=cv2.BORDER_REFLECT_101)
+                reference_frequency = cv2.remap(local.frequency, field.uv[..., 0], field.uv[..., 1],
+                                                cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+                sx = (field.bbox[2] - field.bbox[0]) / (image.width - 1)
+                sy = (field.bbox[3] - field.bbox[1]) / (image.height - 1)
+                radians = np.deg2rad(reference_theta)
+                target_theta = np.degrees(np.arctan2(np.sin(radians) * sy, np.cos(radians) * sx)) % 180
+                normal = radians - np.pi / 2
+                target_frequency = reference_frequency * np.hypot(np.cos(normal) / sx, np.sin(normal) / sy)
                 field_path = base / "fields" / f"{prefix}.npz"
                 np.savez_compressed(field_path, rectification_uv=rect_uv, garment_to_rectified_uv=field.uv,
                     garment_to_reference_uv=composed, orientation=local.orientation,
                     frequency=local.frequency, confidence=local.confidence, valid=local.valid,
                     raw_orientation=raw_local.orientation, raw_frequency=raw_local.frequency,
                     raw_confidence=raw_local.confidence, raw_valid=raw_local.valid, target_blend=blend,
+                    target_orientation=target_theta, target_frequency=target_frequency,
                     canonical_reference=field.canonical_reference, canonical_target=field.canonical_target)
                 geom = {"case": case, "review_index": review_id, "group": group, "variant": name,
                         "theta_gt": theta_gt, "rectification": rect_info,
