@@ -352,6 +352,13 @@ def report(out,stage):
     config=json.loads((out/'cases.json').read_text())
     proofs={(r['case'],r['variant']):r for r in json.loads((out/'A_audit/report.json').read_text())['proofs']}
     audit=metric_eligibility(out)
+    stage_dir={'B':'B_baseline','C':'C_oracle','D':'D_automatic'}[stage]
+    write(out/stage_dir/'evaluation_protocol.json',{'evaluation_git_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=out,text=True).strip(),
+        'pre_generation_audit_sha256':file_sha(out/'A_audit/audit.csv'),
+        'geometry_eligibility':'预先审核的 orientation_readable / period_readable，之后才使用共同 prototype patch 可读性。',
+        'raw_geometry_retained':'每张 metadata 的 unfiltered_geometry 与 geometry_expected_valid_unfiltered。',
+        'undefined_contour_displacement':'null；Contour F1=0 的无前景失败继续计入。',
+        'bootstrap':'reference case，2000 重采样，seed42；seed、variant 和 patches 在 case 内聚合。'})
     b={arm:[] for arm in ARMS}
     for arm in ARMS:
         for path in sorted((out/'B_baseline'/arm).glob('c*.json')):
@@ -471,11 +478,37 @@ def report_automatic(out,baselines):
         'scale_identity_gate_open':bool(auto_gain and rotation_pass),'frozen_pass':frozen,
         'prototype_limit':'采用人工 canonical crop 的周期延拓和归一化 panel UV 作为共同转移 recipe。crop 内部接续会影响 motif；没有真实 target 图或 dense UV ground truth。'})
     decision=json.loads((out/'decision_summary.json').read_text())
+    partial_geometry_gain=theta_reduction>=.20 and contrast['identity']['mean']>=0
+    # oracle 有效不能推出 affine 已失效；当前失败优先回到自动分区/置信度/边界组合。
     decision.update(automatic_local_gain=bool(auto_gain),rotation_pass=rotation_pass,structure_safe=structure,background_safe=background,
-        next_route='test_scale' if auto_gain and rotation_pass else 'train_correspondence_predictor' if auto_gain else 'identity_preservation' if not identity_preserved else 'nonrigid_dense_correspondence',
+        automatic_partial_geometry_gain=bool(partial_geometry_gain),
+        next_route='test_scale' if auto_gain and rotation_pass else 'identity_preservation' if not identity_preserved else 'panel_local_correspondence',
+        next_route_detail='先修正自动 region ownership、confidence 和 external boundary composition；尚未证明需要 TPS/dense flow 或训练 predictor。',
+        stage_status={'A':'completed_18','B':'completed_216_images','C':'completed_32_images','D':'completed_96_images',
+            'E_scale':'gate_open' if auto_gain and rotation_pass else 'not_run_rotation_or_structure_gate_failed',
+            'E_identity':'not_run_scale_gate_not_open','F_ablation':'completed_6_reference_pilot',
+            'F_confirmation':'not_run_no_safe_stable_automatic_pilot_gain'},
         stopping_reason=None if auto_gain and rotation_pass else '自动局部 pilot 未同时达到稳定 rotation 与安全收益，E scale/identity 和 F 大规模确认不运行。')
     write(out/'decision_summary.json',decision)
     print('[D decision]',json.dumps(decision,ensure_ascii=False),flush=True)
+
+
+def bundle(out):
+    import zipfile
+    decision=json.loads((out/'decision_summary.json').read_text())
+    images=list(out.glob('B_baseline/B*/c*_s*.png'))+list(out.glob('C_oracle/C_oracle_panel/c*_s*.png'))+list(out.glob('D_automatic/*/c*_s*.png'))
+    assert len(images)==344,len(images)
+    write(out/'artifact_index.json',{'generated_images':len(images),'decision':decision,
+        'reports':[str(p.relative_to(out)) for p in sorted(out.glob('**/*report.json'))],
+        'evaluation_protocols':[str(p.relative_to(out)) for p in sorted(out.glob('**/evaluation_protocol.json'))],
+        'frozen_checks':[{'path':str(p.relative_to(out)),'pass':json.loads(p.read_text())['pass']} for p in sorted(out.glob('**/frozen_check.json'))],
+        'image_manifest':[{'path':str(p.relative_to(out)),'sha256':file_sha(p)} for p in images]})
+    # 便于本地复核的轻量统计包；全部图像与对应场仍保留在本次服务器目录。
+    selected=[p for p in out.rglob('*') if p.is_file() and (p.suffix in ('.json','.csv','.log','.err') or '/previews/' in p.as_posix())]
+    destination=out/'e27_reports_and_previews.zip'
+    with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED) as archive:
+        for path in selected:archive.write(path,str(path.relative_to(out)))
+    print('[bundle]',destination,'images',len(images),'bytes',destination.stat().st_size,flush=True)
 
 
 def previews(out,stage,cases):
@@ -504,9 +537,10 @@ def previews(out,stage,cases):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
-    p.add_argument('--dataset',type=Path);p.add_argument('--stage',choices=('A','B','C','D','report_B','report_C','report_D'),required=True);args=p.parse_args()
+    p.add_argument('--dataset',type=Path);p.add_argument('--stage',choices=('A','B','C','D','report_B','report_C','report_D','bundle'),required=True);args=p.parse_args()
     args.out.mkdir(parents=True,exist_ok=True)
     if args.stage=='A':prepare(args.root,args.out,args.dataset)
+    elif args.stage=='bundle':bundle(args.out)
     elif args.stage.startswith('report_'):report(args.out,args.stage[-1])
     else:
         import torch

@@ -17,4 +17,5 @@ if [ -f "$PWD/output_eval/e27_20260929/C_oracle/frozen_check.json" ]; then
 fi
 if [ -f "$PWD/output_eval/e27_20260929/D_automatic/frozen_check.json" ]; then
     python -m tools.e27_experiment --root "$PWD" --out "$PWD/output_eval/e27_20260929" --stage report_D
+    python -m tools.e27_experiment --root "$PWD" --out "$PWD/output_eval/e27_20260929" --stage bundle
 fi
