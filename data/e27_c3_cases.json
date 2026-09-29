@@ -1,0 +1,1299 @@
+{
+  "references": [
+    {
+      "id": 0,
+      "reference_id": "c3_01",
+      "review_id": 1,
+      "source": "validation/gt/208901380.jpg",
+      "source_mask": "validation/mask/208901380.png",
+      "source_split": "validation",
+      "source_sha256": "2f8a2533b8a01626c75c1c96411547ac3b5699ec43a83df23f6a68b2b4422cdd",
+      "mask_sha256": "d395c4180615c1a2514c344c870cd8409ec89721913c5c6e80a724520b1ae530",
+      "difficulty": "Easy",
+      "pattern_type": "stripe",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            65,
+            110,
+            145,
+            205
+          ],
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": true,
+      "oracle": false,
+      "note": "单一纵条纹；主体平整；细肩带不作为 sleeve。"
+    },
+    {
+      "id": 1,
+      "reference_id": "c3_07",
+      "review_id": 7,
+      "source": "validation/gt/132604751.jpg",
+      "source_mask": "validation/mask/132604751.png",
+      "source_split": "validation",
+      "source_sha256": "275731b9e0be1cd51581ad3a4c4f70ac0f4c5538364abdadaf5565b02a613837",
+      "mask_sha256": "dd99d094c8093537a426cea3f90ab1748281f0f57d327122f00113eed07a2dd3",
+      "difficulty": "Easy",
+      "pattern_type": "stripe",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            80,
+            90,
+            176,
+            190
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            70,
+            256
+          ],
+          "crop": [
+            49,
+            28,
+            66,
+            58
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            186,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            190,
+            31,
+            207,
+            64
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9946524064171123
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "主体横条纹平整；短袖少量倾斜。"
+    },
+    {
+      "id": 2,
+      "reference_id": "c3_14",
+      "review_id": 14,
+      "source": "validation/gt/76724420.jpg",
+      "source_mask": "validation/mask/76724420.png",
+      "source_split": "validation",
+      "source_sha256": "f97d1048cf4edfef05486b74cf9636434dc52a3d88bf7df74cc88512ad50b014",
+      "mask_sha256": "f68f5e1eb64ab29fd39bdeb89708c6318840500c23be5246b73f2178aa64ac2b",
+      "difficulty": "Easy",
+      "pattern_type": "stripe",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            79,
+            85,
+            175,
+            182
+          ],
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "纵条纹主体清晰；下摆有轻微褶皱。"
+    },
+    {
+      "id": 3,
+      "reference_id": "c3_39",
+      "review_id": 39,
+      "source": "validation/gt/160776240.jpg",
+      "source_mask": "validation/mask/160776240.png",
+      "source_split": "validation",
+      "source_sha256": "5125cceed4e0fb3eb766db980bf4f939f4e9c904cb01cd1149b5f379ba65b317",
+      "mask_sha256": "50722f5ea3a9c6ea840863045956c2b775b855800717ccc0a1447567119bdb6a",
+      "difficulty": "Easy",
+      "pattern_type": "plaid",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            82,
+            91,
+            180,
+            203
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            74,
+            256
+          ],
+          "crop": [
+            44,
+            50,
+            64,
+            91
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9902439024390244
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            183,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            191,
+            50,
+            211,
+            91
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9914634146341463
+        }
+      ],
+      "pilot": true,
+      "oracle": false,
+      "note": "主体格纹平整；领口蝴蝶结作为轻缝线因素。"
+    },
+    {
+      "id": 4,
+      "reference_id": "c3_47",
+      "review_id": 47,
+      "source": "validation/gt/194999704.jpg",
+      "source_mask": "validation/mask/194999704.png",
+      "source_split": "validation",
+      "source_sha256": "9de7a7e077941a1b1861c9158a1ac8776d883ac8694224cbbf5157da26ad0967",
+      "mask_sha256": "9628a6d7d9e2c253684e81a374ee78da998512d8a09350cd35d163ab40b821db",
+      "difficulty": "Easy",
+      "pattern_type": "plaid",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            91,
+            20,
+            143,
+            91
+          ],
+          "source_crop_foreground_fraction": 0.9959371614301191
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "格纹主体清晰；腰部轻褶；不声称完全平面。"
+    },
+    {
+      "id": 5,
+      "reference_id": "c3_56",
+      "review_id": 56,
+      "source": "validation/gt/135812421.jpg",
+      "source_mask": "validation/mask/135812421.png",
+      "source_split": "validation",
+      "source_sha256": "1e6b0504d9ed78453d742533b536a6757b8569190b10ddd7b19daa590a3ca215",
+      "mask_sha256": "871a9058723b37b16073e81fb2e9ccc20ac6cb7b3a199513fe3736e5e02cd72e",
+      "difficulty": "Easy",
+      "pattern_type": "floral",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            98,
+            60,
+            155,
+            135
+          ],
+          "source_crop_foreground_fraction": 0.9904093567251462
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "花卉主体可读；方向/周期不作强方向监督。"
+    },
+    {
+      "id": 6,
+      "reference_id": "c3_04",
+      "review_id": 4,
+      "source": "validation/gt/128222302.jpg",
+      "source_mask": "validation/mask/128222302.png",
+      "source_split": "validation",
+      "source_sha256": "c2c3cc3089eda7035a79b84cf529cac4c320fede5e71354728fae3f0fa20cb95",
+      "mask_sha256": "4b4f3c1808b4c3087738cfc81f516b7a0671f718ac48fd5fd0c232612e40d59e",
+      "difficulty": "Medium",
+      "pattern_type": "stripe",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            78,
+            55,
+            176,
+            133
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            65,
+            256
+          ],
+          "crop": [
+            35,
+            135,
+            51,
+            180
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            191,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            200,
+            135,
+            216,
+            180
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": false,
+      "oracle": true,
+      "note": "宽横条纹长袖；袖区弯折与主体方向不一致。"
+    },
+    {
+      "id": 7,
+      "reference_id": "c3_08",
+      "review_id": 8,
+      "source": "validation/gt/109017767.jpg",
+      "source_mask": "validation/mask/109017767.png",
+      "source_split": "validation",
+      "source_sha256": "015ba4c9b7bca12ad54ed049ce731b30b9364a159962ab0666feeef8741df193",
+      "mask_sha256": "e1083b19d6d108f2c8153588e573642a14d332d88bd052655f29658283f1dc02",
+      "difficulty": "Medium",
+      "pattern_type": "stripe",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            88,
+            75,
+            167,
+            180
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            74,
+            256
+          ],
+          "crop": [
+            39,
+            38,
+            65,
+            77
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9901380670611439
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            182,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            192,
+            37,
+            218,
+            76
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9911242603550295
+        }
+      ],
+      "pilot": true,
+      "oracle": true,
+      "note": "细横条纹主体；两侧短袖纹样明显倾斜。"
+    },
+    {
+      "id": 8,
+      "reference_id": "c3_12",
+      "review_id": 12,
+      "source": "validation/gt/132372376.jpg",
+      "source_mask": "validation/mask/132372376.png",
+      "source_split": "validation",
+      "source_sha256": "f03a8a00ba14914a8ea31c539e38d4923a1a8e9b90ae5e4028d3763b22d5ce8b",
+      "mask_sha256": "9d1b7556e258ca515a9a445af357dd4113a3ccf3faff11a28106eaf727c17d47",
+      "difficulty": "Medium",
+      "pattern_type": "stripe",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            92,
+            55,
+            163,
+            169
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            62,
+            256
+          ],
+          "crop": [
+            44,
+            122,
+            59,
+            201
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9949367088607595
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            194,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            199,
+            122,
+            214,
+            201
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "细横条纹长袖；腰/袖轻至中度褶皱。"
+    },
+    {
+      "id": 9,
+      "reference_id": "c3_25",
+      "review_id": 25,
+      "source": "validation/gt/120689312.jpg",
+      "source_mask": "validation/mask/120689312.png",
+      "source_split": "validation",
+      "source_sha256": "28234da424c1a0fcf214e90f4fe7853e6beb9327c66484ca005058ee7600493c",
+      "mask_sha256": "0eca132bdd9a49697d8b869bae8d3528d182e9cccb8c83cc4c47e0dfc7e259c3",
+      "difficulty": "Medium",
+      "pattern_type": "plaid",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            88,
+            151,
+            168,
+            222
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            67,
+            256
+          ],
+          "crop": [
+            48,
+            149,
+            67,
+            225
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9909972299168975
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            190,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            190,
+            151,
+            209,
+            227
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9909972299168975
+        },
+        {
+          "name": "left_pocket",
+          "box": [
+            74,
+            83,
+            120,
+            142
+          ],
+          "crop": [
+            82,
+            96,
+            110,
+            123
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "right_pocket",
+          "box": [
+            137,
+            83,
+            183,
+            142
+          ],
+          "crop": [
+            145,
+            96,
+            173,
+            123
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": true,
+      "oracle": true,
+      "note": "格纹主体与斜口袋不同局部方向；长袖。"
+    },
+    {
+      "id": 10,
+      "reference_id": "c3_43",
+      "review_id": 43,
+      "source": "validation/gt/140748842.jpg",
+      "source_mask": "validation/mask/140748842.png",
+      "source_split": "validation",
+      "source_sha256": "ae397d2141575287d5879fcbc72401e863ac704b90b31c48d130e9e6d6b35ddc",
+      "mask_sha256": "73cbe015b219823dcfb1e02dcebfe598486641c0870e4a41ff2bba8c254a3640",
+      "difficulty": "Medium",
+      "pattern_type": "plaid",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            94,
+            118,
+            163,
+            211
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            76,
+            256
+          ],
+          "crop": [
+            51,
+            52,
+            69,
+            90
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            180,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            188,
+            52,
+            207,
+            90
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9986149584487535
+        }
+      ],
+      "pilot": false,
+      "oracle": true,
+      "note": "格纹衬衫；袖和衣身姿态不同，轻褶。"
+    },
+    {
+      "id": 11,
+      "reference_id": "c3_65",
+      "review_id": 65,
+      "source": "validation/gt/204963899.jpg",
+      "source_mask": "validation/mask/204963899.png",
+      "source_split": "validation",
+      "source_sha256": "adedcf33bbbff3c31ebd307dd2d04ab1c2619e604c90d3692aacf557cc280106",
+      "mask_sha256": "6b892c42178a250217d7b1017f5116ac19604899a7b8c95579120eeac5c61105",
+      "difficulty": "Medium",
+      "pattern_type": "floral",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            103,
+            89,
+            163,
+            193
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            74,
+            256
+          ],
+          "crop": [
+            59,
+            111,
+            74,
+            157
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.991304347826087
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            183,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            183,
+            112,
+            199,
+            158
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9904891304347826
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "花卉长袖裙；袖与腰褶影响 motif。"
+    },
+    {
+      "id": 12,
+      "reference_id": "c3_06",
+      "review_id": 6,
+      "source": "validation/gt/203984349.jpg",
+      "source_mask": "validation/mask/203984349.png",
+      "source_split": "validation",
+      "source_sha256": "4ff0b6d1964a3891847f041c259d3240769a6ebaefdd98624d71283b5a70926e",
+      "mask_sha256": "0a7d28c2472d646dc2ec0ae4be6b21062c3a7746b092b218307b1e4c9f774f4c",
+      "difficulty": "Hard",
+      "pattern_type": "mixed",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            65,
+            100,
+            93,
+            159
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            66,
+            256
+          ],
+          "crop": [
+            42,
+            143,
+            58,
+            205
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            189,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            201,
+            143,
+            217,
+            205
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "collar",
+          "box": [
+            74,
+            0,
+            183,
+            50
+          ],
+          "crop": [
+            101,
+            25,
+            151,
+            44
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "lower",
+          "box": [
+            65,
+            167,
+            190,
+            194
+          ],
+          "crop": [
+            86,
+            167,
+            169,
+            176
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9906291834002677
+        },
+        {
+          "name": "body_left",
+          "box": [
+            66,
+            40,
+            126,
+            167
+          ],
+          "crop": [
+            83,
+            58,
+            116,
+            127
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "body_right",
+          "box": [
+            126,
+            40,
+            189,
+            167
+          ],
+          "crop": [
+            141,
+            58,
+            174,
+            127
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": false,
+      "oracle": true,
+      "note": "纵条纹、胸前红编饰与罗纹下摆；复杂归属，不含强遮挡。"
+    },
+    {
+      "id": 13,
+      "reference_id": "c3_11",
+      "review_id": 11,
+      "source": "validation/gt/180654996.jpg",
+      "source_mask": "validation/mask/180654996.png",
+      "source_split": "validation",
+      "source_sha256": "5917c21aaef614dae01590995c036034def48fbaf5d9ea9421dee54e3b719c33",
+      "mask_sha256": "0a3720a55e9eed089cca6a8c0067c36d0a3ee6b5545e228813e30706aac15f2f",
+      "difficulty": "Hard",
+      "pattern_type": "mixed",
+      "panels": [
+        {
+          "name": "body_left",
+          "box": [
+            0,
+            0,
+            128,
+            256
+          ],
+          "crop": [
+            71,
+            80,
+            118,
+            173
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "body_right",
+          "box": [
+            128,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            140,
+            85,
+            196,
+            174
+          ],
+          "source_crop_foreground_fraction": 0.9903691813804173
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            0,
+            64,
+            105
+          ],
+          "crop": [
+            43,
+            69,
+            64,
+            103
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9915966386554622
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            194,
+            0,
+            256,
+            111
+          ],
+          "crop": [
+            194,
+            78,
+            211,
+            108
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9901960784313726
+        }
+      ],
+      "pilot": true,
+      "oracle": true,
+      "note": "左侧星形、右侧横条纹；主体多纹样归属。"
+    },
+    {
+      "id": 14,
+      "reference_id": "c3_19",
+      "review_id": 19,
+      "source": "validation/gt/130640285.jpg",
+      "source_mask": "validation/mask/130640285.png",
+      "source_split": "validation",
+      "source_sha256": "0472453848a08aa2bf21c6da826ca7cc187c1fe277cd3d49a6e62cc87d3eed1c",
+      "mask_sha256": "f0571f9e6f2dbad5446acfc9bad2236ef8bccde0a2ae7f8589b32f9c302b38a7",
+      "difficulty": "Hard",
+      "pattern_type": "mixed",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            85,
+            93,
+            169,
+            176
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            65,
+            256
+          ],
+          "crop": [
+            35,
+            110,
+            49,
+            192
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9930313588850174
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            191,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            206,
+            110,
+            220,
+            192
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9930313588850174
+        },
+        {
+          "name": "upper",
+          "box": [
+            65,
+            0,
+            191,
+            78
+          ],
+          "crop": [
+            85,
+            35,
+            167,
+            69
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "lower",
+          "box": [
+            65,
+            204,
+            191,
+            256
+          ],
+          "crop": [
+            88,
+            205,
+            164,
+            221
+          ],
+          "solid": true,
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": false,
+      "oracle": true,
+      "note": "纯色上部、星形/横纹中部、长袖横纹；不同区域归属。"
+    },
+    {
+      "id": 15,
+      "reference_id": "c3_23",
+      "review_id": 23,
+      "source": "validation/gt/134200076.jpg",
+      "source_mask": "validation/mask/134200076.png",
+      "source_split": "validation",
+      "source_sha256": "a934cb7d60640f4ab9b746544aeb29399d08b0d9586435260f915513a8040155",
+      "mask_sha256": "6dbdfd430b5729ed3816b5e6e9c20e3ca19128474e373d62cb39e77bb79410ac",
+      "difficulty": "Hard",
+      "pattern_type": "stripe",
+      "panels": [
+        {
+          "name": "body_left",
+          "box": [
+            0,
+            0,
+            128,
+            173
+          ],
+          "crop": [
+            72,
+            98,
+            109,
+            134
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "body_right",
+          "box": [
+            128,
+            0,
+            256,
+            173
+          ],
+          "crop": [
+            147,
+            98,
+            184,
+            134
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "lower",
+          "box": [
+            0,
+            173,
+            256,
+            256
+          ],
+          "crop": [
+            80,
+            184,
+            172,
+            216
+          ],
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "交叉胸片的多方向条纹；人工矩形衣片是近似标注。"
+    },
+    {
+      "id": 16,
+      "reference_id": "c3_45",
+      "review_id": 45,
+      "source": "validation/gt/146234592.jpg",
+      "source_mask": "validation/mask/146234592.png",
+      "source_split": "validation",
+      "source_sha256": "9f3c3b5385d50400882bb0b8b91541d206af3d362dd944bd4cddb7164f4194aa",
+      "mask_sha256": "5fb5490cf3737edf0186893ddee59267e711a8e6122f1c23aaed043029020abb",
+      "difficulty": "Hard",
+      "pattern_type": "geometric",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            111,
+            85,
+            165,
+            191
+          ],
+          "source_crop_foreground_fraction": 0.9972047519217331
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            73,
+            256
+          ],
+          "crop": [
+            58,
+            41,
+            72,
+            69
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            185,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            185,
+            43,
+            199,
+            71
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9948979591836735
+        },
+        {
+          "name": "body_left",
+          "box": [
+            72,
+            15,
+            126,
+            256
+          ],
+          "crop": [
+            84,
+            142,
+            121,
+            215
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "body_right",
+          "box": [
+            165,
+            15,
+            185,
+            256
+          ],
+          "crop": [
+            165,
+            130,
+            176,
+            204
+          ],
+          "solid": false,
+          "source_crop_foreground_fraction": 0.9901719901719902
+        }
+      ],
+      "pilot": false,
+      "oracle": false,
+      "note": "几何/文字 motif；多区域归属；不是可读单一 stripe。"
+    },
+    {
+      "id": 17,
+      "reference_id": "c3_46",
+      "review_id": 46,
+      "source": "validation/gt/210486726.jpg",
+      "source_mask": "validation/mask/210486726.png",
+      "source_split": "validation",
+      "source_sha256": "1c234005c51610f5ef647070a2fb6e4a8065c81522bcbd7713f20f1025900528",
+      "mask_sha256": "93d36572e007102c3e72e4a3a0a3523150b7c407c696e2c37bd789213c526b61",
+      "difficulty": "Hard",
+      "pattern_type": "mixed",
+      "panels": [
+        {
+          "name": "body",
+          "box": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "crop": [
+            75,
+            75,
+            178,
+            190
+          ],
+          "source_crop_foreground_fraction": 1.0
+        },
+        {
+          "name": "left_sleeve",
+          "box": [
+            0,
+            25,
+            67,
+            256
+          ],
+          "crop": [
+            48,
+            121,
+            65,
+            184
+          ],
+          "solid": true,
+          "source_crop_foreground_fraction": 0.9906629318394025
+        },
+        {
+          "name": "right_sleeve",
+          "box": [
+            190,
+            25,
+            256,
+            256
+          ],
+          "crop": [
+            190,
+            149,
+            207,
+            212
+          ],
+          "solid": true,
+          "source_crop_foreground_fraction": 0.9906629318394025
+        },
+        {
+          "name": "lower",
+          "box": [
+            67,
+            213,
+            190,
+            256
+          ],
+          "crop": [
+            84,
+            220,
+            170,
+            240
+          ],
+          "solid": true,
+          "source_crop_foreground_fraction": 1.0
+        }
+      ],
+      "pilot": true,
+      "oracle": true,
+      "note": "格纹 body、纯色袖、白色下层；层次归属清楚。"
+    }
+  ],
+  "pilot_review_ids": [
+    1,
+    39,
+    8,
+    25,
+    11,
+    46
+  ],
+  "oracle_review_ids": [
+    4,
+    8,
+    25,
+    43,
+    6,
+    11,
+    19,
+    46
+  ],
+  "annotation": "目视完整原图后人工 canonical crop + 近似矩形 panel；不是 dense UV GT。自动对应不可读取人工标注。",
+  "limits": [
+    "没有强遮挡/强透视样本",
+    "几何划分 target panels 仅用于固定长袖 transfer recipe",
+    "full-garment 原始图来自 BF validation/gt；非局部 crop 拼接"
+  ]
+}
