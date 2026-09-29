@@ -27,7 +27,15 @@ THRESHOLDS = {'local_theta_max':20., 'identity_min':.65, 'local_failure_gap':.10
 
 def write(path,payload):
     path.parent.mkdir(parents=True,exist_ok=True)
-    path.write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding='utf-8')
+    path.write_text(json.dumps(finite_json(payload),ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
+
+
+def finite_json(value):
+    # 无前景时旧 contour displacement 返回 NaN；明确标为未定义，不伪造数值。
+    if isinstance(value,float) and not np.isfinite(value):return None
+    if isinstance(value,dict):return {k:finite_json(v) for k,v in value.items()}
+    if isinstance(value,(list,tuple)):return [finite_json(v) for v in value]
+    return value
 
 
 def protocol(root):
@@ -305,7 +313,12 @@ def report(out,stage):
     from tools.e20_utilization import case_stat
     config=json.loads((out/'cases.json').read_text())
     proofs={(r['case'],r['variant']):r for r in json.loads((out/'A_audit/report.json').read_text())['proofs']}
-    b={arm:[json.loads(p.read_text()) for p in sorted((out/'B_baseline'/arm).glob('c*.json'))] for arm in ARMS}
+    b={arm:[] for arm in ARMS}
+    for arm in ARMS:
+        for path in sorted((out/'B_baseline'/arm).glob('c*.json')):
+            raw=json.loads(path.read_text());row=finite_json(raw)
+            row['undefined_metrics']=[k for k,v in raw.items() if isinstance(v,float) and not np.isfinite(v)]
+            write(path,row);b[arm].append(row)
     if stage=='B':
         byarm={}
         failures=[]
@@ -329,10 +342,12 @@ def report(out,stage):
             'difficulty_specific_failure':needs_oracle,'broad_c3_failure':broad_failure,'test_oracle':needs_oracle or broad_failure,
             'failure_counts':{arm:{f:sum(f in r['tags'] for r in failures if r['arm']==arm) for f in ('F1_global_orientation','F2_local_orientation','F3_local_scale','F4_identity','F5_ownership','F6_seam','F7_fold','F8_perspective','F9_occlusion','F10_structure','F11_background','F12_fallback')} for arm in ARMS},
             'taxonomy_limits':'F1/F6/F7/F8/F9 必须结合目视归因；未自动赋因果标签，零计数不代表没有失败。',
-            'noise_hash_pass':noise_check(b),'frozen_pass':json.loads((out/'B_baseline/frozen_check.json').read_text())['pass']})
+            'noise_hash_pass':noise_check(b),'frozen_pass':json.loads((out/'B_baseline/frozen_check.json').read_text())['pass'],
+            'undefined_metric_images':{arm:sum(bool(r['undefined_metrics']) for r in rows) for arm,rows in b.items()},
+            'undefined_metric_note':'无前景时 contour displacement 无定义，保存为 null；Contour F1 仍按 0 计入，不能删除这些失败样本。'})
         write(out/'B_baseline/failures.json',failures)
     else:
-        rows=[json.loads(p.read_text()) for p in sorted((out/'C_oracle/C_oracle_panel').glob('c*.json'))]
+        rows=[finite_json(json.loads(p.read_text())) for p in sorted((out/'C_oracle/C_oracle_panel').glob('c*.json'))]
         assert len(rows)==32
         ids=set(r['case'] for r in rows);baseline=[r for r in b[ARMS[1]] if r['case'] in ids]
         a,z=stats(rows),stats(baseline)
