@@ -408,10 +408,10 @@ def report(root, out):
     elif b4_panel: route = 'panel_parser'
     elif b5_comp: route = 'boundary_safe_composition'
     else: route = 'stop_no_stable_gain'
-    decision = {'A_audit_pass': True, 'B_oracle_reproduced':
-                summary['B1_oracle']['follow']['mean'] > summary['B0_global_anchor']['follow']['mean'],
-                'warp_bottleneck': b2_warp, 'ownership_bottleneck': b3_ownership,
-                'panel_bottleneck': b4_panel, 'composition_bottleneck': b5_comp,
+    decision = {'A_audit_pass': True, 'B_oracle_reproduced': bool(
+                summary['B1_oracle']['follow']['mean'] > summary['B0_global_anchor']['follow']['mean']),
+                'warp_bottleneck': bool(b2_warp), 'ownership_bottleneck': bool(b3_ownership),
+                'panel_bottleneck': bool(b4_panel), 'composition_bottleneck': bool(b5_comp),
                 'primary_bottleneck': route, 'selected_repair': route if route in ('ownership_matching','panel_parser','boundary_safe_composition') else None,
                 'next_route': route}
     write(out/'B_decomposition/report.json', {'summary': summary, 'panel_miou': panel_iou,
