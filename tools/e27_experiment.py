@@ -417,7 +417,8 @@ def report_automatic(out,baselines):
     theta_reduction=1-current['theta_error']['mean']/max(base_stats['theta_error']['mean'],1e-9) if current['theta_error'] and base_stats['theta_error'] else 0.
     gain=current['follow']['mean']-base_stats['follow']['mean']
     rotation=current['rotation_follow']
-    rotation_pass=bool(rotation and rotation['mean']>.75 and rotation['ci95'][0]>.5)
+    rotation_case_n=len({r['case'] for r in groups['full_CALPC'] if any(p['expected_valid'] for p in r['patches'])})
+    rotation_pass=bool(rotation and current['rotation_pair_coverage']>=2/3 and rotation_case_n>=4 and rotation['mean']>.75 and rotation['ci95'][0]>.5)
     structure=contrast['contour_f1']['mean']>=-.02;background=contrast['leakage']['mean']<=.01
     identity_preserved=contrast['identity']['mean']>=-.02
     auto_gain=(gain>=.10 or theta_reduction>=.20) and structure and background and identity_preserved
@@ -428,10 +429,10 @@ def report_automatic(out,baselines):
     frozen=json.loads((out/'D_automatic/frozen_check.json').read_text())['pass']
     write(out/'D_automatic/report.json',{'methods':summaries,'matched_B1':base_stats,'contrasts':contrast,'follow_gain':gain,
         'theta_error_reduction_fraction':theta_reduction,'paired_follow_gain':case_stat(list(differences.items())),
-        'automatic_local_gain':auto_gain,'rotation_pass':rotation_pass,'structure_safe':structure,'background_safe':background,
+        'automatic_local_gain':auto_gain,'rotation_pass':rotation_pass,'rotation_case_n':rotation_case_n,'structure_safe':structure,'background_safe':background,
         'identity_preserved':identity_preserved,'noise_hash_pass':noise_check({**groups,'B1':baseline}),'frozen_pass':frozen,
         'scope':'预注册6例 pilot，2/难度；4个无训练自动化消融；B0/B1 复用相同 case 的既有结果。',
-        'scale_gate':'成对局部 rotation follow >75% 且 case CI lower>.5，并满足结构/背景安全，才进入 scale。'})
+        'scale_gate':'至少4个 reference 有可读方向、pair coverage>=2/3；成对局部 rotation follow >75% 且 case CI lower>.5，并满足结构/背景安全，才进入 scale。'})
     decision=json.loads((out/'decision_summary.json').read_text())
     decision.update(automatic_local_gain=bool(auto_gain),rotation_pass=rotation_pass,structure_safe=structure,background_safe=background,
         next_route='test_scale' if auto_gain and rotation_pass else 'train_correspondence_predictor' if auto_gain else 'identity_preservation' if not identity_preserved else 'nonrigid_dense_correspondence',
