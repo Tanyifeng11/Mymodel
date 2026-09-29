@@ -11,4 +11,5 @@ source /share/apps/anaconda3/etc/profile.d/conda.sh
 conda activate Mymodel
 cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD:${PYTHONPATH:-}" PYTHONUNBUFFERED=1 OMP_NUM_THREADS=4
+python -m tools.e28_experiment --stage revise --root "$PWD" --out "$PWD/output_eval/e28_20260929"
 python -m tools.e28_experiment --stage scaffold --root "$PWD" --e27 "$PWD/output_eval/e27_20260929" --out "$PWD/output_eval/e28_20260929"

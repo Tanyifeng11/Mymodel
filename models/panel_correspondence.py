@@ -9,7 +9,7 @@ from PIL import Image
 
 from models.confidence_local_correspondence import infer_regions
 from models.local_pattern_field import patch_geometry, rectify_reference
-from tools.e27_correspondence import source_labels, target_panel_masks, target_parts
+from tools.e27_correspondence import source_labels, target_panel_masks, target_parts, similarity
 
 
 @dataclass
@@ -22,6 +22,7 @@ class PanelRegion:
     semantic_type: str
     motif_group: Optional[str] = None
     crop: Optional[tuple] = None
+    solid: bool = False
 
 
 @dataclass
@@ -42,6 +43,8 @@ class PanelWarp:
     confidence: np.ndarray
     warp_mode: str
     rgb: np.ndarray
+    fallback_rgb: np.ndarray
+    blend_confidence: float
 
 
 @dataclass
@@ -72,7 +75,7 @@ def source_panels(image, panels, mode, source_mask, groups):
     if mode == 'manual':
         labels = source_labels(source_mask, panels)
         return [PanelRegion(p['name'], labels == i, tuple(p['box']), 1., None,
-                            _semantic(p['name']), groups[p['name']], tuple(p['crop']))
+                            _semantic(p['name']), groups[p['name']], tuple(p['crop']), p.get('solid', False))
                 for i, p in enumerate(panels) if (labels == i).any()]
     _, records, _ = infer_regions(image)
     return [PanelRegion(r['name'], r['area'], tuple(r['source_box']),
@@ -152,42 +155,44 @@ def assign_panels(sources, targets, mode, manual_sources=None, manual_targets=No
     return matches, matrices
 
 
-def estimate_panel_warp(image, source, target, mode):
+def estimate_panel_warp(image, source, target, mode, variant='original'):
     crop = image.crop(source.crop)
-    if mode == 'automatic_local':
-        # canonical crop 由人工 source panel 固定；B2 只切换局部映射/置信度。
-        box = source.crop
-        geom = patch_geometry(crop)
-        conf = float(source.confidence * (.4 + .6 * geom['confidence']))
-    else:
-        box = source.crop
-        geom = patch_geometry(crop)
-        conf = 1.
+    if variant == 'rot90' and not source.solid:
+        crop = crop.transpose(Image.Transpose.ROTATE_90)
+    box = source.crop
+    geom = patch_geometry(crop)
     original = crop
-    rect_uv = None
+    gy, gx = np.indices((crop.height, crop.width), dtype=np.float32)
+    rect_uv = np.stack((gx, gy), -1)
     if geom['valid'] and min(crop.size) >= 32:
         crop, rect_uv, _ = rectify_reference(crop)
+    preservation = similarity(original, crop)[0]
+    if mode == 'automatic_local' and preservation < .85:
+        # 保留 E27 的 identity rejection；人工 crop 固定，只有局部 warp 改变。
+        crop = original
+        rect_uv = np.stack((gx, gy), -1)
+        preservation = 1.
+    blend_conf = float(np.clip(preservation * source.confidence * (.4 + .6*geom['confidence']), 0, 1))
+    conf = blend_conf if mode == 'automatic_local' else 1.
     yy, xx = np.indices(target.mask.shape, dtype=np.float32)
     x0, y0, x1, y1 = target.bbox
     sx0, sy0, sx1, sy1 = source.bbox
     uvx = np.mod((xx-x0)/max(x1-x0-1, 1) * (sx1-sx0-1), crop.width).astype(np.float32)
     uvy = np.mod((yy-y0)/max(y1-y0-1, 1) * (sy1-sy0-1), crop.height).astype(np.float32)
     rgb = cv2.remap(np.asarray(crop), uvx, uvy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP).astype(np.float32)
-    if mode == 'automatic_local':
-        low = cv2.GaussianBlur(np.asarray(original), (0, 0), 2.)
-        fallback = cv2.remap(low, uvx, uvy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
-        rgb = conf * rgb + (1-conf) * fallback
-    if rect_uv is not None:
-        uv = cv2.remap(rect_uv, uvx, uvy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
-    else:
-        uv = np.stack((uvx, uvy), -1)
+    low = cv2.GaussianBlur(np.asarray(original), (0, 0), 2.)
+    fallback = cv2.remap(low, uvx, uvy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
+    uv = cv2.remap(rect_uv, uvx, uvy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
+    if variant == 'rot90' and not source.solid:
+        uv = np.stack((box[2]-box[0]-1-uv[..., 1], uv[..., 0]), -1)
     uv[..., 0] += box[0]
     uv[..., 1] += box[1]
     confidence = np.where(target.mask, conf, 0).astype(np.float32)
-    return PanelWarp(source.panel_id, target.panel_id, uv, target.mask, confidence, mode, rgb)
+    return PanelWarp(source.panel_id, target.panel_id, uv, target.mask, confidence, mode, rgb,
+                     fallback, blend_conf)
 
 
-def compose_panels(warps, target_mask, mode, source_ids):
+def compose_panels(warps, target_mask, mode, source_ids, seam_owner=None):
     masks = np.stack([w.valid_mask for w in warps])
     owner = np.argmax(masks, axis=0)
     if mode == 'fixed_safe_oracle':
@@ -199,8 +204,11 @@ def compose_panels(warps, target_mask, mode, source_ids):
         score = np.log(np.maximum(support, 1e-12)) + 4 * conf
         weights = np.exp(score-score.max(0)); weights /= weights.sum(0)
     rgb = (weights[..., None] * np.stack([w.rgb for w in warps])).sum(0)
-    seam = (cv2.dilate(owner.astype(np.uint8), np.ones((3, 3), np.uint8)) !=
-            cv2.erode(owner.astype(np.uint8), np.ones((3, 3), np.uint8))) & target_mask
+    # Oracle 从白背景计算 seam blur，避免把黑色未覆盖区混入外轮廓。
+    rgb[~target_mask] = 255
+    labels = owner.astype(np.uint8) if seam_owner is None else seam_owner.astype(np.uint8)
+    seam = (cv2.dilate(labels, np.ones((3, 3), np.uint8)) !=
+            cv2.erode(labels, np.ones((3, 3), np.uint8))) & target_mask
     if mode == 'fixed_safe_oracle':
         smooth = cv2.GaussianBlur(rgb, (5, 5), .8)
         rgb[seam] = .5*rgb[seam] + .5*smooth[seam]
@@ -222,7 +230,8 @@ ARMS = {
 }
 
 
-def build_panel_scaffold(reference_rgb, target_mask, panels, source_mask, groups, arm):
+def build_panel_scaffold(reference_rgb, target_mask, panels, source_mask, groups, arm,
+                         original_rgb=None, variant='original'):
     source_mode, target_mode, ownership_mode, warp_mode, composition_mode = ARMS[arm]
     manual_sources = source_panels(reference_rgb, panels, 'manual', source_mask, groups)
     manual_targets = target_panels(target_mask, panels, 'manual')
@@ -233,19 +242,17 @@ def build_panel_scaffold(reference_rgb, target_mask, panels, source_mask, groups
                                     manual_sources if source_mode == 'automatic' else None,
                                     manual_targets if target_mode == 'automatic' else None)
     by_id = {p.panel_id: p for p in sources}
-    warps = [estimate_panel_warp(reference_rgb, by_id[m.source_panel_id], t, warp_mode)
+    # 人工 crop 从原图整体旋转，严格复用 E27 oracle recipe。
+    # 自动 proposal 的 crop 则来自实际 variant RGB，不使用人工 canonical crop。
+    warp_image = original_rgb if source_mode == 'manual' and original_rgb is not None else reference_rgb
+    warp_variant = variant if source_mode == 'manual' else 'original'
+    warps = [estimate_panel_warp(warp_image, by_id[m.source_panel_id], t, warp_mode, warp_variant)
              for t, m in zip(targets, matches)]
     if arm == 'B5_auto_composition':
-        original = np.asarray(reference_rgb)
-        low = cv2.GaussianBlur(original, (0, 0), 2.)
         for warp in warps:
-            source = by_id[warp.source_panel_id]
-            patch = reference_rgb.crop(source.crop)
-            geometry = patch_geometry(patch)
-            c = float(np.clip(source.confidence * (.4 + .6*geometry['confidence']), 0, 1))
-            uvx, uvy = warp.uv_field[..., 0].astype(np.float32), warp.uv_field[..., 1].astype(np.float32)
-            fallback = cv2.remap(low, uvx, uvy, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
-            warp.rgb = c*warp.rgb + (1-c)*fallback
+            c = warp.blend_confidence
+            warp.rgb = c*warp.rgb + (1-c)*warp.fallback_rgb
             warp.confidence = np.where(warp.valid_mask, c, 0).astype(np.float32)
-    result = compose_panels(warps, target_mask, composition_mode, [p.panel_id for p in sources])
+    seam_owner = np.argmax(np.stack(target_panel_masks(target_mask, panels)), axis=0) if target_mode == 'manual' else None
+    result = compose_panels(warps, target_mask, composition_mode, [p.panel_id for p in sources], seam_owner)
     return Image.fromarray(result.scaffold), result, sources, targets, matches, matrix, warps

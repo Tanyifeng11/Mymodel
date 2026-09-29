@@ -3,6 +3,8 @@
 import argparse
 import json
 import shutil
+import subprocess
+import hashlib
 from pathlib import Path
 
 import cv2
@@ -18,6 +20,7 @@ CASE_IDS = (6, 7, 9, 10, 12, 13, 14, 17)
 SEEDS = (42, 43)
 VARIANTS = ('original', 'rot90')
 ARM_NAMES = ('B0_global_anchor', *ARMS)
+RECIPE_VERSION = 'e28_single_component_v2'
 
 
 def _load(path):
@@ -143,18 +146,28 @@ def scaffold(root, e27, out):
     groups = _load(root/'data/e28_panel_cases.json')
     mask = np.asarray(Image.open(out/cases['sketches'][0]['mask']).convert('L')) > 0
     panel_rows = []
+    equivalence = []
     for case in cases['references']:
         source_mask = np.asarray(Image.open(out/'A_audit/inputs'/f"c{case['id']:02d}_mask.png")) > 0
         for variant in VARIANTS:
             reference, prefix = _inputs(out, case, variant)
             original, _ = _inputs(out, case, 'original')
+            # 验证统一入口的全人工组合逐像素复现旧 oracle，防止旋转/拼接混入干预。
+            baseline, *_ = build_panel_scaffold(reference, mask, case['panels'], source_mask,
+                            groups[str(case['id'])], 'B1_oracle', original, variant)
+            oracle_image, _, _ = oracle_scaffold(original, mask, case['panels'], variant,
+                                                 rectified=True, source_mask=source_mask)
+            error = np.abs(np.asarray(baseline).astype(int)-np.asarray(oracle_image).astype(int))
+            assert error.max() <= 1 and error.mean() < .001, (prefix, error.max(), error.mean())
+            equivalence.append({'case': case['id'], 'variant': variant,
+                                'max_rgb_error': int(error.max()), 'mean_rgb_error': float(error.mean())})
             manual_s = source_panels(reference, case['panels'], 'manual', source_mask, groups[str(case['id'])])
             auto_s = source_panels(reference, case['panels'], 'automatic', source_mask, groups[str(case['id'])])
             matched = semantic_match(auto_s, manual_s)
             for man in manual_s:
                 options = [a for a in auto_s if matched[a.panel_id] == man.panel_id]
                 auto = max(options, key=lambda a: (a.mask & man.mask).sum()) if options else None
-                area = auto.mask if auto else np.zeros_like(man.mask)
+                area = np.logical_or.reduce([a.mask for a in options]) if options else np.zeros_like(man.mask)
                 inter = int((area & man.mask).sum())
                 panel_rows.append({'case': case['id'], 'variant': variant,
                                    'auto_panel': auto.panel_id if auto else None,
@@ -187,7 +200,8 @@ def scaffold(root, e27, out):
                     np.savez_compressed(folder/f'{prefix}_fields.npz', **arrays)
                 else:
                     image, result, sources, targets, matches, matrix, warps = build_panel_scaffold(
-                        reference, mask, case['panels'], source_mask, groups[str(case['id'])], arm)
+                        reference, mask, case['panels'], source_mask, groups[str(case['id'])], arm,
+                        original, variant)
                     details = {'source': 'E28 modular', 'assignments':
                                {m.target_panel_id: m.source_panel_id for m in matches},
                                'assignment_scores': matrix,
@@ -199,14 +213,37 @@ def scaffold(root, e27, out):
                                         confidence_map=result.confidence_map,
                                         seam_map=result.seam_map,
                                         source_index_map=result.source_index_map,
+                                        source_panel_ids=np.array([w.source_panel_id for w in warps]),
+                                        target_panel_ids=np.array([w.target_panel_id for w in warps]),
                                         uv=np.stack([w.uv_field for w in warps]),
                                         valid=np.stack([w.valid_mask for w in warps]))
                 image.save(path)
                 details.update(case_id=case['id'], variant=variant, arm=arm,
+                               recipe_version=RECIPE_VERSION,
                                scaffold_sha256=file_sha(path))
                 write(path.with_suffix('.json'), details)
                 print('[E28 scaffold]', prefix, arm, flush=True)
     write(out/'B_decomposition/panel_proposal.json', {'rows': panel_rows})
+    write(out/'B_decomposition/component_check.json', {'pass': True, 'recipe_version': RECIPE_VERSION,
+          'manual_recipe_equivalence': equivalence,
+          'interventions': {arm: modes for arm, modes in ARMS.items()},
+          'automatic_ownership_definition': 'E28 extracted semantic/location prior; E27 has implicit same-region assignment; no learned target appearance',
+          'B6_implementation': 'unmodified E27 full_CALPC'})
+
+
+def revise(out):
+    """首轮诊断留存；只重跑受旋转/白背景 seam 修正影响的干预臂。"""
+    archive = out/'B_initial_4195106'
+    archive.mkdir(exist_ok=True)
+    for arm in ARM_NAMES[2:6]:
+        path = out/'B_decomposition'/arm
+        if path.exists() and not (archive/arm).exists():
+            shutil.move(str(path), str(archive/arm))
+    for name in ('report.json', 'recovery_report.json'):
+        path = out/'B_decomposition'/name
+        if path.exists() and not (archive/name).exists(): shutil.copy2(path, archive/name)
+    path = out/'decision_summary.json'
+    if path.exists() and not (archive/path.name).exists(): shutil.copy2(path, archive/path.name)
 
 
 def generate(root, out):
@@ -229,6 +266,23 @@ def generate(root, out):
     start = e25.timestep_for(pipe.scheduler, .15)
     assert start['remaining_steps'] == 8
     bank = e23.token_bank(pipe, cases, out, width, height, 'E5')
+    def tensor_sha(value):
+        h = hashlib.sha256()
+        def visit(v):
+            if torch.is_tensor(v): h.update(v.detach().cpu().contiguous().numpy().tobytes())
+            elif isinstance(v, dict):
+                for k in sorted(v): h.update(str(k).encode()); visit(v[k])
+            elif isinstance(v, (tuple, list)):
+                for x in v: visit(x)
+            else: h.update(str(v).encode())
+        visit(value)
+        return h.hexdigest()
+    condition_manifest = {f'c{cid:02d}_{variant}': tensor_sha(value)
+                          for (cid, variant), value in bank.items()}
+    condition_manifest.update(prompt='a cloth', negative_prompt=' worst quality, low quality',
+                              sketch_sha256=file_sha(out/sk['path']), target_mask_sha256=file_sha(out/sk['mask']),
+                              texture_tokens=16, texture_path=True)
+    generation_commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
     from tools.e27_experiment import metric_eligibility
     eligibility = metric_eligibility(out)
     noise_manifest = {}
@@ -247,6 +301,17 @@ def generate(root, out):
                     folder = out/'B_decomposition'/arm
                     final_path = folder/f'c{case["id"]:02d}_s{seed}_{variant}.png'
                     if final_path.exists() and final_path.with_suffix('.json').exists():
+                        old = _load(final_path.with_suffix('.json'))
+                        assert old['checkpoint_sha256'] == checkpoint_sha and old['noise_sha256'] == nsha
+                        if 'condition_sha256' in old:
+                            assert old['condition_sha256'] == condition_manifest[prefix]
+                        else:
+                            # 原锚点按同一输入/冻结模型重新计算条件哈希，标明这是补充核对。
+                            old['condition_sha256'] = condition_manifest[prefix]
+                            old['condition_hash_verified_on_resume'] = True
+                            old['sketch_sha256'] = condition_manifest['sketch_sha256']
+                            old['target_mask_sha256'] = condition_manifest['target_mask_sha256']
+                            write(final_path.with_suffix('.json'), old)
                         continue
                     scaffold_image = Image.open(folder/f'{prefix}_scaffold.png').convert('RGB')
                     pixels = to_tensor(scaffold_image)[None].to(pipe.device, pipe.vae.dtype)*2-1
@@ -266,6 +331,13 @@ def generate(root, out):
                            'seed': seed, 'variant': variant, 'arm': arm,
                            'noise_sha256': nsha, 'initial_latent_sha256': latent_sha,
                            'checkpoint_sha256': checkpoint_sha, 'output_sha256': file_sha(final_path),
+                           'generation_git_commit': generation_commit, 'recipe_version': RECIPE_VERSION,
+                           'condition_sha256': condition_manifest[prefix],
+                           'sketch_sha256': condition_manifest['sketch_sha256'],
+                           'target_mask_sha256': condition_manifest['target_mask_sha256'],
+                           'scaffold_sha256': file_sha(folder/f'{prefix}_scaffold.png'),
+                           'component_modes': ARMS.get(arm, ('global',)*5),
+                           'selected_assignments': _load((folder/f'{prefix}_scaffold.png').with_suffix('.json'))['assignments'],
                            'scaffold_metrics': _stage_metrics(scaffold_image, mask, sketch, reference, expected, sk['roi']),
                            'vae_metrics': _stage_metrics(reconstruction if seed == SEEDS[0] else Image.open(folder/f'{prefix}_vae.png').convert('RGB'), mask, sketch, reference, expected, sk['roi']),
                            'final_metrics': _stage_metrics(image, mask, sketch, reference, expected, sk['roi']),
@@ -279,10 +351,13 @@ def generate(root, out):
                                    'checkpoint_sha256': checkpoint_sha, 'training_steps': 0})
     assert before == after
     write(out/'noise_manifest.json', noise_manifest)
+    write(out/'condition_manifest.json', condition_manifest)
 
 
 def report(root, out):
     from tools.e20_utilization import case_stat
+    from tools.e27_experiment import stats
+    from tools.e28_diagnostics import recovery_stat, intermediate_diagnostics
     assert _load(out/'frozen_check.json')['pass'], '冻结模型校验失败'
     cases = _load(out/'cases.json')
     groups = _load(root/'data/e28_panel_cases.json')
@@ -295,12 +370,13 @@ def report(root, out):
     for arm, items in rows.items():
         for r in items:
             key = (r['case'], r['seed'], r['variant'])
-            if key in noise: assert noise[key] == r['noise_sha256']
-            else: noise[key] = r['noise_sha256']
+            value = (r['noise_sha256'], r['condition_sha256'], r['sketch_sha256'], r['target_mask_sha256'], r['checkpoint_sha256'])
+            if key in noise: assert noise[key] == value
+            else: noise[key] = value
     summary = {}
     keys = ('identity', 'theta_error', 'period_error', 'contour_f1', 'leakage')
     for arm, items in rows.items():
-        summary[arm] = {}
+        summary[arm] = stats(items)
         for k in keys:
             values = [(r['case'], r[k]) for r in items if r.get(k) is not None]
             summary[arm][k] = case_stat(values) if values else None
@@ -326,9 +402,13 @@ def report(root, out):
     recoveries = {}
     for arm in ARM_NAMES[2:]:
         recoveries[arm] = {}
-        for metric in ('identity', 'theta_error', 'period_error'):
+        for metric in ('identity', 'theta_error', 'period_error', 'follow', 'contour_f1'):
             case_values = []
             for cid in CASE_IDS:
+                if metric == 'follow':
+                    case_values.append((cid, *[stats([r for r in rows[a] if r['case'] == cid])['follow']['mean']
+                                               for a in (arm, 'B0_global_anchor', 'B1_oracle')]))
+                    continue
                 values = []
                 for seed in SEEDS:
                     for variant in VARIANTS:
@@ -340,9 +420,8 @@ def report(root, out):
                         values.append((a, b0, b1))
                 if values:
                     a, b0, b1 = np.mean(values, axis=0)
-                    if abs(b1-b0) >= 1e-6:
-                        case_values.append((cid, float((a-b0)/(b1-b0))))
-            recoveries[arm][metric] = case_stat(case_values) if case_values else None
+                    case_values.append((cid, float(a), float(b0), float(b1)))
+            recoveries[arm][metric] = recovery_stat(case_values, metric in ('theta_error', 'period_error'))
     proposal = _load(out/'B_decomposition/panel_proposal.json')['rows']
     panel_iou = case_stat([(r['case'], r['iou']) for r in proposal])
     panel_coverage = case_stat([(r['case'], r['coverage']) for r in proposal])
@@ -352,20 +431,25 @@ def report(root, out):
                                      if r['manual_panel'] == name])
                      for name in sorted({r['manual_panel'] for r in proposal})}
     uv_rows = []
-    for cid in CASE_IDS:
-        prefix = f'c{cid:02d}_original'
+    for cid, variant in ((cid, v) for cid in CASE_IDS for v in VARIANTS):
+        prefix = f'c{cid:02d}_{variant}'
         oracle = np.load(out/'B_decomposition/B1_oracle'/f'{prefix}_fields.npz')
         automatic = np.load(out/'B_decomposition/B2_auto_warp'/f'{prefix}_fields.npz')
         names = [str(n) for n in oracle['panel_names']]
+        case = next(c for c in cases['references'] if c['id'] == cid)
+        panel_names = [p['name'] for p in case['panels']]
         for i, name in enumerate(names):
-            a = automatic['uv'][i] / np.array([256., 256.])
+            j = list(automatic['target_panel_ids']).index(name)
+            a = automatic['uv'][j] / np.array([256., 256.])
             b = oracle['garment_to_source_panel_uv'][i] / np.array([256., 256.])
-            valid = oracle['target_panel_masks'][i] & automatic['valid'][i]
+            valid = oracle['target_panel_masks'][panel_names.index(name)] & automatic['valid'][j]
             distances = np.linalg.norm(a-b, axis=-1)[valid]
             if len(distances):
-                uv_rows.append({'case': cid, 'panel': name, 'mean': float(distances.mean()),
+                confidence = automatic['confidence_map'][valid]
+                uv_rows.append({'case': cid, 'variant': variant, 'panel': name, 'mean': float(distances.mean()),
                                 'median': float(np.median(distances)),
-                                'p90': float(np.percentile(distances, 90))})
+                                'p90': float(np.percentile(distances, 90)),
+                                'confidence_weighted': float(np.average(distances, weights=confidence)) if confidence.sum() else None})
     uv_epe = case_stat([(r['case'], r['mean']) for r in uv_rows]) if uv_rows else None
     ownership = []
     for case in cases['references']:
@@ -389,9 +473,11 @@ def report(root, out):
     def mean(arm, key): return summary[arm][key]['mean']
     def recovery(arm, key):
         item = recoveries[arm][key]
-        return item['mean'] if item else None
+        return item['mean'] if item and item['positive_oracle_gap'] else None
+    b2_structure_safe = (mean('B2_auto_warp', 'contour_f1') >= mean('B1_oracle', 'contour_f1')-.02
+                         and mean('B2_auto_warp', 'leakage') <= mean('B1_oracle', 'leakage')+.01)
     b2_warp = any(recovery('B2_auto_warp', key) is not None and recovery('B2_auto_warp', key) < .6
-                  for key in ('theta_error', 'identity'))
+                  for key in ('theta_error', 'identity')) and b2_structure_safe
     b3_ownership = (summary['B3_auto_ownership']['follow']['mean'] <
                     summary['B1_oracle']['follow']['mean']-.05 and
                     (paa['mean'] < .85 or mixed['mean'] < .75 or
@@ -409,17 +495,29 @@ def report(root, out):
     elif b5_comp: route = 'boundary_safe_composition'
     else: route = 'stop_no_stable_gain'
     decision = {'A_audit_pass': True, 'B_oracle_reproduced': bool(
-                summary['B1_oracle']['follow']['mean'] > summary['B0_global_anchor']['follow']['mean']),
+                summary['B1_oracle']['follow']['mean']-summary['B0_global_anchor']['follow']['mean'] >= .10
+                or (mean('B1_oracle', 'theta_error') <= .8*mean('B0_global_anchor', 'theta_error'))),
                 'warp_bottleneck': bool(b2_warp), 'ownership_bottleneck': bool(b3_ownership),
                 'panel_bottleneck': bool(b4_panel), 'composition_bottleneck': bool(b5_comp),
                 'primary_bottleneck': route, 'selected_repair': route if route in ('ownership_matching','panel_parser','boundary_safe_composition') else None,
-                'next_route': route}
+                'next_route': route, 'experiment': 'E28', 'repair_pilot_pass': None,
+                'confirmation_pass': None, 'structure_safe': bool(b2_structure_safe),
+                'rotation_pass': None, 'component_check_pass': _load(out/'B_decomposition/component_check.json')['pass']}
+    diagnostics = intermediate_diagnostics(root, out, cases, groups, rows)
     write(out/'B_decomposition/report.json', {'summary': summary, 'panel_miou': panel_iou,
           'panel_miou_by_name': panel_by_name, 'panel_boundary_f1': panel_boundary,
-          'panel_coverage': panel_coverage, 'uv_epe_relative_to_oracle_original_only': uv_epe,
+          'panel_coverage': panel_coverage, 'uv_epe_relative_to_oracle_recipe': uv_epe,
           'uv_rows': uv_rows, 'paa': paa, 'mixed_paa': mixed,
           'median_ownership_margin': float(np.median(margins)) if margins else None,
-          'ownership_rows': ownership, 'noise_shared': True})
+          'ownership_rows': ownership, 'noise_shared': True, 'conditions_shared': True,
+          'ownership_confusion': {target: {group: sum(r['target']==target and r['selected_group']==group for r in ownership)
+                                  for group in sorted({r['selected_group'] for r in ownership})}
+                                  for target in sorted({r['target'] for r in ownership})},
+          'ownership_by_panel': {target: {'paa': case_stat([(r['case'], float(r['correct'])) for r in ownership if r['target']==target]),
+               'margin': case_stat([(r['case'], r['margin']) for r in ownership if r['target']==target and r['margin'] is not None])
+                         if any(r['target']==target and r['margin'] is not None for r in ownership) else None}
+               for target in sorted({r['target'] for r in ownership})},
+          'intermediate_diagnostics': diagnostics})
     write(out/'B_decomposition/recovery_report.json', recoveries)
     write(out/'decision_summary.json', decision)
     review_dir = out/'review_images'; review_dir.mkdir(exist_ok=True)
@@ -427,6 +525,8 @@ def report(root, out):
         tiles = [(out/'A_audit/inputs'/f'c{cid:02d}_original.png', 'reference'),
                  (out/'A_audit/inputs'/f'c{cid:02d}_rot90.png', 'rot90'),
                  (out/'A_audit/panel_overlays'/f'c{cid:02d}.png', 'manual panels')]
+        tiles.extend([(out/'A_audit/auto_overlays'/f'c{cid:02d}.png', 'auto panels'),
+                      (out/'B_decomposition/ownership_matrices'/f'c{cid:02d}.png', 'ownership scores')])
         for arm in ARM_NAMES:
             folder = out/'B_decomposition'/arm
             tiles.extend([(folder/f'c{cid:02d}_original_scaffold.png', arm+' S0'),
@@ -459,12 +559,13 @@ def main():
     p.add_argument('--e27', type=Path, default=Path('output_eval/e27_20260929'))
     p.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
     p.add_argument('--out', type=Path, default=Path('output_eval/e28_20260929'))
-    p.add_argument('--stage', choices=('A', 'scaffold', 'generate', 'report'), required=True)
+    p.add_argument('--stage', choices=('A', 'revise', 'scaffold', 'generate', 'report'), required=True)
     args = p.parse_args()
     args.root = args.root.resolve(); args.e27 = args.e27.resolve()
     args.dataset = args.dataset.resolve(); args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
     if args.stage == 'A': audit(args.root, args.e27, args.dataset, args.out)
+    elif args.stage == 'revise': revise(args.out)
     elif args.stage == 'scaffold': scaffold(args.root, args.e27, args.out)
     elif args.stage == 'report': report(args.root, args.out)
     else:
