@@ -98,7 +98,7 @@ def target_panel_masks(mask, panels):
     return [owner == i for i in range(len(panels))]
 
 
-def oracle_scaffold(image, mask, panels, variant, rectified=True):
+def oracle_scaffold(image, mask, panels, variant, rectified=True, field_path=None, source_mask=None):
     """独立人工 canonical panel recipe。评测 prototype 使用未矫正版。"""
     areas = target_panel_masks(mask, panels)
     yy, xx = np.indices(mask.shape, dtype=np.float32)
@@ -111,8 +111,10 @@ def oracle_scaffold(image, mask, panels, variant, rectified=True):
         if variant == 'rot90' and not panel.get('solid', False):
             crop = crop.transpose(Image.Transpose.ROTATE_90)
         info = patch_geometry(crop)
+        grid_y,grid_x=np.indices((crop.height,crop.width),dtype=np.float32)
+        rect_uv=np.stack((grid_x,grid_y),-1)
         if rectified and info['valid'] and min(crop.size)>=32:
-            crop, _, rect = rectify_reference(crop)
+            crop, rect_uv, rect = rectify_reference(crop)
         else:
             rect = None
         ys, xs = np.where(area)
@@ -124,7 +126,13 @@ def oracle_scaffold(image, mask, panels, variant, rectified=True):
         sampled = cv2.remap(np.asarray(crop), uvx.astype(np.float32), uvy.astype(np.float32),
                             cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
         rgb[area] = sampled[area]
-        maps.append(np.stack((uvx, uvy), -1))
+        composed=cv2.remap(rect_uv,uvx.astype(np.float32),uvy.astype(np.float32),cv2.INTER_LINEAR,borderMode=cv2.BORDER_WRAP)
+        if variant=='rot90' and not panel.get('solid',False):
+            xref=panel['crop'][0]+(panel['crop'][2]-panel['crop'][0]-1-composed[...,1])
+            yref=panel['crop'][1]+composed[...,0]
+        else:
+            xref=panel['crop'][0]+composed[...,0];yref=panel['crop'][1]+composed[...,1]
+        maps.append(np.stack((xref,yref),-1))
         stats.append({'panel':panel['name'], 'geometry':info, 'rectification':rect,
                       'target_area':int(area.sum()), 'solid':panel.get('solid', False)})
     if rectified:
@@ -134,6 +142,14 @@ def oracle_scaffold(image, mask, panels, variant, rectified=True):
         smooth = cv2.GaussianBlur(rgb, (5,5), .8)
         rgb[seam & mask] = .5 * rgb[seam & mask] + .5 * smooth[seam & mask]
     rgb[~mask] = 255
+    if field_path is not None:
+        fields={'garment_to_source_panel_uv':np.stack(maps), 'target_panel_masks':np.stack(areas),
+                'panel_orientation':np.array([s['geometry']['orientation'] for s in stats]),
+                'panel_frequency':np.array([s['geometry']['frequency'] for s in stats]),
+                'panel_confidence':np.array([s['geometry']['confidence'] for s in stats]),
+                'panel_names':np.array([s['panel'] for s in stats])}
+        if source_mask is not None:fields['source_owner_labels']=source_labels(source_mask,panels)
+        np.savez_compressed(field_path,**fields)
     return Image.fromarray(np.clip(np.rint(rgb),0,255).astype(np.uint8)), areas, stats
 
 

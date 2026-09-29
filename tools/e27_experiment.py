@@ -183,8 +183,10 @@ def generate(root,out,stage):
                 scaffold=None;z0=None
                 if arm!='B2_original_E5':
                     if stage=='C':
-                        scaffold,_,panel_info=oracle_scaffold(original,maskarray,ref['panels'],name,rectified=True)
                         scaffold_dir=base/'scaffolds';scaffold_dir.mkdir(exist_ok=True)
+                        source_mask=np.load(out/'B_baseline/scaffolds'/f'{prefix}_fields.npz')['source_mask']
+                        scaffold,_,panel_info=oracle_scaffold(original,maskarray,ref['panels'],name,rectified=True,
+                            field_path=scaffold_dir/f'{prefix}_fields.npz',source_mask=source_mask)
                         scaffold.save(scaffold_dir/f'{prefix}.png');write(scaffold_dir/f'{prefix}.json',{'panels':panel_info})
                     else:scaffold=Image.open(base/'scaffolds'/f'{prefix}_{arm}.png').convert('RGB')
                     pixels=to_tensor(scaffold)[None].to(pipe.device,pipe.vae.dtype)*2-1
