@@ -38,6 +38,29 @@ def finite_json(value):
     return value
 
 
+def metric_eligibility(out):
+    with open(out/'A_audit/audit.csv',encoding='utf-8') as stream:
+        return {r['reference_id']:r for r in csv.DictReader(stream) if r['include']=='1'}
+
+
+def audited_metrics(row,audit):
+    """按照生成前的人工可读性字段限制统计；保留未过滤的原始读出。"""
+    keys=('theta_error','period_error','local_geometry_follow','geometry_patch_n','output_geometry_coverage')
+    if 'unfiltered_geometry' not in row:row['unfiltered_geometry']={k:row.get(k) for k in keys}
+    for key in keys:row[key]=row['unfiltered_geometry'][key]
+    orient=audit[row['reference_id']]['orientation_readable']=='1'
+    period=audit[row['reference_id']]['period_readable']=='1'
+    row['audit_orientation_readable']=orient;row['audit_period_readable']=period
+    if not orient:
+        row.update(theta_error=None,local_geometry_follow=None,geometry_patch_n=0,output_geometry_coverage=None)
+    if not period:row['period_error']=None
+    for patch in row['patches']:
+        if 'geometry_expected_valid_unfiltered' not in patch:patch['geometry_expected_valid_unfiltered']=patch['expected_valid']
+        patch['expected_valid']=bool(patch['geometry_expected_valid_unfiltered'] and orient)
+        patch['period_expected_valid']=bool(patch['geometry_expected_valid_unfiltered'] and period)
+    return row
+
+
 def protocol(root):
     return {'git_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
         'version':VERSION,'seeds':SEEDS,'scheduler':'DDIMScheduler','ddim_steps':50,'cfg':7.,
@@ -46,7 +69,7 @@ def protocol(root):
         'noise_control':'共享相同原始 Gaussian tensor；B2 从纯噪声跑 50 步，scaffold 臂从 VAE mean 加噪跑最后 8 步；初始 latent 不相同。',
         'counterfactual':'original 保留真实完整服装；rot90 仅旋转各人工源衣片 canonical pattern 并回填同一 mask。',
         'metric_reference':'各臂共用未矫正人工 canonical panel transfer prototype；不是某臂自己的 scaffold；没有真实 dense UV GT。',
-        'geometry_readability':'GT patch 不可读的方向不计方向成功；生成不可读的方向计 90deg 失败；报告覆盖率。',
+        'geometry_readability':'先使用生成前人工 audit 的 orientation_readable/period_readable，再筛 GT patch 可读性；生成不可读的方向计 90deg 失败；报告覆盖率。',
         'patches':'body 64px、窄袖/领/口袋 32px native geometry；FFT/selfsim descriptor 统一 64px。',
         'bootstrap':'reference 为唯一 bootstrap 单位，seed/variants/patches 在 reference 内聚合；2000 重采样 seed42。',
         'pilot':'6 个 reference，2/档，人工预注册；B 对全部18张确认，C 为预注册8张 M/H。',
@@ -304,7 +327,9 @@ def stats(rows):
     for panel in sorted({p['panel'] for r in rows for p in r['patches']}):
         result['panels'][panel]={}
         for key in ('identity','self_similarity','theta_error','period_error'):
-            values=[(r['case'],p[key]) for r in rows for p in r['patches'] if p['panel']==panel and (key not in ('theta_error','period_error') or p['expected_valid'])]
+            values=[(r['case'],p[key]) for r in rows for p in r['patches'] if p['panel']==panel
+                    and (key!='theta_error' or p['expected_valid'])
+                    and (key!='period_error' or p.get('period_expected_valid',p['expected_valid']))]
             result['panels'][panel][key]=case_stat(values) if values else None
     result.update(cases=len(set(r['case'] for r in rows)),images=len(rows),geometry_images=sum(r['theta_error'] is not None for r in rows))
     return result
@@ -326,10 +351,11 @@ def report(out,stage):
     from tools.e20_utilization import case_stat
     config=json.loads((out/'cases.json').read_text())
     proofs={(r['case'],r['variant']):r for r in json.loads((out/'A_audit/report.json').read_text())['proofs']}
+    audit=metric_eligibility(out)
     b={arm:[] for arm in ARMS}
     for arm in ARMS:
         for path in sorted((out/'B_baseline'/arm).glob('c*.json')):
-            raw=json.loads(path.read_text());row=finite_json(raw)
+            raw=json.loads(path.read_text());row=audited_metrics(finite_json(raw),audit)
             row['undefined_metrics']=sorted(set(raw.get('undefined_metrics',[])+[k for k,v in raw.items() if isinstance(v,float) and not np.isfinite(v)]))
             write(path,row);b[arm].append(row)
     if stage=='D':
@@ -364,7 +390,9 @@ def report(out,stage):
             'undefined_metric_note':'无前景时 contour displacement 无定义，保存为 null；Contour F1 仍按 0 计入，不能删除这些失败样本。'})
         write(out/'B_baseline/failures.json',failures)
     else:
-        rows=[finite_json(json.loads(p.read_text())) for p in sorted((out/'C_oracle/C_oracle_panel').glob('c*.json'))]
+        rows=[]
+        for path in sorted((out/'C_oracle/C_oracle_panel').glob('c*.json')):
+            row=audited_metrics(finite_json(json.loads(path.read_text())),audit);write(path,row);rows.append(row)
         assert len(rows)==32
         ids=set(r['case'] for r in rows);baseline=[r for r in b[ARMS[1]] if r['case'] in ids]
         a,z=stats(rows),stats(baseline)
@@ -406,7 +434,10 @@ def noise_check(methods):
 def report_automatic(out,baselines):
     from tools.e20_utilization import case_stat
     from models.confidence_local_correspondence import MODES
-    groups={arm:[finite_json(json.loads(p.read_text())) for p in sorted((out/'D_automatic'/arm).glob('c*.json'))] for arm in MODES}
+    audit=metric_eligibility(out);groups={arm:[] for arm in MODES}
+    for arm in MODES:
+        for path in sorted((out/'D_automatic'/arm).glob('c*.json')):
+            row=audited_metrics(finite_json(json.loads(path.read_text())),audit);write(path,row);groups[arm].append(row)
     assert all(len(rows)==24 for rows in groups.values())
     ids={r['case'] for r in groups['full_CALPC']}
     baseline=[r for r in baselines['B1_global_rectified'] if r['case'] in ids]
