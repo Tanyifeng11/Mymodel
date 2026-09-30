@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from models.confidence_local_correspondence import infer_regions
+from models.confidence_local_correspondence import infer_regions, select_crop
 from models.local_pattern_field import patch_geometry, rectify_reference
 from tools.e27_correspondence import source_labels, target_panel_masks, target_parts, similarity
 
@@ -227,6 +227,8 @@ ARMS = {
     'B4_auto_panel': ('automatic', 'automatic', 'manual', 'oracle_local_uv', 'fixed_safe_oracle'),
     'B5_auto_composition': ('manual', 'manual', 'manual', 'oracle_local_uv', 'current_calpc'),
     'B6_full_auto': ('automatic', 'automatic', 'automatic', 'automatic_local', 'current_calpc'),
+    'P1_auto_panel_manual_crop': ('automatic', 'automatic', 'manual', 'oracle_local_uv', 'fixed_safe_oracle'),
+    'P2_manual_panel_auto_crop': ('manual', 'manual', 'manual', 'oracle_local_uv', 'fixed_safe_oracle'),
 }
 
 
@@ -236,6 +238,15 @@ def build_panel_scaffold(reference_rgb, target_mask, panels, source_mask, groups
     manual_sources = source_panels(reference_rgb, panels, 'manual', source_mask, groups)
     manual_targets = target_panels(target_mask, panels, 'manual')
     sources = manual_sources if source_mode == 'manual' else source_panels(reference_rgb, panels, 'automatic', source_mask, groups)
+    if arm == 'P1_auto_panel_manual_crop':
+        labels = semantic_match(sources, manual_sources)
+        manual_by_id = {p.panel_id: p for p in manual_sources}
+        for source in sources:
+            selected = manual_by_id[labels[source.panel_id]]
+            source.crop, source.solid = selected.crop, selected.solid
+    elif arm == 'P2_manual_panel_auto_crop':
+        for source in sources:
+            source.crop = tuple(select_crop(reference_rgb, source.mask)[0])
     targets = manual_targets if target_mode == 'manual' else target_panels(
         target_mask, panels, 'automatic', [p.panel_id for p in sources])
     matches, matrix = assign_panels(sources, targets, ownership_mode,
@@ -244,8 +255,9 @@ def build_panel_scaffold(reference_rgb, target_mask, panels, source_mask, groups
     by_id = {p.panel_id: p for p in sources}
     # 人工 crop 从原图整体旋转，严格复用 E27 oracle recipe。
     # 自动 proposal 的 crop 则来自实际 variant RGB，不使用人工 canonical crop。
-    warp_image = original_rgb if source_mode == 'manual' and original_rgb is not None else reference_rgb
-    warp_variant = variant if source_mode == 'manual' else 'original'
+    manual_crop = arm != 'P2_manual_panel_auto_crop' and (source_mode == 'manual' or arm == 'P1_auto_panel_manual_crop')
+    warp_image = original_rgb if manual_crop and original_rgb is not None else reference_rgb
+    warp_variant = variant if manual_crop else 'original'
     warps = [estimate_panel_warp(warp_image, by_id[m.source_panel_id], t, warp_mode, warp_variant)
              for t, m in zip(targets, matches)]
     if arm == 'B5_auto_composition':
