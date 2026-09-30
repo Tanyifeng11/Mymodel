@@ -155,8 +155,8 @@ class RegionState:
         strong = [(u, v) for u, v, *rest in self.edges if rest[-1]]
         support = max(8, int((self.nodes['occupancy'] >= .5).sum() * .015))
         detected = len(strong) >= support
-        preserved = sum(labels.ravel()[u] != labels.ravel()[v] or
-                        group_map.ravel()[u] != group_map.ravel()[v] for u, v in strong)
+        preserved = int(sum(labels.ravel()[u] != labels.ravel()[v] or
+                        group_map.ravel()[u] != group_map.ravel()[v] for u, v in strong))
         return labels, group_map, uncertain_map, {
             'regions': details, 'merge_logs': self.logs, 'region_lineage': self.lineage,
             'strong_discontinuity': detected, 'strong_edge_count': len(strong),

@@ -4,7 +4,8 @@ import heapq
 
 import numpy as np
 
-from models.apacc_region_prototype import prototype, similarities
+from models.apacc_region_prototype import (prototype, similarities, merge_prototypes,
+                                          compute_merge_coherence_delta)
 
 
 def _path_barrier(state, start, end):
@@ -47,7 +48,8 @@ def reconcile_pattern_groups(state):
     regions = list(state.regions)
     groups = {r: r for r in regions}
     candidates, logs, lineage = [], [], []
-    diagonal = max(np.linalg.norm(np.ptp(np.array([prototype(p)['centroid'] for p in state.regions.values()]), axis=0)), 1.) if regions else 1.
+    foreground_xy = np.argwhere(state.nodes['occupancy'] >= .5)
+    diagonal = max(float(np.linalg.norm(np.ptp(foreground_xy, axis=0))), 1.) if len(foreground_xy) else 1.
     for i, a in enumerate(regions):
         for b in regions[i + 1:]:
             s = similarities(state.regions[a], state.regions[b])
@@ -60,8 +62,10 @@ def reconcile_pattern_groups(state):
             barrier = _path_barrier(state, a, b)
             spatial = float(np.exp(-2 * distance) * (1 - barrier))
             accepted = score >= config['tau_pattern'] and spatial >= config['tau_spatial'] and barrier < config['strong_boundary']
+            merged = merge_prototypes(state.regions[a], state.regions[b])
+            delta = compute_merge_coherence_delta(state.regions[a], state.regions[b], merged, config)
             logs.append({'stage': 'global', 'region_ids': [a, b], 'merge_score': score,
-                'delta_coherence': None, 'boundary_evidence': barrier, 'spatial_score': spatial,
+                'delta_coherence': float(delta), 'boundary_evidence': barrier, 'spatial_score': spatial,
                 'normalized_centroid_distance': distance, 'accepted': False,
                 'pair_eligible': bool(accepted), 'reason': 'candidate' if accepted else 'pattern_or_spatial_or_boundary'})
             if accepted:
