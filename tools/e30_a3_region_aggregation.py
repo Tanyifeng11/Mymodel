@@ -401,6 +401,26 @@ def run_canonical(args):
 def report(args):
     if args.visual_review_json:
         write(args.out / 'visual_audit/manual_review.json', json.loads(args.visual_review_json))
+    # 额外报告与旧基线更接近的有效区域数；主 Gate 仍包含所有 uncertain ID。
+    for phase in ('pilot', 'ablations'):
+        folder = args.out / phase
+        summary_path = folder / 'summary.json'
+        if not summary_path.exists():
+            continue
+        phase_summary = read(summary_path)
+        for arm in phase_summary['arms']:
+            rows_path = folder / arm / 'rows.json'
+            rows = read(rows_path)
+            for row in rows:
+                with np.load(folder / arm / ('%03d_regions.npz' % row['index'])) as data:
+                    eligible = data['labels'][~data['uncertain']]
+                    row['eligible_region_count'] = int(len(np.unique(eligible[eligible >= 0])))
+            write(rows_path, rows)
+            for split in ('dev', 'stress_dev', 'combined'):
+                values = [r['eligible_region_count'] for r in rows if split == 'combined' or r['split'] == split]
+                phase_summary['arms'][arm][split].update(mean_eligible_region_count=float(np.mean(values)),
+                    median_eligible_region_count=float(np.median(values)), eligible_region_count_ci95=ci(values))
+        write(summary_path, phase_summary)
     pilot = read(args.out / 'pilot/summary.json')
     multi = read(args.out / 'multiseed/status.json')
     canon = read(args.out / 'canonicality_check/status.json')
@@ -416,10 +436,33 @@ def report(args):
         'valid_crop_coverage_stress': pilot['arms'][ARMS[3]]['stress_dev']['valid_crop_coverage'],
         **{k: m[k] for k in METRICS}, 'augmentation_stability': m['augmentation_stability'],
         'next_route': route, 'seed_summary': multi.get('seed_summary'),
-        'geometry_revision_permitted': bool(geometry_failed and not pilot['gate']['pass']),
+        'geometry_revision_permitted': bool(geometry_failed and not pilot['gate']['pass'] and
+            max(pilot['arms'][ARMS[3]][s]['median_region_count'] for s in ('dev', 'stress_dev')) <= 10 and
+            pilot['G1_to_G3']['combined']['region_count_mean_delta'] < 0),
         'geometry_revision_used': read(args.out / 'aggregation_config.json')['revision'],
         'training_steps': 0, 'diffusion_generation_run': False}
     write(args.out / 'decision_summary.json', decision)
+    rows = read(args.out / 'pilot' / ARMS[3] / 'rows.json')
+    codes = {'F1': 'whole-garment collapse', 'F2': 'over-fragmentation',
+        'F3': 'cross-pattern merge', 'F4': 'same-pattern split',
+        'F5': 'structural edge absorbed', 'F6': 'low-confidence geometry split',
+        'F7': 'boundary contamination', 'F8': 'no valid canonical candidate',
+        'F9': 'orientation-inconsistent crop', 'F10': 'period-inconsistent crop',
+        'F11': 'false global reconciliation', 'F12': 'missed global reconciliation'}
+    automatic = {'F1': [r['index'] for r in rows if r['collapse_violation']],
+        'F2': [r['index'] for r in rows if r['region_count'] > 10],
+        'F8': [r['index'] for r in rows if not r['valid_crop']]}
+    for code, key, threshold, greater in (('F7', 'contamination', .0094, True),
+            ('F9', 'orientation_consistency', .8775, False), ('F10', 'period_consistency', .8817, False)):
+        automatic[code] = [r['index'] for r in rows if r['valid_crop'] and
+            (r['crop']['metrics'][key] > threshold if greater else r['crop']['metrics'][key] < threshold)]
+    review = read(args.out / 'visual_audit/manual_review.json') if (args.out / 'visual_audit/manual_review.json').exists() else None
+    write(args.out / 'visual_audit/error_tags.json', {'taxonomy': codes, 'automatic_proxy_indices': automatic,
+        'manual_visual_review': review, 'note': 'F3/F4/F5/F6/F11/F12 需视觉或独立 region GT 佐证，不能将自动代理当真值。'})
+    ablation = read(args.out / 'ablations/summary.json')
+    ablation['paired_to_G3'] = {arm: paired(rows, read(args.out / 'ablations' / arm / 'rows.json'), 42)
+                                for arm in ablation['arms']}
+    write(args.out / 'ablations/summary.json', ablation)
     inputs = read(args.out / 'input_manifest.json')
     frozen = {'checkpoint_unchanged': all(sha(args.source / 'A21_embedding' / ('seed%s' % s) / 'adapter.pt') == digest
               for s, digest in inputs['checkpoint_sha256'].items()),
@@ -430,7 +473,8 @@ def report(args):
     write(args.out / 'frozen_check.json', frozen)
     required = ['split_manifest.json', 'input_manifest.json', 'aggregation_config.json',
         'pilot/summary.json', 'ablations/summary.json', 'multiseed/status.json',
-        'canonicality_check/status.json', 'visual_audit/selection.json', 'decision_summary.json', 'frozen_check.json']
+        'canonicality_check/status.json', 'visual_audit/selection.json', 'visual_audit/error_tags.json',
+        'decision_summary.json', 'frozen_check.json']
     for arm in ARMS:
         required.append('pilot/' + arm + '/rows.json')
         required += ['pilot/' + arm + '/%03d_regions.npz' % i for i in range(64, 96)]
@@ -444,6 +488,7 @@ def report(args):
         'conditional_multiseed_status': multi['status'], 'conditional_canonicality_status': canon['status'],
         'visual_review_completed': audit_path.exists(),
         'experiment_complete': not missing and all(frozen.values()) and audit_path.exists()}
+    completion['report_git_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     write(args.out / 'completion_check.json', completion)
     artifact_paths = [str(p.relative_to(args.out)) for p in args.out.rglob('*') if p.is_file() and p.suffix not in ('.log', '.err', '.gz')]
     write(args.out / 'artifact_manifest.json', {'files': artifact_paths,
