@@ -77,7 +77,10 @@ def main(out):
                     'Pair labels derive from automatic cues and were not independently annotated.',
                     'Segmentation pilot stopped after seed42 because median region count exceeded 10.',
                     'Region stability is based on real photometric augmentation only; shift/resize were not assessed.',
-                    'Frozen-fixed pilot uses current prototype-constrained Stage A graph, not the original first-run graph.']}
+                    'Frozen-fixed pilot uses current prototype-constrained Stage A graph, not the original first-run graph.',
+                    'Local high-frequency gradients replace the proposed true local FFT profile.',
+                    'Training omits translation and rot90 positives and structural-edge, synthetic mixed, and contamination negatives.',
+                    'Training batch samples 64 grid nodes, not 64 independent image crops; results apply to this simplified pilot only.']}
     write(out / 'A22_segmentation/pilot_analysis.json', analysis)
     required = [out / 'protocol.json', out / 'split_manifest.json',
                 out / 'train_normalization.npz', out / 'frozen_check.json',
