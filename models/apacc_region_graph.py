@@ -31,7 +31,7 @@ def discover_pattern_regions(features, mask, mode='combined'):
     valid = features['occupancy'] >= .5
     size = valid.shape[0]
     threshold = {'appearance': .89, 'geometry': .66, 'combined': .77}[mode]
-    prototype_threshold = {'appearance': .94, 'geometry': .79, 'combined': .88}[mode]
+    prototype_threshold = {'appearance': .89, 'geometry': .70, 'combined': .82}[mode]
     parent = np.arange(size * size)
     count = np.ones(size * size, np.float32)
     sums = [array.reshape(-1, array.shape[-1]).copy() if array.ndim == 3 else
