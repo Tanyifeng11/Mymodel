@@ -17,6 +17,7 @@ from models.apacc_adaptive_graph import segment
 from models.apacc_affinity_adapter import PatternAffinityAdapter
 from models.apacc_canonicality import select_canonical_crop
 from models.apacc_features import estimated_foreground, extract_dense_features, load_dino
+from models.apacc_region_graph import discover_pattern_regions
 
 
 def write(path, obj):
@@ -406,9 +407,159 @@ def frozen_adaptive(args):
     write(folder / 'summary.json', summary)
 
 
+def regions_from_labels(labels, foreground):
+    regions = []
+    for k in range(int(labels.max() + 1)):
+        mask = cv2.resize((labels == k).astype(np.uint8), (256, 256), interpolation=cv2.INTER_NEAREST).astype(bool)
+        mask &= foreground
+        if not mask.any():
+            continue
+        ys, xs = np.where(mask)
+        regions.append({'mask': mask, 'bbox': (int(xs.min()), int(ys.min()), int(xs.max() + 1), int(ys.max() + 1)),
+                        'area_ratio': float(mask.mean())})
+    return regions
+
+
+def compute_labels(f, embedding, method):
+    if method == 'adaptive':
+        return segment(f, embedding)[0]
+    old = dict(f, color=f['color'][..., :3])
+    if embedding is not None:
+        old['appearance'] = embedding
+    return discover_pattern_regions(old, f['foreground'].astype(bool), 'combined')[1]
+
+
+def partition_stability(a, b, occupancy):
+    from scipy.optimize import linear_sum_assignment
+    from sklearn.metrics import adjusted_mutual_info_score
+    valid = occupancy >= .5
+    aa, bb = a[valid], b[valid]
+    both = (aa >= 0) & (bb >= 0)
+    if not both.any():
+        return {'iou': 0., 'ami': 0.}
+    aa, bb = aa[both], bb[both]
+    left, right = np.unique(aa), np.unique(bb)
+    mat = np.zeros((len(left), len(right)), np.float64)
+    for i, x in enumerate(left):
+        for j, y in enumerate(right):
+            intersection = np.sum((aa == x) & (bb == y))
+            union = np.sum((aa == x) | (bb == y))
+            mat[i, j] = intersection / max(union, 1)
+    row, col = linear_sum_assignment(-mat)
+    return {'iou': float(np.mean(mat[row, col])) if len(row) else 0.,
+            'ami': float(adjusted_mutual_info_score(aa, bb))}
+
+
+def segmentation(args):
+    out, device = args.out, 'cuda' if torch.cuda.is_available() else 'cpu'
+    audit_path = out / 'A21_embedding/summary.json'
+    audit_summary = json.loads(audit_path.read_text(encoding='utf-8'))
+    if not audit_summary['gate_pass']:
+        raise RuntimeError('Embedding Gate 未通过，禁止 learned segmentation')
+    manifest = json.loads((out / 'split_manifest.json').read_text(encoding='utf-8'))
+    norm = norm_at(out)
+    seed = args.seed
+    ckpt = torch.load(out / 'A21_embedding' / ('seed%d' % seed) / 'adapter.pt', map_location=device)
+    model = PatternAffinityAdapter(ckpt['input_dim'] - 384, not ckpt['no_geometry']).to(device)
+    model.load_state_dict(ckpt['model'])
+    model.eval()
+    folder = out / 'A22_segmentation' / ('seed%d' % seed)
+    palette = np.array([[225, 225, 225], [230, 75, 70], [80, 140, 220],
+                        [55, 180, 120], [210, 145, 50], [130, 90, 195]], np.uint8)
+    arms = ('frozen_fixed', 'frozen_adaptive', 'learned_fixed', 'learned_adaptive')
+    rows = {arm: [] for arm in arms}
+    for arm in arms:
+        (folder / arm).mkdir(parents=True, exist_ok=True)
+    for index in range(64, 96):
+        f = load_feature(out, index)
+        with torch.inference_mode():
+            embedded = model(torch.tensor(tensor_field(f, norm).reshape(-1, ckpt['input_dim']), device=device))
+            embedded = embedded.reshape(64, 64, 64).cpu().numpy()
+            aug_f = dict(f, appearance=f['appearance_aug'])
+            augmented = model(torch.tensor(tensor_field(aug_f, norm).reshape(-1, ckpt['input_dim']), device=device))
+            augmented = augmented.reshape(64, 64, 64).cpu().numpy()
+        name = (manifest['dev'] + manifest['stress_dev'])[index - 64]
+        image = Image.open(args.dataset / 'training' / name).convert('RGB').resize((256, 256))
+        if index >= 80:
+            folder.joinpath('previews').mkdir(parents=True, exist_ok=True)
+            image.save(folder / 'previews' / ('%03d_reference.png' % index))
+            Image.fromarray((f['foreground'] * 255).astype(np.uint8)).save(folder / 'previews' / ('%03d_foreground.png' % index))
+            anchor = np.unravel_index(int(np.argmax(f['boundary_distance'] * (f['occupancy'] >= .5))), (64, 64))
+            for label, features in [('dino', f['appearance']), ('learned', embedded)]:
+                ref = features[anchor]
+                sim = features @ ref
+                Image.fromarray(np.uint8(np.clip((sim + 1) * 127.5, 0, 255))).resize((256, 256)).save(
+                    folder / 'previews' / ('%03d_%s_similarity.png' % (index, label)))
+            angle = (np.arctan2(f['geometry'][..., 1], f['geometry'][..., 0]) / (2 * np.pi) + .5) * 255
+            Image.fromarray(np.uint8(np.clip(angle, 0, 255))).resize((256, 256)).save(
+                folder / 'previews' / ('%03d_orientation.png' % index))
+            freq = np.clip((f['geometry'][..., 2] + 8) / 7 * 255, 0, 255)
+            Image.fromarray(freq.astype(np.uint8)).resize((256, 256)).save(
+                folder / 'previews' / ('%03d_frequency.png' % index))
+        for arm in arms:
+            embedding = embedded if arm.startswith('learned') else None
+            method = 'adaptive' if arm.endswith('adaptive') else 'fixed'
+            labels = compute_labels(f, embedding, method)
+            regions = regions_from_labels(labels, f['foreground'].astype(bool))
+            selected = select_canonical_crop(image, regions, f['foreground'].astype(bool)) if regions else None
+            aug_labels = compute_labels(aug_f, augmented if embedding is not None else None, method)
+            stability = partition_stability(labels, aug_labels, f['occupancy'])
+            row = {'image': name, 'index': index, 'split': 'dev' if index < 80 else 'stress_dev',
+                   'region_count': len(regions), 'foreground_coverage': float((labels >= 0).sum() / max((f['occupancy'] >= .5).sum(), 1)),
+                   'valid_crop': selected is not None, 'region_stability_iou': stability['iou'],
+                   'region_stability_ami': stability['ami'],
+                   'crop': None if selected is None else {'box': selected['box'], 'metrics': selected['metrics']}}
+            rows[arm].append(row)
+            np.savez_compressed(folder / arm / ('%03d_regions.npz' % index), labels=labels)
+            if index >= 80:
+                arm_folder = folder / 'previews' / arm
+                arm_folder.mkdir(parents=True, exist_ok=True)
+                colored = palette[np.maximum(labels, 0) % len(palette)]
+                colored[labels < 0] = 255
+                Image.fromarray(cv2.resize(colored, (256, 256), interpolation=cv2.INTER_NEAREST)).save(
+                    arm_folder / ('%03d_regions.png' % index))
+                if selected:
+                    image.crop(selected['box']).save(arm_folder / ('%03d_crop.png' % index))
+        print('[A2 segment]', seed, index - 63, '/32',
+              {a: rows[a][-1]['region_count'] for a in arms}, flush=True)
+    report = {'seed': seed, 'arms': {}, 'metric_note': 'Reference-level means; stability compares real photometric augmentation.'}
+    for arm in arms:
+        (folder / arm).mkdir(parents=True, exist_ok=True)
+        write(folder / arm / 'rows.json', rows[arm])
+        report['arms'][arm] = {}
+        for split in ('dev', 'stress_dev'):
+            subset = [r for r in rows[arm] if r['split'] == split]
+            valid = [r for r in subset if r['valid_crop']]
+            metrics = {'count': len(subset), 'valid_crop_coverage': len(valid) / len(subset),
+                       'mean_region_count': float(np.mean([r['region_count'] for r in subset])),
+                       'median_region_count': float(np.median([r['region_count'] for r in subset]))}
+            for key in ('foreground_coverage', 'region_stability_iou', 'region_stability_ami'):
+                vals = np.array([r[key] for r in subset])
+                metrics[key], metrics[key + '_ci95'] = float(vals.mean()), bootstrap(vals, seed)
+            for key in ('orientation_consistency', 'period_consistency', 'identity', 'homogeneity', 'contamination', 'rot90_success'):
+                vals = np.array([r['crop']['metrics'][key] for r in valid if r['crop']['metrics'][key] is not None])
+                metrics[key] = float(vals.mean()) if len(vals) else None
+                metrics[key + '_ci95'] = bootstrap(vals, seed) if len(vals) else None
+            report['arms'][arm][split] = metrics
+    m = report['arms']['learned_adaptive']['dev']
+    stress = report['arms']['learned_adaptive']['stress_dev']
+    checks = {'valid_crop_coverage': m['valid_crop_coverage'] >= .8,
+              'orientation': m['orientation_consistency'] is not None and m['orientation_consistency'] >= .8775,
+              'period': m['period_consistency'] is not None and m['period_consistency'] >= .8817,
+              'identity': m['identity'] is not None and m['identity'] >= .9584,
+              'homogeneity': m['homogeneity'] is not None and m['homogeneity'] >= .9095,
+              'contamination': m['contamination'] is not None and m['contamination'] <= .0094,
+              'region_count': m['median_region_count'] <= 6 and m['mean_region_count'] > 1,
+              'stability': m['region_stability_iou'] >= .70,
+              'stress_valid_crop': stress['valid_crop_coverage'] >= .8}
+    report['gate_checks'], report['gate_pass'] = checks, all(checks.values())
+    write(folder / 'summary.json', report)
+    print('[A2 segmentation gate]', seed, report['gate_pass'], checks, flush=True)
+
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('action', choices=('prepare', 'frozen', 'train', 'audit'))
+    p.add_argument('action', choices=('prepare', 'frozen', 'train', 'audit', 'segment'))
     p.add_argument('--root', type=Path, default=Path.cwd())
     p.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
     p.add_argument('--out', type=Path, required=True)
@@ -418,4 +569,5 @@ if __name__ == '__main__':
     p.add_argument('--no-boundary', action='store_true')
     p.add_argument('--no-period', action='store_true')
     a = p.parse_args()
-    {'prepare': prepare, 'frozen': frozen_adaptive, 'train': train, 'audit': audit}[a.action](a)
+    {'prepare': prepare, 'frozen': frozen_adaptive, 'train': train, 'audit': audit,
+     'segment': segmentation}[a.action](a)
