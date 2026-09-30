@@ -35,7 +35,7 @@ def audit(root, e28, out):
     cases = load(e28/'cases.json')
     assert tuple(r['id'] for r in cases['references']) == CASE_IDS
     assert set(cases['references'][0]['variants'][i]['variant'] for i in range(2)) == set(VARIANTS)
-    for name in ('A_audit', 'expected'):
+    for name in ('A_audit', 'expected', 'inputs'):
         shutil.copytree(e28/name, out/name, dirs_exist_ok=True)
     for name in ('cases.json',): shutil.copy2(e28/name, out/name)
     for arm, old in ANCHORS.items():
