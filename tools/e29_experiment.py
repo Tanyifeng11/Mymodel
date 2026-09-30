@@ -320,7 +320,8 @@ def report(root, e28, out):
           'report':'B_causal/report.json','panel':'B_causal/panel_metrics.json',
           'crop':'B_causal/crop_metrics.json','recovery':'B_causal/recovery_report.json',
           'decision':'decision_summary.json','review_images':[f'review_images/c{c:02d}.jpg' for c in ids]})
-    print('[E29 B]',json.dumps({'route':route,'panel_checks':panel_checks,'crop_checks':crop_checks}),flush=True)
+    print('[E29 B]',json.dumps({'route':route,'panel_checks':decision['panel_checks'],
+                               'crop_checks':decision['crop_checks']}),flush=True)
 
 
 def main():
