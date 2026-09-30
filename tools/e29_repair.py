@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import cv2
 import numpy as np
@@ -122,18 +123,54 @@ def run(root, dataset, out):
                     next_route='collect_panel_annotations_and_revise_crop_selector'
                     if not test_summary['proposal_gate_pass'] else 'collect_panel_annotations_then_crop_pilot')
     write(out/'decision_summary.json', decision)
+    # 固定五例加 seed=42 抽出的 9/14；标签依据四组 S0/S1/S2 拼图逐例目视核查。
+    visual = {'review_seed':42,'cases':[13,6,7,12,17,9,14],
+              'review_image_template':'review_images/c{case:02d}.jpg',
+              'observations':[
+                  {'case':13,'tags':['F5_wrong_ownership','F11_dominant_motif_expansion'],
+                   'note':'P2/P3 身片的星形与条纹归属在 S0 已偏离 P0，S2 保留该差异。'},
+                  {'case':6,'tags':['F2_local_orientation_error','F4_pattern_identity_loss'],
+                   'note':'rot90 对照中自动 proposal 的条纹方向与 P0 差异明显。'},
+                  {'case':7,'tags':['F2_local_orientation_error'],
+                   'note':'rot90 对照中局部条纹方向不稳定。'},
+                  {'case':12,'tags':['F4_pattern_identity_loss','F6_crop_contamination'],
+                   'note':'P3 衣身纹样出现亮色局部异常，S0 已可见。'},
+                  {'case':17,'tags':['F5_wrong_ownership','F11_dominant_motif_expansion'],
+                   'note':'P2/P3 衣身条纹区域扩展，衣片纹样归属偏离 P0。'},
+                  {'case':9,'tags':['F4_pattern_identity_loss','F12_boundary_feature_repetition'],
+                   'note':'P2/P3 衣身出现重复亮色块，P0 中不明显。'},
+                  {'case':14,'tags':['F2_local_orientation_error','F3_period_error'],
+                   'note':'P3 rot90 的密集竖向纹样与 P0 的横向节律不同。'}],
+              'scope':'visual diagnostic; formal route decision is based on case-aggregated numeric gates'}
+    assert all((out/f'review_images/c{cid:02d}.jpg').exists() for cid in visual['cases'])
+    write(out/'visual_audit.json', visual)
     write(out/'completion_check.json',
           {'pass':True,'causal_split_complete':True,'selected_route':'joint_panel_crop',
            'panel_training_ready':False,'crop_proposal_pass':bool(test_summary['proposal_gate_pass']),
            'pilot_run':False,'pilot_reason':'panel training set below minimum; crop proposal gate failed'
            if not test_summary['proposal_gate_pass'] else 'panel training set below minimum',
            'confirmation_run':False,'causal_cases_used_for_training':False,
-           'all_four_arms_images':32,'frozen_e5':True})
+           'all_four_arms_images':32,'frozen_e5':True,'visual_audit_cases':7})
     manifest = load(out/'artifact_manifest.json')
     manifest.update(panel_feasibility='C_training/panel_parser/feasibility.json',
                     crop_probe='C_training/crop_selector/probe.json',
-                    completion='completion_check.json')
+                    visual_audit='visual_audit.json',
+                    completion='completion_check.json',
+                    review_bundle='e29_review_results.zip')
     write(out/'artifact_manifest.json',manifest)
+    bundle_files = ('protocol.json','cases.json','decision_summary.json','completion_check.json',
+                    'artifact_manifest.json','visual_audit.json','B_causal/report.json',
+                    'B_causal/panel_metrics.json','B_causal/crop_metrics.json',
+                    'B_causal/recovery_report.json','B_causal/decision.json',
+                    'B_causal/component_check.json','B_causal/frozen_check.json',
+                    'C_training/panel_parser/feasibility.json',
+                    'C_training/crop_selector/probe.json')
+    with ZipFile(out/'e29_review_results.zip','w',compression=ZIP_DEFLATED) as archive:
+        for rel in bundle_files:
+            archive.write(out/rel,rel)
+        for cid in visual['cases']:
+            rel=f'review_images/c{cid:02d}.jpg'
+            archive.write(out/rel,rel)
     print('[E29 C]',json.dumps({'dev_gate':dev_summary['proposal_gate_pass'],
                                 'heldout_gate':test_summary['proposal_gate_pass'],
                                 'heldout_iou':test_summary['median_crop_iou']}),flush=True)
