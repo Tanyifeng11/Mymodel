@@ -38,7 +38,7 @@ def run(args):
     # 只取现有 training split；固定顺序和数量，绝不读取 E27/E29 人工标注。
     records = sorted(records, key=lambda row: hashlib.sha256(row['cloth'].encode()).hexdigest())[:args.count]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model, model_sha = load_dino(device)
+    model, model_sha = load_dino(device, out / 'dinov2_vits14_pretrain.pth')
     arms = ('A0_e29_rule', 'A1_dino', 'A2_geometry', 'A3_combined', 'A4_canonicality')
     rows = {arm: [] for arm in arms}
     regions_folder = out / 'A_feature_feasibility/regions'

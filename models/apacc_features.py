@@ -1,7 +1,7 @@
 """E30 的冻结外观与局部纹样特征；只读取参考 RGB 和估计前景。"""
 
 import hashlib
-import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -12,22 +12,22 @@ from models.confidence_local_correspondence import foreground
 from models.local_pattern_field import patch_geometry
 
 
-def load_dino(device):
-    error = None
-    for attempt in range(5):
-        try:
-            model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14',
-                                   trust_repo=True).to(device).eval()
-            for parameter in model.parameters():
-                parameter.requires_grad_(False)
-            digest = hashlib.sha256()
-            for value in model.state_dict().values():
-                digest.update(value.detach().cpu().numpy().tobytes())
-            return model, digest.hexdigest()
-        except Exception as exc:
-            error = exc
-            time.sleep(min(2 ** attempt, 16))
-    raise RuntimeError('DINOv2 权重获取失败（重试 5 次）') from error
+def load_dino(device, weights_path):
+    source = Path.home() / '.cache/dinov2-e30'
+    weights_path = Path(weights_path)
+    if not (source / 'hubconf.py').exists() or not weights_path.exists():
+        raise FileNotFoundError('DINOv2 代码或权重不存在')
+    digest = hashlib.sha256(weights_path.read_bytes()).hexdigest()
+    expected = 'b938bf1bc15cd2ec0feacfe3a1bb553fe8ea9ca46a7e1d8d00217f29aef60cd9'
+    if digest != expected:
+        raise ValueError('DINOv2 权重 SHA256 不匹配')
+    model = torch.hub.load(str(source), 'dinov2_vits14', source='local', pretrained=False)
+    state = torch.load(weights_path, map_location='cpu')
+    model.load_state_dict(state, strict=True)
+    model = model.to(device).eval()
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+    return model, digest
 
 
 @torch.inference_mode()
