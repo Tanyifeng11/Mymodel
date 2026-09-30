@@ -16,7 +16,8 @@ from scipy.optimize import linear_sum_assignment
 
 from models.apacc_affinity_adapter import PatternAffinityAdapter
 from models.apacc_canonicality import select_canonical_crop
-from models.apacc_hierarchical_aggregation import DEFAULT_CONFIG, hierarchical_region_aggregation
+from models.apacc_hierarchical_aggregation import DEFAULT_CONFIG, hierarchical_region_aggregation, boundary_edges
+from models.apacc_region_prototype import node_features
 from models.apacc_global_reconciliation import reconcile_pattern_groups
 from models.apacc_region_cleanup import cleanup_small_regions
 from tools.e30_a2_affinity import (compute_labels, load_feature, norm_at, regions_from_labels,
@@ -168,8 +169,11 @@ def partition(features, z, arm, config):
     if arm in ARMS[:2]:
         labels = compute_labels(features, z, 'fixed' if arm == ARMS[0] else 'adaptive')
         # 基线也审计同一 strong discontinuity。
-        state = hierarchical_region_aggregation(features, z, config)
-        _, _, _, detail = state.export()
+        edges = boundary_edges(node_features(features, z), config)
+        strong = [(u, v) for u, v, *rest in edges if rest[-1]]
+        detail = {'strong_edge_count': len(strong),
+            'strong_discontinuity': len(strong) >= max(8, int((features['occupancy'] >= .5).sum() * .015)),
+            'preserved_strong_edge_count': int(sum(labels.ravel()[u] != labels.ravel()[v] for u, v in strong))}
         detail['collapse_violation'] = bool(detail['strong_discontinuity'] and labels.max() < 1)
         return labels, labels.copy(), np.zeros_like(labels, bool), detail
     state = hierarchical_region_aggregation(features, z, config)

@@ -69,8 +69,9 @@ def compute_merge_coherence_delta(a, b, merged, config):
             b['area'] * coherence(b, config)) / merged['area']
 
 
-def similarities(a, b):
-    a, b = prototype(a), prototype(b)
+def similarities(a, b, summarized=False):
+    if not summarized:
+        a, b = prototype(a), prototype(b)
     z = float(a['mean_z'] @ b['mean_z'] / max(np.linalg.norm(a['mean_z']) *
               np.linalg.norm(b['mean_z']), 1e-9))
     return {'z': z, 'theta': float((1 + a['direction'] @ b['direction']) / 2),

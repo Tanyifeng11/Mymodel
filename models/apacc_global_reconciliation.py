@@ -8,7 +8,9 @@ from models.apacc_region_prototype import (prototype, similarities, merge_protot
                                           compute_merge_coherence_delta)
 
 
-def _path_barrier(state, start, end):
+def _path_barrier(state, start, end, cached=None):
+    if cached is not None and np.isfinite(cached):
+        return float(cached)
     # minimax 路径：任意前景路径上最弱的强边界链。
     heap, best = [(0., start)], {start: 0.}
     while heap:
@@ -48,18 +50,28 @@ def reconcile_pattern_groups(state):
     regions = list(state.regions)
     groups = {r: r for r in regions}
     candidates, logs, lineage = [], [], []
+    prototypes = {r: prototype(state.regions[r]) for r in regions}
+    positions = {r: i for i, r in enumerate(regions)}
+    barriers = np.full((len(regions), len(regions)), np.inf)
+    np.fill_diagonal(barriers, 0.)
+    for a in regions:
+        for b, stat in state.neighbors[a].items():
+            barriers[positions[a], positions[b]] = stat[0] / stat[2]
+    # 同一 minimax 判据的 Floyd-Warshall；一次算完全部前景路径。
+    for k in range(len(regions)):
+        barriers = np.minimum(barriers, np.maximum(barriers[:, k, None], barriers[None, k, :]))
     foreground_xy = np.argwhere(state.nodes['occupancy'] >= .5)
     diagonal = max(float(np.linalg.norm(np.ptp(foreground_xy, axis=0))), 1.) if len(foreground_xy) else 1.
     for i, a in enumerate(regions):
         for b in regions[i + 1:]:
-            s = similarities(state.regions[a], state.regions[b])
-            distance = float(np.linalg.norm(prototype(state.regions[a])['centroid'] -
-                                           prototype(state.regions[b])['centroid']) / diagonal)
+            s = similarities(prototypes[a], prototypes[b], summarized=True)
+            distance = float(np.linalg.norm(prototypes[a]['centroid'] -
+                                           prototypes[b]['centroid']) / diagonal)
             if distance >= config['global_max_distance'] and s['z'] < config['tau_global_candidate']:
                 continue
             conf = s['conf'] if config['geometry'] else 0.
             score = (.65 * s['z'] + conf * (.20 * s['theta'] + .10 * s['freq']) + .05 * s['selfsim']) / (.70 + .30 * conf)
-            barrier = _path_barrier(state, a, b)
+            barrier = _path_barrier(state, a, b, barriers[positions[a], positions[b]])
             spatial = float(np.exp(-2 * distance) * (1 - barrier))
             accepted = score >= config['tau_pattern'] and spatial >= config['tau_spatial'] and barrier < config['strong_boundary']
             merged = merge_prototypes(state.regions[a], state.regions[b])
