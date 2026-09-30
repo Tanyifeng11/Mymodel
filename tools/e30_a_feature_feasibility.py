@@ -29,6 +29,9 @@ def summarize(rows):
     result['rot90_equivariance'] = float(np.mean(rotations)) if rotations else None
     result['readable_rot90_count'] = len(rotations)
     result['count'] = len(rows)
+    if 'region_count' in rows[0]:
+        for key in ('region_count', 'coverage', 'region_homogeneity'):
+            result[key] = float(np.mean([row[key] for row in rows]))
     return result
 
 
@@ -36,15 +39,18 @@ def run(args):
     root, out = args.root.resolve(), args.out.resolve()
     records = json.loads((root / 'data/train_bf_texture.json').read_text(encoding='utf-8'))
     # 只取现有 training split；固定顺序和数量，绝不读取 E27/E29 人工标注。
-    records = sorted(records, key=lambda row: hashlib.sha256(row['cloth'].encode()).hexdigest())[:args.count]
+    records = sorted(records, key=lambda row: hashlib.sha256(row['cloth'].encode()).hexdigest())[
+              args.offset:args.offset + args.count]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model, model_sha = load_dino(device, out / 'dinov2_vits14_pretrain.pth')
     arms = ('A0_e29_rule', 'A1_dino', 'A2_geometry', 'A3_combined', 'A4_canonicality')
     rows = {arm: [] for arm in arms}
     regions_folder = out / 'A_feature_feasibility/regions'
     crops_folder = out / 'A_feature_feasibility/crops'
+    geometry_folder = out / 'A_feature_feasibility/geometry'
     regions_folder.mkdir(parents=True, exist_ok=True)
     crops_folder.mkdir(parents=True, exist_ok=True)
+    geometry_folder.mkdir(parents=True, exist_ok=True)
     failures = []
     for n, record in enumerate(records):
         path = args.dataset / 'training' / record['cloth']
@@ -52,6 +58,8 @@ def run(args):
             image = Image.open(path).convert('RGB').resize((256, 256))
             mask = estimated_foreground(image)
             features = extract_dense_features(image, mask, model, device)
+            np.savez_compressed(geometry_folder / f'{n:03d}.npz',
+                                geometry=features['geometry'], foreground=mask.astype(np.uint8))
             proposals = {}
             baseline_box, _ = select_crop_e29(image, mask)
             baseline_metrics = crop_metrics(image, mask, mask, baseline_box)
@@ -87,6 +95,7 @@ def run(args):
                     colored[labels < 0] = 255
                     Image.fromarray(cv2.resize(colored, image.size, interpolation=cv2.INTER_NEAREST)).save(
                         regions_folder / f'{n:03d}_{arm}.png')
+                np.savez_compressed(regions_folder / f'{n:03d}_{arm}.npz', labels=labels)
             print('[E30 A]', n + 1, '/', len(records), record['cloth'], flush=True)
         except Exception as exc:
             failures.append({'image': record['cloth'], 'error': str(exc)})
@@ -103,7 +112,7 @@ def run(args):
                                           chosen['rot90_equivariance'] >= .80,
                   'orientation_not_lower': chosen['orientation_consistency'] >= base['orientation_consistency']}
     passed = bool(checks) and all(checks.values())
-    report = {'stage': 'A', 'split': 'BF/training', 'requested': len(records),
+    report = {'stage': 'A', 'split': 'BF/training', 'offset': args.offset, 'requested': len(records),
               'completed': len(rows[arms[-1]]), 'failures': failures,
               'dino_model': 'dinov2_vits14', 'dino_sha256': model_sha,
               'frozen': True, 'uses_manual_labels': False, 'summary': summary,
@@ -127,5 +136,6 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--count', type=int, default=64)
+    parser.add_argument('--offset', type=int, default=0)
     parser.add_argument('--previews', type=int, default=8)
     run(parser.parse_args())

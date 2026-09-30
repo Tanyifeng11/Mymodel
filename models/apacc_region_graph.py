@@ -14,7 +14,7 @@ def _affinity(a, b, mode):
     orientation = (1 + float(np.dot(a[1][:2], b[1][:2]))) / 2
     frequency = np.exp(-abs(float(a[1][2] - b[1][2])))
     color = np.exp(-4 * float(np.linalg.norm(a[2] - b[2])))
-    selfsim = np.exp(-12 * abs(float(a[3] - b[3])))
+    selfsim = np.exp(-12 * abs(float(np.asarray(a[3]).item() - np.asarray(b[3]).item())))
     if mode == 'appearance':
         return app
     if mode == 'geometry':
@@ -31,7 +31,12 @@ def discover_pattern_regions(features, mask, mode='combined'):
     valid = features['occupancy'] >= .5
     size = valid.shape[0]
     threshold = {'appearance': .89, 'geometry': .66, 'combined': .77}[mode]
+    prototype_threshold = {'appearance': .94, 'geometry': .79, 'combined': .88}[mode]
     parent = np.arange(size * size)
+    count = np.ones(size * size, np.float32)
+    sums = [array.reshape(-1, array.shape[-1]).copy() if array.ndim == 3 else
+            array.reshape(-1, 1).copy()
+            for array in (app, geo, color, selfsim)]
 
     def root(n):
         while parent[n] != n:
@@ -39,6 +44,7 @@ def discover_pattern_regions(features, mask, mode='combined'):
             n = parent[n]
         return n
 
+    edges = []
     for y in range(size):
         for x in range(size):
             if not valid[y, x]:
@@ -48,8 +54,26 @@ def discover_pattern_regions(features, mask, mode='combined'):
                 if ny >= size or nx >= size or not valid[ny, nx]:
                     continue
                 b = app[ny, nx], geo[ny, nx], color[ny, nx], selfsim[ny, nx]
-                if _affinity(a, b, mode) >= threshold:
-                    parent[root(y * size + x)] = root(ny * size + nx)
+                score = _affinity(a, b, mode)
+                if score >= threshold:
+                    edges.append((score, y * size + x, ny * size + nx))
+    # 以区域均值复核每次合并，避免高相似邻边串联后吞并整件服装。
+    for score, left, right in sorted(edges, reverse=True):
+        left, right = root(left), root(right)
+        if left == right:
+            continue
+        mean_left = tuple(values[left] / count[left] for values in sums)
+        mean_right = tuple(values[right] / count[right] for values in sums)
+        mean_left = (mean_left[0] / max(np.linalg.norm(mean_left[0]), 1e-9),) + mean_left[1:]
+        mean_right = (mean_right[0] / max(np.linalg.norm(mean_right[0]), 1e-9),) + mean_right[1:]
+        if _affinity(mean_left, mean_right, mode) < prototype_threshold:
+            continue
+        if count[left] < count[right]:
+            left, right = right, left
+        parent[right] = left
+        count[left] += count[right]
+        for values in sums:
+            values[left] += values[right]
     labels = np.full((size, size), -1, np.int32)
     groups = {}
     for y, x in zip(*np.where(valid)):

@@ -17,4 +17,6 @@ for module in attention block; do
   file="$HOME/.cache/dinov2-e30/dinov2/layers/$module.py"
   grep -q '^from __future__ import annotations' "$file" || sed -i '1i from __future__ import annotations' "$file"
 done
-python -m tools.e30_a_feature_feasibility --root "$PWD" --out "$PWD/output_eval/e30_apacc_20260930"
+python -m tools.e30_a_feature_feasibility --root "$PWD" \
+  --out "${E30_OUT:-$PWD/output_eval/e30_apacc_20260930}" \
+  --count "${E30_COUNT:-64}" --offset "${E30_OFFSET:-0}"
