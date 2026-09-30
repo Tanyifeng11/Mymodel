@@ -16,7 +16,7 @@ DEFAULT_CONFIG = {'supercell': 2, 'tau_merge': .78, 'boundary_alpha': .08,
     'bootstrap_resamples': 2000, 'revision': 0}
 
 
-def boundary_edges(nodes):
+def boundary_edges(nodes, config):
     h, w = nodes['occupancy'].shape
     valid = nodes['occupancy'] >= .5
     z, g, f, c = nodes['z'], nodes['direction'], nodes['freq'], nodes['conf']
@@ -32,7 +32,8 @@ def boundary_edges(nodes):
             frequency = float(1 - np.exp(-abs(f[y, x] - f[yy, xx])))
             lab = min(float(np.linalg.norm(color[y, x] - color[yy, xx]) / .25), 1.)
             # Lab 局部梯度是 RGB gradient 的代理，绝不当作独立 GT。
-            evidence = .55 * (1 - affinity) + conf * (.25 * orientation + .15 * frequency) + .05 * lab
+            effective_conf = conf if config['geometry'] else 0.
+            evidence = .55 * (1 - affinity) + effective_conf * (.25 * orientation + .15 * frequency) + .05 * lab
             strong = affinity < .65 or (conf >= .5 and (orientation > .65 or frequency > .5))
             edges.append((y * w + x, yy * w + xx, evidence, affinity, orientation,
                           frequency, lab, bool(strong)))
@@ -59,7 +60,7 @@ class RegionState:
         self.config = config
         self.nodes = node_features(features, embedding)
         self.shape = features['occupancy'].shape
-        self.edges = boundary_edges(self.nodes)
+        self.edges = boundary_edges(self.nodes, config)
         self.labels = np.full(self.shape, -1, np.int32)
         self.regions, self.neighbors, self.logs, self.lineage = {}, {}, [], []
         self.uncertain = set()
