@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tarfile
@@ -443,6 +444,15 @@ def report(args):
         'training_steps': 0, 'diffusion_generation_run': False}
     write(args.out / 'decision_summary.json', decision)
     rows = read(args.out / 'pilot' / ARMS[3] / 'rows.json')
+    selection = read(args.out / 'visual_audit/selection.json')
+    reductions = {}
+    for row in rows:
+        detail = read(args.out / 'pilot' / ARMS[3] / ('%03d_aggregation.json' % row['index']))
+        reductions[row['index']] = detail['initial_region_count'] - row['region_count']
+    selection['G3_most_merged'] = sorted(reductions, key=lambda i: -reductions[i])[:5]
+    selection['G3_merge_reductions_from_supercells'] = reductions
+    selection['G3_most_merged_criterion'] = 'initial super-region count minus final spatial region count'
+    write(args.out / 'visual_audit/selection.json', selection)
     codes = {'F1': 'whole-garment collapse', 'F2': 'over-fragmentation',
         'F3': 'cross-pattern merge', 'F4': 'same-pattern split',
         'F5': 'structural edge absorbed', 'F6': 'low-confidence geometry split',
@@ -483,11 +493,13 @@ def report(args):
         required += ['pilot/' + arm + '/%03d_aggregation.json' % i for i in range(64, 96)]
     missing = [p for p in required if not (args.out / p).exists()]
     audit_path = args.out / 'visual_audit/manual_review.json'
+    reviewed = set(read(audit_path).get('reviewed_indices', [])) if audit_path.exists() else set()
+    visual_complete = set(selection['required_visual_indices']) <= reviewed
     completion = {'required_missing': missing, 'numeric_artifacts_complete': not missing,
         'frozen_inputs_pass': all(frozen.values()), 'pilot_pass': pilot['gate']['pass'],
         'conditional_multiseed_status': multi['status'], 'conditional_canonicality_status': canon['status'],
-        'visual_review_completed': audit_path.exists(),
-        'experiment_complete': not missing and all(frozen.values()) and audit_path.exists()}
+        'visual_review_completed': visual_complete,
+        'experiment_complete': not missing and all(frozen.values()) and visual_complete}
     completion['report_git_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     write(args.out / 'completion_check.json', completion)
     artifact_paths = [str(p.relative_to(args.out)) for p in args.out.rglob('*') if p.is_file() and p.suffix not in ('.log', '.err', '.gz')]
@@ -507,7 +519,7 @@ if __name__ == '__main__':
     parser.add_argument('--source', type=Path, default=Path('output_eval/e30_a2_affinity_20260930'))
     parser.add_argument('--out', type=Path, default=Path('output_eval/e30_a3_region_aggregation_20260930'))
     parser.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
-    parser.add_argument('--visual-review-json', default=None)
+    parser.add_argument('--visual-review-json', default=os.environ.get('E30_A3_VISUAL_REVIEW_JSON'))
     args = parser.parse_args()
     torch.set_num_threads(4)
     actions = {'pilot': run_pilot, 'ablation': run_ablations, 'confirm': run_confirm,
