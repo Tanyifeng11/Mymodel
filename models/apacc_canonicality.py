@@ -19,10 +19,11 @@ def crop_metrics(image, foreground, region, box):
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     fg = float(foreground[y0:y1, x0:x1].mean())
     purity = float(region[y0:y1, x0:x1].mean())
-    vectors = [descriptor(patch.crop((x * patch.width // 2, y * patch.height // 2,
-                                      (x + 1) * patch.width // 2,
-                                      (y + 1) * patch.height // 2)))[0]
-               for y in range(2) for x in range(2)]
+    quadrants = [patch.crop((x * patch.width // 2, y * patch.height // 2,
+                             (x + 1) * patch.width // 2,
+                             (y + 1) * patch.height // 2))
+                 for y in range(2) for x in range(2)]
+    vectors = [descriptor(part)[0] for part in quadrants]
     homogeneity = float(np.mean([_cos(vectors[i], vectors[j])
                                  for i in range(4) for j in range(i + 1, 4)]))
     shifts = []
@@ -32,6 +33,16 @@ def crop_metrics(image, foreground, region, box):
             shifts.append(_cos(descriptor(patch)[0], descriptor(image.crop(moved))[0]))
     shift = float(np.mean(shifts)) if shifts else 0
     geometry = patch_geometry(patch)
+    local = [patch_geometry(part) for part in quadrants]
+    readable = [part for part in local if part['valid']]
+    if readable:
+        angles = np.deg2rad([2 * part['orientation'] for part in readable])
+        orientation_consistency = float(np.abs(np.mean(np.exp(1j * angles))))
+        frequencies = np.array([part['frequency'] for part in readable])
+        period_consistency = float(np.exp(-np.std(np.log(np.maximum(frequencies, 1e-4)))))
+    else:
+        orientation_consistency = .5
+        period_consistency = .5
     rotated = patch_geometry(patch.transpose(Image.Transpose.ROTATE_90))
     rotation_error = abs((rotated['orientation'] - geometry['orientation'] + 0) % 180 - 90)
     rot_success = bool(rotation_error <= 15) if geometry['valid'] else None
@@ -48,7 +59,8 @@ def crop_metrics(image, foreground, region, box):
             'homogeneity': homogeneity, 'identity': shift,
             'shift_consistency': shift, 'rot90_success': rot_success,
             'rotation_error': float(rotation_error),
-            'period_consistency': float(geometry['confidence']),
+            'orientation_consistency': orientation_consistency,
+            'period_consistency': period_consistency,
             'tile_seam': float(1 - seam), 'structural_edge': float(structural),
             'contamination': contamination}
 

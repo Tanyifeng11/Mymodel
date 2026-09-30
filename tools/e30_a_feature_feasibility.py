@@ -22,7 +22,7 @@ def write(path, value):
 
 
 def summarize(rows):
-    keys = ('contamination', 'identity', 'homogeneity', 'period_consistency',
+    keys = ('contamination', 'identity', 'homogeneity', 'period_consistency', 'orientation_consistency',
             'foreground_purity', 'region_purity', 'tile_seam')
     result = {key: float(np.mean([r[key] for r in rows])) for key in keys}
     rotations = [r['rot90_success'] for r in rows if r['rot90_success'] is not None]
@@ -101,15 +101,14 @@ def run(args):
                   'homogeneity_drop_at_most_0_02': chosen['homogeneity'] >= base['homogeneity'] - .02,
                   'rot90_at_least_80pct': chosen['rot90_equivariance'] is not None and
                                           chosen['rot90_equivariance'] >= .80,
-                  'orientation_not_lower': np.mean([r['orientation_consistency'] for r in rows[arms[-1]]]) >=
-                                           np.mean([r['orientation_consistency'] for r in rows[arms[2]]])}
+                  'orientation_not_lower': chosen['orientation_consistency'] >= base['orientation_consistency']}
     passed = bool(checks) and all(checks.values())
     report = {'stage': 'A', 'split': 'BF/training', 'requested': len(records),
               'completed': len(rows[arms[-1]]), 'failures': failures,
               'dino_model': 'dinov2_vits14', 'dino_sha256': model_sha,
               'frozen': True, 'uses_manual_labels': False, 'summary': summary,
               'gate_checks': checks, 'gate_pass': passed,
-              'metric_note': 'contamination=estimated foreground 3px erosion; identity=shifted descriptor cosine; period=E26 patch geometry confidence'}
+              'metric_note': 'contamination=estimated foreground 3px erosion; identity=shifted descriptor cosine; orientation/period=E26 quadrant geometry consistency'}
     write(out / 'A_feature_feasibility/report.json', report)
     write(out / 'A_feature_feasibility/rows.json', rows)
     write(out / 'decision_summary.json', {'feature_feasibility_pass': passed,
