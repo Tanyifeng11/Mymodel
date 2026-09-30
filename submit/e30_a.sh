@@ -19,4 +19,5 @@ for module in attention block; do
 done
 python -m tools.e30_a_feature_feasibility --root "$PWD" \
   --out "${E30_OUT:-$PWD/output_eval/e30_apacc_20260930}" \
+  --weights "$PWD/output_eval/e30_apacc_20260930/dinov2_vits14_pretrain.pth" \
   --count "${E30_COUNT:-64}" --offset "${E30_OFFSET:-0}"

@@ -42,7 +42,7 @@ def run(args):
     records = sorted(records, key=lambda row: hashlib.sha256(row['cloth'].encode()).hexdigest())[
               args.offset:args.offset + args.count]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model, model_sha = load_dino(device, out / 'dinov2_vits14_pretrain.pth')
+    model, model_sha = load_dino(device, args.weights)
     arms = ('A0_e29_rule', 'A1_dino', 'A2_geometry', 'A3_combined', 'A4_canonicality')
     rows = {arm: [] for arm in arms}
     regions_folder = out / 'A_feature_feasibility/regions'
@@ -135,6 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--weights', type=Path, required=True)
     parser.add_argument('--count', type=int, default=64)
     parser.add_argument('--offset', type=int, default=0)
     parser.add_argument('--previews', type=int, default=8)
