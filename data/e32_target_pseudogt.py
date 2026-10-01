@@ -92,10 +92,11 @@ class FrozenFeatures:
         aligned = [cv2.resize(np.rot90(v, -k).copy(), COARSE) for k, v in enumerate(maps)]
         return unit(aligned[0]), unit(np.mean(aligned, axis=0))
 
-    def extract(self, image, supervision_mask=None, appearance=False):
-        dino, invariant = self.perceptual(image, appearance)
+    def extract(self, image, supervision_mask=None, appearance=False, perceptual=True):
+        dino, invariant = self.perceptual(image, appearance) if perceptual else (np.zeros((16,12,384),np.float32),None)
         rgb = np.asarray(image)
         geometry = np.zeros((16, 12, 4), np.float32)
+        raw_confidence = np.zeros((16,12), np.float32)
         descriptors = np.zeros((16, 12, 64), np.float32) if appearance else None
         occupancy = np.ones((16, 12), np.float32)
         lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32) / 255
@@ -111,6 +112,7 @@ class FrozenFeatures:
                     occupancy[y, x] = supervision_mask[y0:y0+64, x0:x0+64].mean()
                 theta = np.deg2rad(2*g['orientation'])
                 conf = g['confidence'] if occupancy[y, x] >= .95 else 0.
+                raw_confidence[y,x] = g['confidence']
                 geometry[y, x] = [np.cos(theta), np.sin(theta), np.log(max(g['frequency'], 1e-4)), conf]
                 if appearance:
                     stat = statistical_descriptor(patch)
@@ -122,6 +124,8 @@ class FrozenFeatures:
         inputs = np.concatenate([dino, geometry, color, selfsim], -1)
         result = dict(reference=inputs.astype(np.float16), geometry=geometry, occupancy=occupancy,
                       histogram=lab_hist(image, supervision_mask))
+        result['unmasked_geometry'] = geometry.copy()
+        result['unmasked_geometry'][...,3] = raw_confidence
         if appearance:
             result['appearance'] = descriptors
         return result

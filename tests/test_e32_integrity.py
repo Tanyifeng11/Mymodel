@@ -3,12 +3,15 @@
 import unittest
 
 import numpy as np
+import torch
 from PIL import Image
 
 from data.e32_target_pseudogt import masks, statistical_descriptor, structure_input
 from data.e32_wrong_reference_sampler import wrong_references
 from tools.e32_stage0_pair_audit import descriptor_similarity
 from tools.e32_common import bootstrap
+from tools.e32_a_geometry_train import geometry_loss
+from models.e32_field import ExplicitPatternField
 
 
 class E32Integrity(unittest.TestCase):
@@ -59,6 +62,35 @@ class E32Integrity(unittest.TestCase):
         self.assertGreater(positive['ci95'][0],0)
         self.assertEqual(positive['n'],16)
         self.assertIsNone(bootstrap([])['ci95'])
+
+    def test_zero_has_no_geometry_reconstruction(self):
+        gt=torch.zeros(1,4,64,48);gt[:,0]=1;gt[:,2]=-3;gt[:,3]=.7
+        batch=dict(supervision_geometry=gt,supervision_interior=torch.ones(1,64,48),pair_weight=torch.ones(1))
+        pred=dict(orientation=gt[:,:2].clone(),log_frequency=torch.full((1,1,64,48),-3.),
+                  confidence=torch.full((1,3,64,48),.5))
+        zero=torch.ones(1,dtype=torch.bool)
+        first,parts=geometry_loss(pred,batch,zero)
+        self.assertEqual(parts['orientation'],0)
+        self.assertEqual(parts['period'],0)
+        gt[:,0]=-1;gt[:,2]=-8
+        second,_=geometry_loss(pred,batch,zero)
+        torch.testing.assert_close(first,second)
+
+    def test_field_forward_shapes_and_gradients(self):
+        torch.set_num_threads(2)
+        model=ExplicitPatternField()
+        self.assertFalse(any(p.requires_grad for p in model.appearance.parameters()))
+        out=model(torch.randn(1,16,12,395),torch.randn(1,7,128,96))
+        self.assertEqual(out['orientation'].shape,(1,2,64,48))
+        self.assertEqual(out['appearance'].shape,(1,64,64,48))
+        self.assertEqual(out['confidence'].shape,(1,3,64,48))
+        gt=torch.zeros(1,4,64,48);gt[:,0]=1;gt[:,2]=-3;gt[:,3]=.7
+        loss,_=geometry_loss(out,dict(supervision_geometry=gt,supervision_interior=torch.ones(1,64,48),
+                                    pair_weight=torch.ones(1)),torch.zeros(1,dtype=torch.bool))
+        loss.backward()
+        self.assertTrue(torch.isfinite(loss))
+        self.assertIsNotNone(model.reference_projection[0].weight.grad)
+        self.assertTrue(torch.isfinite(model.reference_projection[0].weight.grad).all())
 
 
 if __name__=='__main__':
