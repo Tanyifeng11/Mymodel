@@ -87,7 +87,7 @@ def make_split(out, dataset):
 def frozen_manifest(out, weights):
     sources = ['models/local_pattern_field.py', 'models/pattern_geometry.py', 'garment_mask_utils.py']
     checkpoints = [Path('output/phase1_e5_tcpm_lite_e3/checkpoint-final/joint_model.pt')]
-    sources += ['models/IMAGGarment.py', 'models/bf_texture_module.py', 'models/tcpm_module.py',
+    sources += ['models/bf_texture_module.py', 'models/tcpm_lite.py',
                 'inference_IMAGGarment-1.py']
     paths = [Path(p) for p in sources] + [Path(weights)]
     paths += [p for p in checkpoints if p.exists()]
