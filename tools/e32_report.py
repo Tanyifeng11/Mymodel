@@ -84,7 +84,12 @@ def main():
             selected_A=read(out/'audits/geometry_visual_selection.json')['selected_ids']
             assert set(review['reviewed_geometry_ids'])==set(selected_A)
         write(out/'audits/visual_review.json',review)
-    reviewed=(out/'audits/visual_review.json').exists()
+    reviewed=False
+    if (out/'audits/visual_review.json').exists():
+        review=read(out/'audits/visual_review.json')
+        reviewed=set(review.get('reviewed_stage0_ids',[]))==set(read(out/'audits/stage0_visual_selection.json')['selected_ids'])
+        if stopped=='StageA':
+            reviewed=reviewed and set(review.get('reviewed_geometry_ids',[]))==set(read(out/'audits/geometry_visual_selection.json')['selected_ids'])
     finish_frozen(out)
     frozen=read(out/'frozen_check.json')
     protocols=list((out/'A_geometry').glob('seed*/training_protocol.json'))+list((out/'ablations').glob('*/seed*/training_protocol.json'))
