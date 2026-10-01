@@ -115,7 +115,8 @@ def train(args,seed):
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type='cuda',dtype=dtype):
             prediction=model(reference,batch['structure'])
-            loss,parts=geometry_loss(prediction,batch,zero)
+        # Heads return float32; BCE must run outside CUDA autocast, per PyTorch AMP contract.
+        loss,parts=geometry_loss(prediction,batch,zero)
         assert torch.isfinite(loss), (seed,step,parts)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)

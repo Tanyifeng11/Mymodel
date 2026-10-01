@@ -92,6 +92,22 @@ class E32Integrity(unittest.TestCase):
         self.assertIsNotNone(model.reference_projection[0].weight.grad)
         self.assertTrue(torch.isfinite(model.reference_projection[0].weight.grad).all())
 
+    @unittest.skipUnless(torch.cuda.is_available(),'CUDA AMP check requires a GPU')
+    def test_cuda_mixed_precision_loss_backward(self):
+        model=ExplicitPatternField().cuda()
+        dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        reference=torch.randn(1,16,12,395,device='cuda')
+        structure=torch.randn(1,7,128,96,device='cuda')
+        gt=torch.zeros(1,4,64,48,device='cuda');gt[:,0]=1;gt[:,2]=-3;gt[:,3]=.7
+        with torch.autocast(device_type='cuda',dtype=dtype):
+            out=model(reference,structure)
+        loss,_=geometry_loss(out,dict(supervision_geometry=gt,supervision_interior=torch.ones(1,64,48,device='cuda'),
+                                    pair_weight=torch.ones(1,device='cuda')),torch.zeros(1,dtype=torch.bool,device='cuda'))
+        loss.backward()
+        self.assertTrue(torch.isfinite(loss))
+        self.assertTrue(torch.isfinite(model.reference_projection[0].weight.grad).all())
+        print('E32 CUDA AMP passed:',torch.cuda.get_device_name(),dtype,flush=True)
+
 
 if __name__=='__main__':
     unittest.main()
