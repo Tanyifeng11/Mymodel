@@ -74,6 +74,24 @@ def dino_batch(pixels,model,device):
 def prepare(out,dataset,weights):
     assert read(out/'decision_summary.json')['pair_dependence_pass']
     split=read(out/'split_manifest.json')
+    audit_path=out/'audits/target_group_split_audit.json'
+    if not audit_path.exists():
+        known=read(out/'audits/stage0_input_hashes.json')
+        holdouts=split['dev']+split['confirmation_all']
+        heldout_hashes={known[r['id']]['target'] for r in holdouts}
+        target_hashes={};reserved=[]
+        for i,row in enumerate(split['train']):
+            digest=sha(dataset/row['target']);target_hashes[row['id']]=digest
+            if digest in heldout_hashes:reserved.append(row)
+            if (i+1)%4096==0:print('[E32 target split hash]',i+1,'/',len(split['train']),flush=True)
+        # 重复target归到保留组，不改dev选取、不删原始数据、不按confidence删样本。
+        reserved_ids={r['id'] for r in reserved}
+        split['train']=[r for r in split['train'] if r['id'] not in reserved_ids]
+        split['reserved_duplicate_target_rows']=reserved
+        write(out/'split_manifest.json',split)
+        write(audit_path,dict(training_target_hashes=target_hashes,heldout_hashes=sorted(heldout_hashes),
+              reserved_duplicate_target_ids=sorted(reserved_ids),train_after_group_guard=len(split['train']),
+              **{'pass':True},note='distinct target file SHA256 groups; references may share seen pattern; no visual-near-duplicate claims'))
     write(out/'A_geometry/preregistered_protocol.json',dict(steps=8000,batch=8,seeds=[42,43,44],
           lr=1e-4,weight_decay=1e-4,warmup=500,scheduler='cosine',reference_dropout=.1,
           loss_weights=dict(orientation=1.,period=1.,confidence=.1,smoothness=.05),
@@ -114,7 +132,8 @@ def prepare(out,dataset,weights):
           input_keys=['reference','structure'],supervision_keys=['supervision_geometry','supervision_interior','pair_weight'],
           input_structure_shape=[7,128,96],reference_shape=[16,12,395],target_rgb_is_input=False,
           pair_weight='clip(.25+.75*(.5 color histogram compatibility+.5 readable orientation compatibility),.25,1)',
-          all_training_samples_retained=True,rotation='true centered90 rotation in fixed384x512 canvas, crop/pad without stretch; same target sketch/mask',
+          all_eligible_training_samples_retained=True,heldout_duplicate_target_ids=[r['id'] for r in split.get('reserved_duplicate_target_rows',[])],
+          rotation='true centered90 rotation in fixed384x512 canvas, crop/pad without stretch; same target sketch/mask',
           note='GT-derived masks and geometry only in supervision keys; geometry confidence is shared E26 confidence'))
 
 
