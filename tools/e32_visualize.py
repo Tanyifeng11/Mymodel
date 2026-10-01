@@ -46,7 +46,8 @@ def geometry_plots(out,dataset):
         for x,arm in enumerate(('matched','color_near','zero','rot90')):
             artists.append(axes[1,x].imshow(orientation(f[arm+'_orientation'],interior),cmap='twilight',vmin=0,vmax=180))
             error=row['arms'][arm]['orientation_error']
-            axes[1,x].set_title('%s orientation; error %s'%(arm,'unreadable' if error is None else '%.1f deg'%error))
+            title='rot90 orientation (intervention)' if arm=='rot90' else '%s orientation; error %s'%(arm,'unreadable' if error is None else '%.1f deg'%error)
+            axes[1,x].set_title(title)
         fig.colorbar(artists[0],ax=[axes[0,3]]+list(axes[1]),fraction=.025,label='Axial orientation (degrees)')
         period=axes[2,0].imshow(np.ma.array(f['gt_geometry'][2]/np.log(2),mask=~readable),vmin=-6,vmax=-2,cmap='viridis')
         axes[2,0].set_title('GT log2 frequency')

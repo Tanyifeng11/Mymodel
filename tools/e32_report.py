@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.e32_common import OUT,DATASET,read,write,sha,finish_frozen,git_commit
+from tools.e32_common import OUT,DATASET,read,write,sha,finish_frozen,git_commit,bootstrap
 
 
 def finite(value):
@@ -38,6 +38,7 @@ def check_stage0(out):
 
 def check_geometry(out):
     checks={}
+    coverage={}
     from tools.e32_a_geometry_train import VARIANTS,variant_folder
     runs=[('full',seed) for seed in (42,43,44)]+[(variant,42) for variant in VARIANTS[1:]]
     for variant,seed in runs:
@@ -50,12 +51,22 @@ def check_geometry(out):
             rows=read(folder/name/'rows.json')
             checks[key+'/'+name+'/count']=len(rows)=={'dev':256,'causal_test':8,'independent_confirmation':10}[name]
             checks[key+'/'+name+'/finite']=finite(rows) and finite(read(folder/name/'summary.json'))
+            readable=[row for row in rows if row['arms']['matched']['readable_cells']>0]
+            checks[key+'/'+name+'/shared_readability']=all(len({v['readable_cells'] for v in row['arms'].values()})==1 for row in rows)
+            # 统一到同一GT可读案例集合；原评测的不可读分支用interior分母，不能混为全前景覆盖率。
+            coverage[key+'/'+name]=dict(total_cases=len(rows),readable_cases=len(readable),
+                arms={arm:bootstrap([row['arms'][arm]['valid_geometry_coverage'] for row in readable])
+                      for arm in ('matched','color_near','random','zero','rot90')})
         checks[key+'/fields_count']=len(list((folder/'fields').glob('*/predictions.npz')))==256
         for path in (folder/'fields').glob('*/predictions.npz'):
             with np.load(path) as d:
                 checks[key+'/field/'+path.parent.name]=all(np.isfinite(d[k]).all() for k in d.files)
                 for arm in ('matched','color_near','random','zero','rot90'):
                     checks[key+'/confidence/'+path.parent.name+'/'+arm]=bool((d[arm+'_confidence']>=0).all() and (d[arm+'_confidence']<=1).all())
+    write(out/'audits/readable_geometry_confidence_coverage.json',dict(
+        definition='case mean of fraction of GT-readable interior cells with both predicted geometry confidences>=.25; only GT-readable cases; identical cohort for all arms',
+        original_metric='original summary valid_geometry_coverage includes unreadable cases with an interior denominator; retained unchanged, diagnostic only',
+        changes_to_training_or_gate=False,runs=coverage))
     return checks
 
 
