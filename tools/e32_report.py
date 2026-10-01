@@ -119,7 +119,7 @@ def main():
 
 def args_job_ids(out):
     ids=[]
-    for prefix in ('stage0_','A_','report_'):
+    for prefix in ('stage0_','A_','report_','amp_'):
         for p in out.glob(prefix+'*.log'):
             sid=p.stem[len(prefix):]
             if sid.isdigit():ids.append(sid)
