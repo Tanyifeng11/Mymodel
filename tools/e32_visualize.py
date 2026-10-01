@@ -59,5 +59,7 @@ def geometry_plots(out,dataset):
         axes[2,3].imshow(np.ma.array(f['zero_confidence'][:2].mean(0),mask=~foreground),vmin=0,vmax=1,cmap='magma')
         axes[2,3].set_title('Zero geometry confidence')
         fig.colorbar(conf,ax=list(axes[2,2:]),fraction=.025,label='Confidence')
-        fig.suptitle('E32 seed42 case %s | rot90 response error %s | structure response ratio %s'%(sid,row['rot90_response_error'],row['structural_edge_response_ratio']))
+        response='unreadable' if row['rot90_response_error'] is None else '%.1f deg'%row['rot90_response_error']
+        ratio='unavailable' if row['structural_edge_response_ratio'] is None else '%.3f'%row['structural_edge_response_ratio']
+        fig.suptitle('E32 seed42 case %s | rot90 response error %s | structure response ratio %s'%(sid,response,ratio))
         fig.savefig(destination/(sid+'.png'),dpi=120);plt.close(fig)
