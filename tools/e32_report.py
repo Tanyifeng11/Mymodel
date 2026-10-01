@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.e32_common import OUT,read,write,sha,finish_frozen,git_commit
+from tools.e32_common import OUT,DATASET,read,write,sha,finish_frozen,git_commit
 
 
 def finite(value):
@@ -38,18 +38,24 @@ def check_stage0(out):
 
 def check_geometry(out):
     checks={}
-    for seed in (42,43,44):
-        folder=out/'A_geometry'/('seed%d'%seed)
-        checks['seed%d/steps'%seed]=read(folder/'training_protocol.json')['steps']==8000
+    from tools.e32_a_geometry_train import VARIANTS,variant_folder
+    runs=[('full',seed) for seed in (42,43,44)]+[(variant,42) for variant in VARIANTS[1:]]
+    for variant,seed in runs:
+        folder=variant_folder(out,seed,variant)
+        key='%s/seed%d'%(variant,seed)
+        checks[key+'/steps']=read(folder/'training_protocol.json')['steps']==8000
+        history=read(folder/'training_history.json')
+        checks[key+'/history']=len(history)==80 and history[-1]['step']==8000 and finite(history)
         for name in ('dev','causal_test','independent_confirmation'):
             rows=read(folder/name/'rows.json')
-            checks['seed%d/%s/count'%(seed,name)]=len(rows)=={'dev':256,'causal_test':8,'independent_confirmation':10}[name]
-            checks['seed%d/%s/finite'%(seed,name)]=finite(rows)
+            checks[key+'/'+name+'/count']=len(rows)=={'dev':256,'causal_test':8,'independent_confirmation':10}[name]
+            checks[key+'/'+name+'/finite']=finite(rows) and finite(read(folder/name/'summary.json'))
+        checks[key+'/fields_count']=len(list((folder/'fields').glob('*/predictions.npz')))==256
         for path in (folder/'fields').glob('*/predictions.npz'):
             with np.load(path) as d:
-                checks['seed%d/field/%s'%(seed,path.parent.name)]=all(np.isfinite(d[k]).all() for k in d.files)
+                checks[key+'/field/'+path.parent.name]=all(np.isfinite(d[k]).all() for k in d.files)
                 for arm in ('matched','color_near','random','zero','rot90'):
-                    checks['seed%d/confidence/%s/%s'%(seed,path.parent.name,arm)]=bool((d[arm+'_confidence']>=0).all() and (d[arm+'_confidence']<=1).all())
+                    checks[key+'/confidence/'+path.parent.name+'/'+arm]=bool((d[arm+'_confidence']>=0).all() and (d[arm+'_confidence']<=1).all())
     return checks
 
 
@@ -68,20 +74,31 @@ def main():
     elif decision['geometry_field_pass'] is False:
         stopped='StageA'
         checks.update(check_geometry(out))
+        from tools.e32_visualize import geometry_plots
+        geometry_plots(out,DATASET)
     if args.review_json:
         review=json.loads(args.review_json)
         selected=read(out/'audits/stage0_visual_selection.json')['selected_ids']
         assert set(review['reviewed_stage0_ids'])==set(selected)
+        if stopped=='StageA':
+            selected_A=read(out/'audits/geometry_visual_selection.json')['selected_ids']
+            assert set(review['reviewed_geometry_ids'])==set(selected_A)
         write(out/'audits/visual_review.json',review)
     reviewed=(out/'audits/visual_review.json').exists()
     finish_frozen(out)
+    frozen=read(out/'frozen_check.json')
+    protocols=list((out/'A_geometry').glob('seed*/training_protocol.json'))+list((out/'ablations').glob('*/seed*/training_protocol.json'))
+    frozen['training_steps']=sum(read(path)['steps'] for path in protocols)
+    frozen['E5_training_steps']=0
+    frozen['note']='DINO/E26 frozen; E5/VAE/U-Net/BF/TCPM not loaded by Stage0/StageA; training_steps counts completed field runs'
+    write(out/'frozen_check.json',frozen)
     write(out/'audits/numeric_integrity.json',dict(checks=checks,**{'pass':all(checks.values())}))
     subprocess.run(['sacct','-j',args_job_ids(out),'--format=JobID,State,ExitCode,Elapsed','-n'],
                    stdout=(out/'job_status.log').open('w'),check=True)
     completion=dict(numeric_artifacts_complete=all(checks.values()),frozen_inputs_pass=read(out/'frozen_check.json')['pass'],
         stage0_pass=decision['pair_dependence_pass'],stage_A_pass=decision['geometry_field_pass'],
         stopped_at=stopped,visual_review_completed=reviewed,
-        experiment_complete=bool(stopped and all(checks.values()) and reviewed),report_git_commit=git_commit(),
+        experiment_complete=bool(stopped and all(checks.values()) and reviewed and read(out/'frozen_check.json')['pass']),report_git_commit=git_commit(),
         note='completed stopped experiment is not a scientific Gate pass; downstream stages only allowed after prior Gate pass')
     write(out/'completion_check.json',completion)
     paths=[p for p in out.rglob('*') if p.is_file() and p.suffix in ('.json','.png','.log','.err')
