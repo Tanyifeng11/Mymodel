@@ -6,6 +6,8 @@ from torch.nn.functional import normalize
 from models.e33r_rotation_control import SketchPrior,RotationControl,compose
 from tools.e33r_common import cf_support
 from tools.e33r_r180_integrity import measure
+from tools.e33r_losses import group_loss
+from tools.e33r_evaluate import ratio_bootstrap,case_metrics,summarize
 
 class RotationTests(unittest.TestCase):
     def test_composition_and_gradient(self):
@@ -34,5 +36,27 @@ class RotationTests(unittest.TestCase):
         rgb=np.repeat(stripe[...,None],3,axis=2)
         for k in (1,2):
             for seed in (None,42,43):self.assertTrue(measure(rgb,k,seed)['valid'])
+    def test_complete_group_targets_and_paired_statistics(self):
+        gt=torch.zeros(2,4,3,4);gt[:,0]=1;gt[:,3]=1
+        support=torch.ones(2,3,4,dtype=torch.bool)
+        q=gt[:,:2,None].transpose(1,2).expand(-1,7,-1,-1,-1).clone()
+        q[:,1]=-q[:,1];q[:,4]=-q[:,4]
+        logits=torch.full((2,7,1,3,4),50.);logits[:,6]=-50
+        pred=dict(orientation=q,q=q,confidence_logits=logits)
+        loss,parts=group_loss(pred,gt,support)
+        self.assertLess(float(loss),1e-6)
+        pred['orientation'][:,:,:,0,0]=0;support[:,0,0]=False
+        self.assertLess(float(group_loss(pred,gt,support)[0]),1e-6)
+        ratio=ratio_bootstrap([1.,3.],[1.,1.])
+        self.assertEqual(ratio['mean'],2.)
+        # 严格按case聚合：grid、branch和noise均不扩大n。
+        p=np.zeros((11,2,3,4));p[:,0]=1;p[1]=-p[1];p[4]=-p[4];p[7]=-p[7]
+        qp=p.copy();qp[10]=p[0]
+        p[10,0]=np.cos(np.deg2rad(2));p[10,1]=np.sin(np.deg2rad(2))
+        data=dict(orientation=p,q=qp,frozen_prior=p[0],confidence_logits=np.zeros((11,1,3,4)))
+        row=case_metrics(dict(id='test',strict=True),data,gt[0].numpy(),support[0].numpy(),{})
+        summary=summarize([row])
+        self.assertEqual(summary['clean_r90_success']['n'],1)
+        self.assertTrue(summary['gate_pass'])
 
 if __name__=='__main__':unittest.main()

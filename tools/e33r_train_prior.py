@@ -64,6 +64,7 @@ def main():
          loss='confidence-weighted orientation cosine only',reference_input=False,period_loss=False))
     update_decision(prior_pass=passed,prior_orientation_error_deg=error['mean'],
                     next_route='sanity' if passed else 'prior_accuracy_failed_no_control_training')
+    frozen=read(OUT/'frozen_check.json');frozen['training_steps']=6000;write(OUT/'frozen_check.json',frozen)
     finish_frozen(OUT);print('[E33R P0 Gate]',checks,error,flush=True)
 
 if __name__=='__main__':main()
