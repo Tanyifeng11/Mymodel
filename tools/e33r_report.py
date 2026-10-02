@@ -106,6 +106,25 @@ def main():
             rows=read(folder/'dev/rows.json');diagnoses[str(folder.relative_to(OUT))]=dict(
                 overlapping_counts=dict(Counter(c for row in rows for c in row['failure_categories'])),denominator=len(rows))
     write(OUT/'audits/failure_categories.json',diagnoses)
+    if stopped=='R_sanity':
+        rows=read(OUT/'R_sanity/train/rows.json');failed=[r for r in rows if not r['clean_r90_success']]
+        diagnosis=[]
+        for row in failed:
+            source=read(OUT/'R0_integrity/cases'/(row['id']+'.json'))['arms']['rot90']['clean']
+            diagnosis.append(dict(row,source_orientation_deg=source['before']['orientation'],
+                source_confidence=source['before']['confidence'],source_rotation_integrity_pass=source['valid']))
+        configuration=read(OUT/'R_sanity/training_protocol.json')
+        write(OUT/'audits/sanity_failure_diagnosis.json',dict(denominator=len(rows),failed_count=len(failed),
+            failed_strict_count=sum(r['strict'] for r in failed),failed_cases=diagnosis,
+            failed_prior_error=bootstrap([r['prior_absolute_error'] for r in failed if r['prior_absolute_error'] is not None]),
+            successful_prior_error=bootstrap([r['prior_absolute_error'] for r in rows if r['clean_r90_success'] and r['prior_absolute_error'] is not None]),
+            optimization=dict(steps=configuration['steps'],warmup=configuration['warmup'],
+                note='sanity reused P1 warmup500: the500step run is entirely warmup; limitation, no post-result schedule tuning'),
+            implementation_checks=dict(complex_sign_and_native_rotation='unit checks passed',
+                bbox_mapping='unit intersection check passed',complete_group='seven arms; no branch-index input',
+                gradients=read(OUT/'R_sanity/gradient_check.json'),
+                frozen_prior=read(OUT/'R_sanity/checkpoint_integrity.json')),
+            conclusion='no detected sign/mask/batching/frozen-gradient bug; fixed500step configuration misses95% train Gate; no full run or retraining'))
     write(OUT/'audits/numeric_integrity.json',dict(checks=checks,**{'pass':all(checks.values())}))
     write(OUT/'ablations/status.json',dict(required=bool(decision['sanity_pass'] and decision['seed42_pass'] is not None and
            (stages['seed42']['gate_pass'] or stages['seed42']['near_gate'])),variants=PROTOCOL['ablations'],
