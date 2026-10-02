@@ -1,0 +1,48 @@
+"""E33 训练前固定协议；不得用 held-out 指标调整常数。"""
+from pathlib import Path
+
+OUT = Path('output_eval/e33_counterfactual_reference_20261002')
+E32 = Path('output_eval/e32_target_supervised_pattern_field_20261001')
+GROUPS = ('train', 'dev', 'causal_test', 'independent_confirmation')
+PROTOCOL = dict(
+    experiment='E33', version=1, split='exact E32 final split, including duplicate-target guard',
+    controlled_scope='selected patch footprint intersect GT-readable target cells; full field diagnostic only',
+    target_rgb_encoder_input=False, external_images=False, manual_annotations=False,
+    candidate_sizes=[64,80,96], stride=16, foreground_purity=.98, silhouette_distance_px=5,
+    strict=dict(confidence=.50, orientation_consistency=.90, period_consistency=.90),
+    relaxed=dict(confidence=.25, orientation_consistency=.80, period_consistency=.80),
+    relaxation='once only if strict TRAIN availability <50%; retain purity/distance/structure rules; no dev-based tuning',
+    structure_occupancy_max=.10, structural_edge_density_max=.10,
+    consistency='norm(mean axial unit vectors); exp(-std(log frequency)) on cached E26 local field, confidence-weighted',
+    selection='maximum fixed Q among legal candidates, native-pixel E26 confidence also required; no integrity-based reselection',
+    score='0.30 ori+0.25 period+0.20 hom+0.15 interior+0.10 selfsim-0.20 struct',
+    hom='exp(-std(local RGB mean colors)/0.25)', selfsim='max normalized gray autocorrelation at lags4..24',
+    structure='strong sketch long lines + junction/foreground-hole penalties + foreground distance ridge near sketch edges; automatic proxy',
+    source_patch='square native pixel crop; no anisotropic reference resize',
+    scales=[1.25,.80], scale_definition='centered continuous affine zoom; reflection outside with explicit original-pixel valid support',
+    log_units='natural log in model; differences converted to log2 in metrics; analytic delta=-log(s)',
+    integrity=dict(rot_orientation_error_deg=15, rot_period_error_log2=.10,
+                   scale_orientation_error_deg=15, scale_period_error_log2=.10,
+                   estimator_confidence_min=.25, rot_valid_rate=.90, scale_valid_rate=.85,
+                   noisy_trials=2, minimum_train_probes=32, minimum_dev_probes=8),
+    integrity_denominator='all selected available cases, no failed-intervention removal from Gate denominator; scale rates separately',
+    augmentation=dict(jpeg_quality=[90,98], brightness=[.97,1.03], saturation=[.97,1.03],
+                      blur_sigma=[0,.25], translation_px=[-.25,.25],
+                      distribution='same distribution and paired nuisance parameters for all nonzero intervention arms'),
+    p0=dict(seed=42,steps=8000,batch=8,lr=1e-4,weight_decay=1e-4,warmup=500),
+    p1=dict(seeds=[42,43,44],steps=8000,effective_target_batch=16,microbatch=2,
+            lr=1e-4,weight_decay=1e-4,warmup=500,weights=dict(period=1,zero=.1,contrast=.1,confidence=.1),
+            rot_margin_deg=75,scale_margin_log2=.20,sketch_jitter='fixed +-1px translation at128x96; mask/coordinates/distance recomputed',
+            sensitivity_distance='orientation angle /90 + abs(log-frequency delta)/log(2); confidence-independent',
+            zero_ratio='mean(abs(sin(delta angle)),abs(1-cos(delta angle)),abs(delta logfreq)) zero/identity <=.10',
+            gate='>=2/3 dev seeds: rot>=.90, both scale errors<=.10log2, zero_ratio<=.10, mean Sref/mean Ssketch>=2'),
+    p2=dict(steps=8000,mixing=[[2000,.75],[3000,.50],[3000,.25]],
+            rank_orientation_margin_deg=5,rank_period_margin_log2=.08,
+            weights=dict(rank=.1,controlled=1,retention=.1),
+            retention_probe='fixed hash-selected train controlled32; P1 frozen teacher',
+            collapse_retry='once if controlled rot<.70: double retention weight .1->.2, rerun from P1; preserve failed run'),
+    optional_phase_shift=False,
+    limitations=['local controlled intervention is imposed analytic field supervision, not real counterfactual RGB truth',
+                 'candidate consistency uses coarse interpolated E26 proxy; not independent local correspondence ground truth',
+                 'structure exclusion can remove genuine strong periodic texture lines',
+                 'controlled success does not by itself identify why real pairing fails'])
