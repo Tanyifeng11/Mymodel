@@ -70,7 +70,9 @@ def case_metrics(row,pred,gt,support,jitter_meta):
 @torch.no_grad()
 def evaluate_records(model,records,dino,folder,variant='full',frozen_prior=None,save_fields=False,diagnostic_only=False):
     folder.mkdir(parents=True,exist_ok=True);model.eval();frozen_prior=frozen_prior or model.prior
-    loader=DataLoader(GroupDataset(records),batch_size=1,shuffle=False,num_workers=2,pin_memory=True)
+    # 连续评测会在CUDA/OpenCV线程已启动后再次fork，可能在首个case阻塞。
+    # 评测使用主进程读取；两次nuisance仍由固定case seed确定，指标口径不变。
+    loader=DataLoader(GroupDataset(records),batch_size=1,shuffle=False,num_workers=0,pin_memory=True)
     rows=[]
     for index,(row,case) in enumerate(zip(records,loader),1):
         reference=encode_reference(case['pixels'],case['aux'],dino,variant)
