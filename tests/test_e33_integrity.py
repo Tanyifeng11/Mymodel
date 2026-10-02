@@ -4,6 +4,8 @@ import numpy as np
 from PIL import Image
 from data.e33_interventions import transform,audit_intervention,central_valid_box
 from data.e33_self_reference import select_reference
+import torch
+from models.e33_counterfactual_field import SketchPrior,CounterfactualField
 
 
 def stripe(n=96):
@@ -13,6 +15,18 @@ def stripe(n=96):
 
 
 class InterventionIntegrity(unittest.TestCase):
+    def test_prior_stays_frozen_and_zero_initial_residual_preserves_field(self):
+        torch.set_num_threads(2)
+        prior=SketchPrior();model=CounterfactualField(prior).train()
+        self.assertFalse(prior.training)
+        structure=torch.rand(1,7,128,96);reference=torch.rand(1,16,12,395)
+        pred=model(reference,structure)
+        self.assertTrue(torch.allclose(pred['orientation'],pred['prior_orientation']))
+        self.assertTrue(torch.allclose(pred['log_frequency'],pred['prior_log_frequency']))
+        (pred['orientation'].sum()+pred['log_frequency'].sum()+pred['confidence'].sum()).backward()
+        self.assertTrue(all(p.grad is None and not p.requires_grad for p in prior.parameters()))
+        self.assertTrue(all(torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None))
+
     def test_real_frequency_scale_sign_and_rotation(self):
         rgb=stripe()
         for arm,sign in [('rot90',0),('scale_up',-1),('scale_down',1)]:
