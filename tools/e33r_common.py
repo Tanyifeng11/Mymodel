@@ -1,6 +1,7 @@
 """E33-R固定协议、冻结候选与局部支持；不重新选择patch。"""
 import hashlib
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import numpy as np
 from tools.e32_common import read,write,sha,bootstrap,git_commit,DATASET,WEIGHTS,finish_frozen,frozen_manifest
@@ -83,7 +84,38 @@ def prepare_manifest():
          seed42_pass=None,seed43_pass=None,seed44_pass=None,controlled_rotation_causality_pass=None,next_route='R180_integrity'))
     return chosen
 
+@contextmanager
+def result_lock():
+    # 服务器上的三seed并行作业共用决策文件。
+    import fcntl
+    with (OUT/'.result.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        try:yield
+        finally:fcntl.flock(lock,fcntl.LOCK_UN)
+
 def update_decision(**values):
-    v=read(OUT/'decision_summary.json');v.update(values);write(OUT/'decision_summary.json',v)
+    with result_lock():
+        v=read(OUT/'decision_summary.json');v.update(values)
+        results=[v['seed%d_pass'%s] for s in PROTOCOL['seeds']]
+        if all(r is not None for r in results):
+            passed=sum(bool(r) for r in results)>=2
+            v.update(controlled_rotation_causality_pass=passed,
+                next_route='E33_RC_real_rotation_curriculum' if passed else 'rotation_control_architecture_bottleneck')
+        write(OUT/'decision_summary.json',v)
+
+def sanity_continuation():
+    gate=read(OUT/'R_sanity/gate.json')
+    if gate['pass']:return dict(allowed=True,overridden=False)
+    path=OUT/'sanity_override.json'
+    if not path.exists():return dict(allowed=False,overridden=False)
+    override=read(path)
+    failed=[k for k,v in gate['checks'].items() if not v]
+    assert failed==['clean_r90_success'], '授权仅覆盖sanity R90停止条件'
+    assert override['authorizing_request']=='忽视R90 成功率 **93.36% < 95%**  的停止条件继续往后做'
+    assert override['sanity_gate_sha256']==sha(OUT/'R_sanity/gate.json')
+    assert override['sanity_train_summary_sha256']==sha(OUT/'R_sanity/train/summary.json')
+    assert override['prior_checkpoint_sha256']==read(OUT/'P0_prior/summary.json')['checkpoint_sha256']
+    assert read(OUT/'decision_summary.json')['prior_pass']
+    return dict(allowed=True,overridden=True,override_sha256=sha(path),original_sanity_pass=False)
 
 def audit_seed(sid,j=0):return (int(hashlib.sha256(('E33/audit/'+sid).encode()).hexdigest()[:8],16)+j)%2**32

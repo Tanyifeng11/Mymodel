@@ -43,6 +43,8 @@ def main():
     prior=read(OUT/'P0_prior/summary.json');checks['prior_checkpoint']=sha(OUT/'P0_prior/checkpoint_final.pt')==prior['checkpoint_sha256']
     checks['prior_dev_ids']={r['id'] for r in read(OUT/'P0_prior/dev_rows.json')}=={r['id'] for r in split['dev']}
     stages={};visual={};required=[];total_steps=6000
+    continuation=sanity_continuation() if decision['prior_pass'] else dict(allowed=False,overridden=False)
+    checks['sanity_continuation_valid']=not decision['prior_pass'] or continuation['allowed'] or not (OUT/'sanity_override.json').exists()
     if not decision['prior_pass']:
         stopped='P0_prior';required=['R180_integrity','P0_prior'];route='prior_accuracy_failed_no_control_training'
         if not (OUT/'P0_prior/visual/selection.json').exists():prior_panels()
@@ -53,12 +55,13 @@ def main():
         folder=OUT/'R_sanity';stages['sanity']=read(folder/'dev/summary.json')
         if not (folder/'visual/selection.json').exists():create_panels(folder,read(OUT/'sanity_manifest.json')['dev'])
         visual['R_sanity']=read(folder/'visual/selection.json')['unique_ids']
-        if not sanity['pass']:stopped='R_sanity';route='implementation_or_parameterization_debug'
+        if not continuation['allowed']:stopped='R_sanity';route='implementation_or_parameterization_debug'
         else:
             stopped=None;results=[]
             for seed in PROTOCOL['seeds']:
                 folder=OUT/'P1_controlled'/('seed%d'%seed);name='seed%d'%seed
                 summary=read(folder/'dev/summary.json');stages[name]=summary;results.append(summary['gate_pass']);total_steps+=8000
+                checks[name+'/phase_complete']=read(folder/'phase_complete.json')['checkpoint_sha256']==sha(folder/'checkpoint_final.pt')
                 checks[name+'/dev_ids']={r['id'] for r in read(folder/'dev/rows.json')}=={r['id'] for r in chosen['dev']}
                 checks[name+'/train_strict_ids']={r['id'] for r in read(folder/'train_strict/rows.json')}=={r['id'] for r in chosen['train'] if r['strict']}
                 checks[name+'/shared_prior']=read(folder/'checkpoint_integrity.json')['prior_sha256']==prior['checkpoint_sha256']
@@ -73,6 +76,10 @@ def main():
                 folder=OUT/'ablations'/variant
                 if trigger:
                     stages[variant]=read(folder/'dev/summary.json');total_steps+=8000
+                    checks[variant+'/phase_complete']=read(folder/'phase_complete.json')['checkpoint_sha256']==sha(folder/'checkpoint_final.pt')
+                    for group,expected in [('dev',chosen['dev']),('train_strict',[r for r in chosen['train'] if r['strict']]),
+                            ('causal_test',chosen['causal_test']),('independent_confirmation',chosen['independent_confirmation'])]:
+                        checks[variant+'/'+group+'_ids']={r['id'] for r in read(folder/group/'rows.json')}=={r['id'] for r in expected}
                     checks[variant+'/shared_prior']=read(folder/'checkpoint_integrity.json')['prior_sha256']==prior['checkpoint_sha256']
                     if not (folder/'visual/selection.json').exists():create_panels(folder,chosen['dev'])
                     visual['ablations/'+variant]=read(folder/'visual/selection.json')['unique_ids']
@@ -86,7 +93,7 @@ def main():
         decision[output]=sum(values)/3 if len(values)==3 and all(v is not None for v in values) else None
     decision['strict_subset_rot90_success']=sum(stages['seed%d'%s]['strict']['clean_r90_success']['mean'] for s in PROTOCOL['seeds'])/3 if stopped is None else None
     decision['metric_aggregation']='arithmetic mean of full-seed means; Gate is still at least2of3 complete per-seed Gates'
-    decision['next_route']=route;write(OUT/'decision_summary.json',decision)
+    decision['next_route']=route;decision['sanity_gate_overridden']=continuation['overridden'];write(OUT/'decision_summary.json',decision)
     expected_visual={k:v for k,v in visual.items()}
     if args.review_json:
         review=json.loads(args.review_json);assert review['reviewed_ids']==expected_visual
@@ -126,15 +133,16 @@ def main():
                 frozen_prior=read(OUT/'R_sanity/checkpoint_integrity.json')),
             conclusion='no detected sign/mask/batching/frozen-gradient bug; fixed500step configuration misses95% train Gate; no full run or retraining'))
     write(OUT/'audits/numeric_integrity.json',dict(checks=checks,**{'pass':all(checks.values())}))
-    write(OUT/'ablations/status.json',dict(required=bool(decision['sanity_pass'] and decision['seed42_pass'] is not None and
+    write(OUT/'ablations/status.json',dict(required=bool(continuation['allowed'] and decision['seed42_pass'] is not None and
            (stages['seed42']['gate_pass'] or stages['seed42']['near_gate'])),variants=PROTOCOL['ablations'],
         completed=[v for v in PROTOCOL['ablations'] if v in stages],
-        reason='fixed seed42 Gate/near-Gate trigger; no trigger after prior/sanity failure'))
+        reason='fixed seed42 Gate/near-Gate trigger; user override applies only to sanity R90 stop'))
     frozen=read(OUT/'frozen_check.json');frozen['training_steps']=total_steps;write(OUT/'frozen_check.json',frozen);finish_frozen(OUT)
     completion=dict(numeric_artifacts_complete=all(checks.values()),frozen_inputs_pass=True,visual_review_completed=reviewed,
         training_steps=total_steps,E5_training_steps=0,stopped_at=stopped,required_phases=required,
         experiment_complete=bool(all(checks.values()) and reviewed),report_git_commit=git_commit(),
         controlled_rotation_causality_pass=decision['controlled_rotation_causality_pass'],
+        sanity_pass=decision['sanity_pass'],sanity_continuation=continuation,
         note='field-level controlled rotation only; prior/sanity stop does not test full8000step capability; no real training or generation')
     write(OUT/'completion_check.json',completion)
     ids=','.join(sorted({p.stem.rsplit('_',1)[-1] for p in OUT.glob('*.log') if p.stem.rsplit('_',1)[-1].isdigit()}))

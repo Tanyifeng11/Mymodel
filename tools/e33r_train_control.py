@@ -24,7 +24,7 @@ def main():
     args=parser.parse_args();decision=read(OUT/'decision_summary.json')
     assert decision['prior_pass']
     if args.phase=='sanity':assert args.seed==42 and args.variant=='full'
-    else:assert decision['sanity_pass']
+    else:assert sanity_continuation()['allowed']
     if args.phase=='ablation':
         assert args.seed==42 and args.variant!='full'
         full=read(OUT/'P1_controlled/seed42/dev/summary.json');assert full['gate_pass'] or full['near_gate']
@@ -39,7 +39,8 @@ def main():
     dino,dino_sha=load_dino('cuda',WEIGHTS) if args.variant!='G_geometry_only' else (None,sha(WEIGHTS))
     optim=torch.optim.AdamW([p for p in model.parameters() if p.requires_grad],lr=1e-4,weight_decay=1e-4)
     loader=DataLoader(GroupDataset(records['train'],training=True),batch_size=2,shuffle=True,
-        num_workers=2,pin_memory=True,drop_last=True,generator=torch.Generator().manual_seed(args.seed))
+        num_workers=2,multiprocessing_context='spawn',pin_memory=True,drop_last=True,
+        generator=torch.Generator().manual_seed(args.seed))
     steps=500 if args.phase=='sanity' else 8000;warmup=500
     r180=read(OUT/'R0_integrity/summary.json')['R180_training_enabled']
     configuration=dict(PROTOCOL['p1'])
@@ -48,7 +49,8 @@ def main():
         R180_loss_enabled=r180 and args.variant!='D_no_r180',prior_frozen=model.freeze_prior,
         reference_gradient=False,group_arms=['R0','R90','R180','N0','N90','N180','zero'],
         field_and_q='clean arms',nuisance='online resampled paired noisy arms consistency',
-        train_cases=len(records['train']),device=torch.cuda.get_device_name())
+        train_cases=len(records['train']),device=torch.cuda.get_device_name(),
+        sanity_continuation=sanity_continuation() if args.phase!='sanity' else None)
     write(folder/'training_protocol.json',configuration)
     iterator=iter(loader);history=[];start=time.monotonic();gradient_check={}
     for step in range(1,steps+1):
@@ -84,8 +86,10 @@ def main():
             history.append(dict(step=step,elapsed_seconds=time.monotonic()-start,**metrics));write(folder/'history.json',history)
             print('[E33R control]',args.phase,args.variant,args.seed,history[-1],flush=True)
     path=folder/'checkpoint_final.pt'
+    temporary=folder/'checkpoint_final.tmp'
     torch.save(dict(model=model.state_dict(),steps=steps,seed=args.seed,variant=args.variant,prior_sha256=prior_sha,
-                    git_commit=git_commit()),path)
+                    git_commit=git_commit()),temporary)
+    temporary.replace(path)
     assert sha(OUT/'P0_prior/checkpoint_final.pt')==prior_sha
     baseline,_=load_prior();baseline.requires_grad_(False)
     write(folder/'checkpoint_integrity.json',dict(sha256=sha(path),prior_sha256=prior_sha,
@@ -113,13 +117,10 @@ def main():
             evaluate_records(model,records[group],dino,folder/group,args.variant,baseline,True,True)
         if args.phase=='full':
             update_decision(**{'seed%d_pass'%args.seed:dev['gate_pass']})
-            decision=read(OUT/'decision_summary.json');results=[decision['seed%d_pass'%s] for s in PROTOCOL['seeds']]
-            if all(v is not None for v in results):
-                passed=sum(bool(v) for v in results)>=2
-                update_decision(controlled_rotation_causality_pass=passed,
-                    next_route='E33_RC_real_rotation_curriculum' if passed else 'rotation_control_architecture_bottleneck')
         print('[E33R formal Gate]',args.variant,args.seed,dev['checks'],flush=True)
-    frozen=read(OUT/'frozen_check.json');frozen['training_steps']=sum(torch.load(p,map_location='cpu')['steps'] for p in OUT.rglob('checkpoint_final.pt'))
-    write(OUT/'frozen_check.json',frozen);finish_frozen(OUT)
+    write(folder/'phase_complete.json',dict(steps=steps,checkpoint_sha256=sha(path),phase=args.phase,seed=args.seed,variant=args.variant))
+    with result_lock():
+        frozen=read(OUT/'frozen_check.json');frozen['training_steps']=sum(torch.load(p,map_location='cpu')['steps'] for p in OUT.rglob('checkpoint_final.pt'))
+        write(OUT/'frozen_check.json',frozen);finish_frozen(OUT)
 
 if __name__=='__main__':main()
