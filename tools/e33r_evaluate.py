@@ -57,7 +57,8 @@ def case_metrics(row,pred,gt,support,jitter_meta):
           r0_identity_success=success(errors['r0_response_error']),noisy_r90_both_success=all(success(v) for v in noisy))
     categories=[]
     if errors['s_ref'] is not None and errors['s_ref']<15:categories+=['R1_no_reference_shortcut','R2_prior_domination']
-    if not errors['clean_r90_success']:categories.append('R3_R90_under_or_wrong_axis_response')
+    if not errors['clean_r90_success']:
+        categories.append('R3_R90_under_response' if errors['s_ref'] is not None and errors['s_ref']<75 else 'R4_R90_wrong_axis_response')
     if not errors['r180_identity_success']:categories.append('R5_R180_false_response')
     if errors['d_zero'] is not None and errors['d_zero']>.1*errors['d_valid']:categories.append('R6_zero_nonzero_control')
     if not errors['noisy_r90_both_success']:categories.append('R7_nuisance_sensitive')
@@ -67,7 +68,7 @@ def case_metrics(row,pred,gt,support,jitter_meta):
           noisy_r90_errors=noisy,jitter=jitter_meta,failure_categories=categories,**errors)
 
 @torch.no_grad()
-def evaluate_records(model,records,dino,folder,variant='full',frozen_prior=None,save_fields=False):
+def evaluate_records(model,records,dino,folder,variant='full',frozen_prior=None,save_fields=False,diagnostic_only=False):
     folder.mkdir(parents=True,exist_ok=True);model.eval();frozen_prior=frozen_prior or model.prior
     loader=DataLoader(GroupDataset(records),batch_size=1,shuffle=False,num_workers=2,pin_memory=True)
     rows=[]
@@ -94,5 +95,7 @@ def evaluate_records(model,records,dino,folder,variant='full',frozen_prior=None,
                  source_geometry=case['aux'][0,:3,:,:,:3].numpy())
         if index%128==0:print('[E33R eval]',folder,index,'/',len(records),flush=True)
     write(folder/'rows.json',rows);summary=summarize(rows)
-    summary['strict']=summarize([r for r in rows if r['strict']]);write(folder/'summary.json',summary)
+    summary['strict']=summarize([r for r in rows if r['strict']])
+    if diagnostic_only:summary=dict(denominator=len(rows),diagnostic_only=True,raw_case_table='rows.json',used_for_gate=False)
+    write(folder/'summary.json',summary)
     return rows,summary

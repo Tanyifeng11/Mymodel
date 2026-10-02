@@ -110,7 +110,7 @@ def main():
         strict_train=[r for r in records['train'] if r['strict']]
         evaluate_records(model,strict_train,dino,folder/'train_strict',args.variant,baseline)
         for group in ('causal_test','independent_confirmation'):
-            evaluate_records(model,records[group],dino,folder/group,args.variant,baseline,True)
+            evaluate_records(model,records[group],dino,folder/group,args.variant,baseline,True,True)
         if args.phase=='full':
             update_decision(**{'seed%d_pass'%args.seed:dev['gate_pass']})
             decision=read(OUT/'decision_summary.json');results=[decision['seed%d_pass'%s] for s in PROTOCOL['seeds']]

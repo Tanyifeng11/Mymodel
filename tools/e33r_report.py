@@ -1,0 +1,101 @@
+"""生成可下载结果包；未通过早期Gate明确标记未运行后续阶段。"""
+import argparse,json,subprocess,tarfile
+from collections import Counter
+from tools.e33r_common import *
+from tools.e33r_visualize import create_panels,prior_panels
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--review-json',default='')
+    args=parser.parse_args();decision=read(OUT/'decision_summary.json')
+    chosen=read(OUT/'selected_manifest.json');split=read(OUT/'split_manifest.json')
+    checks={'protocol':read(OUT/'protocol.json')['sha256']==protocol_hash(),
+        'selected_manifest':sha(OUT/'selected_manifest.json')==read(OUT/'input_provenance.json')['selected_manifest_sha256'],
+        'available_counts':[len(chosen[g]) for g in GROUPS]==PROTOCOL['expected_available'],
+        'strict_counts':[sum(r['strict'] for r in chosen[g]) for g in GROUPS]==PROTOCOL['expected_strict'],
+        'split_disjoint':len(set(r['id'] for g in GROUPS for r in split[g]))==sum(len(split[g]) for g in GROUPS)}
+    integrity=read(OUT/'R0_integrity/summary.json')
+    checks['integrity_ids']={p.stem for p in (OUT/'R0_integrity/cases').glob('*.json')}=={r['id'] for g in GROUPS for r in chosen[g]}
+    prior=read(OUT/'P0_prior/summary.json');checks['prior_checkpoint']=sha(OUT/'P0_prior/checkpoint_final.pt')==prior['checkpoint_sha256']
+    checks['prior_dev_ids']={r['id'] for r in read(OUT/'P0_prior/dev_rows.json')}=={r['id'] for r in split['dev']}
+    stages={};visual={};required=[];total_steps=6000
+    if not decision['prior_pass']:
+        stopped='P0_prior';required=['R180_integrity','P0_prior'];route='prior_accuracy_failed_no_control_training'
+        if not (OUT/'P0_prior/visual/selection.json').exists():prior_panels()
+        visual['P0_prior']=read(OUT/'P0_prior/visual/selection.json')['ids']
+    else:
+        sanity=read(OUT/'R_sanity/gate.json');total_steps+=500;checks['sanity_denominator']=sanity['denominator']==512
+        required=['R180_integrity','P0_prior','R_sanity']
+        folder=OUT/'R_sanity';stages['sanity']=read(folder/'dev/summary.json')
+        if not (folder/'visual/selection.json').exists():create_panels(folder,read(OUT/'sanity_manifest.json')['dev'])
+        visual['R_sanity']=read(folder/'visual/selection.json')['unique_ids']
+        if not sanity['pass']:stopped='R_sanity';route='implementation_or_parameterization_debug'
+        else:
+            stopped=None;results=[]
+            for seed in PROTOCOL['seeds']:
+                folder=OUT/'P1_controlled'/('seed%d'%seed);name='seed%d'%seed
+                summary=read(folder/'dev/summary.json');stages[name]=summary;results.append(summary['gate_pass']);total_steps+=8000
+                checks[name+'/dev_ids']={r['id'] for r in read(folder/'dev/rows.json')}=={r['id'] for r in chosen['dev']}
+                checks[name+'/train_strict_ids']={r['id'] for r in read(folder/'train_strict/rows.json')}=={r['id'] for r in chosen['train'] if r['strict']}
+                checks[name+'/shared_prior']=read(folder/'checkpoint_integrity.json')['prior_sha256']==prior['checkpoint_sha256']
+                for group in ('causal_test','independent_confirmation'):
+                    checks[name+'/'+group]={r['id'] for r in read(folder/group/'rows.json')}=={r['id'] for r in chosen[group]}
+                if not (folder/'visual/selection.json').exists():create_panels(folder,chosen['dev'])
+                visual['P1_controlled/'+name]=read(folder/'visual/selection.json')['unique_ids']
+            passed=sum(results)>=2;route='E33_RC_real_rotation_curriculum' if passed else 'rotation_control_architecture_bottleneck'
+            decision.update(controlled_rotation_causality_pass=passed,**{'seed%d_pass'%s:r for s,r in zip(PROTOCOL['seeds'],results)})
+            trigger=stages['seed42']['gate_pass'] or stages['seed42']['near_gate']
+            for variant in PROTOCOL['ablations']:
+                folder=OUT/'ablations'/variant
+                if trigger:
+                    stages[variant]=read(folder/'dev/summary.json');total_steps+=8000
+                    checks[variant+'/shared_prior']=read(folder/'checkpoint_integrity.json')['prior_sha256']==prior['checkpoint_sha256']
+                    if not (folder/'visual/selection.json').exists():create_panels(folder,chosen['dev'])
+                    visual['ablations/'+variant]=read(folder/'visual/selection.json')['unique_ids']
+            required+=['P1_controlled_seed42','P1_controlled_seed43','P1_controlled_seed44']+PROTOCOL['ablations']*int(trigger)
+    decision['next_route']=route;write(OUT/'decision_summary.json',decision)
+    expected_visual={k:v for k,v in visual.items()}
+    if args.review_json:
+        review=json.loads(args.review_json);assert review['reviewed_ids']==expected_visual
+        write(OUT/'audits/visual_review.json',review)
+    reviewed=(OUT/'audits/visual_review.json').exists() and read(OUT/'audits/visual_review.json')['reviewed_ids']==expected_visual
+    write(OUT/'audits/visual_required.json',expected_visual)
+    prior_rows=read(OUT/'P0_prior/dev_rows.json')
+    b0=dict(description='same frozen prior for every reference; analytic no-response baseline',
+        clean_r90_response_deg=90,clean_r90_success=0,R180_identity_success_on_nonempty_support=1,
+        R0_identity_success_on_nonempty_support=1,zero_control_magnitude=0,zero_ratio=None,
+        sensitivity_ratio=0,absolute_dev_orientation_error=prior['orientation_error'],
+        denominator_note='full256 prior Gate differs from controlled128 local support; compare local values in B3 rows')
+    history=read(E32/'decision_summary.json')
+    write(OUT/'baselines.json',dict(B0=b0,B1=dict(task='historical real-reference diagnostic, different task',
+        E32_decision_sha256=sha(E32/'decision_summary.json'),real_orientation_advantage_deg=history['matched_orientation_advantage_deg'],
+        real_rot90_response=history['rot90_geometry_response'],directly_comparable_to_controlled=False),
+        B2=dict(task='source-side E26 R0/R90/R180 analytic readout; not a trained target model',groups=integrity['groups']),B3=stages))
+    diagnoses={}
+    for folder in [OUT/'R_sanity']+[OUT/'P1_controlled'/('seed%d'%s) for s in PROTOCOL['seeds']]:
+        if (folder/'dev/rows.json').exists():
+            rows=read(folder/'dev/rows.json');diagnoses[str(folder.relative_to(OUT))]=dict(
+                overlapping_counts=dict(Counter(c for row in rows for c in row['failure_categories'])),denominator=len(rows))
+    write(OUT/'audits/failure_categories.json',diagnoses)
+    write(OUT/'audits/numeric_integrity.json',dict(checks=checks,**{'pass':all(checks.values())}))
+    write(OUT/'ablations/status.json',dict(required=bool(decision['sanity_pass'] and decision['seed42_pass'] is not None and
+           (stages['seed42']['gate_pass'] or stages['seed42']['near_gate'])),variants=PROTOCOL['ablations'],
+        completed=[v for v in PROTOCOL['ablations'] if v in stages],
+        reason='fixed seed42 Gate/near-Gate trigger; no trigger after prior/sanity failure'))
+    frozen=read(OUT/'frozen_check.json');frozen['training_steps']=total_steps;write(OUT/'frozen_check.json',frozen);finish_frozen(OUT)
+    completion=dict(numeric_artifacts_complete=all(checks.values()),frozen_inputs_pass=True,visual_review_completed=reviewed,
+        training_steps=total_steps,E5_training_steps=0,stopped_at=stopped,required_phases=required,
+        experiment_complete=bool(all(checks.values()) and reviewed),report_git_commit=git_commit(),
+        controlled_rotation_causality_pass=decision['controlled_rotation_causality_pass'],
+        note='field-level controlled rotation only; prior/sanity stop does not test full8000step capability; no real training or generation')
+    write(OUT/'completion_check.json',completion)
+    ids=','.join(sorted({p.stem.rsplit('_',1)[-1] for p in OUT.glob('*.log') if p.stem.rsplit('_',1)[-1].isdigit()}))
+    with (OUT/'job_status.log').open('w') as f:subprocess.run(['sacct','-j',ids,'--format=JobID,State,ExitCode,Elapsed','-n'],stdout=f,check=True)
+    paths=[p for p in OUT.rglob('*') if p.is_file() and p.suffix in ('.json','.png','.log','.err') and p.name!='artifact_manifest.json']
+    write(OUT/'artifact_manifest.json',dict(files={str(p.relative_to(OUT)):sha(p) for p in paths},
+         large_checkpoints='retained on server; fields npz retained on server; numeric rows and visuals included'))
+    with tarfile.open(OUT/'local_review_bundle.tar.gz','w:gz') as f:
+        for p in paths:f.add(p,arcname=str(p.relative_to(OUT)))
+        f.add(OUT/'artifact_manifest.json',arcname='artifact_manifest.json')
+    print(json.dumps(dict(decision=decision,completion=completion,bundle_sha256=sha(OUT/'local_review_bundle.tar.gz'))),flush=True)
+
+if __name__=='__main__':main()
