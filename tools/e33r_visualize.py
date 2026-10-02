@@ -16,6 +16,12 @@ def scalar(field,maximum=1):
     rgb=cv2.applyColorMap(np.uint8(np.clip(field/maximum,0,1)*255),cv2.COLORMAP_TURBO)
     return Image.fromarray(cv2.cvtColor(rgb,cv2.COLOR_BGR2RGB))
 
+def fit_panel(image):
+    width,height=image.size;scale=min(200/width,245/height)
+    # 离散方向/支持网格以nearest放大，避免16/48像素图缩在面板角落。
+    return image.resize((round(width*scale),round(height*scale)),
+        Image.Resampling.NEAREST if max(image.size)<=128 else Image.Resampling.LANCZOS)
+
 def create_panels(folder,records):
     rows=read(folder/'dev/rows.json');lookup={r['id']:r for r in records}
     ordered=sorted(rows,key=lambda r:(r['r90_response_error'] if r['r90_response_error'] is not None else 999,r['id']))
@@ -46,7 +52,7 @@ def create_panels(folder,records):
         draw.text((8,23),'Hue is physical axial angle [0,180); error heatmap [0,90deg]; gray means outside M_cf',fill='black')
         for i,(label,image) in enumerate(items):
             x=(i%7)*210;y=60+(i//7)*275;draw.text((x+5,y),label,fill='black')
-            image=image.copy();image.thumbnail((200,245));canvas.paste(image,(x+5,y+22))
+            canvas.paste(fit_panel(image),(x+5,y+22))
         canvas.save(visual/(sid+'.png'))
     return unique
 
@@ -71,5 +77,5 @@ def prior_panels():
                    ('prior',direction(pred,support)),('error 0..90deg',scalar(error,90))]
             canvas=Image.new('RGB',(840,310),'white');draw=ImageDraw.Draw(canvas);draw.text((5,5),row['id'],fill='black')
             for i,(label,image) in enumerate(items):
-                draw.text((i*210+5,30),label,fill='black');image.thumbnail((200,245));canvas.paste(image,(i*210+5,55))
+                draw.text((i*210+5,30),label,fill='black');canvas.paste(fit_panel(image),(i*210+5,55))
             canvas.save(visual/(row['id']+'.png'))
