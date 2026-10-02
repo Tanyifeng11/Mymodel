@@ -132,6 +132,13 @@ def main():
                 gradients=read(OUT/'R_sanity/gradient_check.json'),
                 frozen_prior=read(OUT/'R_sanity/checkpoint_integrity.json')),
             conclusion='no detected sign/mask/batching/frozen-gradient bug; fixed500step configuration misses95% train Gate; no full run or retraining'))
+    if continuation['overridden']:
+        path=OUT/'audits/sanity_failure_diagnosis.json'
+        diagnosis=read(path)
+        diagnosis.setdefault('original_sanity_stop_conclusion',diagnosis['conclusion'])
+        diagnosis.update(observed_at_phase='original500step_sanity',sanity_continuation=continuation,
+            conclusion='fixed500step sanity R90 failed; original failure retained; user authorized full8000step runs, assessed separately by unchanged formal Gate')
+        write(path,diagnosis)
     write(OUT/'audits/numeric_integrity.json',dict(checks=checks,**{'pass':all(checks.values())}))
     write(OUT/'ablations/status.json',dict(required=bool(continuation['allowed'] and decision['seed42_pass'] is not None and
            (stages['seed42']['gate_pass'] or stages['seed42']['near_gate'])),variants=PROTOCOL['ablations'],
