@@ -22,13 +22,15 @@ def create_panels(folder):
     write(visual/'selection.json',dict(groups=groups,unique_ids=ids,
         unavailable_near=[r['id'] for r in rows if r['near_advantage'] is None],
         ordering='metric extremes only GT-readable217; hash over all256 including emptyGT; same hash IDs all stages'))
-    lookup={r['id']:r for r in read(OUT/'split_manifest.json')['dev']};metrics={r['id']:r for r in rows}
+    split=read(OUT/'split_manifest.json')
+    lookup={r['id']:r for r in split['dev']};metrics={r['id']:r for r in rows}
+    donors={r['id']:r for r in split['dev']+split['confirmation_all']}
     cf_records=read(OUT/'controlled_manifest.json')['dev'];cfmap={r['id']:r for r in cf_records}
     # 无自身controlled候选的真实target，显示预先固定hash probe，不重新挑成功病例。
     fallback=hash_order(cf_records,'E33RC/visual/controlled-probe')[0]['id']
     for sid in ids:
         row=lookup[sid];metric=metrics[sid];wrong=metric['wrong_references']['color_near']
-        wrongrow=next(r for r in read(OUT/'split_manifest.json')['dev']+read(OUT/'split_manifest.json')['confirmation_all'] if r['id']==wrong)
+        wrongrow=donors[wrong]
         with np.load(folder/'real/fields'/(sid+'.npz')) as z:
             ori,q,gt,conf,support=[np.asarray(z[k]) for k in ['orientation','q','gt','confidence_logits','support']]
         match=image_at(DATASET/row['reference']);probe=sid if sid in cfmap else fallback

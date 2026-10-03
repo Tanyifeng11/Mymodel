@@ -38,6 +38,11 @@ def report(review_json=''):
         retained=bool(status['completed_RC_C'] and cf['retention_gate']['pass'])
         successful=bool(retained and real['gate']['pass'])
         controlled_pass.append(retained);passed.append(successful);full.append(real)
+    if revision:
+        for status_path in sorted(OUT.glob('seed*/run_status.json')):
+            status=read(status_path)
+            for record in status['stage_decisions']:
+                audit_stage(status_path.parent/record['stage'],'original_'+status_path.parent.name+'/'+record['stage'])
     ablation_status=read(OUT/'ablations/status.json');completed=[]
     if ablation_status['required']:
         for name in ABLATIONS:
@@ -59,6 +64,12 @@ def report(review_json=''):
     for output,key in [('controlled_clean_rot90','clean_r90_success'),('controlled_noisy_rot90','noisy_r90_both_success'),('controlled_r180_identity','r180_identity_success')]:
         endpoints=[read(seed_folder(s,revision)/seeds[str(s)]['stage_decisions'][-1]['stage']/'controlled/summary.json')[key]['mean'] for s in [42,43,44]]
         decision[output]=float(np.mean(endpoints))
+    decision['zero_shot_real_transfer']={str(s):read(OUT/'RC0_zero_shot'/('seed%d'%s)/'real/summary.json') for s in [42,43,44]}
+    history=read(E32/'decision_summary.json')
+    write(OUT/'historical_E32_baseline.json',dict(E32_decision_sha256=sha(E32/'decision_summary.json'),
+        matched_orientation_advantage_deg=history['matched_orientation_advantage_deg'],
+        real_rot90_response=history['rot90_geometry_response'],
+        note='historical E32 model; RC0 independently recomputed using exact same real target support/donors/rot90 protocol'))
     write(OUT/'decision_summary.json',decision);write(OUT/'result_table.json',table)
     write(OUT/'audits/numeric_integrity.json',dict(checks=numeric,**{'pass':all(numeric.values())}));assert all(numeric.values())
     write(OUT/'visual_audit/required.json',visual)
