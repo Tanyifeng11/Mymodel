@@ -14,7 +14,7 @@ def preview(name, phases):
     fallback=hash_order(controlled,'E33RC/visual/controlled-probe')[0]['id']
     for phase in phases:
         folder=OUT/phase
-        assert folder.resolve().is_relative_to(OUT.resolve())
+        folder.resolve().relative_to(OUT.resolve())
         assert (folder/'phase_complete.json').exists(), '只归档已完成阶段'
         if not (folder/'visual_audit/selection.json').exists():create_panels(folder)
         ids=read(folder/'visual_audit/selection.json')['unique_ids'];required[phase]=ids
