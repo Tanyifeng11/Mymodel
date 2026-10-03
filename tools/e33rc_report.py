@@ -89,8 +89,15 @@ def report(review_json=''):
         ablations_required=ablation_status['required'],ablations_completed=completed,report_git_commit=git_commit())
     write(OUT/'completion_check.json',completion)
     paths=[p for p in OUT.rglob('*') if p.is_file() and p.suffix in ['.json','.png','.log','.err'] and p.name!='artifact_manifest.json']
+    # 下载所选面板的原始field，供本地独立重算；全量field/checkpoint仍保留服务器。
+    controlled_ids={r['id'] for r in read(OUT/'controlled_manifest.json')['dev']}
+    fallback=hash_order(read(OUT/'controlled_manifest.json')['dev'],'E33RC/visual/controlled-probe')[0]['id']
+    for name,ids in visual.items():
+        folder=OUT/name
+        paths += [folder/'real/fields'/(sid+'.npz') for sid in ids]
+        paths += [folder/'controlled/fields'/(sid+'.npz') for sid in sorted(({sid for sid in ids if sid in controlled_ids})|{fallback})]
     write(OUT/'artifact_manifest.json',dict(files={str(p.relative_to(OUT)):sha(p) for p in paths},
-        checkpoints_fields_teacher_cache='retained on server; numeric rows, audits, logs and selected PNGs in local review bundle'))
+        checkpoints_fields_teacher_cache='all retained on server; selected visual fields included for independent local audit'))
     with tarfile.open(OUT/'local_review_bundle.tar.gz','w:gz') as archive:
         for p in paths:archive.add(p,arcname=str(p.relative_to(OUT)))
         archive.add(OUT/'artifact_manifest.json',arcname='artifact_manifest.json')
