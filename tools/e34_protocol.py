@@ -16,7 +16,7 @@ PROTOCOL = dict(
     authorization='用户确认：开始实施；没有覆盖人工标注或实验停止条件',
     inherited_split=dict(train=45126, dev=256, causal_test=8, independent_confirmation=10),
     evidence_source='完整服装：E32 train/dev 的 target RGB；不是 texture patch；仅用于参考端 evidence 标注/训练',
-    evidence_selection='caption 中 pattern cue 仅作候选招募，随后固定 SHA256 排序；无人工标签或成功率筛选',
+    evidence_selection='固定caption词规则：服装类型+pattern cue，排除bag类配饰；随后SHA256排序；不使用纹样标签或成功率筛选，不以纯色/配饰补足数量',
     annotation_minimum=dict(train=100, validation=20, independent_test=20),
     annotation_schema=dict(
         required=['id', 'group', 'reference', 'reference_sha256', 'reviewed_by_human', 'reviewer',

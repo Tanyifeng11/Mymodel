@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -41,6 +42,15 @@ def file_record(item):
 
 def hash_order(rows, tag):
     return sorted(rows, key=lambda r: hashlib.sha256((tag + '/' + str(r['id'])).encode()).hexdigest())
+
+
+def pattern_garment_caption(caption):
+    """只用于招募候选，不能生成family/box/confidence等人工标签。"""
+    garment = r'\b(dress|skirt|shirt|blouse|top|sweater|sweatshirt|hoodie|jacket|coat|cardigan|pants|trousers|shorts|jeans|jumpsuit|romper|vest|tank|pullover|tunic|blazer)\b'
+    accessory = r'\b(bag|bags|handbag|purse|backpack|clutch|tote|wallet)\b'
+    cues = ('stripe', 'plaid', 'floral', 'print', 'pattern', 'geometric', 'polka', 'graphic', 'checkered')
+    return bool(re.search(garment, caption) and not re.search(accessory, caption)
+                and any(c in caption for c in cues))
 
 
 def source_audit(root, dataset, out, workers):
@@ -106,17 +116,16 @@ def freeze_sources(root, out):
 def review_package(root, dataset, out, split, hashes):
     folder = out / 'annotation_review'
     captions = {Path(r['cloth']).stem: r['caption'].lower() for r in read(root / 'data/train_bf_texture.json')}
-    cues = ('stripe', 'plaid', 'floral', 'print', 'pattern', 'geometric', 'polka', 'graphic', 'checkered')
     chosen = []
     for source_group, group, count in [('train', 'train', 100), ('dev', 'validation', 20)]:
         ranked = hash_order(split[source_group], 'E34/evidence/' + group)
-        recruits = [r for r in ranked if any(c in captions.get(r['id'], '') for c in cues)]
-        recruits += [r for r in ranked if r not in recruits]
+        recruits = [r for r in ranked if pattern_garment_caption(captions.get(r['id'], ''))]
         for row in recruits:
             digest = hashes[row['target']]['sha256']
             if digest is not None and digest not in {r['reference_sha256'] for r in chosen}:
                 chosen.append(dict(id=row['id'], group=group, reference=row['target'],
-                                   reference_sha256=digest, inherited_identity_group=source_group))
+                                   reference_sha256=digest, inherited_identity_group=source_group,
+                                   recruitment_caption=captions[row['id']]))
             if sum(r['group'] == group for r in chosen) == count:
                 break
     banned = {v['sha256'] for v in hashes.values()}
@@ -124,12 +133,22 @@ def review_package(root, dataset, out, split, hashes):
     candidates = [dict(id=p.stem, reference=str(p.relative_to(dataset)))
                   for p in (dataset / 'validation/gt').glob('*.jpg') if p.stem not in banned_ids]
     for row in hash_order(candidates, 'E34/independent_reference'):
+        caption_path = dataset / 'validation/text' / (row['id'] + '.txt')
+        caption = caption_path.read_text(encoding='utf-8-sig').lower() if caption_path.is_file() else ''
+        if not pattern_garment_caption(caption):
+            continue
         digest = sha(dataset / row['reference'])
         if digest not in banned and digest not in {r['reference_sha256'] for r in chosen}:
             chosen.append(dict(row, group='independent_test', reference_sha256=digest,
-                               inherited_identity_group=None))
+                               inherited_identity_group=None, recruitment_caption=caption))
         if sum(r['group'] == 'independent_test' for r in chosen) == 20:
             break
+    # 一次招募修正后清理本脚本生成、已不属于当前清单的图片；不处理其他路径。
+    current_images = {folder / 'images' / r['group'] / (r['id'] + '.jpg') for r in chosen}
+    for old in (folder / 'images').rglob('*.jpg'):
+        if old not in current_images:
+            assert folder.resolve() in old.resolve().parents
+            old.unlink()
     records = []
     for row in chosen:
         path = folder / 'images' / row['group'] / (row['id'] + '.jpg')
