@@ -340,8 +340,9 @@ def main():
           review_reference_counts={g: sum(r['group'] == g for r in records) for g in ('train', 'validation', 'independent_test')},
           stopped_before_training=True, training_steps=0)
     write(out / 'completion_check.json', completion)
+    # Slurm日志在作业结束前仍会追加，且不进入下载包；仅冻结包内稳定文件。
     write(out / 'artifact_manifest.json', {str(p.relative_to(out)): sha(p) for p in out.rglob('*')
-          if p.is_file() and p.name not in ('artifact_manifest.json', 'e34_stage0_review.zip')})
+          if p.is_file() and p.name != 'artifact_manifest.json' and p.suffix not in ('.zip', '.log', '.err')})
     with ZipFile(out / 'e34_stage0_review.zip', 'w', ZIP_DEFLATED) as archive:
         for p in sorted(out.rglob('*')):
             if p.is_file() and p.suffix not in ('.zip', '.log', '.err'):
