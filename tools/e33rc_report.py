@@ -66,10 +66,15 @@ def report(review_json=''):
         decision[output]=float(np.mean(endpoints))
     decision['zero_shot_real_transfer']={str(s):read(OUT/'RC0_zero_shot'/('seed%d'%s)/'real/summary.json') for s in [42,43,44]}
     history=read(E32/'decision_summary.json')
+    historical_paths={str(s):E32/'A_geometry'/('seed%d'%s)/'summary.json' for s in [42,43,44]}
+    historical={s:read(p)['dev'] for s,p in historical_paths.items()}
     write(OUT/'historical_E32_baseline.json',dict(E32_decision_sha256=sha(E32/'decision_summary.json'),
         matched_orientation_advantage_deg=history['matched_orientation_advantage_deg'],
         real_rot90_response=history['rot90_geometry_response'],
-        note='historical E32 model; RC0 independently recomputed using exact same real target support/donors/rot90 protocol'))
+        matched_orientation_error_deg=float(np.mean([v['arms']['matched']['orientation_error']['mean'] for v in historical.values()])),
+        random_orientation_advantage_deg=float(np.mean([v['advantages']['random']['orientation_error']['mean'] for v in historical.values()])),
+        seeds=historical,source_sha256={s:sha(p) for s,p in historical_paths.items()},
+        note='historical E32 model; descriptive mean across3seeds, not pooled independent cases; RC0 independently recomputed using exact same real target support/donors/rot90 protocol'))
     write(OUT/'decision_summary.json',decision);write(OUT/'result_table.json',table)
     write(OUT/'audits/numeric_integrity.json',dict(checks=numeric,**{'pass':all(numeric.values())}));assert all(numeric.values())
     write(OUT/'visual_audit/required.json',visual)
