@@ -109,6 +109,12 @@ def run(document, protocol, dataset, device):
     measurements = []
     for index, row in enumerate(document['records']):
         e = row['evidence'][0]
+        # 未读方向或invalid参考不做正式旋转；避免旋转已标出的结构/未知区域。
+        formal = e['readable'] and e['confidence']=='high'
+        if not formal:
+            measurements.append(dict(id=row['id'], group=row['group'], family=row['family'], formal=False,
+                intervention_run=False, reason='not high-confidence orientation-readable canonical evidence'))
+            continue
         original_image = Image.open(dataset/row['reference']).convert('RGB')
         original = np.asarray(original_image)
         _, support, _ = masks(row, original_image.size)
@@ -118,7 +124,7 @@ def run(document, protocol, dataset, device):
         clean = original.copy()
         clean[y:y1, x:x1] = rotated
         item = dict(id=row['id'], group=row['group'], family=row['family'],
-            formal=e['readable'] and e['confidence']=='high',
+            formal=formal, intervention_run=True,
             outside_support_unchanged=bool(np.array_equal(original[~support], clean[~support])),
             inverse_exact=bool(np.array_equal(np.rot90(rotated, -1), patch)))
         if item['formal']:
@@ -150,8 +156,8 @@ def run(document, protocol, dataset, device):
     metric = lambda key: float(np.mean([r[key] for r in formal])) if formal else 0.
     summary = dict(formal_count=len(formal), total_count=len(measurements), clean_success=metric('clean_success'),
         noisy_success=metric('noisy_success'), clean_identity=metric('clean_identity'), noisy_identity=metric('noisy_identity'),
-        nuisance_control_identity=metric('nuisance_control_identity'), outside_support_unchanged=all(r['outside_support_unchanged'] for r in measurements),
-        inverse_exact=all(r['inverse_exact'] for r in measurements), rows=measurements)
+        nuisance_control_identity=metric('nuisance_control_identity'), outside_support_unchanged=bool(formal) and all(r['outside_support_unchanged'] for r in formal),
+        inverse_exact=bool(formal) and all(r['inverse_exact'] for r in formal), rows=measurements)
     g = protocol['rot90_gate']
     summary['gate_pass'] = bool(formal and summary['clean_success'] >= g['clean'] and summary['noisy_success'] >= g['nuisance']
         and summary['outside_support_unchanged'] and min(summary['clean_identity'], summary['noisy_identity']) >= g['identity_cosine']
