@@ -21,7 +21,20 @@ def archive(out, name):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
+    parser.add_argument('--expand', action='store_true')
     args = parser.parse_args()
+    if args.expand:
+        assert read(PILOT / 'status.json')['A2_ready'], '前置门槛未通过，不扩标'
+        protocol = read(PILOT / 'protocol.json')
+        for row in protocol['records']:
+            source = args.dataset / row['reference']
+            assert sha(source) == row['reference_sha256']
+            destination = PILOT / 'images' / row['group'] / (row['id'] + '.jpg')
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+        archive(PILOT, 'e34_pilot_40_review.zip')
+        print('E34 pilot: preconditions passed, 40 references packed', flush=True)
+        return
     selection = read(Path('assets/e34_pilot_selection.json'))
     assert sha(OUT / 'protocol/split_manifest.json') == selection['split_sha256']
     previous = read(Path('assets/e34_visual_annotations.json'))['records']

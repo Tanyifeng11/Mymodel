@@ -9,4 +9,4 @@ set -eo pipefail
 source /share/apps/anaconda3/etc/profile.d/conda.sh
 conda activate Mymodel
 cd /share/home/u2515283058/Mymodel_e34_capf
-python -u -m tools.e34_pilot_prepare
+python -u -m tools.e34_pilot_prepare "$@"
