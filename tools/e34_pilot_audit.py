@@ -167,7 +167,7 @@ def run(document, protocol, dataset, device):
     write(PILOT/'status.json', dict(stage='E34-A0/A0.1/A1', completed=True, exploratory_preconditions_pass=passed,
         A2_ready=passed, learned_training_ready=False, diffusion_ready=False, human_annotation_gate_pass=False,
         source_sha256=sha(Path('assets/e34_pilot_annotations.json')), dino_sha256=dino_sha, adapter_sha256=sha(checkpoint),
-        reason='preconditions passed' if passed else 'stop expansion: annotation or rot90 gate failed'))
+        inference_device=str(device), reason='preconditions passed' if passed else 'stop expansion: annotation or rot90 gate failed'))
     archive(PILOT, 'e34_pilot_preconditions_results.zip')
     print('E34 preconditions', passed, flush=True)
 
@@ -175,6 +175,7 @@ def run(document, protocol, dataset, device):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=Path, default=Path('/share/home/u2515283058/datasets/BF'))
+    parser.add_argument('--device', choices=('cpu', 'cuda'), default='cuda')
     args = parser.parse_args()
     torch.set_num_threads(4)
-    run(read(Path('assets/e34_pilot_annotations.json')), read(PILOT/'protocol.json'), args.dataset, torch.device('cuda'))
+    run(read(Path('assets/e34_pilot_annotations.json')), read(PILOT/'protocol.json'), args.dataset, torch.device(args.device))
