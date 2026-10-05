@@ -42,7 +42,8 @@ class Evaluator:
                                                      perceptual=False)['geometry'])
         scores = dict(text_score=float((value.text_embeds[0]*value.image_embeds[0]).sum()),
             clip_texture=float((value.image_embeds[0]*value.image_embeds[1]).sum()),
-            texture_score=float(patch_texture_similarity(image,reference.resize(image.size),mask=inner,patch=8)),
+            texture_score=float(patch_texture_similarity(image,reference.resize(image.size),
+                                mask=Image.fromarray(inner.astype(np.uint8)*255),patch=8)),
             contour_f1=float(2*precision*recall/max(precision+recall,1e-12)),
             foreground_iou=float((foreground&pixels).sum()/max((foreground|pixels).sum(),1)),
             sketch_similarity=sketch_similarity)
