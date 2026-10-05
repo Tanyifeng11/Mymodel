@@ -75,7 +75,14 @@ def run():
     conflict=[]
     for setting in ('C0','C1','C2'):
         path=OUT/'conflict_test'/setting/'rows.json'
-        if path.exists(): conflict.append(dict(caption=setting,**summarize(read(path))))
+        if path.exists():
+            values=read(path)
+            checks['conflict/'+setting]={r['id'] for r in values}=={r['id'] for r in cohort['conflict']} and len(values)==len(cohort['conflict'])
+            conflict.append(dict(caption=setting,**summarize(values)))
+    conflict_base=OUT/'conflict_test/baseline_e5/rows.json'
+    if conflict_base.exists():
+        values=read(conflict_base)
+        checks['conflict/baseline']={r['id'] for r in values}=={r['id'] for r in cohort['conflict']} and len(values)==len(cohort['conflict'])
     if len(conflict)==3:
         lookup={r['caption']:r for r in conflict}
         rates=[lookup[k]['statistics']['r90_success']['mean'] for k in ('C0','C1','C2')]
@@ -143,6 +150,8 @@ def run():
     write(OUT/'result_table.json',dict(generation=table,modality_roles=roles,ablations=ablations,
                                      robustness=robust,conflict=conflict,text_compatible_near=near))
     frozen=freeze_check()
+    checks['required_stages_complete']=all(s['completed'] for s in stages.values() if s['required'])
+    checks['inference_weight_audit']=read(OUT/'historical_weight_audit.json')['pass_audit']
     complete=bool((d.get('hard_stop') or (main_complete and len(roles)==3 and len(ablations)==6 and len(robust)==2 and near is not None and
                   (len(conflict)==3 or not cohort['conflict']))) and all(checks.values()))
     write(OUT/'completion_check.json',dict(experiment_execution_complete=complete,scientific_success=bool(
