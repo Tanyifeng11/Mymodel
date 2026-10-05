@@ -62,7 +62,7 @@ class Experiment:
         case = reference_group(source)
         if setting=='wrong_sketch': structure = cached_real(donor)['structure']
         elif setting=='no_sketch': structure = np.zeros_like(case['structure'].numpy())
-        else: structure = case['structure'].numpy()
+        else: structure = cached_real(row)['structure']
         ref = case['reference'].cuda()
         st = torch.from_numpy(structure)[None].cuda().expand(3,-1,-1,-1)
         with torch.autocast('cuda',dtype=torch.bfloat16):
