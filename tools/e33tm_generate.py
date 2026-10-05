@@ -16,6 +16,7 @@ from tools.e33tm_protocol import *
 from tools.e33tm_caption_audit import prepare
 from tools.e33tm_interventions import prepare as prepare_interventions
 from tools.e22_4_generation import module_hashes
+from tools.e33tm_weight_audit import effective_hashes, validate_proof
 
 def folder(setting,seed=42):
     if setting=='baseline': return OUT/'baseline_e5'
@@ -41,6 +42,7 @@ class Experiment:
         self.eval = Evaluator()
         self.modules['text_image_evaluator'] = self.eval.model
         self.before = module_hashes(self.modules)
+        self.effective_before = effective_hashes(self.modules)
         write((self.audit or OUT)/'generation_implementation.json',dict(git_commit=commit(),
             source_files={p:sha(p) for p in ('tools/e33tm_generate.py','tools/e33tm_metrics.py',
                 'models/e33tm_generation_wrapper.py','tools/e33tm_protocol.py','tools/e33tm_interventions.py')},
@@ -170,7 +172,10 @@ class Experiment:
         write(audit_dest/'rows.json',rows)
         write(audit_dest/'summary.json',summarize(rows))
         assert module_hashes(self.modules)==self.before
-        write(audit_dest/'frozen_modules.json',dict(before=self.before,after=module_hashes(self.modules),**{'pass':True}))
+        effective_after = effective_hashes(self.modules)
+        assert effective_after == self.effective_before
+        write(audit_dest/'frozen_modules.json',dict(before=self.before,after=module_hashes(self.modules),
+            effective_before=self.effective_before,effective_after=effective_after,**{'pass':True}))
         freeze_check()
         return rows
 
@@ -209,19 +214,21 @@ def aggregate(cohort,work,seed,count):
     interventions=prepare_interventions(cohort)
     cohort.update({k:interventions[k] for k in ('donors','donor_rows','text_compatible_near')})
     for records,setting,diffusion_seeds in stage_tasks(cohort,work):
-        proofs=[]
+        proofs=[]; effective=[]
         for index in range(count):
             audit=OUT/'shards'/shard_tag(work,seed,index,count)
             assert read(audit/'manifest.json')['cohort_sha256']==sha(OUT/'manifests/cohorts.json')
             proof=read(audit/setting/'frozen_modules.json')
             assert proof['pass'] and proof['before']==proof['after']
             proofs.append(proof)
-        assert all(p['before']==proofs[0]['before'] for p in proofs)
+            effective.append(validate_proof(proof,audit/'generation_implementation.json'))
+        assert all(p==effective[0] for p in effective)
         rows=collect_rows(cohort,records,setting,seed,diffusion_seeds)
         dest=folder(setting,seed)
         write(dest/'rows.json',rows);write(dest/'summary.json',summarize(rows))
         write(dest/'frozen_modules.json',dict(before=proofs[0]['before'],after=proofs[0]['after'],
-                                             verified_shards=count,**{'pass':True}))
+            effective_before=effective[0],effective_after=effective[0],full_shard_proofs=proofs,
+            weight_audit_sha256=sha(OUT/'weight_audit.json'),verified_shards=count,**{'pass':True}))
     freeze_check()
     if work=='remaining': gate(seed,cohort['primary'])
     print('[E33TM aggregate]',work,seed,'complete',flush=True)

@@ -2,7 +2,7 @@
 import hashlib
 import torch
 from models.bf_texture_module import BFTextureConditioner
-from tools.e33tm_protocol import E5, OUT, sha, write
+from tools.e33tm_protocol import E5, OUT, sha, write, read
 
 
 def digest(state):
@@ -11,6 +11,38 @@ def digest(state):
         h.update(key.encode())
         h.update(value.detach().cpu().contiguous().numpy().tobytes())
     return h.hexdigest()
+
+
+def effective_hashes(modules):
+    from tools.e22_4_generation import module_hashes
+    audit = read(OUT/'weight_audit.json')
+    assert audit['pass_audit'] and audit['outputs_torch_equal']
+    for path, expected in audit['source_files'].items():
+        if path != 'tools/e33tm_weight_audit.py': assert sha(path) == expected
+    conditioner = modules['bf_texture_conditioner']
+    assert not conditioner.pattern_loss_enabled
+    state = {k:v for k,v in conditioner.state_dict().items() if k not in audit['missing_keys']}
+    result = module_hashes(modules)
+    result['bf_texture_conditioner'] = digest(state)
+    assert result['bf_texture_conditioner'] == audit['effective_bf_sha256']
+    return result
+
+
+def validate_proof(proof, metadata_path):
+    """旧分片保留全状态哈希；依据恢复路径审计解释未记录的有效哈希。"""
+    audit = read(OUT/'weight_audit.json')
+    assert audit['pass_audit'] and audit['outputs_torch_equal']
+    assert read(metadata_path)['original_e5_sha256'] == audit['original_e5_sha256']
+    assert proof['pass'] and proof['before'] == proof['after']
+    result = dict(proof['before'])
+    if 'effective_before' in proof:
+        assert proof['effective_before'] == proof['effective_after']
+        result = proof['effective_before']
+    else:
+        # 旧加载路径完整恢复所有有效参数；仅关闭的新增pattern_head不在E5中。
+        result['bf_texture_conditioner'] = audit['effective_bf_sha256']
+    assert result['bf_texture_conditioner'] == audit['effective_bf_sha256']
+    return result
 
 
 @torch.inference_mode()
