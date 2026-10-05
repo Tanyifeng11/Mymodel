@@ -144,7 +144,9 @@ class Experiment:
                                         scaffold,setting=='no_sketch')
                     image.save(path)
                     metric_reference = references[min(ai,2)] if setting not in ('wrong_texture','near') else image_at(DATASET/row['reference'])
-                    metrics,geometry = self.eval.evaluate(image,row['caption'],metric_reference,eval_mask,eval_sketch)
+                    conflict=setting in ('conflict_C0','conflict_C1','conflict_C2')
+                    metrics,geometry = self.eval.evaluate(image,row['caption'],metric_reference,eval_mask,eval_sketch,
+                                                         prompt_caption=text if conflict else None)
                     record = dict(id=row['id'],setting=setting,rf_seed=self.seed,diffusion_seed=diffusion_seed,
                         arm=arm,caption=row['caption'],donor=None if donor is None else donor['id'],
                         path=str(path.relative_to(OUT)),metrics=metrics,output_sha256=sha(path),git_commit=commit(),
@@ -155,6 +157,14 @@ class Experiment:
                     scores[arm],geometries[arm],metadata[arm] = metrics,geometry,record
                 assert len({r['noise_sha256'] for r in metadata.values()})==1, 'paired noise differs'
                 row_metrics = pair_metrics(geometries,support,gt[3])
+                if setting in ('conflict_C0','conflict_C1','conflict_C2'):
+                    # C2的R0文本已变成horizontal，不能用它检验R90上vertical→horizontal的冲突解除。
+                    anchor=folder('conflict_C0')/row['id']/('d%d'%diffusion_seed)/'R0_orientation.npz'
+                    with np.load(anchor) as z: common=z['geometry'].copy()
+                    anchored=pair_metrics(dict(geometries,R0=common),support,gt[3])
+                    for key in ('success','error','coverage'):
+                        row_metrics['common_anchor_r90_'+key]=anchored['r90_'+key]
+                    if setting=='conflict_C0': assert anchored['r90_success']==row_metrics['r90_success']
                 for key in scores['R0']:
                     row_metrics[key] = mean_available([scores[a][key] for a in ARMS[:3]])
                 # 语义旋转稳定性同样以每case记录，辅助检查R90/R180相对R0。

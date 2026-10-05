@@ -29,8 +29,9 @@ class Evaluator:
         self.extractor = FrozenFeatures(None,'cpu')
 
     @torch.inference_mode()
-    def evaluate(self,image,caption,reference,mask,sketch):
-        args = self.processor(text=[caption],images=[image,reference],return_tensors='pt',padding=True,truncation=True)
+    def evaluate(self,image,caption,reference,mask,sketch,prompt_caption=None):
+        texts=[caption] if prompt_caption is None else [caption,prompt_caption]
+        args = self.processor(text=texts,images=[image,reference],return_tensors='pt',padding=True,truncation=True)
         value = self.model(**{k:v.cuda() for k,v in args.items()})
         pixels = np.asarray(mask)>127
         foreground = estimate_foreground_mask(image,image.size)
@@ -52,6 +53,8 @@ class Evaluator:
             contour_f1=float(2*precision*recall/max(precision+recall,1e-12)),
             foreground_iou=float((foreground&pixels).sum()/max((foreground|pixels).sum(),1)),
             sketch_similarity=sketch_similarity)
+        if prompt_caption is not None:
+            scores['prompt_text_score']=float((value.text_embeds[1]*value.image_embeds[0]).sum())
         assert all(np.isfinite(v) for v in scores.values() if v is not None)
         return scores,geo.transpose(2,0,1)
 
@@ -77,6 +80,10 @@ def summarize(rows):
               'contour_f1','foreground_iou','sketch_similarity','r90_coverage','r180_coverage')
     cases = [{k:mean_available([r[k] for r in rows if r['id']==sid]) for k in fields} for sid in ids]
     stats = {k:bootstrap([r[k] for r in cases if r[k] is not None]) for k in fields}
+    for key in ('common_anchor_r90_success','common_anchor_r90_error','prompt_text_score'):
+        if any(key in r for r in rows):
+            stats[key]=bootstrap([value for sid in ids for value in [mean_available([
+                r.get(key) for r in rows if r['id']==sid])] if value is not None])
     for k in ('r90_error','r180_error'):
         means = [float(np.mean([r[k] for r in rows if r['id']==sid and r[k] is not None]))
                  for sid in ids if any(r['id']==sid and r[k] is not None for r in rows)]
@@ -86,10 +93,12 @@ def summarize(rows):
         for arm in ('R0','R90','R180','Rzero'):
             eligible=[r for r in rows if arm in r['arm_metrics']]
             if not eligible: continue
+            keys=('text_score','texture_score','clip_texture','contour_f1','sketch_similarity')
+            if any('prompt_text_score' in r['arm_metrics'][arm] for r in eligible): keys+=('prompt_text_score',)
             arms[arm]={k:bootstrap([value for sid in ids
                                    for value in [mean_available([r['arm_metrics'][arm][k] for r in eligible if r['id']==sid])]
                                    if value is not None])
-                       for k in ('text_score','texture_score','clip_texture','contour_f1','sketch_similarity')}
+                       for k in keys}
     return dict(case_count=len(ids),repeated_measures=len(rows),statistics=stats,arm_statistics=arms)
 
 def compare(full,baseline):

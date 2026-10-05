@@ -85,7 +85,8 @@ def run():
         checks['conflict/baseline']={r['id'] for r in values}=={r['id'] for r in cohort['conflict']} and len(values)==len(cohort['conflict'])
     if len(conflict)==3:
         lookup={r['caption']:r for r in conflict}
-        rates=[lookup[k]['statistics']['r90_success']['mean'] for k in ('C0','C1','C2')]
+        rates=[lookup[k]['statistics']['common_anchor_r90_success']['mean'] for k in ('C0','C1','C2')]
+        d['conflict_r90_definition']='R90 versus common C0-R0 anchor; same-caption paired R90 also retained'
         d['text_texture_conflict_detected']=bool(rates[1]>rates[0] and rates[2]>rates[0])
     near_path=OUT/'text_compatible_near/rows.json'
     near=None
