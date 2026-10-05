@@ -37,7 +37,9 @@ def panel(cohort,sid,destination,setting='full',seed=42):
     for arm in ('R0','R90','R180'):
         record=read(full/(arm+'.json'));records.append(record)
         entries.append((setting+' '+arm,Image.open(full/(arm+'.png'))))
-    entries += [('RF field R0',field_image(full/'R0_field.npz')),
+    entries += [('scaffold R0',Image.open(full/'R0_scaffold.png')),
+                ('scaffold R90',Image.open(full/'R90_scaffold.png')),
+                ('RF field R0',field_image(full/'R0_field.npz')),
                 ('RF field R90',field_image(full/'R90_field.npz')),
                 ('E26 image R0',field_image(full/'R0_orientation.npz','geometry')),
                 ('E26 image R90',field_image(full/'R90_orientation.npz','geometry'))]
@@ -102,4 +104,10 @@ def final_audit():
     for setting in ('conflict_C0','conflict_C1','conflict_C2'):
         grouped(cohort,[r['id'] for r in conflict],OUT/'visual_audit/text_conflict16'/setting,setting)
 
-if __name__=='__main__': final_audit()
+if __name__=='__main__':
+    import argparse
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--smoke',action='store_true')
+    args=parser.parse_args()
+    if args.smoke: smoke(read(OUT/'manifests/cohorts.json'))
+    else: final_audit()
