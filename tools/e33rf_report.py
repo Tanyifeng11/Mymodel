@@ -15,7 +15,7 @@ def failure_route(real):
 def report(review_json=''):
     reproduced=read(OUT/'rf0_status.json')['pass'];table=[];numeric={};visual={};probes={}
     split=read(OUT/'split_manifest.json');controlled=read(OUT/'controlled_manifest.json')['dev'];endpoints=[]
-    def audit(stage,seed):
+    def audit(stage,seed,visualize=False):
         name=str(stage.relative_to(OUT));real=read(stage/'real/summary.json');cf=read(stage/'controlled/summary.json')
         rr=read(stage/'real/rows.json');cr=read(stage/'controlled/rows.json')
         numeric[name+'/real_ids']=len(rr)==256 and {r['id'] for r in rr}=={r['id'] for r in split['dev']}
@@ -43,7 +43,8 @@ def report(review_json=''):
             value=read(done);phase=value['phase'];numeric[name+'/steps']=value['training_steps']==PROTOCOL['phases'][phase]['steps']
             numeric[name+'/checkpoint']=value['checkpoint_sha256']==sha(stage/'checkpoint_final.pt')
             numeric[name+'/frozen_backbone']=read(stage/'backbone_frozen_check.json')['pass']
-        ids,probe=create_panels(stage,seed);visual[name]=ids;probes[name]=probe
+        if visualize:
+            ids,probe=create_panels(stage,seed);visual[name]=ids;probes[name]=probe
         table.append(dict(model=name,controlled=cf,real=real,drift=drift));return cf,real
     routes={};passed=[];cf_pass=[];rf1collapse={};completed_ablations=[]
     for seed in SEEDS:
@@ -54,11 +55,11 @@ def report(review_json=''):
             stage=folder(seed,phase);assert (stage/'phase_complete.json').exists()
             if phase=='RF1':
                 for step in [500,1000]:audit(stage/('diagnostic_step%d'%step),seed)
-            cf,real=audit(stage,seed)
+            cf,real=audit(stage,seed,phase=='RF2')
         rf1collapse[str(seed)]=read(folder(seed,'RF1')/'decision_record.json')['match_only_adapter_causes_real_causal_collapse']
         pilot=pilot_gate(cf,real)['pass'];rf3=folder(seed,'RF3')
         numeric['seed%d/RF3_schedule'%seed]=pilot==(rf3/'phase_complete.json').exists()
-        if pilot:cf,real=audit(rf3,seed);endpoint=rf3
+        if pilot:cf,real=audit(rf3,seed,True);endpoint=rf3
         else:assert (folder(seed,'RF2')/'RF3_not_run.json').exists();endpoint=folder(seed,'RF2')
         ok=controlled_gate(cf)['pass'] and real_gate(real)['pass'];passed.append(ok);cf_pass.append(controlled_gate(cf)['pass'])
         routes[str(seed)]='E33_I_identity_causality' if ok else failure_route(real)
