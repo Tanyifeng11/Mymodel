@@ -91,10 +91,14 @@ def run():
         for seed in SEEDS:
             path=OUT/('rf2_seed%d'%seed)/'rows.json'
             if not path.exists(): continue
+            field_rows={r['id']:r for r in read(OUT/'field_precheck'/('seed%d'%seed)/'real/rows.json')}
             errors=[]
             for row in read(path):
                 base=original[row['id']];tags=[]
-                if not row['r90_success']: tags+=['TM1_field_causality_lost_after_E5','TM4_texture_R90_ignored']
+                if not row['r90_success']:
+                    tags.append('TM4_texture_R90_ignored')
+                    if field_rows[row['id']]['rot90_response_success'] is True:
+                        tags.append('TM1_field_causality_lost_after_E5')
                 if row['contour_f1']<base['contour_f1']-.02: tags.append('TM2_structure_degradation')
                 if row['text_score']<base['text_score']*.98: tags.append('TM3_text_semantic_degradation')
                 if not row['r180_success']: tags.append('TM5_R180_false_response')
