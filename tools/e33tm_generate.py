@@ -30,6 +30,7 @@ def folder(setting,seed=42):
 
 class Experiment:
     def __init__(self,seed,run_tag=None):
+        self.implementation_commit = commit()
         assert read(OUT/'field_precheck/summary.json')['pass']
         self.cohorts = prepare()
         interventions = prepare_interventions(self.cohorts)
@@ -43,7 +44,7 @@ class Experiment:
         self.modules['text_image_evaluator'] = self.eval.model
         self.before = module_hashes(self.modules)
         self.effective_before = effective_hashes(self.modules)
-        write((self.audit or OUT)/'generation_implementation.json',dict(git_commit=commit(),
+        write((self.audit or OUT)/'generation_implementation.json',dict(git_commit=self.implementation_commit,
             source_files={p:sha(p) for p in ('tools/e33tm_generate.py','tools/e33tm_metrics.py',
                 'models/e33tm_generation_wrapper.py','tools/e33tm_protocol.py','tools/e33tm_interventions.py')},
             size=self.size,texture_num_tokens=self.pipe.effective_texture_num_tokens,
@@ -149,7 +150,7 @@ class Experiment:
                                                          prompt_caption=text if conflict else None)
                     record = dict(id=row['id'],setting=setting,rf_seed=self.seed,diffusion_seed=diffusion_seed,
                         arm=arm,caption=row['caption'],donor=None if donor is None else donor['id'],
-                        path=str(path.relative_to(OUT)),metrics=metrics,output_sha256=sha(path),git_commit=commit(),
+                        path=str(path.relative_to(OUT)),metrics=metrics,output_sha256=sha(path),git_commit=self.implementation_commit,
                         source_sketch=str(DATASET/(donor['sketch'] if setting=='wrong_sketch' else row['sketch'])),
                         source_reference=str(DATASET/texture_source['reference']),**info)
                     np.savez_compressed(case_dest/(arm+'_orientation.npz'),geometry=geometry)
