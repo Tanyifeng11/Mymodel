@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 import re
 import subprocess
 
@@ -38,7 +39,9 @@ def read(path):
 def write(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+    temporary = path.with_name(path.name+'.%d.tmp'%os.getpid())
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+    temporary.replace(path)
 
 def sha(path):
     h = hashlib.sha256()

@@ -28,7 +28,7 @@ def folder(setting,seed=42):
     return OUT/'ablations'/setting
 
 class Experiment:
-    def __init__(self,seed):
+    def __init__(self,seed,run_tag=None):
         assert read(OUT/'field_precheck/summary.json')['pass']
         self.cohorts = prepare()
         interventions = prepare_interventions(self.cohorts)
@@ -36,11 +36,12 @@ class Experiment:
         self.lookup = dict(self.cohorts['donor_rows'])
         self.lookup.update({r['id']:r for r in self.cohorts['dev']})
         self.seed = seed
+        self.audit = OUT/'shards'/run_tag if run_tag else None
         self.pipe,self.modules,self.size,self.ns = load_e5()
         self.eval = Evaluator()
         self.modules['text_image_evaluator'] = self.eval.model
         self.before = module_hashes(self.modules)
-        write(OUT/'generation_implementation.json',dict(git_commit=commit(),
+        write((self.audit or OUT)/'generation_implementation.json',dict(git_commit=commit(),
             source_files={p:sha(p) for p in ('tools/e33tm_generate.py','tools/e33tm_metrics.py',
                 'models/e33tm_generation_wrapper.py','tools/e33tm_protocol.py','tools/e33tm_interventions.py')},
             size=self.size,texture_num_tokens=self.pipe.effective_texture_num_tokens,
@@ -164,10 +165,11 @@ class Experiment:
                 write(case_dest/'pair.json',result)
             print('[E33TM generate]',setting,self.seed,index,'/',len(records),row['id'],flush=True)
         rows = self.rows(records,setting,diffusion_seeds)
-        write(dest/'rows.json',rows)
-        write(dest/'summary.json',summarize(rows))
+        audit_dest = self.audit/setting if self.audit else dest
+        write(audit_dest/'rows.json',rows)
+        write(audit_dest/'summary.json',summarize(rows))
         assert module_hashes(self.modules)==self.before
-        write(dest/'frozen_modules.json',dict(before=self.before,after=module_hashes(self.modules),**{'pass':True}))
+        write(audit_dest/'frozen_modules.json',dict(before=self.before,after=module_hashes(self.modules),**{'pass':True}))
         freeze_check()
         return rows
 
@@ -212,7 +214,9 @@ def gate(seed,records):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--stage',choices=('smoke','seed42','remaining','robustness','ablations','diagnostics'),required=True)
+    parser.add_argument('--stage',choices=('smoke','seed42','seed42_shard','remaining','robustness','ablations','diagnostics'),required=True)
+    parser.add_argument('--shard-index',type=int,default=0)
+    parser.add_argument('--shard-count',type=int,default=4)
     args = parser.parse_args()
     cohort = prepare()
     if read(OUT/'decision_summary.json').get('hard_stop'):
@@ -228,7 +232,16 @@ def main():
         smoke(cohort)
         return
     assert read(OUT/'smoke_audit/visual_review.json')['pass'], 'review fixed16 panels before full dev'
-    if args.stage=='seed42':
+    if args.stage=='seed42_shard':
+        assert 0<=args.shard_index<args.shard_count
+        records=cohort['primary'][args.shard_index::args.shard_count]
+        tag='seed42_%d_of_%d'%(args.shard_index,args.shard_count)
+        write(OUT/'shards'/tag/'manifest.json',dict(ids=[r['id'] for r in records],
+            cohort_sha256=sha(OUT/'manifests/cohorts.json'),shard_index=args.shard_index,
+            shard_count=args.shard_count,diffusion_seed=42,rf_seed=42))
+        experiment=Experiment(42,tag)
+        experiment.run(records,'baseline');experiment.run(records,'full')
+    elif args.stage=='seed42':
         experiment = Experiment(42)
         experiment.run(cohort['primary'],'baseline');experiment.run(cohort['primary'],'full')
         gate(42,cohort['primary'])
