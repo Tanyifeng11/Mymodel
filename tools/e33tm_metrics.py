@@ -108,5 +108,6 @@ def compare(full,baseline):
         contour=result['contour_f1']['mean']>=-.02,
         text=max(arm_drop.values())<=.02 and max(rotated_drop.values())<=.02,
         sketch=result['sketch_similarity']['ci95'][0]>=-.02)
+    result['checks'] = {name:bool(value) for name,value in result['checks'].items()}
     result['pass'] = all(result['checks'].values())
     return result
