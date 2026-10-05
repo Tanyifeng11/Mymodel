@@ -79,6 +79,21 @@ def main():
                   source_files={p:sha(p) for p in ('models/bf_texture_module.py','pipelines/IMAGGarment_pipeline.py',
                       'inference_IMAGGarment-1.py','tools/e33tm_weight_audit.py')})
     write(OUT/'weight_audit.json',result)
+    legacy = []
+    common = None
+    for path in sorted(OUT.rglob('frozen_modules.json')):
+        proof = read(path)
+        metadata = path.parent.parent/'generation_implementation.json'
+        if not metadata.exists(): metadata = OUT/'generation_implementation.json'
+        active = validate_proof(proof,metadata)
+        if common is None: common = active
+        assert active == common, '有效推理权重跨分片不同：%s'%path
+        legacy.append(dict(path=str(path.relative_to(OUT)),proof_sha256=sha(path),
+                           full_bf_sha256=proof['before']['bf_texture_conditioner'],effective_hashes=active,
+                           metadata_sha256=sha(metadata),effective_hash_reconstructed='effective_before' not in proof))
+    write(OUT/'historical_weight_audit.json',dict(pass_audit=True,proofs=legacy,
+        reconstruction_basis='Original restore path loads every active BF key from identical E5; four absent pattern_head keys are disabled.',
+        weight_audit_sha256=sha(OUT/'weight_audit.json')))
     print(result,flush=True)
     for handle in handles: handle.remove()
 
