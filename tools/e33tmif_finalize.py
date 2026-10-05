@@ -50,11 +50,13 @@ def main():
     if loc['field_to_rgb_bottleneck']:purity=read(OUT/'carrier_purity/summary.json')
     seeds=read(OUT/'stage_survival/seed_confirmation.json')
     review=read(OUT/'visual_audit/localization_review.json')
-    assert review['pass'] and review['not_pure_evaluator_artifact'], '必须完成固定图例和阶段曲线核验'
-    stable=1+sum(r['pass'] for r in seeds)>=2
+    assert review['pass'], '必须完成固定图例和阶段曲线核验'
+    qualified=review['not_pure_evaluator_artifact']
+    stable=1+sum(r['pass'] for r in seeds)>=2 and qualified
     rescue=bool(confirmation and confirmation['pass'])
-    stage=loc['primary_bottleneck_stage']
-    if rescue:route='operating_point_confirmation'
+    stage=loc['primary_bottleneck_stage'] if qualified else 'unknown'
+    if not qualified:route='evaluator_readability_validation'
+    elif rescue:route='operating_point_confirmation'
     elif stage in ('S0->S1','S1->S2'):route='carrier_construction_revision'
     elif stage=='S2->S4':route='vae_preservation_revision'
     elif stage=='S4->x0_01':route='initialization_condition_conflict'
