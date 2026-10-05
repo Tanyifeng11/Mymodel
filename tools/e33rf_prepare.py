@@ -7,7 +7,17 @@ from tools.e33rf_common import *
 def prepare():
     OUT.mkdir(parents=True,exist_ok=True)
     if (OUT/'prepared.json').exists():
-        assert read(OUT/'protocol.json')['sha256']==protocol_sha();finish_frozen();return
+        old=read(OUT/'protocol.json')
+        if old['sha256']!=protocol_sha():
+            # 仅允许在零训练步时修正原协议的全批次聚合；保留旧元数据和缓存。
+            assert not any(OUT.rglob('training_protocol.json'))
+            assert old['protocol']=={k:v for k,v in PROTOCOL.items() if k!='loss_aggregation'}
+            write(OUT/'protocol_before_aggregation_fix.json',old)
+            write(OUT/'aggregation_fix_before_training.json',dict(before=old['sha256'],after=protocol_sha(),training_steps=0,
+                reason='global valid-target averaging instead of averaging independently inside microbatches',rotation_cache_unchanged=True))
+            old.update(protocol=PROTOCOL,sha256=protocol_sha(),git_commit=git_commit());write(OUT/'protocol.json',old)
+            write(OUT/'prepared.json',dict(complete=True,protocol_sha256=protocol_sha()))
+        finish_frozen();return
     assert read(RC/'completion_check.json')['experiment_complete']
     assert read(RC/'frozen_check.json')['pass']
     frozen=dict(read(RC/'frozen_check.json')['after'])

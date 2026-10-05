@@ -2,7 +2,7 @@
 import torch
 from tools.e33rc_losses import case_mean
 
-def losses(pred,gt,support,phase,variant='full'):
+def losses(pred,gt,support,phase,variant='full',supervised_scale=1.,regular_scale=1.):
     ori=pred['orientation'];weight=support.float()*gt[:,3];valid=weight.flatten(1).sum(1)>0
     avg=lambda x:case_mean(x,weight)[valid].mean() if valid.any() else x.sum()*0
     match=avg(1-(ori[:,0]*gt[:,:2]).sum(1))
@@ -20,5 +20,5 @@ def losses(pred,gt,support,phase,variant='full'):
         rank=(.5*torch.relu(5+e[:,0]-e[:,1])+.25*torch.relu(7.5+e[:,0]-e[:,2]))[valid].mean() if valid.any() else ori.sum()*0
     leq=0 if phase=='RF1' or variant=='A_no_equivariance' else 1
     l180=0 if phase=='RF1' or variant in ['A_no_equivariance','B_no_r180'] else .5
-    total=match+leq*eq+l180*identity+.05*regular+rank
+    total=supervised_scale*(match+leq*eq+l180*identity+rank)+regular_scale*.05*regular
     return total,dict(match=float(match.detach()),eq90=float(eq.detach()),eq180=float(identity.detach()),adapter_id=float(regular.detach()),rank=float(rank.detach()))

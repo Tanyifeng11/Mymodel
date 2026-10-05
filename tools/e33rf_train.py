@@ -34,17 +34,23 @@ def train(seed,phase,dino,variant='full'):
         factor=step/warmup if step<=warmup else .5*(1+math.cos(math.pi*(step-warmup)/(steps-warmup)))
         for group in optimizer.param_groups:group['lr']=rate*factor
         optimizer.zero_grad(set_to_none=True);seen=set();metrics={}
-        for case in draw(iterator,8,seen,['reference','structure','gt','support']):
+        microbatches=draw(iterator,8,seen,['reference','structure','gt','support'])
+        counts=[int(((c['support'].float()*c['gt'][:,3]).flatten(1).sum(1)>0).sum()) for c in microbatches]
+        valid_targets=sum(counts)
+        for case,count in zip(microbatches,counts):
             pred=forward_group(model,case['reference'].cuda(),case['structure'].cuda())
-            total,part=losses(pred,case['gt'].cuda(),case['support'].cuda(),phase,variant)
-            (total*len(case['gt'])/8).backward()
-            for key,value in part.items():metrics[key]=metrics.get(key,0)+value*len(case['gt'])/8
+            supervised_scale=count/max(valid_targets,1);regular_scale=len(case['gt'])/8
+            total,part=losses(pred,case['gt'].cuda(),case['support'].cuda(),phase,variant,supervised_scale,regular_scale)
+            total.backward()
+            for key,value in part.items():
+                scale=regular_scale if key=='adapter_id' else supervised_scale
+                metrics[key]=metrics.get(key,0)+value*scale
         trainable=[p for p in model.parameters() if p.requires_grad]
         gradients=[p.grad for p in trainable if p.grad is not None]
         assert gradients and all(torch.isfinite(g).all() for g in gradients)
         assert all(p.grad is None for p in model.parameters() if not p.requires_grad)
         if step==1:
-            write(dest/'gradient_check.json',dict(finite_gradients=True,distinct_identities=len(seen),
+            write(dest/'gradient_check.json',dict(finite_gradients=True,distinct_identities=len(seen),valid_targets=valid_targets,
                 frozen_gradients_absent=True,adapter_last_linear_gradient_norm=float(model.adapter.net[-1].weight.grad.norm()) if model.adapter else None))
         torch.nn.utils.clip_grad_norm_(trainable,1.);optimizer.step()
         if step%50==0:

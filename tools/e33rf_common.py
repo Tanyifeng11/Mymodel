@@ -17,6 +17,7 @@ PROTOCOL=dict(experiment='E33-RF',seeds=SEEDS,adapter=dict(input_dim=394,width=3
     optimizer='fresh AdamW each phase;wd1e-4;cosine;bf16;effective8 distinct identities;micro2',
     initialization='RF1 and RF2 independent original E33-R per-seed weights plus zero adapter; RF3 from RF2final',
     loss=dict(match=1,eq90=1,eq180=.5,adapter_id=.05,rank_near=.5,rank_random=.25),
+    loss_aggregation='supervision/ranking mean over valid targets across the full8-identity batch; adapter-id mean across all8; microbatch partition invariant',
     adapter_id='unscaled A squared mean per token/channel, then case and R/R90/R180 arm mean; RF1 matched only',
     data='exact E32/RC immutable split,GT,donors; train45126/dev256/causal8/ind10; controlled128/strict45',
     rotations='source RGB fixed384x512 canvas native90/180 crop/pad, E32 frozen extractor; no GT rotation or intervention flag input',

@@ -55,4 +55,22 @@ class AdapterTests(unittest.TestCase):
         self.assertTrue(real_gate(real)['pass']);self.assertTrue(controlled_gate(cf)['pass']);self.assertTrue(pilot_gate(cf,real)['pass'])
         real['near_advantage']['ci95'][0]=0;self.assertFalse(real_gate(real)['pass'])
         cf['clean_r90_success']['mean']=.9499;self.assertFalse(pilot_gate(cf,real)['pass'])
+    def test_microbatch_invariance_with_empty_gt_cases(self):
+        torch.manual_seed(42)
+        gt=torch.zeros(8,4,1,1);gt[:,0]=1.;gt[:,3]=1.
+        support=torch.ones(8,1,1,dtype=torch.bool);support[1]=False;support[4]=False
+        ori=torch.nn.functional.normalize(torch.randn(8,3,2,1,1),dim=2).requires_grad_()
+        delta=torch.randn(8,3,1,1,394,requires_grad=True)
+        whole,_=losses(dict(orientation=ori,adapter_delta=delta),gt,support,'RF2');whole.backward()
+        expected=[ori.grad.clone(),delta.grad.clone()];ori.grad=None;delta.grad=None
+        pieces=[]
+        for i in range(0,8,2):
+            count=int(support[i:i+2].flatten(1).any(1).sum())
+            value,_=losses(dict(orientation=ori[i:i+2],adapter_delta=delta[i:i+2]),gt[i:i+2],support[i:i+2],'RF2',
+                supervised_scale=count/6,regular_scale=2/8)
+            pieces.append(value)
+        micro=sum(pieces);micro.backward()
+        self.assertAlmostEqual(float(whole),float(micro),places=6)
+        self.assertTrue(torch.allclose(ori.grad,expected[0],atol=1e-7))
+        self.assertTrue(torch.allclose(delta.grad,expected[1],atol=1e-7))
 if __name__=='__main__':unittest.main()
