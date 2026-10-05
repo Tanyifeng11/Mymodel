@@ -59,8 +59,9 @@ def panel(cohort,sid,destination,setting='full',seed=42):
     draw.text((4,182),line,fill='black')
     for i,record in enumerate(records):
         m=record['metrics']
-        draw.text((4,196+14*i),'{}: Contour {:.4f} Text {:.4f} Texture {:.4f} | text used: {}'.format(
-            record['arm'],m['contour_f1'],m['text_score'],m['texture_score'],record['text_used'][:125]),fill='black')
+        texture='NA (empty input interior)' if m['texture_score'] is None else '%.4f'%m['texture_score']
+        draw.text((4,196+14*i),'{}: Contour {:.4f} Text {:.4f} Texture {} | text used: {}'.format(
+            record['arm'],m['contour_f1'],m['text_score'],texture,record['text_used'][:125]),fill='black')
     destination.parent.mkdir(parents=True,exist_ok=True);canvas.save(destination)
     return destination
 

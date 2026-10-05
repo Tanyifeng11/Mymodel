@@ -11,7 +11,7 @@ from data.e33rf_real_rotation_dataset import rotate, reference_group
 from data.e33rc_real_pair_dataset import cached_real
 from tools.e33rf_common import build, E32
 from models.e33tm_generation_wrapper import load_e5, spatial_carrier, generate, TriModalField
-from tools.e33tm_metrics import Evaluator, pair_metrics, summarize, compare
+from tools.e33tm_metrics import Evaluator, pair_metrics, summarize, compare, mean_available
 from tools.e33tm_protocol import *
 from tools.e33tm_caption_audit import prepare
 from tools.e33tm_interventions import prepare as prepare_interventions
@@ -48,6 +48,7 @@ class Experiment:
             evaluator_config_sha256=sha('models/clip/models/image_encoder/config.json'),
             evaluator_weights_sha256=sha('models/clip/pytorch_model.bin'),
             original_e5_sha256=sha(E5),modules_before=self.before,orientation_readable_threshold=.25,
+            empty_texture_interior='null for auxiliary Texture Sim; report available-input N; retain identity in every primary Gate',
             image_case_success='nonempty readable paired support and axial response error<=15deg; no case exclusion'))
         self.model = None
 
@@ -153,7 +154,7 @@ class Experiment:
                 assert len({r['noise_sha256'] for r in metadata.values()})==1, 'paired noise differs'
                 row_metrics = pair_metrics(geometries,support,gt[3])
                 for key in scores['R0']:
-                    row_metrics[key] = float(np.mean([scores[a][key] for a in ARMS[:3]]))
+                    row_metrics[key] = mean_available([scores[a][key] for a in ARMS[:3]])
                 # 语义旋转稳定性同样以每case记录，辅助检查R90/R180相对R0。
                 row_metrics['rotation_text_drop'] = max(0.,max((scores['R0']['text_score']-scores[a]['text_score'])/
                     max(scores['R0']['text_score'],1e-8) for a in ('R90','R180')))

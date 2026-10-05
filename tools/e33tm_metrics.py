@@ -17,6 +17,10 @@ def bootstrap(values):
     samples = np.random.default_rng(32042).choice(values,(2000,len(values)),replace=True).mean(1)
     return dict(mean=float(values.mean()),ci95=np.percentile(samples,[2.5,97.5]).tolist(),n=len(values))
 
+def mean_available(values):
+    values=[v for v in values if v is not None]
+    return float(np.mean(values)) if values else None
+
 class Evaluator:
     def __init__(self):
         config = CLIPConfig.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
@@ -43,11 +47,12 @@ class Evaluator:
         scores = dict(text_score=float((value.text_embeds[0]*value.image_embeds[0]).sum()),
             clip_texture=float((value.image_embeds[0]*value.image_embeds[1]).sum()),
             texture_score=float(patch_texture_similarity(image,reference.resize(image.size),
-                                mask=Image.fromarray(inner.astype(np.uint8)*255),patch=8)),
+                                mask=Image.fromarray(inner.astype(np.uint8)*255),patch=8)) if inner.any() else None,
+            texture_support_pixels=int(inner.sum()),
             contour_f1=float(2*precision*recall/max(precision+recall,1e-12)),
             foreground_iou=float((foreground&pixels).sum()/max((foreground|pixels).sum(),1)),
             sketch_similarity=sketch_similarity)
-        assert all(np.isfinite(v) for v in scores.values())
+        assert all(np.isfinite(v) for v in scores.values() if v is not None)
         return scores,geo.transpose(2,0,1)
 
 def pair_metrics(geometries,support,weight):
@@ -70,8 +75,8 @@ def summarize(rows):
     ids = sorted({r['id'] for r in rows})
     fields = ('r90_success','r180_success','text_score','texture_score','clip_texture',
               'contour_f1','foreground_iou','sketch_similarity','r90_coverage','r180_coverage')
-    cases = [{k:float(np.mean([r[k] for r in rows if r['id']==sid])) for k in fields} for sid in ids]
-    stats = {k:bootstrap([r[k] for r in cases]) for k in fields}
+    cases = [{k:mean_available([r[k] for r in rows if r['id']==sid]) for k in fields} for sid in ids]
+    stats = {k:bootstrap([r[k] for r in cases if r[k] is not None]) for k in fields}
     for k in ('r90_error','r180_error'):
         means = [float(np.mean([r[k] for r in rows if r['id']==sid and r[k] is not None]))
                  for sid in ids if any(r['id']==sid and r[k] is not None for r in rows)]
@@ -81,8 +86,9 @@ def summarize(rows):
         for arm in ('R0','R90','R180','Rzero'):
             eligible=[r for r in rows if arm in r['arm_metrics']]
             if not eligible: continue
-            arms[arm]={k:bootstrap([float(np.mean([r['arm_metrics'][arm][k] for r in eligible if r['id']==sid]))
-                                   for sid in ids if any(r['id']==sid for r in eligible)])
+            arms[arm]={k:bootstrap([value for sid in ids
+                                   for value in [mean_available([r['arm_metrics'][arm][k] for r in eligible if r['id']==sid])]
+                                   if value is not None])
                        for k in ('text_score','texture_score','clip_texture','contour_f1','sketch_similarity')}
     return dict(case_count=len(ids),repeated_measures=len(rows),statistics=stats,arm_statistics=arms)
 
@@ -90,7 +96,8 @@ def compare(full,baseline):
     assert {r['id'] for r in full} == {r['id'] for r in baseline}
     keys = ('r90_success','r180_success','contour_f1','text_score','texture_score','sketch_similarity')
     lookup = {r['id']:r for r in baseline}
-    result = {k:bootstrap([r[k]-lookup[r['id']][k] for r in full]) for k in keys}
+    result = {k:bootstrap([r[k]-lookup[r['id']][k] for r in full
+                          if r[k] is not None and lookup[r['id']][k] is not None]) for k in keys}
     denom = np.mean([r['text_score'] for r in baseline])
     result['relative_text_drop'] = -result['text_score']['mean']/max(denom,1e-8)
     arm_drop={arm:(np.mean([r['arm_metrics'][arm]['text_score'] for r in baseline])-
