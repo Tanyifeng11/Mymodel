@@ -198,6 +198,9 @@ def gate(seed,records):
         else: d.update(next_route='seed43_seed44',hard_stop=False)
         d['seed42_hard_stop_checks'] = dict(field_r90=field,structure_drop=-result['contour_f1']['mean'],
                                            r90_gain=result['r90_success']['mean'])
+    elif result['contour_f1']['mean']<-.05:
+        d.update(next_route='structure_safe_injection_revision',hard_stop=True,
+                 hard_stop_rf_seed=seed,hard_stop_contour_drop=-result['contour_f1']['mean'])
     decision(**d)
     print('[E33TM image Gate]',seed,result,flush=True)
     return not read(OUT/'decision_summary.json').get('hard_stop',False)
@@ -226,8 +229,10 @@ def main():
         gate(42,cohort['primary'])
     elif args.stage=='remaining':
         for seed in (43,44):
-            experiment = Experiment(seed);experiment.run(cohort['primary'],'full');gate(seed,cohort['primary'])
+            experiment = Experiment(seed);experiment.run(cohort['primary'],'full')
+            proceed = gate(seed,cohort['primary'])
             del experiment;gc.collect();torch.cuda.empty_cache()
+            if not proceed: break
     elif args.stage=='robustness':
         records = [r for r in cohort['primary'] if r['id'] in cohort['robust64']]
         experiment = Experiment(42)
