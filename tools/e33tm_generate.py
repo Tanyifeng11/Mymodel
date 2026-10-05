@@ -14,6 +14,7 @@ from models.e33tm_generation_wrapper import load_e5, spatial_carrier, generate, 
 from tools.e33tm_metrics import Evaluator, pair_metrics, summarize, compare
 from tools.e33tm_protocol import *
 from tools.e33tm_caption_audit import prepare
+from tools.e33tm_interventions import prepare as prepare_interventions
 from tools.e22_4_generation import module_hashes
 
 def folder(setting,seed=42):
@@ -30,6 +31,8 @@ class Experiment:
     def __init__(self,seed):
         assert read(OUT/'field_precheck/summary.json')['pass']
         self.cohorts = prepare()
+        interventions = prepare_interventions(self.cohorts)
+        self.cohorts.update({k:interventions[k] for k in ('donors','donor_rows','text_compatible_near')})
         self.lookup = dict(self.cohorts['donor_rows'])
         self.lookup.update({r['id']:r for r in self.cohorts['dev']})
         self.seed = seed
@@ -39,7 +42,7 @@ class Experiment:
         self.before = module_hashes(self.modules)
         write(OUT/'generation_implementation.json',dict(git_commit=commit(),
             source_files={p:sha(p) for p in ('tools/e33tm_generate.py','tools/e33tm_metrics.py',
-                'models/e33tm_generation_wrapper.py','tools/e33tm_protocol.py')},
+                'models/e33tm_generation_wrapper.py','tools/e33tm_protocol.py','tools/e33tm_interventions.py')},
             size=self.size,texture_num_tokens=self.pipe.effective_texture_num_tokens,
             evaluator_config_sha256=sha('models/clip/models/image_encoder/config.json'),
             evaluator_weights_sha256=sha('models/clip/pytorch_model.bin'),
@@ -76,6 +79,7 @@ class Experiment:
         for index,row in enumerate(records,1):
             donor = None
             if setting in donor_key:
+                if self.cohorts['donors'][row['id']] is None: continue
                 donor = self.lookup[self.cohorts['donors'][row['id']][donor_key[setting]]]
             if setting=='near':
                 sid = self.cohorts['text_compatible_near'][row['id']]['donor']
@@ -170,6 +174,7 @@ class Experiment:
     def rows(self,records,setting,diffusion_seeds=(42,)):
         result = []
         for row in records:
+            if setting in ('shuffled_text','wrong_sketch','wrong_texture') and self.cohorts['donors'][row['id']] is None: continue
             if setting=='near' and not self.cohorts['text_compatible_near'][row['id']]['available']: continue
             for seed in diffusion_seeds:
                 result.append(read(folder(setting,self.seed)/row['id']/('d%d'%seed)/'pair.json'))

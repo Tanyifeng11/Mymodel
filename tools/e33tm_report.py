@@ -10,6 +10,7 @@ def run():
     if d.get('field_precheck_pass') is False:
         d.update(hard_stop=True,next_route='trimodal_wrapper_integration_bug')
     cohort=read(OUT/'manifests/cohorts.json')
+    interventions=read(OUT/'manifests/intervention_data.json') if (OUT/'manifests/intervention_data.json').exists() else None
     table=[]
     base_path=OUT/'baseline_e5/rows.json'
     baseline=read(base_path) if base_path.exists() else None
@@ -20,7 +21,7 @@ def run():
         path=OUT/name/'rows.json'
         if not path.exists(): continue
         rows=read(path)
-        complete={r['id'] for r in rows}==primary_ids
+        complete={r['id'] for r in rows}==primary_ids and len(rows)==len(primary_ids)
         checks[name+'/complete_primary']=complete
         table.append(dict(model=name,complete=complete,**summarize(rows)))
         if complete and name!='baseline_e5' and baseline and {r['id'] for r in baseline}==primary_ids:
@@ -36,7 +37,13 @@ def run():
         lookup={r['id']:r for r in full}
         for setting in ('no_text','shuffled_text','no_sketch','wrong_sketch','no_texture','wrong_texture'):
             path=OUT/'ablations'/setting/'rows.json'
-            if path.exists(): ablations.append(dict(setting=setting,**summarize(read(path))))
+            if path.exists():
+                values=read(path)
+                expected=primary_ids if setting in ('no_text','no_sketch','no_texture') else {
+                    sid for sid in primary_ids if interventions['donors'][sid] is not None}
+                checks['ablation/'+setting]={r['id'] for r in values}==expected and len(values)==len(expected)
+                ablations.append(dict(setting=setting,**summarize(values),requested_primary=len(primary_ids),
+                                      unavailable_donor_cases=len(primary_ids)-len(expected)))
         for setting,metric in [('no_text','text_score'),('no_sketch','contour_f1'),('no_texture','r90_success')]:
             path=OUT/'ablations'/setting/'rows.json'
             if not path.exists(): continue
@@ -63,6 +70,8 @@ def run():
     near=None
     if near_path.exists():
         rows=read(near_path);pairs=[(r,lookup_full) for r in rows for lookup_full in full if r['id']==lookup_full['id']]
+        expected={sid for sid in primary_ids if interventions['text_compatible_near'][sid]['available']}
+        checks['near/eligible_ids']={r['id'] for r in rows}==expected and len(rows)==len(expected)
         readable=[(r,b) for r,b in pairs if r['matched_target_error'] is not None and b['matched_target_error'] is not None]
         near=dict(available_cases=len(rows),requested_primary=len(primary_ids),diagnostic_only=True,
             matched_error=bootstrap([b['matched_target_error'] for r,b in readable]),
@@ -84,7 +93,11 @@ def run():
     robust=[]
     for name in ('baseline_e5','rf2_seed42','rf2_seed43','rf2_seed44'):
         path=OUT/'robustness'/name/'rows.json'
-        if path.exists(): robust.append(dict(model=name,diagnostic_only=True,**summarize(read(path))))
+        if path.exists():
+            values=read(path)
+            checks['robust/'+name]=len(values)==len(cohort['robust64'])*4 and {
+                (r['id'],r['diffusion_seed']) for r in values}=={(sid,seed) for sid in cohort['robust64'] for seed in (42,43,44,45)}
+            robust.append(dict(model=name,diagnostic_only=True,**summarize(values)))
     error_categories={}
     if baseline:
         original={r['id']:r for r in baseline}
@@ -109,8 +122,8 @@ def run():
     write(OUT/'result_table.json',dict(generation=table,modality_roles=roles,ablations=ablations,
                                      robustness=robust,conflict=conflict,text_compatible_near=near))
     frozen=freeze_check()
-    complete=bool(d.get('hard_stop') or (main_complete and len(roles)==3 and near is not None and
-                  (len(conflict)==3 or not cohort['conflict'])))
+    complete=bool((d.get('hard_stop') or (main_complete and len(roles)==3 and len(ablations)==6 and len(robust)==2 and near is not None and
+                  (len(conflict)==3 or not cohort['conflict']))) and all(checks.values()))
     write(OUT/'completion_check.json',dict(experiment_execution_complete=complete,scientific_success=bool(
         d.get('trimodal_reference_causality_pass') and d.get('modality_role_disentanglement_pass')),
         hard_stop=d.get('hard_stop',False),stages=stages,numeric_checks=checks,frozen_pass=frozen['pass']))

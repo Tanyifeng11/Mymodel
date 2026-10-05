@@ -93,11 +93,20 @@ def compare(full,baseline):
     result = {k:bootstrap([r[k]-lookup[r['id']][k] for r in full]) for k in keys}
     denom = np.mean([r['text_score'] for r in baseline])
     result['relative_text_drop'] = -result['text_score']['mean']/max(denom,1e-8)
+    arm_drop={arm:(np.mean([r['arm_metrics'][arm]['text_score'] for r in baseline])-
+                   np.mean([r['arm_metrics'][arm]['text_score'] for r in full]))/
+                   max(np.mean([r['arm_metrics'][arm]['text_score'] for r in baseline]),1e-8)
+              for arm in ('R0','R90','R180')}
+    original_text=np.mean([r['arm_metrics']['R0']['text_score'] for r in full])
+    rotated_drop={arm:(original_text-np.mean([r['arm_metrics'][arm]['text_score'] for r in full]))/
+                  max(original_text,1e-8) for arm in ('R90','R180')}
+    result['text_drop_by_arm']={k:float(v) for k,v in arm_drop.items()}
+    result['text_rotation_drop']={k:float(v) for k,v in rotated_drop.items()}
     result['checks'] = dict(r90=np.mean([r['r90_success'] for r in full])>=.5,
         gain=result['r90_success']['mean']>=.2,paired_ci=result['r90_success']['ci95'][0]>0,
         r180=np.mean([r['r180_success'] for r in full])>=.8,
         contour=result['contour_f1']['mean']>=-.02,
-        text=result['relative_text_drop']<=.02,
+        text=max(arm_drop.values())<=.02 and max(rotated_drop.values())<=.02,
         sketch=result['sketch_similarity']['ci95'][0]>=-.02)
     result['pass'] = all(result['checks'].values())
     return result

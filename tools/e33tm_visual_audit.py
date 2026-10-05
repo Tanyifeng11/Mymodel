@@ -85,6 +85,9 @@ def smoke(cohort):
 
 def final_audit():
     cohort=read(OUT/'manifests/cohorts.json')
+    if (OUT/'manifests/intervention_data.json').exists():
+        interventions=read(OUT/'manifests/intervention_data.json')
+        cohort['text_compatible_near']=interventions['text_compatible_near']
     rows=read(OUT/'rf2_seed42/rows.json')
     ranked=sorted(rows,key=lambda r:(r['r90_error'] if r['r90_error'] is not None else 999.,r['id']))
     grouped(cohort,[r['id'] for r in ranked[:16]],OUT/'visual_audit/best16_R90')
