@@ -64,14 +64,17 @@ def localize(cohort,splits):
         adjacent[a+'->'+b]=c
     primary_pre={a+'->'+b:compare(records('stage_survival',42,primary,a),records('stage_survival',42,primary,b))
                  for a,b in [('S0','S1'),('S1','S2'),('S2','S4')]}
+    field_to_carrier=compare(records('stage_survival',42,primary,'S0'),records('stage_survival',42,primary,'S2'))
     candidates=[(c['r90_success']['mean'],edge) for edge,c in adjacent.items() if c['significant_drop']]
     chosen=max(candidates)[1] if candidates else 'cumulative_small_losses'
     field_edges=['S0->S1','S1->S2']
     output=dict(primary_bottleneck_stage=chosen,stage_pair=chosen.split('->') if candidates else None,
         selection_scope='same diagnostic64 at every stage; pre-diffusion contrasts separately verified on all254',
         full254=full,diagnostic64=diagnostic,adjacent_diagnostic64=adjacent,adjacent_full254=primary_pre,
-        field_to_rgb_bottleneck=any(primary_pre[e]['significant_drop'] for e in field_edges),
-        field_to_rgb_readability_loss=any(primary_pre[e]['significant_drop'] and primary_pre[e]['readability_loss'] for e in field_edges),
+        field_to_carrier_full254=field_to_carrier,
+        field_to_rgb_bottleneck=field_to_carrier['significant_drop'] or any(primary_pre[e]['significant_drop'] for e in field_edges),
+        field_to_rgb_readability_loss=field_to_carrier['significant_drop'] and field_to_carrier['readability_loss'] or
+            any(primary_pre[e]['significant_drop'] and primary_pre[e]['readability_loss'] for e in field_edges),
         vae_orientation_bottleneck=primary_pre['S2->S4']['significant_drop'],
         initialization_or_first_denoise_bottleneck=adjacent['S4->x0_01']['significant_drop'],
         first_to_last=compare(records('stage_survival',42,diag,'x0_01'),records('stage_survival',42,diag,'x0_08')),
