@@ -146,6 +146,11 @@ class Experiment:
                                  strength=strength,conditions=conditions,observer=observe,save_tensors=tensor_path,save_step_tensors=steps)
             schedules[arm]=metadata
             write(dest/(arm+'_scheduler.json'),metadata)
+            for stage,key in [('S3','posterior_mean'),('S5','initial_latent')]:
+                write(dest/stage/(arm+'.json'),dict(id=row['id'],stage=stage,arm=arm,
+                    readable=None,support_fraction=None,orientation_angle=None,orientation_confidence=None,
+                    latent=metadata[key],tensor_path=str(tensor_path.relative_to(dest)),
+                    note='潜变量仅记录张量与scheduler摘要，不使用RGB方向评测；posterior_mean已乘VAE scaling_factor'))
             if control:
                 direct,direct_info=generate(self.pipe,self.size,self.ns,row['caption'],sketch,ref,mask,42,carrier)
                 assert np.array_equal(np.asarray(image),np.asarray(direct)), 'logger changed final image'
