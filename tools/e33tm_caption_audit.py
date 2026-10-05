@@ -1,5 +1,7 @@
 """扫描原划分，冻结 caption/cohort/donor；重复执行只核验哈希。"""
 from pathlib import Path
+import numpy as np
+from PIL import Image
 from data.e33tm_caption_audit import audit_row
 from tools.e33tm_protocol import *
 
@@ -20,6 +22,10 @@ def prepare():
     conflict = [r for r in dev if r['cohort'] == 'conflict']
     assert primary and len(primary)+len(conflict) == 256
     donors = {}
+    near = {}
+    def pixels(row, key):
+        with Image.open(DATASET/row[key]) as image:
+            return np.asarray(image.convert('RGB').resize((32,32)),dtype=float)
     for row in dev:
         candidates = order([r for r in dev if r['id'] != row['id'] and r['category'] == row['category']],
                            'E33TM/donor/'+row['id'])
@@ -27,11 +33,24 @@ def prepare():
             candidates = order([r for r in enriched.values() if r['id'] != row['id'] and r['category'] == row['category']],
                                'E33TM/donor/'+row['id'])
         assert candidates, 'same-category donor unavailable: '+row['id']
+        original_sketch = pixels(row,'sketch')
+        sketch_donor = max(candidates[:8],key=lambda r: float(np.mean(abs(pixels(r,'sketch')-original_sketch))))
         donors[row['id']] = dict(shuffled_text=next((r['id'] for r in candidates if r['caption'] != row['caption']), None),
-                                 wrong_sketch=candidates[0]['id'], wrong_texture=candidates[-1]['id'])
+                                 wrong_sketch=sketch_donor['id'], wrong_texture=candidates[-1]['id'])
         assert donors[row['id']]['shuffled_text'], 'distinct caption donor unavailable'
+        compatible = order([r for r in enriched.values() if r['id']!=row['id'] and
+                            r['category']==row['category'] and r['pattern']==row['pattern']],
+                           'E33TM/near/'+row['id'])[:32]
+        color = pixels(row,'reference').mean((0,1))
+        distances = [(float(np.linalg.norm(pixels(r,'reference').mean((0,1))-color)),r['id']) for r in compatible]
+        closest = min(distances) if distances else None
+        near[row['id']] = dict(donor=closest[1] if closest and closest[0]<=40 else None,
+                              rgb_mean_distance=closest[0] if closest else None,
+                              color_threshold=40., available=bool(closest and closest[0]<=40))
     used = {sid for choices in donors.values() for sid in choices.values()}
+    used.update(r['donor'] for r in near.values() if r['donor'])
     cohort = dict(dev=dev, primary=primary, conflict=conflict, donors=donors,
+        text_compatible_near=near,
         donor_rows={sid:enriched[sid] for sid in used},
         smoke16=[r['id'] for r in order(primary, 'E33TM/smoke')[:16]],
         robust64=[r['id'] for r in order(primary, 'E33TM/robust')[:64]],
