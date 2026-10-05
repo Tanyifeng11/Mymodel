@@ -175,13 +175,56 @@ class Experiment:
         return rows
 
     def rows(self,records,setting,diffusion_seeds=(42,)):
-        result = []
-        for row in records:
-            if setting in ('shuffled_text','wrong_sketch','wrong_texture') and self.cohorts['donors'][row['id']] is None: continue
-            if setting=='near' and not self.cohorts['text_compatible_near'][row['id']]['available']: continue
-            for seed in diffusion_seeds:
-                result.append(read(folder(setting,self.seed)/row['id']/('d%d'%seed)/'pair.json'))
-        return result
+        return collect_rows(self.cohorts,records,setting,self.seed,diffusion_seeds)
+
+def collect_rows(cohort,records,setting,rf_seed,diffusion_seeds):
+    result=[]
+    for row in records:
+        if setting in ('shuffled_text','wrong_sketch','wrong_texture') and cohort['donors'][row['id']] is None: continue
+        if setting=='near' and not cohort['text_compatible_near'][row['id']]['available']: continue
+        for seed in diffusion_seeds:
+            result.append(read(folder(setting,rf_seed)/row['id']/('d%d'%seed)/'pair.json'))
+    return result
+
+def stage_tasks(cohort,work,index=0,count=1):
+    records=cohort['primary'][index::count]
+    if work=='remaining': return [(records,'full',(42,))]
+    if work=='robustness':
+        records=[r for r in cohort['primary'] if r['id'] in cohort['robust64']][index::count]
+        return [(records,setting,(42,43,44,45)) for setting in ('robust_baseline','robust_full')]
+    if work=='ablations':
+        return [(records,setting,(42,)) for setting in
+                ('no_text','shuffled_text','no_sketch','wrong_sketch','no_texture','wrong_texture')]
+    if work=='diagnostics':
+        conflict=cohort['conflict'][index::count]
+        return [(records,'near',(42,))]+[(conflict,setting,(42,)) for setting in
+               ('conflict_baseline','conflict_C0','conflict_C1','conflict_C2')]
+    raise ValueError(work)
+
+def shard_tag(work,seed,index,count):
+    return '%s_s%d_%d_of_%d'%(work,seed,index,count)
+
+def aggregate(cohort,work,seed,count):
+    # 只读逐case结果；不重新加载E5，也不把分片当作独立统计单位。
+    interventions=prepare_interventions(cohort)
+    cohort.update({k:interventions[k] for k in ('donors','donor_rows','text_compatible_near')})
+    for records,setting,diffusion_seeds in stage_tasks(cohort,work):
+        proofs=[]
+        for index in range(count):
+            audit=OUT/'shards'/shard_tag(work,seed,index,count)
+            assert read(audit/'manifest.json')['cohort_sha256']==sha(OUT/'manifests/cohorts.json')
+            proof=read(audit/setting/'frozen_modules.json')
+            assert proof['pass'] and proof['before']==proof['after']
+            proofs.append(proof)
+        assert all(p['before']==proofs[0]['before'] for p in proofs)
+        rows=collect_rows(cohort,records,setting,seed,diffusion_seeds)
+        dest=folder(setting,seed)
+        write(dest/'rows.json',rows);write(dest/'summary.json',summarize(rows))
+        write(dest/'frozen_modules.json',dict(before=proofs[0]['before'],after=proofs[0]['after'],
+                                             verified_shards=count,**{'pass':True}))
+    freeze_check()
+    if work=='remaining': gate(seed,cohort['primary'])
+    print('[E33TM aggregate]',work,seed,'complete',flush=True)
 
 def axial_local(a,b):
     from tools.e33r_evaluate import axial
@@ -215,7 +258,9 @@ def gate(seed,records):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--stage',choices=('smoke','seed42','seed42_shard','remaining','robustness','ablations','diagnostics'),required=True)
+    parser.add_argument('--stage',choices=('smoke','seed42','seed42_shard','remaining','robustness','ablations','diagnostics','worker','aggregate'),required=True)
+    parser.add_argument('--work',choices=('remaining','robustness','ablations','diagnostics'))
+    parser.add_argument('--rf-seed',type=int,choices=SEEDS,default=42)
     parser.add_argument('--shard-index',type=int,default=0)
     parser.add_argument('--shard-count',type=int,default=4)
     args = parser.parse_args()
@@ -233,7 +278,20 @@ def main():
         smoke(cohort)
         return
     assert read(OUT/'smoke_audit/visual_review.json')['pass'], 'review fixed16 panels before full dev'
-    if args.stage=='seed42_shard':
+    if args.stage in ('worker','aggregate'):
+        assert args.work and 0<=args.shard_index<args.shard_count
+        if args.stage=='aggregate':
+            aggregate(cohort,args.work,args.rf_seed,args.shard_count)
+            return
+        tag=shard_tag(args.work,args.rf_seed,args.shard_index,args.shard_count)
+        tasks=stage_tasks(cohort,args.work,args.shard_index,args.shard_count)
+        write(OUT/'shards'/tag/'manifest.json',dict(cohort_sha256=sha(OUT/'manifests/cohorts.json'),
+            work=args.work,rf_seed=args.rf_seed,shard_index=args.shard_index,shard_count=args.shard_count,
+            settings={setting:dict(ids=[r['id'] for r in records],diffusion_seeds=diffusion_seeds)
+                      for records,setting,diffusion_seeds in tasks}))
+        experiment=Experiment(args.rf_seed,tag)
+        for records,setting,diffusion_seeds in tasks: experiment.run(records,setting,diffusion_seeds)
+    elif args.stage=='seed42_shard':
         assert 0<=args.shard_index<args.shard_count
         records=cohort['primary'][args.shard_index::args.shard_count]
         tag='seed42_%d_of_%d'%(args.shard_index,args.shard_count)
