@@ -27,6 +27,18 @@ def verify(root):
         for arm in ['matched','rot90','rot180','color_near','random','zero']:
             checks[name+'/'+arm]=real['errors'][arm]==statistics([float(r[arm+'_error']) for r in rr if r[arm+'_error'] is not None])
         cf=entry['controlled'];checks[name+'/controlled128']=cf['denominator']==128 and cf['strict']['denominator']==45
+        controlled_rows=read(stage/'controlled/rows.json')
+        for key in ['clean_r90_success','noisy_r90_both_success','r180_identity_success']:
+            checks[name+'/CF/'+key]=cf[key]==statistics([float(r[key]) for r in controlled_rows if r[key] is not None])
+        controlled_lookup={r['id']:r for r in controlled_rows}
+        for path in (stage/'controlled/fields').glob('*.npz'):
+            with np.load(path) as z:
+                ori,gt,mask=z['orientation'],z['gt'],z['support'];row=controlled_lookup[path.stem]
+                avg=lambda x:float(np.average(x[mask],weights=gt[3][mask])) if mask.any() else None
+                for key,value in [('r90_response_error',avg(axial(ori[1],-ori[0]))),('r180_response_error',avg(axial(ori[2],ori[0])))]:
+                    checks[name+'/'+path.stem+'/CF/'+key]=value is row[key] if value is None else abs(value-row[key])<1e-4
+                checks[name+'/'+path.stem+'/CF/noisy']=all(abs(avg(axial(ori[k+1],-ori[k]))-row['noisy_r90_errors'][i])<1e-4 for i,k in enumerate([3,6])) if mask.any() else row['noisy_r90_errors']==[None,None]
+                checks[name+'/'+path.stem+'/CF/finite']=all(np.isfinite(z[k]).all() for k in z.files)
         rows={r['id']:r for r in rr}
         for path in (stage/'real/fields').glob('*.npz'):
             row=rows[path.stem]
