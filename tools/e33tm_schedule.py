@@ -17,7 +17,7 @@ def submit(args):
 
 
 def wait(job):
-    while command(['squeue','-h','-j',job,'-o','%T']): time.sleep(15)
+    while job in command(['squeue','-h','-u','u2515283058','-o','%A']).splitlines(): time.sleep(15)
     # 等待调度系统的作业状态入账，失败时停止调度，保留结果供检查。
     result = ''
     while not result:

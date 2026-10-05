@@ -158,12 +158,12 @@ def run():
         d.get('trimodal_reference_causality_pass') and d.get('modality_role_disentanglement_pass')),
         hard_stop=d.get('hard_stop',False),stages=stages,numeric_checks=checks,frozen_pass=frozen['pass']))
     files={str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and
-           p.name not in ('artifact_manifest.json','final_review_bundle.tar.gz','smoke_review.zip') and
+           p.name not in ('artifact_manifest.json','final_review_bundle.tar.gz','smoke_review.zip','scheduler_state.json') and
            not p.name.endswith(('.log','.err'))}
     write(OUT/'artifact_manifest.json',dict(files=files,git_commit=commit(),training_steps=0))
     with tarfile.open(OUT/'final_review_bundle.tar.gz','w:gz') as archive:
         for path in OUT.rglob('*'):
-            if not path.is_file() or path.name=='final_review_bundle.tar.gz': continue
+            if not path.is_file() or path.name in ('final_review_bundle.tar.gz','scheduler_state.json'): continue
             if path.suffix=='.json' or (path.suffix=='.png' and ('visual_audit' in path.parts or 'smoke_audit' in path.parts)):
                 archive.add(path,arcname=str(path.relative_to(OUT)))
     print('[E33TM final]',d,flush=True)
