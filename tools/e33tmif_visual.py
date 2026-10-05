@@ -66,6 +66,13 @@ def main():
                 if p.is_file():tar.add(p,arcname=str(p.relative_to(OUT)))
             for p in (OUT/'protocol/protocol.json',OUT/'splits/field_success_fixed_hash16.json'):
                 tar.add(p,arcname=str(p.relative_to(OUT)))
+    else:
+        from tools.e33tmif_finalize import curves
+        curves(read(OUT/'stage_survival/localization.json'),read(OUT/'strength_grid/summary.json'))
+        with tarfile.open(OUT/'localization_review.tar.gz','w:gz') as tar:
+            for p in sorted(OUT.rglob('*')):
+                if p.is_file() and (p.suffix=='.json' or 'curves' in p.parts or 'visual_audit' in p.parts):
+                    tar.add(p,arcname=str(p.relative_to(OUT)))
     print('[IF visual]',group,len(ids),'complete',flush=True)
 
 if __name__=='__main__':main()

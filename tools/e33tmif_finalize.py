@@ -49,6 +49,8 @@ def main():
     if candidate['strength'] is not None:confirmation=read(OUT/'strength_confirmation/summary.json')
     if loc['field_to_rgb_bottleneck']:purity=read(OUT/'carrier_purity/summary.json')
     seeds=read(OUT/'stage_survival/seed_confirmation.json')
+    review=read(OUT/'visual_audit/localization_review.json')
+    assert review['pass'] and review['not_pure_evaluator_artifact'], '必须完成固定图例和阶段曲线核验'
     stable=1+sum(r['pass'] for r in seeds)>=2
     rescue=bool(confirmation and confirmation['pass'])
     stage=loc['primary_bottleneck_stage']
@@ -87,7 +89,7 @@ def main():
         all8_conditions=conditions['carrier_noise_initial_latent_equal'] and conditions['full_reproduced'],
         all5_strengths=True,conditional_confirmation=candidate['strength'] is None or confirmation is not None,
         conditional_purity=not loc['field_to_rgb_bottleneck'] or purity is not None,
-        seed43_seed44_confirmation_executed=len(seeds)==2,frozen=True)
+        seed43_seed44_confirmation_executed=len(seeds)==2,frozen=True,localization_visual_review=review['pass'])
     primary=[r['id'] for r in cohort['primary']]
     full={str(seed):stage_summary(seed,primary,['S0','S1','S2','S4','S9']) for seed in SEEDS}
     table=dict(stage_survival=loc,full254_all_seeds=full,conditions=conditions,strength_grid=grid,
@@ -96,7 +98,8 @@ def main():
     write(OUT/'completion_check.json',dict(experiment_execution_complete=all(checks.values()),numeric_checks=checks,
                                          scientific_localization_success=stable,frozen_proofs=proofs,training_steps=0))
     curves(loc,grid)
-    excluded={'artifact_manifest.json','review_bundle.tar.gz','scheduler_state.json','scheduler.log','smoke_review.tar.gz'}
+    excluded={'artifact_manifest.json','review_bundle.tar.gz','scheduler_state.json','scheduler.log',
+              'smoke_review.tar.gz','localization_review.tar.gz'}
     files={str(p.relative_to(OUT)):sha(p) for p in sorted(OUT.rglob('*')) if p.is_file() and p.name not in excluded
            and p.suffix not in ('.log','.err')}
     write(OUT/'artifact_manifest.json',dict(files=files,git_commit=commit(),training_steps=0))

@@ -36,9 +36,8 @@ def main():
         for seed in (43,44):phase('seed_confirmation',seed)
     job=submit(['submit/e33tmif.sh','aggregate','seed_confirmation']);wait(job)
     job=submit(['submit/e33tmif.sh','visual']);wait(job)
-    job=submit(['submit/e33tmif.sh','finalize']);wait(job)
-    assert read(OUT/'completion_check.json')['experiment_execution_complete']
-    write(OUT/'scheduler_state.json',dict(phases=history,final_job=job,complete=True))
-    print('[IF schedule complete]',flush=True)
+    write(OUT/'scheduler_state.json',dict(phases=history,visual_job=job,complete=False,
+        awaiting='agent_localization_visual_review_then_finalize'))
+    print('[IF numerical experiments complete; visual review required]',flush=True)
 
 if __name__=='__main__':main()
