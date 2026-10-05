@@ -48,7 +48,7 @@ def report(review_json=''):
         table.append(dict(model=name,controlled=cf,real=real,drift=drift));return cf,real
     routes={};passed=[];cf_pass=[];rf1collapse={};completed_ablations=[]
     for seed in SEEDS:
-        baseline=OUT/'RF0_reproduction'/('seed%d'%seed);audit(baseline,seed)
+        baseline=OUT/'RF0_reproduction'/('seed%d'%seed);audit(baseline,seed,not reproduced)
         numeric['RF0_seed%d'%seed]=read(baseline/'reproduction_gate.json')['pass']==all(read(baseline/'reproduction_gate.json')['checks'].values())
         if not reproduced:continue
         for phase in ['RF1','RF2']:
@@ -116,6 +116,11 @@ def report(review_json=''):
         paths += [stage/'real/fields'/(sid+'.npz') for sid in ids]
         paths += [stage/'controlled/fields'/(sid+'.npz') for sid in sorted(({sid for sid in ids if sid in {r['id'] for r in controlled}})|{probes[name]})]
         paths += list((stage/'feature_drift').glob('*.npz'))
+        seed_name=name.split('/')[1] if name.startswith('RF0_reproduction/') else name.split('/')[0]
+        baseline=OUT/'RF0_reproduction'/seed_name
+        paths += [baseline/'real/fields'/(sid+'.npz') for sid in ids]
+        rf2=OUT/seed_name/'RF2'
+        if (rf2/'phase_complete.json').exists():paths += [rf2/'real/fields'/(sid+'.npz') for sid in ids]
     paths=sorted(set(paths));write(OUT/'artifact_manifest.json',dict(files={str(p.relative_to(OUT)):sha(p) for p in paths},checkpoints='full checkpoints and all fields retained on server'))
     with tarfile.open(OUT/'local_review_bundle.tar.gz','w:gz') as archive:
         for p in paths:archive.add(p,arcname=str(p.relative_to(OUT)))
