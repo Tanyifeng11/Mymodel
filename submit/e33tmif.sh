@@ -20,6 +20,8 @@ if [ "$action" = aggregate ]; then
     python -m tools.e33tmif_report "$@"
 elif [ "$action" = visual ]; then
     python -m tools.e33tmif_visual "$@"
+elif [ "$action" = finalize ]; then
+    python -m tools.e33tmif_finalize
 else
     python -m tools.e33tmif_run --work "$action" "$@"
     if [ "$action" = smoke ]; then python -m tools.e33tmif_visual --smoke; fi

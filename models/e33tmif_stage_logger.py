@@ -22,7 +22,7 @@ def decode(pipe,latent):
 
 @torch.inference_mode()
 def refine(pipe,size,ns,text,sketch,reference,mask,carrier,strength=.15,conditions=(True,True,True),
-           diffusion_seed=42,observer=None,save_tensors=None):
+           diffusion_seed=42,observer=None,save_tensors=None,save_step_tensors=False):
     noise=torch.randn((1,pipe.unet.config.in_channels,size[1]//8,size[0]//8),device=pipe.device,
         dtype=pipe.unet.dtype,generator=torch.Generator(device=pipe.device).manual_seed(diffusion_seed))
     start=timestep_for(pipe.scheduler,strength)
@@ -47,7 +47,7 @@ def refine(pipe,size,ns,text,sketch,reference,mask,carrier,strength=.15,conditio
                   predicted_noise=tensor_summary(model_output),predicted_x0=tensor_summary(predicted))
         records.append(info)
         if observer: observer('x0_%02d'%len(records),decode(pipe,predicted),info)
-        if save_tensors is not None and observer:
+        if save_tensors is not None and save_step_tensors:
             np.savez_compressed(save_tensors.parent/('step_%02d.npz'%len(records)),
                 predicted_noise=model_output.detach().cpu().numpy(),predicted_x0=predicted.detach().cpu().numpy())
         return result

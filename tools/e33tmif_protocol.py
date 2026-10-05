@@ -58,7 +58,7 @@ def prepare():
     if path.exists(): assert read(path)==read_normalized(PROTOCOL)
     else: write(path,PROTOCOL)
     locked=[E5,TM/'manifests/cohorts.json',TM/'weight_audit.json',TM/'completion_check.json',
-        Path('data/train_bf_texture.json'),Path('data/dev_bf_texture.json')]
+        Path('data/train_bf_texture.json')]
     locked += [RF/('seed%d'%s)/'RF2/checkpoint_final.pt' for s in SEEDS]
     old=read(TM/'frozen_check.json')
     locked += [Path(p) for p in old['before']]

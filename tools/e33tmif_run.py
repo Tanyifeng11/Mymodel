@@ -143,7 +143,7 @@ class Experiment:
                     self.stage(row,stage,image,None,mask,sketch,ref,support,gt,dest,info)
             tensor_path=dest/'tensors'/arm/'initial.npz'
             image,metadata=refine(self.pipe,self.size,self.ns,row['caption'],sketch,ref,mask,carrier,
-                                 strength=strength,conditions=conditions,observer=observe,save_tensors=tensor_path)
+                                 strength=strength,conditions=conditions,observer=observe,save_tensors=tensor_path,save_step_tensors=steps)
             schedules[arm]=metadata
             write(dest/(arm+'_scheduler.json'),metadata)
             if control:
