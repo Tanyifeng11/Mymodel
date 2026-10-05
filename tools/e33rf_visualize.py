@@ -59,7 +59,8 @@ def create_panels(stage,seed):
             ('controlled error '+probe,Image.fromarray(error_pic)),('current zero',direction(p['orientation'][5],support))]
         canvas=Image.new('RGB',(5*210,4*275+65),'white');draw=ImageDraw.Draw(canvas)
         draw.text((8,5),'E33-RF '+str(stage.relative_to(OUT))+' '+sid,fill='black')
-        draw.text((8,23),'near=%.3f R90error=%.3f'%(metrics[sid]['near_advantage'] or 0,metrics[sid]['rot90_response_error'] or 0),fill='black')
+        label=lambda value:'N/A (empty GT)' if value is None else '%.3f'%value
+        draw.text((8,23),'near='+label(metrics[sid]['near_advantage'])+' R90error='+label(metrics[sid]['rot90_response_error']),fill='black')
         draw.text((8,41),'Axial hue [0,180); gray outside GT; confidence is diagnostic, not truth',fill='black')
         for i,(label,pic) in enumerate(items):
             x,y=(i%5)*210+5,(i//5)*275+65;draw.text((x,y),label,fill='black');canvas.paste(fit_panel(pic),(x,y+20))
