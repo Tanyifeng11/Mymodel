@@ -75,7 +75,15 @@ def summarize(rows):
         means = [float(np.mean([r[k] for r in rows if r['id']==sid and r[k] is not None]))
                  for sid in ids if any(r['id']==sid and r[k] is not None for r in rows)]
         stats[k] = bootstrap(means)
-    return dict(case_count=len(ids),repeated_measures=len(rows),statistics=stats)
+    arms={}
+    if rows and 'arm_metrics' in rows[0]:
+        for arm in ('R0','R90','R180','Rzero'):
+            eligible=[r for r in rows if arm in r['arm_metrics']]
+            if not eligible: continue
+            arms[arm]={k:bootstrap([float(np.mean([r['arm_metrics'][arm][k] for r in eligible if r['id']==sid]))
+                                   for sid in ids if any(r['id']==sid for r in eligible)])
+                       for k in ('text_score','texture_score','clip_texture','contour_f1','sketch_similarity')}
+    return dict(case_count=len(ids),repeated_measures=len(rows),statistics=stats,arm_statistics=arms)
 
 def compare(full,baseline):
     assert {r['id'] for r in full} == {r['id'] for r in baseline}
