@@ -13,7 +13,9 @@ def prepare():
     captions = {Path(r['cloth']).stem: r['caption'] for r in read('data/train_bf_texture.json')}
     rows = [audit_row(r, captions[r['id']], key) for key in ('train', 'dev') for r in split[key]]
     index = {r['id']: r for r in rows}
-    dev = [dict(r, **{k: index[r['id']][k] for k in ('caption', 'category', 'pattern', 'cohort')}) for r in split['dev']]
+    enriched = {r['id']: dict(r, **{k: index[r['id']][k] for k in ('caption', 'category', 'pattern', 'cohort')})
+                for key in ('train','dev') for r in split[key]}
+    dev = [enriched[r['id']] for r in split['dev']]
     primary = [r for r in dev if r['cohort'] == 'primary']
     conflict = [r for r in dev if r['cohort'] == 'conflict']
     assert primary and len(primary)+len(conflict) == 256
@@ -21,11 +23,16 @@ def prepare():
     for row in dev:
         candidates = order([r for r in dev if r['id'] != row['id'] and r['category'] == row['category']],
                            'E33TM/donor/'+row['id'])
+        if not candidates:
+            candidates = order([r for r in enriched.values() if r['id'] != row['id'] and r['category'] == row['category']],
+                               'E33TM/donor/'+row['id'])
         assert candidates, 'same-category donor unavailable: '+row['id']
         donors[row['id']] = dict(shuffled_text=next((r['id'] for r in candidates if r['caption'] != row['caption']), None),
                                  wrong_sketch=candidates[0]['id'], wrong_texture=candidates[-1]['id'])
         assert donors[row['id']]['shuffled_text'], 'distinct caption donor unavailable'
+    used = {sid for choices in donors.values() for sid in choices.values()}
     cohort = dict(dev=dev, primary=primary, conflict=conflict, donors=donors,
+        donor_rows={sid:enriched[sid] for sid in used},
         smoke16=[r['id'] for r in order(primary, 'E33TM/smoke')[:16]],
         robust64=[r['id'] for r in order(primary, 'E33TM/robust')[:64]],
         hash16=[r['id'] for r in order(primary, 'E33TM/visual')[:16]])
