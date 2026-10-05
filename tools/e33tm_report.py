@@ -7,6 +7,11 @@ from tools.e33tm_metrics import bootstrap, summarize, compare
 
 def run():
     d=read(OUT/'decision_summary.json')
+    for key in ('seed42_image_r90','seed43_image_r90','seed44_image_r90',
+                'seed42_image_r180','seed43_image_r180','seed44_image_r180',
+                'no_text_textscore_drop','no_sketch_structure_drop','no_texture_r90_drop',
+                'text_texture_conflict_detected'):
+        d.setdefault(key,None)
     if d.get('field_precheck_pass') is False:
         d.update(hard_stop=True,next_route='trimodal_wrapper_integration_bug')
     cohort=read(OUT/'manifests/cohorts.json')
@@ -86,8 +91,15 @@ def run():
             else: d['next_route']='multimodal_condition_conflict'
         elif not d['modality_role_disentanglement_pass']: d['next_route']='modality_role_calibration'
         else: d['next_route']='trimodal_causal_loop_validated'
-    stages={name:dict(completed=(OUT/name/'rows.json').exists(),required=not d.get('hard_stop',False))
-            for name in ('rf2_seed43','rf2_seed44','ablations/no_text','ablations/no_sketch','ablations/no_texture','text_compatible_near')}
+    stage_names=('baseline_e5','rf2_seed42','rf2_seed43','rf2_seed44',
+        'robustness/baseline_e5','robustness/rf2_seed42',
+        'ablations/no_text','ablations/shuffled_text','ablations/no_sketch','ablations/wrong_sketch',
+        'ablations/no_texture','ablations/wrong_texture','text_compatible_near',
+        'conflict_test/baseline_e5','conflict_test/C0','conflict_test/C1','conflict_test/C2')
+    stages={name:dict(completed=(OUT/name/'rows.json').exists(),required=(
+        d.get('field_precheck_pass') is True if name in ('baseline_e5','rf2_seed42') else
+        not d.get('hard_stop',False) and (not name.startswith('conflict_test/') or bool(cohort['conflict']))))
+        for name in stage_names}
     d['not_run_reason']='protocol_hard_stop' if d.get('hard_stop') else None
     write(OUT/'decision_summary.json',d)
     robust=[]
