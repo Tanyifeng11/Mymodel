@@ -52,7 +52,9 @@ def run():
                      real_r180=abs(real180-old_real['r180_identity']['mean']),
                      controlled_r180=abs(cf['r180_identity_success']['mean']-old_cf['r180_identity_success']['mean']))
         record = dict(seed=seed, differences=diffs, real_r90=real90, real_r180=real180,
-                      real_denominator=256, controlled_denominator=128, direct_outputs_equal=True,
+                      real_evaluated_cases=len(rows),
+                      real_denominator=sum(r['rot90_response_success'] is not None for r in rows),
+                      controlled_denominator=128, direct_outputs_equal=True,
                       **{'pass':all(v<=.02+1e-12 for v in diffs.values())})
         write(dest/'summary.json', record)
         reports.append(record)

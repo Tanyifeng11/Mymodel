@@ -15,6 +15,15 @@ def run():
     if d.get('field_precheck_pass') is False:
         d.update(hard_stop=True,next_route='trimodal_wrapper_integration_bug')
     cohort=read(OUT/'manifests/cohorts.json')
+    # 校正早期摘要把数据集大小标成条件成功率分母的元数据；不重算/改变field分数。
+    field_path=OUT/'field_precheck/summary.json'
+    field_report=read(field_path)
+    for item in field_report['seeds']:
+        rows=read(OUT/'field_precheck'/('seed%d'%item['seed'])/'real/rows.json')
+        item['real_evaluated_cases']=len(rows)
+        item['real_denominator']=sum(r['rot90_response_success'] is not None for r in rows)
+        write(OUT/'field_precheck'/('seed%d'%item['seed'])/'summary.json',item)
+    write(field_path,field_report)
     interventions=read(OUT/'manifests/intervention_data.json') if (OUT/'manifests/intervention_data.json').exists() else None
     table=[]
     base_path=OUT/'baseline_e5/rows.json'
