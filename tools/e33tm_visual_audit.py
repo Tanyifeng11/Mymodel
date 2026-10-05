@@ -28,6 +28,9 @@ def panel(cohort,sid,destination,setting='full',seed=42):
     refs += [rotate(refs[0],90),rotate(refs[0],180)]
     entries = [('Sketch',Image.open(DATASET/row['sketch']))]
     entries += [(a+' ref',r) for a,r in zip(('R0','R90','R180'),refs)]
+    if setting in ('near','wrong_texture'):
+        used=read(full/'R0.json')
+        entries.append(('Donor '+str(used['donor']),Image.open(used['source_reference'])))
     for label,path in [('E5 R0',base/'R0.png'),('E5 R90',base/'R90.png')]:
         if path.exists(): entries.append((label,Image.open(path)))
     records=[]

@@ -230,11 +230,9 @@ def main():
             del experiment;gc.collect();torch.cuda.empty_cache()
     elif args.stage=='robustness':
         records = [r for r in cohort['primary'] if r['id'] in cohort['robust64']]
-        for seed in SEEDS:
-            experiment = Experiment(seed)
-            if seed==42: experiment.run(records,'robust_baseline',(42,43,44,45))
-            experiment.run(records,'robust_full',(42,43,44,45))
-            del experiment;gc.collect();torch.cuda.empty_cache()
+        experiment = Experiment(42)
+        experiment.run(records,'robust_baseline',(42,43,44,45))
+        experiment.run(records,'robust_full',(42,43,44,45))
     elif args.stage=='ablations':
         experiment = Experiment(42)
         for setting in ('no_text','shuffled_text','no_sketch','wrong_sketch','no_texture','wrong_texture'):
