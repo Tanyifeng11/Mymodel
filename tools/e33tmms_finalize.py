@@ -27,6 +27,7 @@ def finish():
     elif not d['M2_real_carrier_pass']:skipped+=['M2 confirmation64','M2 E5 mini']
     elif not d.get('M2_confirmation_pass'):skipped+=['M2 E5 mini']
     if not d['M3_run']:skipped+=['M3 training and evaluation']
+    elif not d['M3_feature_pass']:skipped+=['M3 confirmation64']
     completion=dict(experiment_execution_complete=True,scientific_success=success,
         selected_method=selected,next_route=d['next_route'],skipped_due_to_prespecified_gates=skipped,
         original_split_reused=True,seed42_only=True,identity_bootstrap_draws=2000,
@@ -35,9 +36,10 @@ def finish():
     write(OUT/'completion_check.json',completion)
     # 包不纳入manifest，避免打包文件与清单之间相互引用；服务器保留全部原始产物。
     files={str(p.relative_to(OUT)):sha(p) for p in sorted(OUT.rglob('*'))
-        if p.is_file() and p.name!='artifact_manifest.json' and not p.name.endswith('_review.tar.gz')}
+        if p.is_file() and p.name!='artifact_manifest.json' and not p.name.endswith('_review.tar.gz')
+        and not (p.name.startswith('job_') and p.suffix in ('.log','.err'))}
     write(OUT/'artifact_manifest.json',dict(files=files,file_count=len(files),git_commit=commit(),
-        excluded='review archives only; raw images/features/checkpoints included'))
+        excluded='review archives and appendable Slurm stdout/stderr; raw images/features/checkpoints included; logs retained on server'))
     bundle('final');print('[MS completion]',completion,flush=True)
 
 if __name__=='__main__':finish()
