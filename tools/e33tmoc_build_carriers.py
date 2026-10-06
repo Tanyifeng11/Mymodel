@@ -14,6 +14,7 @@ def main():
     assert read(OUT/'decision_summary.json')['geometry_mapping_pass'], 'OC0 Gate失败，停止'
     assert read(OUT/'visual_audit/geometry_review.json')['pass'], '须先审阅固定16例坐标叠图'
     cohort=prepare();ids=read(OUT/'splits/diagnostic64.json');rows=[r for r in cohort if r['id'] in ids]
+    input_hashes=freeze_carrier_inputs(cohort,ids)
     results={name:{s:[] for s in ('S1','S2')} for name in ('C0_current','C1_analytic')}
     from data.e32_target_pseudogt import image_at,masks,upsample_geometry
     for row in rows:
@@ -82,6 +83,7 @@ def main():
     write(OUT/'decision_summary.json',d)
     write(OUT/'result_table.json',dict(geometry_audit=read(OUT/'geometry_audit/synthetic/synthetic_results.json'),carrier_initial=table))
     frozen_check()
+    assert {p:sha(p) for p in input_hashes}==input_hashes
     from tools.e33tmoc_geometry_audit import tarfile
     with tarfile.open(OUT/'carrier_initial_review.tar.gz','w:gz') as tar:
         for p in sorted(OUT.rglob('*')):

@@ -61,3 +61,21 @@ def frozen_check():
     record['pass']=record['before']==record['after']; assert record['pass']
     write(p,record)
 
+def freeze_carrier_inputs(cohort,ids,seed=42):
+    """RF缓存对照IF最终指纹，新增原图/GT逐文件冻结。"""
+    from data.e32_field_dataset import cache_path
+    from tools.e33rf_common import E32
+    previous=read(IF/'artifact_manifest.json')['files'];paths=[]
+    for row in cohort:
+        if row['id'] not in ids:continue
+        sid=row['id'];field=IF/'reproduction'/('seed%d'%seed)/'fields'/(sid+'.npz')
+        assert sha(field)==previous[str(field.relative_to(IF))], 'RF field缓存与IF归档不一致'
+        baseline=IF/'stage_survival'/('seed%d'%seed)/sid/'case.json'
+        assert sha(baseline)==previous[str(baseline.relative_to(IF))]
+        paths += [field,baseline,cache_path(E32,sid),DATASET/row['reference'],DATASET/row['sketch']]
+    fingerprints={str(p):sha(p) for p in paths}
+    path=OUT/'protocol'/('carrier_inputs_seed%d_N%d.json'%(seed,len(ids)))
+    if path.exists():assert read(path)['files']==fingerprints
+    else:write(path,dict(files=fingerprints,IF_field_manifest_verified=True,case_count=len(ids),seed=seed))
+    return fingerprints
+
