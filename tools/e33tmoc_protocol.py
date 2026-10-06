@@ -51,7 +51,8 @@ def prepare():
     if p.exists(): assert read(p)['before']==fingerprints
     else: write(p,dict(before=fingerprints,git_commit=commit(),training_steps=0))
     write(OUT/'protocol/implementation.json',dict(git_commit=commit(),
-        source_files={str(p):sha(p) for p in sorted(Path('tools').glob('e33tmoc_*.py'))},
+        source_files={str(p):sha(p) for p in sorted(Path('tools').glob('e33tmoc_*.py'))+
+            sorted(Path('models').glob('e33tmoc_*.py'))+sorted(Path('submit').glob('e33tmoc*.sh'))},
         split_sha256={p.stem:sha(p) for p in (OUT/'splits').glob('*.json')}))
     return cohort
 
