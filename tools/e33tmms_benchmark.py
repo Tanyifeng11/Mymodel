@@ -1,5 +1,6 @@
 """同split同输入的载体构建、方向和真实LPIPS评测。"""
 import argparse
+import os
 import tarfile
 import cv2
 import numpy as np
@@ -57,13 +58,16 @@ def freeze_visual(rows,ids):
         input_scores=scores,selection='input-only source foreground gray variance, bright-background fraction, mask boundary ratio; before M1')
     write(path,value);return value
 
-def evaluate(names,split):
+def evaluate(names,split,shard=None):
     torch.set_num_threads(2);cv2.setNumThreads(1)
-    cohort=prepare();ids=read(OUT/'splits'/(split+'.json'));rows=[r for r in cohort if r['id'] in ids]
-    fingerprints=freeze_inputs(cohort,ids,split)
-    if split=='diagnostic64':freeze_visual(cohort,ids)
+    # 分片只改变身份任务分配；每例随机数仍只由sid决定，结果统一在汇总作业判定。
+    cohort=prepare() if shard is None else read(TM/'manifests/cohorts.json')['primary']
+    ids=read(OUT/'splits'/(split+'.json'));rows=[r for r in cohort if r['id'] in ids]
+    fingerprints=freeze_inputs(cohort,ids,split) if shard is None else read(OUT/'protocol'/('inputs_%s_N%d.json'%(split,len(ids))))
+    if split=='diagnostic64' and shard is None:freeze_visual(cohort,ids)
+    if shard is not None:rows=[r for i,r in enumerate(rows) if i%shard[1]==shard[0]]
     metric,init=frozen_lpips();metric_sha=model_hash(metric)
-    write(OUT/'protocol/appearance_metrics.json',dict(APPEARANCE_PROTOCOL,**init,lpips_state_sha256=metric_sha))
+    if shard is None:write(OUT/'protocol/appearance_metrics.json',dict(APPEARANCE_PROTOCOL,**init,lpips_state_sha256=metric_sha))
     for name in names:
         direction={s:[] for s in ('S1','S2')};appearance={s:[] for s in direction}
         dest=folder(name,split)
@@ -121,13 +125,18 @@ def evaluate(names,split):
                     for values in [[r[k] for r in app_arms[stage] if r[k] is not None]]})
                 direction[stage].append(record['direction'][stage]);appearance[stage].append(record['appearance'][stage])
             write(existing,record);print('[MS benchmark]',name,split,sid,flush=True)
+        if shard is not None:
+            write(OUT/'execution'/('M1_shard_%d.json'%shard[0]),dict(index=shard[0],count=shard[1],
+                ids=[r['id'] for r in rows],git_commit=commit(),lpips_state_sha256=metric_sha,
+                complete=True,algorithm_change=False))
+            continue
         for stage in direction:
             write(dest/(stage+'_direction_rows.json'),direction[stage]);write(dest/(stage+'_appearance_cases.json'),appearance[stage])
         result=dict(direction={s:summarize(rs) for s,rs in direction.items()},
             appearance={s:dict(case_count=len(rs),statistics={k:bootstrap([r[k] for r in rs]) for k in rs[0] if k!='id'}) for s,rs in appearance.items()})
         write(dest/'summary.json',result)
     assert model_hash(metric)==metric_sha and {n:sha(n) for n in fingerprints}==fingerprints
-    frozen_check()
+    if shard is None:frozen_check()
 
 def reproduce():
     evaluate(['C0','C1','C2'],'diagnostic64');checks={};old_names=['C0_current','C1_analytic','C2_appearance']
@@ -222,11 +231,14 @@ def bundle(label):
     print('[MS bundle]',path,'SHA256',sha(path),flush=True)
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('stage',choices=['reproduce','M1','confirmation','visual']);a=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('stage',choices=['reproduce','M1','confirmation','visual'])
+    parser.add_argument('--shard-count',type=int);a=parser.parse_args()
+    shard=(int(os.environ['SLURM_ARRAY_TASK_ID']),a.shard_count) if a.shard_count else None
     if a.stage=='reproduce':reproduce();bundle('MS0')
     elif a.stage=='M1':
         assert read(OUT/'decision_summary.json')['reproduction_pass']
-        evaluate(['M1'],'diagnostic64');carrier_gate('M1','diagnostic64');visuals();bundle('M1')
+        evaluate(['M1'],'diagnostic64',shard)
+        if shard is None:carrier_gate('M1','diagnostic64');visuals();bundle('M1')
     elif a.stage=='confirmation':
         assert read(OUT/'decision_summary.json')['M1_carrier_pass']
         evaluate(['C0','M1'],'confirmation64');carrier_gate('M1','confirmation64');bundle('M1_confirmation')
