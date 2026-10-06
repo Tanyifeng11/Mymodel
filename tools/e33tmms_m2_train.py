@@ -129,7 +129,9 @@ def train(phase):
         if actual:
             for _ in range(state['real_seen']):next(actual)
         random.setstate(state['python_rng']);np.random.set_state(state['numpy_rng']);torch.set_rng_state(state['torch_rng']);torch.cuda.set_rng_state_all(state['cuda_rng'])
-    control_seen=(first-1)*(8 if phase=='A' else 4);real_seen=(first-1)*(0 if phase=='A' else 4)
+    # 恢复实际消耗量，包含为保证每批身份互异而跳过的样本。
+    control_seen=state['controlled_seen'] if first>1 else 0
+    real_seen=state['real_seen'] if first>1 else 0
     write(dest/'training_protocol.json',dict(phase=phase,steps=steps,seed=42,trainable=sum(p.numel() for p in model.parameters()),
         effective_batch=8,microbatch=1,lr=1e-4,weight_decay=1e-4,warmup=200,optimizer='fresh phase AdamW; cosine',
         target_groundtruth='supervision only',appearance='A(R0) held fixed across geometry arms; A(R90/R180) invariance loss',git_commit=commit()))
