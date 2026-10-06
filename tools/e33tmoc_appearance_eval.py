@@ -72,12 +72,27 @@ def model_hash(model):
         digest.update(name.encode());digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
     return digest.hexdigest()
 
+def frozen_lpips():
+    """使用服务器现有官方AlexNet缓存，避免新版文件名触发在线下载。"""
+    import lpips
+    path=Path(torch.hub.get_dir())/'checkpoints/alexnet-owt-4df8aa71.pth'
+    digest=sha(path)
+    assert digest.startswith('4df8aa71'), '必须匹配TorchVision官方旧AlexNet文件指纹'
+    metric=lpips.LPIPS(net='alex',pnet_rand=True)
+    pretrained=torch.load(path,map_location='cpu')
+    # LPIPS按slice分组保留原features索引；严格载入全部卷积张量后才允许评测。
+    metric.net.load_state_dict({k:pretrained['features.'+k.split('.',1)[1]] for k in metric.net.state_dict()},strict=True)
+    metric.eval().requires_grad_(False)
+    return metric,dict(alexnet_checkpoint=str(path),alexnet_checkpoint_sha256=digest,
+        trunk_initialization='all AlexNet features replaced with verified official pretrained checkpoint before inference',
+        lpips_linear_calibration='bundled pretrained LPIPS v0.1 alex weights')
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--names',nargs='+',default=['C0_current','C1_analytic']);args=parser.parse_args()
     import lpips
-    torch.set_num_threads(2);metric=lpips.LPIPS(net='alex').eval().requires_grad_(False)
+    torch.set_num_threads(2);metric,initialization=frozen_lpips()
     digest=model_hash(metric)
-    record=dict(**APPEARANCE_PROTOCOL,lpips_module=str(Path(lpips.__file__)),lpips_state_sha256=digest)
+    record=dict(**APPEARANCE_PROTOCOL,lpips_module=str(Path(lpips.__file__)),lpips_state_sha256=digest,**initialization)
     p=OUT/'protocol/appearance_metrics.json'
     if p.exists():assert read(p)==record
     else:write(p,record)
