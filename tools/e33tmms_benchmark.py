@@ -36,7 +36,38 @@ def build(name,ref,orientation,confidence,mask,sid):
     if name=='M1':
         from models.e33tmms_m1 import construct
         return construct(ref,orientation,confidence,mask,sid)
+    if name=='M2':
+        return learned_carrier(ref,orientation,confidence,mask,sid)
     raise ValueError(name)
+
+M2_MODEL=None
+M2_APPEARANCE={}
+
+@torch.no_grad()
+def learned_carrier(ref,orientation,confidence,mask,sid):
+    global M2_MODEL
+    from models.e33tmms_m2 import AppearanceGeometryDecoder
+    from torch.nn import functional as F
+    checkpoint=OUT/'M2/real_mixed/checkpoint_final.pt'
+    if M2_MODEL is None:
+        assert read(OUT/'M2/controlled/gate.json')['pass']
+        done=read(OUT/'M2/real_mixed/training_complete.json')
+        assert done['checkpoint_sha256']==sha(checkpoint) and done['steps']==2000
+        state=torch.load(checkpoint,map_location='cpu');assert state['seed']==42 and state['phase']=='B'
+        M2_MODEL=AppearanceGeometryDecoder().eval().requires_grad_(False);M2_MODEL.load_state_dict(state['model'],strict=True)
+    rgb=torch.from_numpy(np.asarray(ref,np.float32).transpose(2,0,1).copy()/255)[None]
+    # evaluate按R0/R90/R180顺序访问每例，缓存R0外观，绝不换成旋转臂外观。
+    if sid not in M2_APPEARANCE:M2_APPEARANCE[sid]=M2_MODEL.appearance(rgb)
+    appearance=M2_APPEARANCE[sid]
+    geom=torch.from_numpy(np.concatenate([orientation,confidence],0))[None]
+    geom=F.interpolate(geom,mask.size[::-1],mode='bilinear',align_corners=False)
+    geom[:,:2]=F.normalize(geom[:,:2],dim=1)
+    target=torch.from_numpy((np.asarray(mask)>0).astype(np.float32))[None,None]
+    raw=M2_MODEL.decode(appearance,torch.cat([geom,target],1))[0].numpy().transpose(1,2,0)
+    pixels=np.uint8(np.clip(np.round(raw*255),0,255));s1=Image.fromarray(pixels.copy());pixels[np.asarray(mask)==0]=255
+    return (s1,Image.fromarray(pixels),dict(RF_orientation=orientation,RF_confidence=confidence,target_support=target[0,0].numpy(),
+        appearance_global=appearance[0][0].numpy(),appearance_tokens=appearance[1][0].numpy()),
+        dict(method='M2-A',checkpoint_sha256=sha(checkpoint),appearance='fixed A(R0) for all arms',training_steps=6000),[])
 
 def freeze_visual(rows,ids):
     path=OUT/'splits/visual_sets.json'
@@ -162,18 +193,23 @@ def carrier_gate(name,split):
     old={r['id']:r for r in read(folder('C0',split)/'S2_direction_rows.json')}
     new=read(folder(name,split)/'S2_direction_rows.json')
     gain=bootstrap([r['r90_success']-old[r['id']]['r90_success'] for r in new])
+    fail_route='M2' if name=='M1' else 'M3'
     if split=='diagnostic64':
         checks=dict(S1_r90=s1['r90_success']['mean']>=.45,S2_r90=s2['r90_success']['mean']>=.40,
             gain=gain['mean']>=.15,gain_ci=gain['ci95'][0]>0,R180=s2['r180_success']['mean']>=.60,
             readable=s2['r90_readable']['mean']>=.55,texture=app['texture_score']['mean']>=.19,
             Lab=app['Lab_color_distance']['mean']<=baseline['Lab_color_distance']['mean']*1.2)
         hard_stop=s2['r90_success']['mean']<.35 or app['texture_score']['mean']<.16
+        if name=='M2':
+            checks={k:checks[k] for k in ['S1_r90','S2_r90','texture','Lab']}
+            hard_stop=s2['r90_success']['mean']<.30 or app['texture_score']['mean']<.15
         passed=all(checks.values());decision(**{name+'_run':True,name+'_carrier_pass':passed},
-            next_route=name+'_confirmation' if passed else 'M2')
+            next_route=name+'_confirmation' if passed else fail_route)
+        if name=='M2':decision(M2_real_carrier_pass=passed)
     else:
         checks=dict(S2_r90=s2['r90_success']['mean']>=.35,gain=gain['mean']>=.12,
             gain_ci=gain['ci95'][0]>0,texture=app['texture_score']['mean']>=.17)
-        hard_stop=False;passed=all(checks.values());decision(**{name+'_confirmation_pass':passed},next_route=name+'_E5_mini' if passed else 'M2')
+        hard_stop=False;passed=all(checks.values());decision(**{name+'_confirmation_pass':passed},next_route=name+'_E5_mini' if passed else fail_route)
     gate=dict(checks=checks,**{'pass':passed},hard_stop=hard_stop,paired_gain=gain)
     write(folder(name,split)/'gate.json',gate)
     table=read(OUT/'result_table.json') if (OUT/'result_table.json').exists() else {}
@@ -231,7 +267,8 @@ def bundle(label):
     print('[MS bundle]',path,'SHA256',sha(path),flush=True)
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('stage',choices=['reproduce','M1','confirmation','visual'])
+    parser=argparse.ArgumentParser();parser.add_argument('stage',choices=['reproduce','M1','M2','confirmation','visual'])
+    parser.add_argument('--method',choices=['M1','M2'],default='M1')
     parser.add_argument('--shard-count',type=int);a=parser.parse_args()
     shard=(int(os.environ['SLURM_ARRAY_TASK_ID']),a.shard_count) if a.shard_count else None
     if a.stage=='reproduce':reproduce();bundle('MS0')
@@ -239,9 +276,12 @@ def main():
         assert read(OUT/'decision_summary.json')['reproduction_pass']
         evaluate(['M1'],'diagnostic64',shard)
         if shard is None:carrier_gate('M1','diagnostic64');visuals();bundle('M1')
+    elif a.stage=='M2':
+        assert read(OUT/'decision_summary.json')['M2_controlled_pass']
+        evaluate(['M2'],'diagnostic64');carrier_gate('M2','diagnostic64');visuals('M2');bundle('M2')
     elif a.stage=='confirmation':
-        assert read(OUT/'decision_summary.json')['M1_carrier_pass']
-        evaluate(['C0','M1'],'confirmation64');carrier_gate('M1','confirmation64');bundle('M1_confirmation')
-    else:visuals();bundle('M1')
+        assert read(OUT/'decision_summary.json')[a.method+'_carrier_pass']
+        evaluate(['C0',a.method],'confirmation64');carrier_gate(a.method,'confirmation64');bundle(a.method+'_confirmation')
+    else:visuals(a.method);bundle(a.method)
 
 if __name__=='__main__':main()

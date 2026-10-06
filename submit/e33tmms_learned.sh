@@ -14,4 +14,9 @@ conda activate Mymodel
 cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD:${PYTHONPATH:-}" PYTHONUNBUFFERED=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
-python -m tools.e33tmms_m2_train "$@"
+if [ "${1:-A}" = mini ]; then
+    shift
+    python -m tools.e33tmms_image "$@"
+else
+    python -m tools.e33tmms_m2_train "$@"
+fi
