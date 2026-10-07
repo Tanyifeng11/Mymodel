@@ -2,6 +2,7 @@
 import math,random,time
 from types import MethodType
 import numpy as np,torch
+from PIL import Image
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms.functional import to_tensor
