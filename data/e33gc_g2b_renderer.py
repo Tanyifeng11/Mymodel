@@ -7,11 +7,24 @@ from data.e33gc_renderer import support
 from tools.e33gc_g2b_protocol import CONFIG, DATASET, OUT, ARMS, sha, read
 
 def input_dir(row):
-    return OUT/('G1a_synthetic_reference_control' if row.get('route')=='B' else 'G1a_controlled_targets')/row['id']
+    name='G1a_synthetic_reference_control' if row.get('route')=='B' else 'G1a_controlled_targets'
+    if row.get('renderer_revision')==2:name+='_v2'
+    return OUT/name/row['id']
+
+def input_support(row,sketch):
+    mask,inner,falloff=support(sketch)
+    if row.get('renderer_revision')==2:
+        # 只修草图mask的细小断口和封闭孔洞；统一规则，不使用GT或生成结果选参数。
+        closed=cv2.morphologyEx(mask,cv2.MORPH_CLOSE,np.ones((17,17),np.uint8))
+        contours,_=cv2.findContours(closed,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+        mask=np.zeros_like(mask);cv2.drawContours(mask,contours,-1,1,-1)
+        inner=cv2.erode(mask,np.ones((17,17),np.uint8)).astype(bool)
+        falloff=np.clip(cv2.distanceTransform(inner.astype(np.uint8),cv2.DIST_L2,5)/8,0,1).astype(np.float32)
+    return mask,inner,falloff
 
 def construct(row, targets=True):
     sketch=image_at(DATASET/row['sketch']); source=image_at(DATASET/row['reference'])
-    mask,inner,falloff=support(sketch)
+    mask,inner,falloff=input_support(row,sketch)
     crop=source.crop(CONFIG['crop']); patch=np.asarray(crop)
     if row.get('route')=='B':
         import hashlib
@@ -44,7 +57,7 @@ def construct(row, targets=True):
 def load(row,targets=False):
     # 模型前向只读预冻结 reference/sketch/mask；独立训练目标显式传 targets=True 才加载。
     d=input_dir(row)
-    sketch=Image.open(d/'sketch.png').convert('RGB'); mask,inner,falloff=support(sketch)
+    sketch=Image.open(d/'sketch.png').convert('RGB'); mask,inner,falloff=input_support(row,sketch)
     result=dict(sketch=sketch,mask=mask,inner=inner,falloff=falloff,
         references=[Image.open(d/(a+'_reference.png')).convert('RGB') for a in ARMS])
     if targets: result['targets']=[Image.open(d/(a+'_target.png')).convert('RGB') for a in ARMS]

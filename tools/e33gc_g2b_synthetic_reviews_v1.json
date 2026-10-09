@@ -1,0 +1,262 @@
+{
+  "reviewer1": {
+    "104293117": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。棕金色细竖纹与P源一致，R90转横及R180保持竖轴清楚；裙身主体无严重破洞，领口小白区对应领部结构，固定紫色晕边不产生旋转信号。"
+    },
+    "118092764": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。深蓝细竖纹与P源对应，R90转横且R180保持轴向；外套袖部与下摆轮廓保持，图案遍布内部，非门襟或缝线。"
+    },
+    "138736116": {
+      "eligible": false,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": false,
+      "reason": "AI独立视觉审核，非人工。亮绿程序纹样与参考/目标条纹对应，纵横旋转清楚且新caption相容；上衣内部和左侧存在大面积破洞及缺块，目标残留大面积灰白褐色污染，结构不安全。"
+    },
+    "143379505": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。绿色程序横纹与三臂参考/目标对应，R90转竖清楚；长外套主体轮廓稳定，新caption的jacket与条纹类别相容。"
+    },
+    "162420447": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。深绿横纹与P源对应，参考与目标三臂颜色及周期外观一致，R90清楚转竖；长裙轮廓基本保持，固定蓝色边缘晕染不替代图案。"
+    },
+    "168584173": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。紫红竖纹与P源同源，R90横纹清楚，R180竖轴保持；无袖收腰裙轮廓基本稳定，固定浅绿晕边不提供旋转纹样，新caption相容。"
+    },
+    "170764742": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。绿色横纹与程序P相符，R90竖纹及R180横纹均清楚；短袖裙轮廓与背景稳定，新caption无颜色冲突。"
+    },
+    "174504971": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。灰绿色P源与三臂参考/目标条纹相符，横竖方向变化清楚；窄长无袖上衣轮廓保持，新caption没有旧文字印花约束。目标边缘有固定淡紫低频晕边，未形成方向替代。"
+    },
+    "181972027": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。黄绿色竖纹与程序P对应，R90转横，R180保持竖轴；连帽卫衣主体和袖部轮廓稳定，方向来自衣身重复纹样。"
+    },
+    "187653788": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。灰蓝横纹与P源对应，R90转竖清楚；长袖裙主体轮廓稳定，目标有固定黄色低频晕边但未破坏内部周期纹样或形成假旋转，新caption相容。"
+    },
+    "187725431": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。灰紫细竖纹与程序P对应，R90横纹清楚，R180竖轴保持；长卫衣袖部与主体轮廓稳定，新caption相容。"
+    },
+    "191495531": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。绿色横纹与P源对应，R90转竖明确；吊带裙轮廓及下摆整体保持，目标细吊带因低频边缘较淡，但未见严重缺块，新caption相容。"
+    },
+    "204142270": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。蓝灰P源与目标条纹相符，R90由竖变横，R180保持竖轴；肩带、袖部和裙身外轮廓保持，条纹不是结构边。"
+    },
+    "204293453": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。蓝色细竖纹真实来自程序P，R90变横纹，R180保持竖轴；袖子、领口和衣身轮廓基本保持，条纹遍布衣身而非结构边。"
+    },
+    "212066303": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立视觉审核，非人工。酒红色程序横纹与P源对应，R90转为竖纹，R180保持横轴；三臂衣身轮廓和背景基本保持，新caption相容。"
+    },
+    "214321851": {
+      "eligible": false,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": false,
+      "reason": "AI独立视觉审核，非人工。米灰P与三臂条纹对应且旋转清楚，新caption相容；裙摆左下有明显内部白洞，目标对应位置为异色块，衣身裁切不完整，结构污染严重。"
+    }
+  },
+  "reviewer2": {
+    "104293117": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。棕金细竖条纹P与参考/目标一致，R90横条纹清楚；裙轮廓保持。目标外缘紫色低通色晕为固定背景局限，不将其当P纹样来源。"
+    },
+    "118092764": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。蓝灰细竖条纹P与参考/目标一致，R90横条纹清楚；风衣袖部、腰身及衣摆轮廓各臂保持，颜色无新caption限制。"
+    },
+    "138736116": {
+      "eligible": false,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": false,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。绿色细竖条纹P在剩余衣身区域与参考/目标对应，R90横向转动清楚，新条纹caption相容；但胸部、左袖和下腹存在多处大片白色孔洞，truth混入灰白/米色块，明显破坏完整衣身，结构不安全。"
+    },
+    "143379505": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。绿色横条纹P与参考/目标一致，R90竖条纹清楚；外套长身与袖部支持在三臂保持。目标衣边低通模糊为控制局限，未见大片内部孔洞。"
+    },
+    "162420447": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。深绿横条纹P与参考/目标对应，R90竖向、R180横向清楚；长裙轮廓稳定，背景外缘蓝色低通色晕须保留备注。"
+    },
+    "168584173": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。紫红细竖条纹P在三臂参考/目标对应，R90横向清楚；无袖裙外轮廓与背景支持三臂稳定。薄荷绿边缘色晕来自固定低通层，不作为真实颜色来源证据。"
+    },
+    "170764742": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。绿色横条纹P与参考/目标对应，R90竖条纹清楚；短袖直身裙轮廓基本保持。新caption没有原黑白橙色限定。"
+    },
+    "174504971": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。灰绿横条纹P对应参考/目标，R90竖纹清楚；细长衣身三臂保持。新caption仅类别和条纹，不要求原文字印花，轮廓附近粉紫低通色晕为固定局限。"
+    },
+    "181972027": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。黄绿竖条纹P对应三臂参考/目标，R90横条纹、R180竖条纹清楚；卫衣袖部、袖口及下摆支持稳定，新caption类别相容。"
+    },
+    "187653788": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。蓝灰横条纹P与参考/目标一致，R90竖条纹、R180横条纹清楚；长袖裙轮廓稳定。target衣边黄色低通色晕为固定局限，新caption无黄色或蕾丝要求。"
+    },
+    "187725431": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。灰紫竖条纹P与参考/目标一致，R90横条纹清楚；长款卫衣衣身和袖部支持三臂保持。target外缘米色低通色晕保留备注。"
+    },
+    "191495531": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。绿色横条纹P对应参考/目标，R90竖向清楚；吊带裙轮廓各臂保持。细肩带在truth中有低通模糊但未造成大片衣身缺损。"
+    },
+    "204142270": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。蓝灰竖条纹P与参考/目标对应，R90横纹清楚；裙身、肩部及袖部支持三臂保持，未出现大面积内部破洞，新caption无格纹要求。"
+    },
+    "204293453": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。蓝灰细竖条纹P对应参考与目标，R90横纹、R180竖纹清楚；袖口、衣摆和领部轮廓三臂稳定，未见大面积破洞。"
+    },
+    "212066303": {
+      "eligible": true,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": true,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。暗红横条纹P与三臂参考/目标颜色、间距对应；R90竖纹、R180横纹清楚。夹克外轮廓各臂保持，边缘粉色低通色晕须作为控制局限保留。"
+    },
+    "214321851": {
+      "eligible": false,
+      "source_target_consistent": true,
+      "rotation_clear": true,
+      "text_compatible": true,
+      "structure_safe": false,
+      "reason": "AI独立审核，非人工；仅程序化纹样控制，不能归因真实reference。灰棕竖纹P与参考/目标来源及R90横向转动清楚，条纹caption相容；但裙摆左下内部存在大片不规则孔洞，truth中成为明显灰紫缺口，sketch未表达镂空设计，结构不安全。"
+    }
+  }
+}

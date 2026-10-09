@@ -101,9 +101,10 @@ def upper():
         next_route='fixed_adapter_conditioning_or_optimization_unresolved' if numerical and visual else 'fixed_last8_channel_failed_stop')
     bundle('upper_reviewed')
 
-def freeze_B():
+def freeze_B(revision=1):
     init();assert read(OUT/'decision_summary.json')['main_reference_derived_G2b']=='not_run'
-    rows=read(OUT/'G1a_synthetic_reference_control/candidate16_rows.json')
+    root=OUT/('G1a_synthetic_reference_control'+('_v2' if revision==2 else ''))
+    rows=read(root/'candidate16_rows.json')
     reviews=read('tools/e33gc_g2b_synthetic_reviews.json');approved=[]
     for row in rows:
         sid=row['id'];folder=input_dir(row)
@@ -115,19 +116,20 @@ def freeze_B():
     fit=[dict(r,label='fit_%02d'%(i+1)) for i,r in enumerate(rows[:4])]
     probe=[dict(r,label='probe_%02d'%(i+1)) for i,r in enumerate(rows[4:8])]
     write(OUT/'protocol/g2b_fit_probe_ids.json',dict(fit=fit,probe=probe,selection='first fixed4 SHA input identities; routeB, no output selection'))
-    write(OUT/'G1a_synthetic_reference_control/two_AI_reviews.json',dict(reviews=reviews,approved_n=len(approved),human_pass=None))
+    write(root/'two_AI_reviews.json',dict(reviews=reviews,approved_n=len(approved),human_pass=None))
     write(OUT/'protocol/routeB_DFT_contract_v2.json',ROUTE_B_DFT)
     write(OUT/'protocol/routeB_DFT_analytic_controls.json',read('tools/e33gc_g2b_dft_controls.json'))
     files={str(p):sha(p) for r in fit+probe for p in input_dir(r).glob('*.png')}
     files[str(OUT/'protocol/g2b_fit_probe_ids.json')]=sha(OUT/'protocol/g2b_fit_probe_ids.json')
     files[str(OUT/'protocol/routeB_DFT_contract_v2.json')]=sha(OUT/'protocol/routeB_DFT_contract_v2.json')
+    files[str(OUT/'protocol'/('routeB_frozen_config'+('_v2' if revision==2 else '')+'.json'))]=sha(OUT/'protocol'/('routeB_frozen_config'+('_v2' if revision==2 else '')+'.json'))
     write(OUT/'protocol/input_target_contract.json',dict(route='B',approved_for_AI_amended_training=True,files=files,
         real_source=False,source='same independent procedural P drives reference and target',DFT_positive_control_before_training=True,
         inference_target_RGB=False,neutral_caption_protocol=True,old_captions_not_used=True,human_certification=None,
-        real_reference_causality_claim_allowed=False,main_reference_derived_G2b='not_run',budget_GPU_hours=6))
+        real_reference_causality_claim_allowed=False,main_reference_derived_G2b='not_run',budget_GPU_hours=6,renderer_revision=revision))
     decision(g2b_route='B',g2b_train_identity_n=4,synthetic_reference_control='ready',next_route='synthetic_G2b_smoke')
     bundle('routeB_frozen_inputs')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['freeze','freeze_B','endpoint','upper']);a=p.parse_args()
-    {'freeze':freeze,'freeze_B':freeze_B,'endpoint':endpoint,'upper':upper}[a.action]()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['freeze','freeze_B','freeze_B_v2','endpoint','upper']);a=p.parse_args()
+    {'freeze':freeze,'freeze_B':freeze_B,'freeze_B_v2':lambda:freeze_B(2),'endpoint':endpoint,'upper':upper}[a.action]()
