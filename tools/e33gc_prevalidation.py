@@ -83,7 +83,8 @@ def run():
         row = cohort[sid]; dest = OUT / 'G0_reproduction' / sid
         ref = image_at(DATASET / row['reference']); sketch = image_at(DATASET / row['sketch'])
         with np.load(IF / 'reproduction/seed42/fields' / (sid + '.npz')) as z:
-            rf = np.concatenate([z['orientation'][0], z['confidence'][0]], 0)
+            # 统一为E26显示布局cos2θ/sin2θ/logfreq/conf；RF2没有频率通道。
+            rf = np.concatenate([z['orientation'][0], np.zeros_like(z['confidence'][0]), z['confidence'][0]], 0)
         top = [('Sketch', sketch), ('Ref R0', ref), ('Ref R90', rotate(ref, 90)),
                ('Ref R180', rotate(ref, 180)), ('GT real R0', image_at(DATASET / row['target']))]
         top += [(arm + ' E5', image_at(dest / (arm + '_B0.png'))) for arm in ARMS]
