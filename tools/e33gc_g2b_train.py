@@ -80,6 +80,17 @@ def confirmed_underflow(components):
         any(v['norm'] for v in c.get('scaled_1024_diagnostic_gradients',{}).values()) and
         all(v['finite'] for v in c.get('scaled_1024_diagnostic_gradients',{}).values() if v['present']) for c in zero)
 
+def canonical_cache_key(key):
+    key=dict(key);scheduler=dict(key['scheduler'])
+    # diffusers将默认参数名集合转为列表，跨进程顺序可能变化；只规范此内部列表。
+    if '_use_default_values' in scheduler:
+        scheduler['_use_default_values']=sorted(scheduler['_use_default_values'])
+    key['scheduler']=scheduler
+    return key
+
+def cache_key_hash(key):
+    return hashlib.sha256(json.dumps(key,sort_keys=True).encode()).hexdigest()
+
 class TracedInjection(TextureInjection):
     def __init__(self,pipe,adapter):
         super().__init__(pipe,adapter);self.tracing=False;self.residual_trace=[]
@@ -103,10 +114,17 @@ def cache_case(row,pipe,ns,adapter,injection,rf,dino):
         key=dict(id=sid,arm=arm,reference=sha(ref_path),sketch=sha(input_dir(row)/'sketch.png'),
             caption=hashlib.sha256(row['caption'].encode()).hexdigest(),E5=sha(E5),RF2=sha(RF/'seed42/RF2/checkpoint_final.pt'),
             noise_seed=42,dtype=str(pipe.unet.dtype),cfg=7.,steps=50,scheduler=dict(pipe.scheduler.config))
-        keyhash=hashlib.sha256(json.dumps(key,sort_keys=True).encode()).hexdigest()
+        current_raw_key_hash=cache_key_hash(key)
+        key=canonical_cache_key(key);keyhash=cache_key_hash(key)
         dest=folder/(arm+'_prefix.pt');injection.geometry=geom[i:i+1];injection.falloff=m['falloff']
         if dest.exists():
-            cached=torch.load(dest,map_location='cpu');assert cached['cache_key_hash']==keyhash
+            cached=torch.load(dest,map_location='cpu')
+            assert cached['cache_key_hash']==cache_key_hash(cached['cache_key']),'stored cache key hash corrupted'
+            old_key=canonical_cache_key(cached['cache_key'])
+            if old_key!=key:
+                differences={k:dict(cached=old_key.get(k),current=key.get(k)) for k in set(old_key)|set(key) if old_key.get(k)!=key.get(k)}
+                write(OUT/'failures'/('cache_key_job_'+os.environ.get('SLURM_JOB_ID','local')+'_'+sid+'_'+arm+'.json'),differences)
+                raise AssertionError('effective cache key changed: '+','.join(sorted(differences)))
             image=Image.open(folder/(arm+'_A0.png')).convert('RGB')
         else:
             cached,image=prefix(pipe,ns,row['caption'],inputs['sketch'],inputs['references'][i],Image.fromarray(inputs['mask']*255),injection)
@@ -120,6 +138,9 @@ def cache_case(row,pipe,ns,adapter,injection,rf,dino):
         assert cached['timesteps'].tolist()[-8:]==[141,121,101,81,61,41,21,1]
         proof.append(dict(arm=arm,exact=exact,baseline_sha256=sha(folder/(arm+'_A0.png')),
             step0_sha256=sha(folder/(arm+'_step0.png')),cache_key=key,cache_key_hash=keyhash,
+            stored_cache_key=cached['cache_key'],stored_cache_key_hash=cached['cache_key_hash'],
+            current_raw_cache_key_hash=current_raw_key_hash,
+            cache_key_normalization='sort only scheduler._use_default_values; all other values exact; stored pt unchanged',
             residual_trace=injection.residual_trace,CFG_trace=trace,noise_sha256=cached['generation']['noise_sha256']))
         states.append(cached);baseline.append(rgb.detach())
     assert len({p['noise_sha256'] for p in proof})==1
