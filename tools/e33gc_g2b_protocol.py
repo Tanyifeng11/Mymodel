@@ -60,6 +60,12 @@ def verify_frozen():
     write(OUT/'frozen_check.json',dict(before=before,after=after,pass_unchanged=before==after))
     assert before==after
 
+def verify_contract():
+    contract=read(OUT/'protocol/input_target_contract.json')
+    assert contract['approved_for_AI_amended_training']
+    assert all(sha(p)==h for p,h in contract['files'].items()),'frozen input/target/manifest files changed'
+    return contract
+
 def bundle(label):
     import tarfile
     path=OUT/(label+'_review.tar.gz')

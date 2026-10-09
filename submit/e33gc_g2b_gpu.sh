@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J E33GC_G2b
+#SBATCH -J E33GC_G2b_GPU
 #SBATCH -p gpu
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2

@@ -17,7 +17,7 @@ def run():
         value['source_crop'].save(folder/'P_source.png');value['sketch'].save(folder/'sketch.png')
         for arm,ref,target in zip(ARMS,value['references'],value['targets']):
             ref.save(folder/(arm+'_reference.png'));target.save(folder/(arm+'_target.png'))
-        metric=dft_pair(dict(zip(ARMS,value['targets'])),r['dft_boxes'])
+        metric=dft_pair(dict(zip(ARMS,value['targets'])),r['dft_boxes'],periodic=True)
         audit.append(dict(id=r['id'],DFT=metric,shared_P_source=True,source_sha256=sha(folder/'P_source.png'),
             renderer_sha256=sha('data/e33gc_g2b_renderer.py'),files={p.name:sha(p) for p in folder.glob('*.png')}))
         rows.append(r);materials.append((r['id'],r['caption'],[('P source',value['source_crop']),('sketch',value['sketch'])]+

@@ -16,6 +16,7 @@ from tools.e33rf_common import build,WEIGHTS
 from tools.e22_4_generation import module_hashes
 from tools.e33tm_weight_audit import effective_hashes
 from tools.e33tmoc_appearance_eval import model_hash
+from tools.e33gc_g2b_launch import gpu_seconds
 
 def tensors(value):
     return {k:torch.from_numpy(value[k].astype(np.float32))[None,None].cuda() for k in ['mask','inner','falloff']}
@@ -125,8 +126,7 @@ def diagnostic(cases,pipe,ns,injection,step,label='G2b_train',constant=False):
 
 def run(action):
     init();torch.manual_seed(42);torch.set_num_threads(2);cv2.setNumThreads(1)
-    contract=read(OUT/'protocol/input_target_contract.json');assert contract['approved_for_AI_amended_training']
-    assert all(sha(p)==h for p,h in contract['files'].items()),'frozen input/target files changed'
+    contract=verify_contract();assert gpu_seconds()<21600
     rows=read(OUT/'protocol/g2b_fit_probe_ids.json')['fit'];assert len(rows)==4
     pipe,modules,size,ns=load_e5();assert size==(384,512)
     rf,_=build(42,checkpoint=RF/'seed42/RF2/checkpoint_final.pt');rf.eval().requires_grad_(False)
@@ -179,7 +179,7 @@ def run(action):
                 seconds=time.monotonic()-t,elapsed_seconds=time.monotonic()-began)
             with log.open('a',encoding='utf-8') as f:f.write(json.dumps(record)+'\n')
             print('UPDATE',step,'loss',sum(v['total'] for v in values)/4,'seconds',round(record['seconds'],2),flush=True)
-            assert (time.monotonic()-began)/3600<6,'GPU budget exhausted; do not extend'
+            assert gpu_seconds()<21600,'cumulative GPU budget exhausted; do not extend'
             if step in [40,80,160]:
                 torch.save(dict(adapter=adapter.state_dict(),step=step,config=CONFIG),OUT/'G2b_train'/('checkpoint_step%d.pt'%step))
                 diagnostic(cases,pipe,ns,injection,step)
@@ -197,7 +197,7 @@ def run(action):
     assert rf_hash==model_hash(rf) and dino_hash==model_hash(dino)
     write(OUT/('G2b_smoke' if action=='smoke' else 'G2b_train')/'frozen_modules.json',dict(before=before,after=module_hashes(modules),
         RF2=rf_hash,DINO=dino_hash,effective_before=effective,effective_after=effective_hashes(modules)))
-    injection.close();verify_frozen();bundle(action)
+    injection.close();verify_frozen();assert gpu_seconds()<21600;bundle(action)
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('action',choices=['smoke','train']);a=p.parse_args()

@@ -8,18 +8,41 @@ from tools.e33tmif_metrics import pair
 from tools.e33tmoc_appearance_eval import patches,measure,frozen_lpips,model_hash
 from tools.e33gc_g2b_prepare import panels
 
-def dft_block(image,box):
+ROUTE_B_DFT=dict(version=2,scope='only fixed B horizontal/vertical procedural periods16/32',
+    minimum_band_ratio=.1,minimum_band_RMS=.015,periods=[16,32],
+    minimum_full_period_correlation=.5,maximum_half_period_correlation=-.5,
+    frozen_before_training=True,generated_endpoints_used_for_design=False)
+
+def dft_block(image,box,periodic=False):
     a=np.asarray(image.crop(tuple(box)).convert('L'),float)/255;h,w=a.shape
-    power=abs(np.fft.fft2((a-a.mean())*np.outer(np.hanning(h),np.hanning(w))))**2
+    window=np.outer(np.hanning(h),np.hanning(w));power=abs(np.fft.fft2((a-a.mean())*window))**2
     fy,fx=np.meshgrid(np.fft.fftfreq(h),np.fft.fftfreq(w),indexing='ij');radius=np.hypot(fx,fy)
     p=power*((radius>=CONFIG['dft']['low_frequency'])&(radius<=CONFIG['dft']['high_frequency']))
     z=np.sum(p*np.exp(2j*np.arctan2(fy,fx)))/max(float(p.sum()),1e-12)
     theta=(np.degrees(np.angle(z))/2+90)%180;std=float(a.std());coherence=float(abs(z))
-    return dict(angle=float(theta),std=std,coherence=coherence,
-        readable=std>=CONFIG['dft']['min_std'] and coherence>=CONFIG['dft']['min_axis_coherence'])
+    readable=std>=CONFIG['dft']['min_std'] and coherence>=CONFIG['dft']['min_axis_coherence']
+    extra={}
+    if periodic:
+        ratio=float(p.sum()/max(float(power.sum()),1e-12))
+        rms=float(np.sqrt(p.sum()/max(h*w*float((window**2).sum()),1e-12)))
+        def correlation(profile,lag):
+            x=profile[:-lag];y=profile[lag:];x=x-x.mean();y=y-y.mean()
+            denominator=float(np.linalg.norm(x)*np.linalg.norm(y))
+            return float(np.dot(x,y)/denominator) if denominator>1e-10 else None
+        correlations=[]
+        for axis in [0,1]:
+            profile=a.mean(axis=axis)
+            for period in ROUTE_B_DFT['periods']:
+                full=correlation(profile,period);half=correlation(profile,period//2)
+                correlations.append(dict(axis=axis,period=period,full=full,half=half,
+                    valid=full is not None and half is not None and full>=.5 and half<=-.5))
+        periodic_support=any(v['valid'] for v in correlations)
+        extra=dict(band_ratio=ratio,band_RMS=rms,periodic_support=periodic_support,correlations=correlations)
+        readable=readable and ratio>=.1 and rms>=.015 and periodic_support
+    return dict(angle=float(theta),std=std,coherence=coherence,readable=bool(readable),**extra)
 
-def dft_pair(images,boxes):
-    blocks={arm:[dft_block(image,box) for box in boxes] for arm,image in images.items()};result={}
+def dft_pair(images,boxes,periodic=False):
+    blocks={arm:[dft_block(image,box,periodic) for box in boxes] for arm,image in images.items()};result={}
     for name,arm,rotation in [('r90','R90',90),('r180','R180',0)]:
         valid=[i for i in range(len(boxes)) if blocks['R0'][i]['readable'] and blocks[arm][i]['readable']]
         errors=[float(abs((blocks[arm][i]['angle']-blocks['R0'][i]['angle']+rotation+90)%180-90)) for i in valid]
@@ -29,7 +52,7 @@ def dft_pair(images,boxes):
     return dict(**result,blocks=blocks,fixed_boxes=boxes,fixed_block_count=len(boxes))
 
 def run():
-    init();torch.set_num_threads(2);cv2.setNumThreads(1)
+    init();verify_contract();torch.set_num_threads(2);cv2.setNumThreads(1)
     evaluator=Evaluator();clip_hash=model_hash(evaluator.model);lpips,lpips_init=frozen_lpips();lpips_hash=model_hash(lpips)
     identities=read(OUT/'protocol/g2b_fit_probe_ids.json');cases=[];blind=[];blind_key=[];learning=[]
     for group,rows in identities.items():
@@ -38,7 +61,9 @@ def run():
             sid=row['id'];value=load(row,True);inner=value['inner']
             fixed=cv2.resize(inner.astype(np.float32),(48,64),interpolation=cv2.INTER_AREA)>=.95;weight=np.ones((64,48),np.float32)
             oracle={a:v for a,v in zip(ARMS,value['targets'])}
-            oracle_dft=dft_pair(oracle,row['dft_boxes']);assert oracle_dft['r90_success'] and oracle_dft['r180_success'],'oracle fixed-block DFT contract invalid'
+            periodic=row.get('route')=='B'
+            if periodic:assert read(OUT/'protocol/routeB_DFT_contract_v2.json')==ROUTE_B_DFT
+            oracle_dft=dft_pair(oracle,row['dft_boxes'],periodic);assert oracle_dft['r90_success'] and oracle_dft['r180_success'],'oracle fixed-block DFT contract invalid'
             sets={'A0_E5':OUT/'G2b_smoke/cache'/sid,'A1_step160':OUT/('G2b_train' if group=='fit' else 'G2b_probe')/'step160'/sid}
             if group=='fit':
                 sets.update({'step40':OUT/'G2b_train/step40'/sid,'step80':OUT/'G2b_train/step80'/sid,
@@ -47,7 +72,7 @@ def run():
             for method,folder in sets.items():
                 if not folder.exists():continue
                 images={a:Image.open(folder/(a+'_A0.png' if method=='A0_E5' else a+'.png')).convert('RGB') for a in ARMS}
-                dft=dft_pair(images,row['dft_boxes']);metrics={};geometries={};target_boxes=patches(value['references'][0],inner,sid,'shared','target')
+                dft=dft_pair(images,row['dft_boxes'],periodic);metrics={};geometries={};target_boxes=patches(value['references'][0],inner,sid,'shared','target')
                 for i,arm in enumerate(ARMS):
                     scores,geometry=evaluator.evaluate(images[arm],row['caption'],value['references'][i],Image.fromarray(value['mask']*255),value['sketch'])
                     reference=value['references'][i];source_mask=np.any(np.asarray(reference)<245,axis=2)

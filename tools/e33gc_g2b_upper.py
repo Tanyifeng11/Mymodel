@@ -17,7 +17,7 @@ class FreeResidual(nn.Module):
         return (residual*mask).flatten(2).transpose(1,2)
 
 def run_upper():
-    init();assert read(OUT/'decision_summary.json')['g2b_AI_amended_fit_pass'] is False
+    init();verify_contract();assert read(OUT/'decision_summary.json')['g2b_AI_amended_fit_pass'] is False
     smoke=read(OUT/'G2b_smoke/smoke_audit.json');assert smoke['pass_autograd'] and smoke['budget_pass']
     torch.manual_seed(42);torch.set_num_threads(2);cv2.setNumThreads(1)
     rows=read(OUT/'protocol/g2b_fit_probe_ids.json')['fit'][:2]
@@ -29,8 +29,6 @@ def run_upper():
     cases=[cache_case(row,pipe,ns,injection.adapter,injection,rf,dino) for row in rows]
     adapter=FreeResidual(cases);injection.adapter=adapter
     opt=torch.optim.AdamW(adapter.parameters(),lr=1e-4,weight_decay=1e-4)
-    train_hours=read(OUT/'G2b_train/training_complete.json')['elapsed_seconds']/3600
-    budget_left=6-train_hours-smoke['full4_identity_update_seconds']/3600*10
     began=time.monotonic();dest=OUT/'G2b_upper_bound_if_needed';dest.mkdir(parents=True,exist_ok=True)
     assert not (dest/'checkpoint_step80.pt').exists()
     for step in range(1,81):
@@ -41,13 +39,13 @@ def run_upper():
         norm=torch.nn.utils.clip_grad_norm_(adapter.parameters(),1.);assert torch.isfinite(norm);opt.step()
         with (dest/'updates.jsonl').open('a') as f:f.write(json.dumps(dict(update=step,losses=parts,grad_norm=float(norm),seconds=time.monotonic()-began))+'\n')
         print('UPPER',step,'seconds',round(time.monotonic()-began,2),flush=True)
-        assert (time.monotonic()-began)/3600<budget_left,'combined GPU budget exhausted'
+        assert gpu_seconds()<21600,'combined GPU budget exhausted'
     torch.save(dict(residual=adapter.state_dict(),privileged_identity_and_arm=True,updates=80),dest/'checkpoint_step80.pt')
     diagnostic(cases,pipe,ns,injection,80,label='G2b_upper_bound_if_needed')
     results=[];blind=[];keys=[]
     for case in cases:
         folder=dest/'step80'/case['row']['id']
-        metrics=dft_pair({arm:Image.open(folder/(arm+'.png')).convert('RGB') for arm in ARMS},case['row']['dft_boxes'])
+        metrics=dft_pair({arm:Image.open(folder/(arm+'.png')).convert('RGB') for arm in ARMS},case['row']['dft_boxes'],periodic=case['row'].get('route')=='B')
         results.append(dict(id=case['row']['id'],label=case['row']['label'],DFT=metrics))
         token=hashlib.sha256(('E33GC-G2b/upper/'+case['row']['id']).encode()).hexdigest()[:12]
         keys.append(dict(token=token,id=case['row']['id'],label=case['row']['label']))

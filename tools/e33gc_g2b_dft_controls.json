@@ -1,0 +1,36 @@
+{
+  "gradient": {
+    "N": 8,
+    "readable_n": 0
+  },
+  "flat": {
+    "N": 3,
+    "readable_n": 0
+  },
+  "single_edge": {
+    "N": 88,
+    "readable_n": 0
+  },
+  "periodic_stripe": {
+    "N": 256,
+    "readable_n": 256
+  },
+  "implementation": "AST extracted actual dft_block; uint8 roundtrip",
+  "source_sha256": "091213cfb52863f354bc1fad46fe864196fac61e5d43d5fcc272a4da897933b9",
+  "generated_outputs_used": false,
+  "scope": "routeB fixed horizontal/vertical periods16/32 only",
+  "contract": {
+    "version": 2,
+    "scope": "only fixed B horizontal/vertical procedural periods16/32",
+    "minimum_band_ratio": 0.1,
+    "minimum_band_RMS": 0.015,
+    "periods": [
+      16,
+      32
+    ],
+    "minimum_full_period_correlation": 0.5,
+    "maximum_half_period_correlation": -0.5,
+    "frozen_before_training": true,
+    "generated_endpoints_used_for_design": false
+  }
+}

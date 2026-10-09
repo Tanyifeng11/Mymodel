@@ -2,7 +2,7 @@
 import argparse,csv
 from PIL import Image
 from tools.e33gc_g2b_protocol import *
-from tools.e33gc_g2b_eval import dft_pair
+from tools.e33gc_g2b_eval import dft_pair,ROUTE_B_DFT
 from data.e33gc_g2b_renderer import input_dir
 
 def freeze():
@@ -59,6 +59,7 @@ def freeze():
     write(OUT/'protocol/g2b_fit_probe_ids.json',dict(fit=fit,probe=probe,selection='reference_SHA_order then independent input-only AI reviews',
         human_gate=None,AI_review_passed_n=len(accepted),newdev_excluded=True))
     files={str(p):sha(p) for r in fit+probe for p in (OUT/'G1a_controlled_targets'/r['id']).glob('*.png')}
+    files[str(OUT/'protocol/g2b_fit_probe_ids.json')]=sha(OUT/'protocol/g2b_fit_probe_ids.json')
     write(OUT/'protocol/input_target_contract.json',dict(route='A',approved_for_AI_amended_training=True,files=files,
         real_source=True,DFT_positive_control_before_training=True,inference_target_RGB=False,
         independent_human_certification=None,user_amendment=CONFIG['review'],
@@ -74,10 +75,15 @@ def endpoint():
     fit=[v for v in keys if v['group']=='fit' and v['method']=='A1_step160']
     fields=['visible_rotation','motif_correspondence','structure_safe','appearance_distinct']
     counts={k:sum(reviews['reviewer1'][v['token']][k] and reviews['reviewer2'][v['token']][k] for v in fit) for k in fields}
-    numerical=read(OUT/'G2b_eval/numerical_gate.json');visual=all(n>=3 for n in counts.values())
+    # 参考对应要求同一身份同时有可见转向与纹样对应，不能跨身份拼出一个合格样本。
+    correspondence=sum(all(reviews[r][v['token']][k] for r in ['reviewer1','reviewer2']
+        for k in ['visible_rotation','motif_correspondence']) for v in fit)
+    numerical=read(OUT/'G2b_eval/numerical_gate.json');visual=all(n>=3 for n in counts.values()) and correspondence>=3
     passed=numerical['numerical_pass'] and visual
     route=read(OUT/'protocol/input_target_contract.json')['route']
-    write(OUT/'G2b_eval/two_AI_blind_review.json',dict(reviews=reviews,counts=counts,AI_visual_pass=visual,human_pass=None,N=4))
+    write(OUT/'G2b_eval/two_AI_blind_review.json',dict(reviews=reviews,counts=counts,visible_correspondence_joint_n=correspondence,
+        all_four_visual_joint_n=sum(all(reviews[r][v['token']][k] for r in ['reviewer1','reviewer2'] for k in fields) for v in fit),
+        AI_visual_pass=visual,human_pass=None,N=4))
     decision(g2b_fit_visible_motif_n_of_4=counts['motif_correspondence'],g2b_fit_structure_and_appearance_gate=visual,
         g2b_fit_pass=passed if route=='A' else None,g2b_AI_amended_fit_pass=passed,
         synthetic_reference_control=('pass' if passed else 'fail') if route=='B' else None,
@@ -101,16 +107,20 @@ def freeze_B():
     reviews=read('tools/e33gc_g2b_synthetic_reviews.json');approved=[]
     for row in rows:
         sid=row['id'];folder=input_dir(row)
-        metric=dft_pair({a:Image.open(folder/(a+'_target.png')).convert('RGB') for a in ARMS},row['dft_boxes'])
+        metric=dft_pair({a:Image.open(folder/(a+'_target.png')).convert('RGB') for a in ARMS},row['dft_boxes'],periodic=True)
         if reviews['reviewer1'][sid]['eligible'] and reviews['reviewer2'][sid]['eligible'] and metric['r90_success'] and metric['r180_success']:
             approved.append(sid)
     # 原16正控制方向门槛仍为15；固定前4身份不得根据读出/生成成功换案例。
-    assert len(approved)>=15 and all(r['id'] in approved for r in rows[:4]),'synthetic input contract invalid'
+    assert len(approved)>=15 and all(r['id'] in approved for r in rows[:8]),'synthetic fixed fit/probe input contract invalid; no reselection'
     fit=[dict(r,label='fit_%02d'%(i+1)) for i,r in enumerate(rows[:4])]
     probe=[dict(r,label='probe_%02d'%(i+1)) for i,r in enumerate(rows[4:8])]
     write(OUT/'protocol/g2b_fit_probe_ids.json',dict(fit=fit,probe=probe,selection='first fixed4 SHA input identities; routeB, no output selection'))
     write(OUT/'G1a_synthetic_reference_control/two_AI_reviews.json',dict(reviews=reviews,approved_n=len(approved),human_pass=None))
+    write(OUT/'protocol/routeB_DFT_contract_v2.json',ROUTE_B_DFT)
+    write(OUT/'protocol/routeB_DFT_analytic_controls.json',read('tools/e33gc_g2b_dft_controls.json'))
     files={str(p):sha(p) for r in fit+probe for p in input_dir(r).glob('*.png')}
+    files[str(OUT/'protocol/g2b_fit_probe_ids.json')]=sha(OUT/'protocol/g2b_fit_probe_ids.json')
+    files[str(OUT/'protocol/routeB_DFT_contract_v2.json')]=sha(OUT/'protocol/routeB_DFT_contract_v2.json')
     write(OUT/'protocol/input_target_contract.json',dict(route='B',approved_for_AI_amended_training=True,files=files,
         real_source=False,source='same independent procedural P drives reference and target',DFT_positive_control_before_training=True,
         inference_target_RGB=False,neutral_caption_protocol=True,old_captions_not_used=True,human_certification=None,
