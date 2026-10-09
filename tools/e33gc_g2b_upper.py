@@ -19,6 +19,7 @@ class FreeResidual(nn.Module):
 def run_upper():
     init();verify_contract();assert read(OUT/'decision_summary.json')['g2b_AI_amended_fit_pass'] is False
     smoke=read(OUT/'G2b_smoke/smoke_audit.json');assert smoke['pass_autograd'] and smoke['budget_pass']
+    loss_scale=precision_scale()
     torch.manual_seed(42);torch.set_num_threads(2);cv2.setNumThreads(1)
     rows=read(OUT/'protocol/g2b_fit_probe_ids.json')['fit'][:2]
     assert [r['label'] for r in rows]==['fit_01','fit_02']
@@ -35,9 +36,10 @@ def run_upper():
         opt.zero_grad(set_to_none=True);parts=[]
         for case in cases:
             images=render_case(case,pipe,ns,injection);loss,values=losses(images,case['targets'],case['baseline'],case['masks'])
-            (loss/2).backward();parts.append({k:float(v.detach()) for k,v in values.items()})
+            (loss*loss_scale/2).backward();parts.append({k:float(v.detach()) for k,v in values.items()})
+        unscale_gradients(adapter,loss_scale)
         norm=torch.nn.utils.clip_grad_norm_(adapter.parameters(),1.);assert torch.isfinite(norm);opt.step()
-        with (dest/'updates.jsonl').open('a') as f:f.write(json.dumps(dict(update=step,losses=parts,grad_norm=float(norm),seconds=time.monotonic()-began))+'\n')
+        with (dest/'updates.jsonl').open('a') as f:f.write(json.dumps(dict(update=step,losses=parts,grad_norm=float(norm),seconds=time.monotonic()-began,backward_loss_scale=loss_scale))+'\n')
         print('UPPER',step,'seconds',round(time.monotonic()-began,2),flush=True)
         assert gpu_seconds()<21600,'combined GPU budget exhausted'
     torch.save(dict(residual=adapter.state_dict(),privileged_identity_and_arm=True,updates=80),dest/'checkpoint_step80.pt')

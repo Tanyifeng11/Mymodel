@@ -1,5 +1,5 @@
 """固定4身份/160更新，原G2 last8链与三个最终RGB损失；不选最佳checkpoint。"""
-import argparse,time,hashlib,json,os
+import argparse,time,hashlib,json,os,sys
 import cv2,numpy as np,torch
 from torch import nn
 from torch.nn import functional as F
@@ -47,11 +47,38 @@ def losses(images,targets,baseline,masks):
     return total,dict(rgb=rgb,orientation_pair=pair,outside=outside,total=total)
 
 def gradient_stats(adapter,require_nonzero=True):
-    values={n:dict(present=p.grad is not None,norm=float(p.grad.norm()) if p.grad is not None else None,
+    values={n:dict(present=p.grad is not None,norm=float(p.grad.double().norm()) if p.grad is not None else None,
+        nonzero=int(torch.count_nonzero(p.grad)) if p.grad is not None else None,
         finite=bool(torch.isfinite(p.grad).all()) if p.grad is not None else None) for n,p in adapter.named_parameters()}
     assert all(v['finite'] for v in values.values() if v['present'])
     if require_nonzero:assert sum(v['norm'] or 0 for v in values.values())>0
     return values
+
+def unscale_gradients(adapter,scale):
+    for parameter in adapter.parameters():
+        if parameter.grad is not None:parameter.grad.div_(scale)
+
+def precision_scale():
+    smoke=read(OUT/'G2b_smoke/smoke_audit.json')
+    complete=read(OUT/'G2b_smoke/smoke_complete.json')
+    assert complete['smoke_audit_sha256']==sha(OUT/'G2b_smoke/smoke_audit.json')
+    assert complete['frozen_modules_sha256']==sha(OUT/'G2b_smoke/frozen_modules.json')
+    assert complete['input_contract_sha256']==sha(OUT/'protocol/input_target_contract.json')
+    assert complete['train_code_sha256']==sha(__file__)
+    assert smoke['pass_autograd'] and smoke['budget_pass']
+    path=OUT/'protocol/backward_precision.json'
+    assert sha(path)==smoke['backward_precision_sha256']
+    precision=read(path)
+    if precision['loss_scale']==1024:
+        assert sha(precision['underflow_diagnosis_path'])==precision['underflow_diagnosis_sha256']
+    return precision['loss_scale']
+
+def confirmed_underflow(components):
+    if set(components)!={'rgb','orientation_pair','outside'}:return False
+    zero=[c for c in components.values() if not any(v['norm'] for v in c['gradients'].values())]
+    return bool(zero) and all(any(c['pixel_gradient_nonzero']) and
+        any(v['norm'] for v in c.get('scaled_1024_diagnostic_gradients',{}).values()) and
+        all(v['finite'] for v in c.get('scaled_1024_diagnostic_gradients',{}).values() if v['present']) for c in zero)
 
 class TracedInjection(TextureInjection):
     def __init__(self,pipe,adapter):
@@ -124,9 +151,19 @@ def diagnostic(cases,pipe,ns,injection,step,label='G2b_train',constant=False):
             records.append(dict(id=case['row']['id'],label=case['row']['label'],loss={k:float(v) for k,v in parts.items()}))
     write(folder/'losses.json',records)
 
-def run(action):
+def run(action,loss_scale=1):
     init();torch.manual_seed(42);torch.set_num_threads(2);cv2.setNumThreads(1)
     contract=verify_contract();assert gpu_seconds()<21600
+    if action=='train':loss_scale=precision_scale()
+    else:assert not (OUT/'G2b_train/updates.jsonl').exists(),'formal training already started; do not repeat smoke'
+    diagnosis_sha=None;diagnosis_path=None
+    if action=='smoke' and loss_scale==1024:
+        diagnosis_path=OUT/'G2b_smoke'/('precision_diagnosis_job_'+os.environ.get('SLURM_JOB_ID','local')+'.json')
+        diagnosis=read(diagnosis_path)
+        assert diagnosis['confirmed_FP16_backward_underflow'] and diagnosis['original_scale1_pass'] is False
+        assert diagnosis['code_commit']==commit() and diagnosis['input_contract_sha256']==sha(OUT/'protocol/input_target_contract.json')
+        assert diagnosis['fixed_retry_scale']==1024 and confirmed_underflow(diagnosis['components'])
+        diagnosis_sha=sha(diagnosis_path)
     rows=read(OUT/'protocol/g2b_fit_probe_ids.json')['fit'];assert len(rows)==4
     pipe,modules,size,ns=load_e5();assert size==(384,512)
     rf,_=build(42,checkpoint=RF/'seed42/RF2/checkpoint_final.pt');rf.eval().requires_grad_(False)
@@ -141,12 +178,14 @@ def run(action):
         step_start=time.monotonic();values=[]
         for case in cases:
             images=render_case(case,pipe,ns,injection);total,parts=losses(images,case['targets'],case['baseline'],case['masks'])
-            assert all(torch.isfinite(v) for v in parts.values());(total/4).backward()
+            assert all(torch.isfinite(v) for v in parts.values());(total*loss_scale/4).backward()
             values.append({k:float(v.detach()) for k,v in parts.items()})
+        unscale_gradients(adapter,loss_scale)
         first=gradient_stats(adapter);torch.nn.utils.clip_grad_norm_(adapter.parameters(),1.);opt.step()
         seconds=time.monotonic()-step_start
         opt.zero_grad(set_to_none=True);images=render_case(cases[0],pipe,ns,injection)
-        total,parts=losses(images,cases[0]['targets'],cases[0]['baseline'],cases[0]['masks']);total.backward()
+        total,parts=losses(images,cases[0]['targets'],cases[0]['baseline'],cases[0]['masks']);(total*loss_scale).backward()
+        unscale_gradients(adapter,loss_scale)
         second=gradient_stats(adapter);assert second['body.0.weight']['norm']>0
         assert all(p.grad is None for m in list(modules.values())+[rf,dino] for p in m.parameters())
         # 将三loss各自反传到末层，新增outside项在非零更新后验证。
@@ -155,31 +194,39 @@ def run(action):
             adapter.zero_grad(set_to_none=True);im=render_case(cases[0],pipe,ns,injection)
             _,pieces=losses(im,cases[0]['targets'],cases[0]['baseline'],cases[0]['masks'])
             pixel_grad=torch.autograd.grad(pieces[name],im,retain_graph=True)
-            pieces[name].backward(retain_graph=True)
+            (pieces[name]*loss_scale).backward(retain_graph=True)
+            unscale_gradients(adapter,loss_scale)
             unscaled=gradient_stats(adapter,False)
             value=dict(value=float(pieces[name].detach()),gradients=unscaled,
                 pixel_gradient_norms=[float(g.norm()) for g in pixel_grad],
                 pixel_gradient_nonzero=[int(torch.count_nonzero(g)) for g in pixel_grad])
             # 只读诊断：对相同图反传缩放损失，再还原参数梯度，判断fp16链下溢。
-            if not any(v['norm'] for v in unscaled.values()):
+            if loss_scale==1 and not any(v['norm'] for v in unscaled.values()):
                 adapter.zero_grad(set_to_none=True);(pieces[name]*1024).backward()
-                for parameter in adapter.parameters():
-                    if parameter.grad is not None:parameter.grad.div_(1024)
+                unscale_gradients(adapter,1024)
                 value['scaled_1024_diagnostic_gradients']=gradient_stats(adapter,False)
             components[name]=value
-            write(OUT/'G2b_smoke'/('component_diagnostic_job_'+os.environ.get('SLURM_JOB_ID','local')+'.json'),components)
+            write(OUT/'G2b_smoke'/('component_diagnostic_job_'+os.environ.get('SLURM_JOB_ID','local')+'_scale%d.json'%loss_scale),components)
             print('LOSS_COMPONENT',name,'value',value['value'],'pixel_nonzero',value['pixel_gradient_nonzero'],
                 'parameter_norm',sum(v['norm'] or 0 for v in unscaled.values()),flush=True)
             del im,pieces,pixel_grad
         assert all(any(v['norm'] for v in c['gradients'].values()) for c in components.values()),'individual loss gradient zero; see component diagnostic; no formal training'
-        projected=(seconds*160+seconds*.5*80+seconds*10+time.monotonic()-began)/3600
+        precision=dict(loss_scale=loss_scale,forward_dtype_unchanged=True,RGB_postprocess_unchanged=True,
+            unscale_after_all_identities_before_clip=True,clip=1.,optimizer_unchanged=True,
+            formal_updates_before_freeze=0,underflow_diagnosis_sha256=diagnosis_sha,
+            underflow_diagnosis_path=str(diagnosis_path) if diagnosis_path else None,
+            source='complete fresh smoke; finite nonzero gradients for all three losses')
+        path=OUT/'protocol/backward_precision.json'
+        if path.exists():assert read(path)==precision
+        else:write(path,precision)
+        projected=(gpu_seconds()+seconds*210+1200)/3600
         peak=torch.cuda.max_memory_allocated()/2**30
         audit=dict(pass_autograd=True,full4_identity_update_seconds=seconds,peak_memory_gib=peak,first_gradients=first,
             after_update_gradients=second,losses=values,component_gradients=components,projected_GPU_hours=projected,
             cap_GPU_hours=6.,budget_pass=projected<=6,exact_arms=12,formal_updates=0,
+            backward_loss_scale=loss_scale,backward_precision_sha256=sha(path),
             cache_hits=len(cases)*3,checkpointed=True,code_commit=commit(),freeze_before=before)
         write(OUT/'G2b_smoke/smoke_audit.json',audit);assert projected<=6,'budget exceeds pre-registered6GPUh'
-        decision(g2b_step0_exact_match=True,g2b_loss_autograd_pass=True,g2b_peak_memory_gib=peak,next_route='fixed160_training')
     else:
         smoke=read(OUT/'G2b_smoke/smoke_audit.json');assert smoke['budget_pass'] and smoke['pass_autograd']
         opt=torch.optim.AdamW(adapter.parameters(),lr=1e-4,weight_decay=1e-4)
@@ -189,11 +236,12 @@ def run(action):
             opt.zero_grad(set_to_none=True);t=time.monotonic();values=[]
             for case in cases:
                 images=render_case(case,pipe,ns,injection);total,parts=losses(images,case['targets'],case['baseline'],case['masks'])
-                assert all(torch.isfinite(v) for v in parts.values());(total/4).backward()
+                assert all(torch.isfinite(v) for v in parts.values());(total*loss_scale/4).backward()
                 values.append(dict(id=case['row']['id'],**{k:float(v.detach()) for k,v in parts.items()}))
+            unscale_gradients(adapter,loss_scale)
             norm=torch.nn.utils.clip_grad_norm_(adapter.parameters(),1.);assert torch.isfinite(norm);opt.step()
             record=dict(update=step,identities=values,grad_norm_before_clip=float(norm),peak_memory_gib=torch.cuda.max_memory_allocated()/2**30,
-                seconds=time.monotonic()-t,elapsed_seconds=time.monotonic()-began)
+                seconds=time.monotonic()-t,elapsed_seconds=time.monotonic()-began,backward_loss_scale=loss_scale)
             with log.open('a',encoding='utf-8') as f:f.write(json.dumps(record)+'\n')
             print('UPDATE',step,'loss',sum(v['total'] for v in values)/4,'seconds',round(record['seconds'],2),flush=True)
             assert gpu_seconds()<21600,'cumulative GPU budget exhausted; do not extend'
@@ -214,12 +262,33 @@ def run(action):
     assert rf_hash==model_hash(rf) and dino_hash==model_hash(dino)
     write(OUT/('G2b_smoke' if action=='smoke' else 'G2b_train')/'frozen_modules.json',dict(before=before,after=module_hashes(modules),
         RF2=rf_hash,DINO=dino_hash,effective_before=effective,effective_after=effective_hashes(modules)))
-    injection.close();verify_frozen();assert gpu_seconds()<21600;bundle(action)
+    injection.close();verify_frozen();assert gpu_seconds()<21600
+    if action=='smoke':
+        write(OUT/'G2b_smoke/smoke_complete.json',dict(smoke_audit_sha256=sha(OUT/'G2b_smoke/smoke_audit.json'),
+            frozen_modules_sha256=sha(OUT/'G2b_smoke/frozen_modules.json'),train_code_sha256=sha(__file__),
+            input_contract_sha256=sha(OUT/'protocol/input_target_contract.json'),code_commit=commit()))
+        decision(g2b_step0_exact_match=True,g2b_loss_autograd_pass=True,g2b_peak_memory_gib=peak,next_route='fixed160_training')
+    bundle(action)
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['smoke','train']);a=p.parse_args()
-    try:run(a.action)
-    except Exception:
-        import traceback,os
-        write(OUT/'failures'/('job_'+os.environ.get('SLURM_JOB_ID','local')+'.json'),dict(traceback=traceback.format_exc(),action=a.action,commit=commit()))
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['smoke','train'])
+    p.add_argument('--loss-scale',type=int,choices=[1,1024],default=1);a=p.parse_args()
+    try:run(a.action,a.loss_scale)
+    except Exception as error:
+        import traceback
+        jid=os.environ.get('SLURM_JOB_ID','local')
+        write(OUT/'failures'/('job_'+jid+'_'+a.action+'_scale%d.json'%a.loss_scale),
+            dict(traceback=traceback.format_exc(),action=a.action,loss_scale=a.loss_scale,commit=commit()))
+        # 仅实测证明FP16下溢时允许一次固定1024缩放修复；驻点/断链/NaN仍停止。
+        path=OUT/'G2b_smoke'/('component_diagnostic_job_'+jid+'_scale1.json')
+        if a.action=='smoke' and a.loss_scale==1 and str(error).startswith('individual loss gradient zero') and path.exists():
+            components=read(path)
+            if confirmed_underflow(components):
+                write(OUT/'G2b_smoke'/('precision_diagnosis_job_'+jid+'.json'),dict(
+                    confirmed_FP16_backward_underflow=True,original_scale1_pass=False,components=components,
+                    fixed_retry_scale=1024,fresh_process_and_optimizer=True,formal_updates=0,code_commit=commit(),
+                    input_contract_sha256=sha(OUT/'protocol/input_target_contract.json')))
+                print('CONFIRMED_FP16_UNDERFLOW: restart complete smoke at fixed loss scale1024',flush=True)
+                # 替换进程以释放原模型显存；重新seed42/零初始化并完整复查，不继承诊断更新。
+                os.execv(sys.executable,[sys.executable,'-m','tools.e33gc_g2b_train','smoke','--loss-scale','1024'])
         raise

@@ -53,6 +53,8 @@ def run():
         fixed4_identities=len(fit)==4,
         exact12_zero_arms=all(a['exact'] for p in proof for a in p['arms']) and sum(len(p['arms']) for p in proof)==12,
         all_three_losses_autograd=smoke['pass_autograd'] and set(smoke['component_gradients'])=={'rgb','orientation_pair','outside'},
+        frozen_backward_precision=sha(OUT/'protocol/backward_precision.json')==smoke['backward_precision_sha256'],
+        smoke_fully_completed=read(OUT/'G2b_smoke/smoke_complete.json')['smoke_audit_sha256']==sha(OUT/'G2b_smoke/smoke_audit.json'),
         frozen_input_target_hashes=all(sha(p)==h for p,h in read(OUT/'protocol/input_target_contract.json')['files'].items()),
         fixed160_updates=training['updates']==160 and updates==list(range(1,161)),
         endpoint_checkpoint_hash=sha(OUT/'G2b_train/checkpoint_step160.pt')==training['checkpoint_sha256'],
