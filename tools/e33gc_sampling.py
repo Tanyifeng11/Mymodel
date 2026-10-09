@@ -37,13 +37,21 @@ def prefix(pipe,ns,caption,sketch,reference,mask,injection=None):
 def final8(pipe,ns,caption,sketch,reference,mask,cached,injection,checkpointed=True,trace=False):
     old_prepare,old_timesteps,old_step=pipe.prepare_latents,pipe.scheduler.set_timesteps,pipe.scheduler.step
     old_decode,old_forward=pipe.vae.decode,pipe.unet.forward
-    outputs=[];scores=[];index=42;start_count=injection.count
+    outputs=[];scores=[];checked=set();index=42;start_count=injection.count
     geometry,falloff=injection.geometry,injection.falloff
     def timesteps(steps,*args,**kwargs):
         old_timesteps(steps,*args,**kwargs)
         assert torch.equal(pipe.scheduler.timesteps.cpu(),cached['timesteps'])
         pipe.scheduler.timesteps=pipe.scheduler.timesteps[42:]
     def forward(*args,**kwargs):
+        branch='conditional' if 'sa_hidden_states' in kwargs.get('cross_attention_kwargs',{}) else 'unconditional'
+        if branch not in checked:
+            assert tensor_sha(kwargs['encoder_hidden_states'])==cached[branch], 'cached condition mismatch'
+            if branch=='conditional':
+                features=kwargs['cross_attention_kwargs']['sa_hidden_states']
+                assert set(features)==set(cached['sketch_features'])
+                assert all(tensor_sha(features[k])==tensor_sha(v) for k,v in cached['sketch_features'].items())
+            checked.add(branch)
         def invoke(*inner_args,**inner_kwargs):
             # checkpoint重算时必须重新确定CFG分支，不能使用最后一次uncond的状态。
             injection.conditional='sa_hidden_states' in inner_kwargs.get('cross_attention_kwargs',{})
@@ -80,7 +88,7 @@ def final8(pipe,ns,caption,sketch,reference,mask,cached,injection,checkpointed=T
             ref_image=to_tensor(sketch)[None]*2-1,texture_clip_image=reference,width=384,height=512,
             num_inference_steps=50,guidance_scale=7.,sketch_scale=.6,ipa_scale=1.,
             texture_mode=ns.texture_mode,texture_condition_mode='token',texture_preprocess_mode='plain_resize',
-            texture_num_tokens=pipe.effective_texture_num_tokens,texture_scale=1.,spatial_mask=mask,
+            texture_num_tokens=pipe.effective_texture_num_tokens,texture_scale=1.,spatial_mask=mask.to(pipe.device,torch.float16),
             generator=torch.Generator(device=pipe.device).manual_seed(42))
         assert index==50 and len(outputs)==1 and injection.count-start_count==8
         return outputs[0],scores
