@@ -107,8 +107,10 @@ def run():
                 image = image.copy(); image.thumbnail((134, 168))
                 panel.paste(image, (140 * column + 3, 42 + 194 * line))
         b = lookup[sid]
-        draw.text((4, 416), 'R90={} R180={} | Texture={:.5f} Contour={:.5f} Sketch={:.5f} Text={:.5f}'.format(
-            b['r90_success'], b['r180_success'], b['texture_score'], b['contour_f1'], b['sketch_similarity'], b['text_score']), fill='black')
+        metric = lambda key: 'NA' if b[key] is None else '{:.5f}'.format(b[key])
+        draw.text((4, 416), 'R90={} R180={} | Texture={} Contour={} Sketch={} Text={}'.format(
+            b['r90_success'], b['r180_success'], metric('texture_score'), metric('contour_f1'),
+            metric('sketch_similarity'), metric('text_score')), fill='black')
         draw.text((4, 432), 'B1 exact B0 | A1 sham/A2 trained candidate not run | support: original GT evaluation support + generated confidence', fill='black')
         path = folder / (sid + '.png'); panel.save(path); index[sid] = str(path.relative_to(OUT))
     write(OUT / 'visual_audit/G0_baseline/index.json', dict(fixed16=inputs['fixed16'], groups=inputs['groups'], files=index))
