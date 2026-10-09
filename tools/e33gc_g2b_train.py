@@ -126,6 +126,7 @@ def diagnostic(cases,pipe,ns,injection,step,label='G2b_train',constant=False):
 def run(action):
     init();torch.manual_seed(42);torch.set_num_threads(2);cv2.setNumThreads(1)
     contract=read(OUT/'protocol/input_target_contract.json');assert contract['approved_for_AI_amended_training']
+    assert all(sha(p)==h for p,h in contract['files'].items()),'frozen input/target files changed'
     rows=read(OUT/'protocol/g2b_fit_probe_ids.json')['fit'];assert len(rows)==4
     pipe,modules,size,ns=load_e5();assert size==(384,512)
     rf,_=build(42,checkpoint=RF/'seed42/RF2/checkpoint_final.pt');rf.eval().requires_grad_(False)

@@ -1,5 +1,5 @@
 """导入两份独立AI评审；先冻结训练身份，不以生成效果选身份。"""
-import argparse
+import argparse,csv
 from PIL import Image
 from tools.e33gc_g2b_protocol import *
 from tools.e33gc_g2b_eval import dft_pair
@@ -33,6 +33,21 @@ def freeze():
         human_eligible_n=None,human_gate_24of64=None,old_automatic_eligible_n=19,
         two_AI_agreement=sum(reviews['reviewer1']['real_inputs'][sid]['eligible']==reviews['reviewer2']['real_inputs'][sid]['eligible'] for sid in realids)/64,
         outputs_used=False,review_type='two_independent_AI',reviewer1=reviews['reviewer1']['real_inputs'],reviewer2=reviews['reviewer2']['real_inputs']))
+    fields=['id','reviewer_type','eligible','single_axis_pattern','pattern_not_structural_edge','source_patch_purity',
+        'reference_R90_valid','padding_or_crop_artifact','text_direction_conflict','target_pattern_support','reason_codes']
+    for label in ['reviewer1','reviewer2','consensus']:
+        p=OUT/'G0a_real_input_annotations'/('G0a_real_input_annotations_'+label+'.csv')
+        with p.open('w',newline='',encoding='utf-8') as f:
+            writer=csv.DictWriter(f,fieldnames=fields);writer.writeheader()
+            for sid in realids:
+                a=reviews['reviewer1']['real_inputs'][sid];b=reviews['reviewer2']['real_inputs'][sid]
+                value=dict((a if label!='reviewer2' else b))
+                if label=='consensus':
+                    value={k:(a[k] and b[k]) for k in fields if k not in ['id','reviewer_type','reason_codes']}
+                    value['reason_codes']=sorted(set(a['reason_codes']+b['reason_codes']))
+                    for k in ['padding_or_crop_artifact','text_direction_conflict']:value[k]=a[k] or b[k]
+                writer.writerow(dict(id=sid,reviewer_type='AI_independent' if label!='consensus' else 'AI_consensus',
+                    **{k:(';'.join(value[k]) if k=='reason_codes' else value[k]) for k in fields if k not in ['id','reviewer_type']}))
     if len(accepted)<4:
         decision(main_reference_derived_G2b='not_run',g1a_AI_approved_identity_n=len(accepted),
             main_route_hard_stop='fewer than4 jointly AI-qualified real-crop identities',

@@ -1,0 +1,2209 @@
+{
+  "reviewer1": {
+    "reviewer_type": "AI_independent",
+    "targets": {
+      "104293117": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "紫色裁片模糊阴影纹理不能确认周期纹样；caption白领在目标中丢失。"
+      },
+      "118092764": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "绿色裁片被褶皱阴影主导，不是真实周期纹样，平铺接缝明显。"
+      },
+      "138736116": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "裁片是灰褐色模糊褶皱/边界，不能辨为棕榈图案；蓝绿色caption冲突，轮廓大面积空洞污染。"
+      },
+      "143379505": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "棕色裁片主要为光影与褶皱，没有可辨重复纹样，人工平铺条带不能替代纹样。"
+      },
+      "162420447": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "蓝色裁片暗带不足以认定清晰蓝白条纹，缺少caption要求的白色条纹。"
+      },
+      "168584173": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "薄荷色裁片是柔和光照/褶皱渐变，没有清晰纹样；平铺产生人工条带。"
+      },
+      "170764742": {
+        "eligible": false,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "黑白条纹与旋转关系可辨，来源一致；caption要求橙色，三臂无橙色，颜色冲突。"
+      },
+      "174504971": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "来源裁片近纯色阴影，重复条带来自平铺；目标丢失文本印字，与caption冲突。"
+      },
+      "181972027": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "灰色裁片为宽暗影/折痕，非真实重复纹样；目标条带来自平铺。"
+      },
+      "187653788": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "黄色裁片仅有模糊不规则蕾丝纹理，缺乏清晰单轴可辨纹样；不能据方向分数判合格。"
+      },
+      "187725431": {
+        "eligible": true,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "米色肋纹呈清晰重复单轴条纹；三臂同源，R90方向变化正确，颜色材质类别相容，轮廓基本保持。"
+      },
+      "191495531": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "黑色裁片近纯色，仅有暗影，无清晰纹样；不得把平铺产生的带状边界当图案。"
+      },
+      "204142270": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "裁片只有模糊黑白纵向宽带，不能确认双轴gingham；铺贴目标与方格caption冲突。"
+      },
+      "204293453": {
+        "eligible": true,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "黑白条纹裁片可辨，三臂同源且R90转为横纹，轮廓与背景基本保持；颜色与条纹类别相容。"
+      },
+      "212066303": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "来源裁片是单条暗影/结构边与粉色渐变，不是重复真实纹样；铺贴后产生接缝。"
+      },
+      "214321851": {
+        "eligible": false,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "来源彩色条带与caption相容，三臂来源一致；轮廓内部及裙摆有明显白洞和遮罩污染，不合格。"
+      }
+    },
+    "real_inputs": {
+      "37557379": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纵向褶皱非纹样",
+          "中心近纯色"
+        ]
+      },
+      "44420139": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "天鹅绒一般绒面纹理",
+          "中心无清晰单轴纹样"
+        ]
+      },
+      "53539439": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "局部花叶轮廓非单轴周期",
+          "中心只含少量曲线和局部色块"
+        ]
+      },
+      "71189358": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "白色衣料褶皱或缝线",
+          "中心无清晰周期"
+        ]
+      },
+      "71373444": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "边缘仅见局部黑色结构",
+          "中心缺少黑白条纹",
+          "sketch条纹无法由裁片支持"
+        ]
+      },
+      "76341048": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "平滑光照渐变",
+          "无清晰纹样"
+        ]
+      },
+      "79156171": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纵向褶皱阴影",
+          "中心不可辨纹样"
+        ]
+      },
+      "89887776": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "绞花针织真实但非清晰单轴裁片",
+          "中心模糊不可辨"
+        ]
+      },
+      "102793986": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "不规则印花非单轴",
+          "中心模糊且缺少完整重复图案"
+        ]
+      },
+      "105475525": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "服装轮廓背景边",
+          "中心近纯黑无纹样"
+        ]
+      },
+      "107371828": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "近纯白无纹样",
+          "sketch过淡缺乏可靠纹样支持"
+        ]
+      },
+      "115683391": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "中心近纯色",
+          "牛仔普通织物纹理不足以确认单轴纹样"
+        ]
+      },
+      "116062813": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纽扣门襟与缝线结构",
+          "中心纯深色无纹样"
+        ]
+      },
+      "120077969": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "羽毛或下摆结构",
+          "中心非清晰织物纹样"
+        ]
+      },
+      "120631496": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "服装轮廓边",
+          "近纯色褶皱非纹样"
+        ]
+      },
+      "123010844": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "全参考有针织肋纹",
+          "中心裁片被模糊至近纯色"
+        ]
+      },
+      "127244297": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "皮革光影与缝线",
+          "不是重复纹样"
+        ]
+      },
+      "137445285": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "蕾丝花纹非单轴",
+          "中心花纹严重模糊"
+        ]
+      },
+      "140298892": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "服装轮廓背景污染",
+          "普通绿色织物非单轴纹样"
+        ]
+      },
+      "146772311": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "粉色褶皱非纹样"
+        ]
+      },
+      "148546249": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "来源含背景结构边",
+          "中心近纯色无纹样"
+        ]
+      },
+      "157644041": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "黑色裤腿轮廓与背景",
+          "中心纯黑无纹样"
+        ]
+      },
+      "157656865": {
+        "eligible": true,
+        "single_axis_pattern": true,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "清晰单轴重复肋纹",
+          "中心裁片纯净",
+          "旋转合法"
+        ]
+      },
+      "168752054": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": false,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "蕾丝与折痕混合",
+          "中心非清晰单轴纹样"
+        ]
+      },
+      "170226628": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "真实网眼纹理双轴",
+          "中心模糊点阵非单轴"
+        ]
+      },
+      "170963273": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "服装边缘背景污染",
+          "深色褶皱非纹样"
+        ]
+      },
+      "171479419": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "薄荷色纵向褶皱",
+          "不是纹样"
+        ]
+      },
+      "171581319": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "中间深线为褶皱或抽绳结构",
+          "不是周期纹样"
+        ]
+      },
+      "172517359": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "来源褶皱光影",
+          "无清晰纹样"
+        ]
+      },
+      "173048123": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "服装轮廓背景污染",
+          "中心近纯白无纹样"
+        ]
+      },
+      "174116638": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纯蓝与局部扣件结构",
+          "中心无纹样"
+        ]
+      },
+      "177610483": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "中心黑色近纯色",
+          "caption侧边红条纹不在裁片"
+        ]
+      },
+      "179287415": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "暗红裤料褶皱",
+          "中心无清晰周期纹样"
+        ]
+      },
+      "180055056": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "来源服装结构与模糊装饰",
+          "中心无清晰条纹"
+        ]
+      },
+      "180618007": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "近纯色米白裁片",
+          "无周期纹样"
+        ]
+      },
+      "181375827": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "真实双轴格纹",
+          "不是单轴纹样"
+        ]
+      },
+      "181672930": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "服装折痕与局部装饰",
+          "中心近纯粉色"
+        ]
+      },
+      "181718440": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "裁片缺少菠萝印花",
+          "来源服装边缘",
+          "中心纯色"
+        ]
+      },
+      "181899368": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔缝线扣件非纹样",
+          "来源含白背景边",
+          "中心杂乱模糊"
+        ]
+      },
+      "182616606": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "平滑米色服装边",
+          "无重复纹样"
+        ]
+      },
+      "183613703": {
+        "eligible": true,
+        "single_axis_pattern": true,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "清晰黑色单轴重复肋纹",
+          "中心纯净",
+          "R90合法"
+        ]
+      },
+      "188128810": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔接缝褶皱",
+          "来源局部白背景",
+          "中心无清晰周期"
+        ]
+      },
+      "191359972": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔缝线与边缘",
+          "中心模糊且无清晰周期纹样"
+        ]
+      },
+      "191613857": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "大块色块分界非周期纹样",
+          "中心近纯色"
+        ]
+      },
+      "193332247": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "刺绣零散非单轴",
+          "中心花纹模糊不可辨"
+        ]
+      },
+      "193558467": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "竖线为裤子缝线或褶皱",
+          "不是纹样"
+        ]
+      },
+      "193617830": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "白领结构边混入",
+          "中心黑色纯色无纹样"
+        ]
+      },
+      "194275301": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "服装背景边污染",
+          "中心牛仔近纯色"
+        ]
+      },
+      "194443837": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "中心米色近纯色",
+          "袖口条纹不在裁片"
+        ]
+      },
+      "194937082": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "白色近纯色",
+          "无可辨单轴纹样"
+        ]
+      },
+      "197434618": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "来源含服装背景边",
+          "中心不能辨亮片重复纹样"
+        ]
+      },
+      "198118117": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "黄色轮廓背景边",
+          "中心纯黄无纹样"
+        ]
+      },
+      "198425984": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "宽渐变来自褶皱光影",
+          "无周期纹样"
+        ]
+      },
+      "198473215": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "白色背景或裤腿间隙贯穿中心",
+          "结构边误作纹样"
+        ]
+      },
+      "200451120": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "深竖线为门襟褶皱",
+          "来源背景边污染"
+        ]
+      },
+      "201270124": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "花卉印花非单轴",
+          "中心裁片丢失主体花纹"
+        ]
+      },
+      "203538738": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纯黄色与弱光影",
+          "无周期纹样"
+        ]
+      },
+      "204475274": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "真实双轴gingham",
+          "不是单轴纹样"
+        ]
+      },
+      "206412661": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": false,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "来源不规则印花与褶皱混合",
+          "中心红色带状阴影不足以辨单轴周期"
+        ]
+      },
+      "208606613": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔缝线扣件与裤结构",
+          "不是纹样"
+        ]
+      },
+      "208630089": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "红色服装边与背景污染",
+          "褶皱非纹样"
+        ]
+      },
+      "209293348": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "大面积白背景与斜向服装边",
+          "中心不可辨肋纹"
+        ]
+      },
+      "211816272": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "全参考有细肋纹迹象",
+          "中心裁片模糊至不可辨重复纹样"
+        ]
+      },
+      "214335246": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "花卉图案非单轴",
+          "中心裁片主要为空白浅色"
+        ]
+      }
+    },
+    "old16": {
+      "26742879": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；珊瑚色透明上衣与绿色合成条纹冲突。"
+      },
+      "78716098": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；米色裙与红棕合成条纹冲突。"
+      },
+      "112627684": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；灰色山形logoT恤与绿色合成条纹冲突。"
+      },
+      "116991916": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；黑白条纹与紫色合成条纹颜色冲突，sketch横纹与斜条冲突。"
+      },
+      "121908097": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；海军蓝珠饰裙与粉紫合成条纹冲突。"
+      },
+      "130411961": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；芥末黄T恤与紫色合成条纹冲突。"
+      },
+      "138736116": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；蓝绿棕榈图案与橙色合成条纹冲突，轮廓大面积空洞污染。"
+      },
+      "142324243": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；蓝白格子衬衫与粉灰合成条纹冲突。"
+      },
+      "143887784": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；黑橙条纹及红色字样与紫色合成条纹冲突。"
+      },
+      "144078320": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；红黑格纹大衣与绿色合成条纹冲突。"
+      },
+      "156211624": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；黑米色条纹与蓝灰合成条纹颜色冲突，sketch横条与斜条冲突。"
+      },
+      "189181368": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；深蓝天鹅绒裙与青绿合成条纹冲突。"
+      },
+      "196763885": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；紫色短裤与绿色合成条纹长裤轮廓冲突。"
+      },
+      "201240103": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；红色平滑毛衣与金色合成条纹冲突。"
+      },
+      "202407542": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；浅粉皮夹克与紫色合成条纹冲突。"
+      },
+      "37839359_10": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "合成条纹三臂方向可辨且来源一致；深灰铆钉夹克与绿色合成条纹冲突。"
+      }
+    },
+    "limitations": "独立AI视觉审核，非人工；不得据此把旧人工gate设为true。仅查看指定输入图页及id/caption元数据，未读取任何生成效果、历史成功标签或另一审核者结论。裁片模糊时按证据不足判不合格，不依据方向分数放行。R90合法性与单轴资格分开记录；方向文本冲突只指明确方向冲突，缺图案等写入reason_codes。padding_or_crop_artifact包含裁片内明显背景或边缘污染，不把旋转后排版留白认作padding。旧16是合成条纹，方向16/16可辨，整体资格0/16，方向通过不代表真实来源合格。"
+  },
+  "reviewer2": {
+    "reviewer_type": "AI_independent",
+    "targets": {
+      "104293117": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "紫色一般纹理与阴影可见，但缺乏可辨周期，不能仅凭 textured pattern caption通过。"
+      },
+      "118092764": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "绿色裁片出现褶皱和结构阴影，平铺形成横向断层；无真实周期纹样。"
+      },
+      "138736116": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "裁片主要是褶皱阴影，棕灰色与蓝绿色棕榈树caption冲突；轮廓多处孔洞污染。"
+      },
+      "143379505": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "棕色裁片为平滑明暗，不可将一般材质阴影认作周期纹样。"
+      },
+      "162420447": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "蓝色深浅横向明暗不足以证明蓝白条纹，白色条纹未见，无法确认真实周期。"
+      },
+      "168584173": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "薄荷绿色裁片仅有低频阴影，无可辨真实重复纹样。"
+      },
+      "170764742": {
+        "eligible": false,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "黑白横条纹及旋转可辨，但源裁片和目标没有caption所述橙色，颜色类别存在明确缺项。"
+      },
+      "174504971": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "源裁片近纯色，周期来自平铺明暗；文字印花缺失，与文字印花caption冲突。"
+      },
+      "181972027": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "灰色褶皱阴影被重复铺贴，方向来自结构明暗而非图案。"
+      },
+      "187653788": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "黄色模糊一般纹理，蕾丝花型与周期不可辨；重复裁片边界形成伪条带。"
+      },
+      "187725431": {
+        "eligible": true,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "米色规则平行罗纹可辨，符合ribbed材质caption；同源三臂转动且轮廓基本保持。"
+      },
+      "191495531": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "黑色低对比明暗与褶皱不可辨为纹样，蕾丝来源无可辨证据。"
+      },
+      "204142270": {
+        "eligible": false,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": false,
+        "reason": "可辨黑白条带，但无gingham双轴交叉结构，目标由条纹替代格纹，与caption冲突。"
+      },
+      "204293453": {
+        "eligible": true,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "黑白条带可辨，符合条纹caption；三臂使用同源纹样且R90改变轴向，轮廓保持。裁片平铺接缝存在但不否定条纹来源。"
+      },
+      "212066303": {
+        "eligible": false,
+        "source_pattern": false,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "源裁片是粉色明暗渐变和一侧深色结构阴影，未见可辨周期纹样；拼接产生假条带。"
+      },
+      "214321851": {
+        "eligible": true,
+        "source_pattern": true,
+        "reference_target_consistent": true,
+        "text_compatible": true,
+        "reason": "橙、浅蓝、白纵向条纹可辨且颜色相容；三臂同源转向，轮廓与背景基本保持。存在掩膜孔洞与平铺接缝，需保留污染备注。"
+      }
+    },
+    "real_inputs": {
+      "37557379": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "薄蓝布面褶皱，不是周期纹样"
+        ]
+      },
+      "44420139": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "天鹅绒不规则材质，无唯一图案轴向"
+        ]
+      },
+      "53539439": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "图案局部粗轮廓边及叶片多轴，裁片不足以代表花型"
+        ]
+      },
+      "71189358": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "衣服褶皱和结构边，中心无可辨图案"
+        ]
+      },
+      "71373444": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "中心裁片纯白未含黑白条纹，sketch条纹无法补足参考"
+        ]
+      },
+      "76341048": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纯色明暗渐变，无纹样"
+        ]
+      },
+      "79156171": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "细竖向明暗疑似褶皱，中心过于平滑不能确认周期"
+        ]
+      },
+      "89887776": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "绞花针织是多方向结构，中心裁片花型不可清楚辨认"
+        ]
+      },
+      "102793986": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "黑白不规则印花多轴，裁片失去完整图案"
+        ]
+      },
+      "105475525": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "黑裤边及白背景主导，中心无纹样"
+        ]
+      },
+      "107371828": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纯白裁片无纹样，sketch轮廓也过弱"
+        ]
+      },
+      "115683391": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔一般材质模糊，中心裁片近纯色"
+        ]
+      },
+      "116062813": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纽扣和门襟污染，中心近纯色"
+        ]
+      },
+      "120077969": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "羽毛和衣摆背景边，不是周期纹样"
+        ]
+      },
+      "120631496": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "裤边与褶皱，无真实周期图案"
+        ]
+      },
+      "123010844": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "细针织纹理原图可见，但中心平滑失去周期，不能据caption通过"
+        ]
+      },
+      "127244297": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "皮革缝线与褶皱，无周期纹样"
+        ]
+      },
+      "137445285": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "花状蕾丝真实但多轴，中心裁片模糊"
+        ]
+      },
+      "140298892": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "绿色裙边白背景侵入，中心近纯色"
+        ]
+      },
+      "146772311": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "粉色褶皱明暗，非真实周期纹样"
+        ]
+      },
+      "148546249": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "棕色衣服结构边及白背景，无纹样"
+        ]
+      },
+      "157644041": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "黑裤两侧白背景边及接缝，无真实周期"
+        ]
+      },
+      "157656865": {
+        "eligible": true,
+        "single_axis_pattern": true,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "规则竖向罗纹清楚，中心裁片纯净，R90转为横向",
+          "单轴真实罗纹",
+          "中心裁片仍保留周期",
+          "sketch中性轮廓可承载但不证明纹样来源"
+        ]
+      },
+      "168752054": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "蕾丝与结构缝线混合，中心花纹模糊，无单轴周期"
+        ]
+      },
+      "170226628": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "真实网状材质有双轴格点，不能视为单轴"
+        ]
+      },
+      "170963273": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "衣服边缘和褶皱主导方向，白背景侵入"
+        ]
+      },
+      "171479419": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "薄荷色褶皱和明暗，非真实重复图案"
+        ]
+      },
+      "171581319": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "抽绳及褶皱结构明暗，非周期纹样"
+        ]
+      },
+      "172517359": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "粉色明暗阴影，无周期纹样"
+        ]
+      },
+      "173048123": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "衣边白背景与褶皱造成方向，中心无纹样"
+        ]
+      },
+      "174116638": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "局部结构点与纯蓝布，无清楚周期"
+        ]
+      },
+      "177610483": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "黑色近纯色裁片不含侧边红条，原结构线不能当图案"
+        ]
+      },
+      "179287415": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "红色纯布弱结构线，中心无纹样"
+        ]
+      },
+      "180055056": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "结构缝线和局部图案边界，中心无粉色条纹"
+        ]
+      },
+      "180618007": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "近纯色布面，弱阴影无周期纹样"
+        ]
+      },
+      "181375827": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "真实双轴大格纹，不是单轴，中心仅格纹交点"
+        ]
+      },
+      "181672930": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "腰带或结构局部形状污染，中心近纯色"
+        ]
+      },
+      "181718440": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "裁片仅绿色布和边缘，菠萝图案未进入中心"
+        ]
+      },
+      "181899368": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔口袋、铆钉及边缘污染，非单轴纹样"
+        ]
+      },
+      "182616606": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "米色衣边和低频明暗，无纹样"
+        ]
+      },
+      "183613703": {
+        "eligible": true,
+        "single_axis_pattern": true,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": true,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "黑色规则竖向罗纹清晰，中心纯净，R90横向仍可辨",
+          "单轴真实罗纹",
+          "中心裁片仍保留周期",
+          "sketch中性轮廓可承载但不证明纹样来源"
+        ]
+      },
+      "188128810": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔接缝和裤裆阴影主导，非周期纹样"
+        ]
+      },
+      "191359972": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔口袋缝线及背景边污染，非纹样"
+        ]
+      },
+      "191613857": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "大色块边界非重复纹样，中心无周期"
+        ]
+      },
+      "193332247": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "零散刺绣点，中心花型不可辨，无唯一轴"
+        ]
+      },
+      "193558467": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "裤面压褶和结构线被当方向，非纹样"
+        ]
+      },
+      "193617830": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "白领结构边造成方向，黑色中心没有可辨纹样"
+        ]
+      },
+      "194275301": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔裤边白背景主导方向，中心无图案周期"
+        ]
+      },
+      "194443837": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "米色裁片无袖口黑白条纹，中心近纯色"
+        ]
+      },
+      "194937082": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "近白色纯布及弱明暗，无图案"
+        ]
+      },
+      "197434618": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "黑色颗粒亮片无单轴周期，背景结构边污染"
+        ]
+      },
+      "198118117": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纯黄布及衣边，中心无图案"
+        ]
+      },
+      "198425984": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "蓝色褶皱光影，无真实条纹"
+        ]
+      },
+      "198473215": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "裤腿间白背景缝隙进入中心，结构边非条纹"
+        ]
+      },
+      "200451120": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "蓝色褶皱阴影，不能视为条纹"
+        ]
+      },
+      "201270124": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "零散花卉多轴，中心基本无印花"
+        ]
+      },
+      "203538738": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "纯黄色明暗，无周期纹样"
+        ]
+      },
+      "204475274": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "真实双轴gingham，不能做唯一单轴方向"
+        ]
+      },
+      "206412661": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "不规则多色印花与褶皱混合，不具唯一轴向"
+        ]
+      },
+      "208606613": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": false,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "牛仔口袋缝线和铆钉污染，非图案"
+        ]
+      },
+      "208630089": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "红裤结构边与白背景，中心明暗无纹样"
+        ]
+      },
+      "209293348": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": false,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": true,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "衣服白背景边与弱折线主导，中心几乎无纹理"
+        ]
+      },
+      "211816272": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": false,
+        "reason_codes": [
+          "原材质隐约有纹理但中心过度平滑，不能清楚辨认罗纹周期"
+        ]
+      },
+      "214335246": {
+        "eligible": false,
+        "single_axis_pattern": false,
+        "pattern_not_structural_edge": true,
+        "source_patch_purity": true,
+        "reference_R90_valid": false,
+        "padding_or_crop_artifact": false,
+        "text_direction_conflict": false,
+        "target_pattern_support": true,
+        "reason_codes": [
+          "黄花不规则多轴，中心失去花型细节"
+        ]
+      }
+    },
+    "old16": {
+      "26742879": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；珊瑚色透薄衬衫被深绿色斜条纹替代，颜色与材质冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "78716098": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；浅粉皮夹克被紫色斜条纹替代，皮革材质与色系冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "112627684": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；深蓝天鹅绒裙被青绿色斜条纹替代，颜色和材质冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "116991916": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；海军蓝裙被粉灰斜条纹替代，颜色和无条纹caption冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "121908097": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；蓝绿色棕榈印花被橙色竖条纹替代，颜色、图案类别冲突，目标还出现大片掩膜孔洞。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "130411961": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；芥末黄T恤被紫色斜条纹替代，颜色冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "138736116": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；红色光滑毛衣被金色斜条纹替代，颜色与光滑材质描述冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "142324243": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；米色连衣裙被红棕斜条纹替代，颜色与原设计冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "143887784": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；紫色短裤被绿色条纹覆盖，颜色冲突，目标轮廓更接近长裤。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "144078320": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；灰色Patagonia山形图案T恤被绿色斜条纹替代，颜色冲突且logo图案缺失。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "156211624": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；黑白条纹毛衣变成紫色斜条纹，颜色冲突，sketch原有横条纹不能证明该合成来源。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "189181368": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；红黑格纹外套变成亮绿色单轴条纹，颜色与格纹类别冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "196763885": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；黑橙条纹、红字Moschino上衣被紫色斜条纹替代，颜色冲突且文字缺失。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "201240103": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；蓝白格纹衬衫被粉灰单轴斜条纹替代，颜色与格纹类别冲突。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "202407542": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；深灰铆钉夹克被绿色斜条纹替代，颜色与材质冲突，结构装饰消失。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      },
+      "37839359_10": {
+        "eligible": false,
+        "direction_valid": true,
+        "text_compatible": false,
+        "reference_target_consistent": true,
+        "reason": "三臂方向转动清楚，参考与目标合成条纹同源；黑米色条纹毛衣被蓝色斜条纹替代，颜色冲突，sketch横条纹与合成斜纹也不同。该条纹无真实源裁片证据，旧人工gate不得设为true。"
+      }
+    },
+    "limitations": "AI非人工；独立查看全部24页，不读取生成输出、历史成功标签或另一审核者结论。基于审核拼图和id/caption元数据，未据方向分数放行。source_patch_purity指中心裁片未混入结构/背景；reference_R90_valid指可用于单轴纹样因果判断，非仅像素旋转完成。纯轮廓sketch不证明图案来源，但可中性承载纹样；target_pattern_support严格记录明确图案支持。旧16方向门槛与整体合法性分别统计，旧人工gate不得true。"
+  }
+}
