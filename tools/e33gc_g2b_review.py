@@ -3,7 +3,7 @@ import argparse,csv
 from PIL import Image
 from tools.e33gc_g2b_protocol import *
 from tools.e33gc_g2b_eval import dft_pair,ROUTE_B_DFT
-from data.e33gc_g2b_renderer import input_dir
+from data.e33gc_g2b_renderer import input_dir,input_support
 
 def freeze():
     init(); reviews=read('tools/e33gc_g2b_reviews.json')
@@ -105,9 +105,20 @@ def freeze_B(revision=1):
     init();assert read(OUT/'decision_summary.json')['main_reference_derived_G2b']=='not_run'
     root=OUT/('G1a_synthetic_reference_control'+('_v2' if revision==2 else ''))
     rows=read(root/'candidate16_rows.json')
-    reviews=read('tools/e33gc_g2b_synthetic_reviews.json');approved=[]
+    reviews=read('tools/e33gc_g2b_synthetic_reviews.json');approved=[];mask_audit=[]
     for row in rows:
         sid=row['id'];folder=input_dir(row)
+        if revision==2:
+            import cv2
+            source_before=OUT/'G1a_synthetic_reference_control'/sid/'P_source.png'
+            assert sha(source_before)==sha(folder/'P_source.png')
+            sketch=Image.open(folder/'sketch.png').convert('RGB')
+            before=input_support(dict(row,renderer_revision=1),sketch)[0]
+            after,inner,_=input_support(row,sketch)
+            assert all(inner[y0:y1,x0:x1].mean()>=.95 for x0,y0,x1,y1 in row['dft_boxes'])
+            mask_audit.append(dict(id=sid,before_pixels=int(before.sum()),after_pixels=int(after.sum()),
+                changed_pixels=int((before!=after).sum()),source_P_unchanged=True,DFT_boxes_unchanged=True,
+                cv2_version=cv2.__version__,GT_used=False))
         metric=dft_pair({a:Image.open(folder/(a+'_target.png')).convert('RGB') for a in ARMS},row['dft_boxes'],periodic=True)
         if reviews['reviewer1'][sid]['eligible'] and reviews['reviewer2'][sid]['eligible'] and metric['r90_success'] and metric['r180_success']:
             approved.append(sid)
@@ -117,6 +128,7 @@ def freeze_B(revision=1):
     probe=[dict(r,label='probe_%02d'%(i+1)) for i,r in enumerate(rows[4:8])]
     write(OUT/'protocol/g2b_fit_probe_ids.json',dict(fit=fit,probe=probe,selection='first fixed4 SHA input identities; routeB, no output selection'))
     write(root/'two_AI_reviews.json',dict(reviews=reviews,approved_n=len(approved),human_pass=None))
+    if revision==2:write(root/'uniform_mask_repair_audit.json',mask_audit)
     write(OUT/'protocol/routeB_DFT_contract_v2.json',ROUTE_B_DFT)
     write(OUT/'protocol/routeB_DFT_analytic_controls.json',read('tools/e33gc_g2b_dft_controls.json'))
     files={str(p):sha(p) for r in fit+probe for p in input_dir(r).glob('*.png')}

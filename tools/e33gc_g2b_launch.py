@@ -19,7 +19,15 @@ def run():
     p=argparse.ArgumentParser();p.add_argument('module');p.add_argument('arguments',nargs='*');args=p.parse_args()
     pending=subprocess.run(['squeue','-h','-u',os.environ['USER'],'-n','E33GC_G2b_GPU','-o','%i'],capture_output=True,text=True,check=True)
     assert not pending.stdout.strip(),'another G2b GPU job is pending/running'
-    used=gpu_seconds();minutes=math.floor((21600-used)/60)
+    used=gpu_seconds();remaining=math.floor((21600-used)/60)
+    request=60
+    profile=OUT/'G2b_smoke/smoke_audit.json'
+    if profile.exists():
+        seconds=json.loads(profile.read_text())['full4_identity_update_seconds']
+        if args.module.endswith('train_eval'):request=math.ceil((seconds*180+900)*1.3/60)
+        elif args.module.endswith('upper'):request=math.ceil((seconds*40+600)*1.3/60)
+        elif args.module.endswith('eval'):request=30
+    minutes=min(remaining,request)
     assert minutes>=1,'fixed6GPUh budget exhausted'
     env=dict(os.environ,G2B_MODULE=args.module)
     command=['sbatch','--time='+str(minutes),'submit/e33gc_g2b_gpu.sh',*args.arguments]

@@ -2,7 +2,7 @@
 import argparse,hashlib
 from PIL import Image
 from tools.e33gc_g2b_protocol import *
-from data.e33gc_g2b_renderer import construct,input_dir
+from data.e33gc_g2b_renderer import construct,input_dir,input_support
 from tools.e33gc_g2b_prepare import panels
 from tools.e33gc_g2b_eval import dft_pair
 from tools.e33tm_protocol import category
@@ -22,10 +22,16 @@ def run(repair=False):
         if repair:r['renderer_revision']=2
         value=construct(r);folder=input_dir(r);folder.mkdir(parents=True,exist_ok=True)
         value['source_crop'].save(folder/'P_source.png');value['sketch'].save(folder/'sketch.png')
+        mask_audit=None
+        if repair:
+            assert sha(folder/'P_source.png')==sha(OUT/'G1a_synthetic_reference_control'/r['id']/'P_source.png')
+            original_mask=input_support(dict(row,route='B'),value['sketch'])[0]
+            mask_audit=dict(before_pixels=int(original_mask.sum()),after_pixels=int(value['mask'].sum()),
+                changed_pixels=int((original_mask!=value['mask']).sum()),sketch_only=True,source_P_unchanged=True)
         for arm,ref,target in zip(ARMS,value['references'],value['targets']):
             ref.save(folder/(arm+'_reference.png'));target.save(folder/(arm+'_target.png'))
         metric=dft_pair(dict(zip(ARMS,value['targets'])),r['dft_boxes'],periodic=True)
-        audit.append(dict(id=r['id'],DFT=metric,shared_P_source=True,source_sha256=sha(folder/'P_source.png'),
+        audit.append(dict(id=r['id'],DFT=metric,shared_P_source=True,mask_audit=mask_audit,source_sha256=sha(folder/'P_source.png'),
             renderer_sha256=sha('data/e33gc_g2b_renderer.py'),files={p.name:sha(p) for p in folder.glob('*.png')}))
         rows.append(r);materials.append((r['id'],r['caption'],[('P source',value['source_crop']),('sketch',value['sketch'])]+
             [(a+' ref',v) for a,v in zip(ARMS,value['references'])]+[(a+' truth',v) for a,v in zip(ARMS,value['targets'])]))
