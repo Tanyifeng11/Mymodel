@@ -13,4 +13,7 @@ conda activate Mymodel
 cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD:${PYTHONPATH:-}" PYTHONUNBUFFERED=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+printf 'MODULE %s ARGS' "${G2B_MODULE:-tools.e33gc_g2b_prepare}"
+printf ' %q' "$@"
+printf '\n'
 python -m "${G2B_MODULE:-tools.e33gc_g2b_prepare}" "$@"

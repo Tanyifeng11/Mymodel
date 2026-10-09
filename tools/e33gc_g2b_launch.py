@@ -1,5 +1,5 @@
 """用累计Slurm分配时长限制新GPU作业；仅支持固定单GPU协议。"""
-import argparse,math,os,re,subprocess
+import argparse,datetime,json,math,os,re,subprocess
 from pathlib import Path
 OUT=Path('output_eval/e33_gc_g2b_20261009')
 
@@ -22,7 +22,13 @@ def run():
     used=gpu_seconds();minutes=math.floor((21600-used)/60)
     assert minutes>=1,'fixed6GPUh budget exhausted'
     env=dict(os.environ,G2B_MODULE=args.module)
-    subprocess.run(['sbatch','--time='+str(minutes),'submit/e33gc_g2b_gpu.sh',*args.arguments],env=env,check=True)
+    command=['sbatch','--time='+str(minutes),'submit/e33gc_g2b_gpu.sh',*args.arguments]
+    submitted=subprocess.run(command,env=env,capture_output=True,text=True,check=True)
+    record=dict(UTC=datetime.datetime.now(datetime.timezone.utc).isoformat(),module=args.module,command=command,
+        GPU_seconds_used_before_submission=used,job_id=re.search(r'job (\d+)',submitted.stdout)[1])
+    dest=OUT/'protocol/gpu_submissions.jsonl';dest.parent.mkdir(parents=True,exist_ok=True)
+    with dest.open('a',encoding='utf-8') as f:f.write(json.dumps(record)+'\n')
+    print(submitted.stdout,end='',flush=True)
     print('CUMULATIVE_ALLOCATED_GPU_SECONDS',used,'NEW_JOB_MAX_MINUTES',minutes,flush=True)
 
 if __name__=='__main__':run()

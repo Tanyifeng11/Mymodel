@@ -19,6 +19,8 @@ def accounting():
     value=dict(jobs=jobs,GPU_hours=sum(v['GPU_hours'] for v in jobs),cap=6,
         code_commit=commit(),scope='all Slurm jobs with logs in this new experiment directory; allocated GPU wall time',
         submission_scripts=['submit/e33gc_g2b_cpu.sh','submit/e33gc_g2b_gpu.sh'])
+    submission_log=OUT/'protocol/gpu_submissions.jsonl'
+    value['GPU_submissions']=[json.loads(line) for line in submission_log.read_text().splitlines()] if submission_log.exists() else []
     write(OUT/'protocol/commands_and_gpu_budget.json',value)
     return value
 
