@@ -2,10 +2,10 @@
 #SBATCH -J E33GC_smoke
 #SBATCH -p gpu
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:1
-#SBATCH --time=12:00:00
+#SBATCH --time=02:00:00
 #SBATCH -o /share/home/u2515283058/Mymodel/output_eval/e33_gc_generation_causality_20261009/job_%j.log
 #SBATCH -e /share/home/u2515283058/Mymodel/output_eval/e33_gc_generation_causality_20261009/job_%j.err
 set -eo pipefail
