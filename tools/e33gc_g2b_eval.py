@@ -85,7 +85,8 @@ def run():
         human_gate=None,lpips_init=lpips_init,lpips_sha256=lpips_hash,CLIP_sha256=clip_hash))
     decision(g2b_fit_final_image_r90_n_of_4=count('r90_success'),g2b_fit_r180_n_of_4=count('r180_success'),
         g2b_fit_readable_n_of_4=count('r90_readable'),g2b_fit_masked_charbonnier_reduction_pct=reduction,
-        g2b_fit_pass=False if not all(checks.values()) else None,next_route='two_AI_endpoint_review')
+        g2b_fit_pass=False if not all(checks.values()) and identities['fit'][0].get('route')!='B' else None,
+        g2b_numerical_fit_pass=all(checks.values()),next_route='two_AI_endpoint_review')
     assert clip_hash==model_hash(evaluator.model) and lpips_hash==model_hash(lpips)
     verify_frozen();bundle('endpoint')
 

@@ -17,7 +17,7 @@ class FreeResidual(nn.Module):
         return (residual*mask).flatten(2).transpose(1,2)
 
 def run_upper():
-    init();assert read(OUT/'decision_summary.json')['g2b_fit_pass'] is False
+    init();assert read(OUT/'decision_summary.json')['g2b_AI_amended_fit_pass'] is False
     smoke=read(OUT/'G2b_smoke/smoke_audit.json');assert smoke['pass_autograd'] and smoke['budget_pass']
     torch.manual_seed(42);torch.set_num_threads(2);cv2.setNumThreads(1)
     rows=read(OUT/'protocol/g2b_fit_probe_ids.json')['fit'][:2]

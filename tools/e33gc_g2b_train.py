@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from PIL import Image
 from torchvision.transforms.functional import to_tensor
 from tools.e33gc_g2b_protocol import *
-from data.e33gc_g2b_renderer import load
+from data.e33gc_g2b_renderer import load,input_dir
 from tools.e33gc_smoke import fields,png
 from tools.e33gc_sampling import prefix,final8,tensor_sha
 from models.e33gc_adapter import CausalResidual,TextureInjection
@@ -71,8 +71,8 @@ def cache_case(row,pipe,ns,adapter,injection,rf,dino):
     states=[];baseline=[];proof=[]
     geom_np=geom.cpu().numpy();np.savez_compressed(folder/'RF2_fields.npz',geometry=geom_np)
     for i,arm in enumerate(ARMS):
-        ref_path=OUT/'G1a_controlled_targets'/sid/(arm+'_reference.png')
-        key=dict(id=sid,arm=arm,reference=sha(ref_path),sketch=sha(OUT/'G1a_controlled_targets'/sid/'sketch.png'),
+        ref_path=input_dir(row)/(arm+'_reference.png')
+        key=dict(id=sid,arm=arm,reference=sha(ref_path),sketch=sha(input_dir(row)/'sketch.png'),
             caption=hashlib.sha256(row['caption'].encode()).hexdigest(),E5=sha(E5),RF2=sha(RF/'seed42/RF2/checkpoint_final.pt'),
             noise_seed=42,dtype=str(pipe.unet.dtype),cfg=7.,steps=50,scheduler=dict(pipe.scheduler.config))
         keyhash=hashlib.sha256(json.dumps(key,sort_keys=True).encode()).hexdigest()

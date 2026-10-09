@@ -6,10 +6,21 @@ from data.e32_target_pseudogt import image_at
 from data.e33gc_renderer import support
 from tools.e33gc_g2b_protocol import CONFIG, DATASET, OUT, ARMS, sha, read
 
+def input_dir(row):
+    return OUT/('G1a_synthetic_reference_control' if row.get('route')=='B' else 'G1a_controlled_targets')/row['id']
+
 def construct(row, targets=True):
     sketch=image_at(DATASET/row['sketch']); source=image_at(DATASET/row['reference'])
     mask,inner,falloff=support(sketch)
     crop=source.crop(CONFIG['crop']); patch=np.asarray(crop)
+    if row.get('route')=='B':
+        import hashlib
+        seed=int(hashlib.sha256(('E33GC-G2b/synthetic/'+row['id']).encode()).hexdigest()[:16],16)
+        rng=np.random.default_rng(seed);yy,xx=np.mgrid[:128,:128]
+        period=int(rng.choice([16,32]));axis=int(rng.choice([0,1]));phase=float(rng.uniform(0,2*np.pi))
+        color=rng.uniform(65,190,3);contrast=float(rng.uniform(35,55))
+        wave=np.cos(2*np.pi*(xx if axis==0 else yy)/period+phase)
+        patch=np.uint8(np.clip(np.round(color+contrast*wave[...,None]),0,255));crop=Image.fromarray(patch)
     y,x=np.mgrid[:512,:384]
     # 固定相位，以中心128裁片原生像素为局部纹样坐标；三臂不随机重采样。
     tiled=patch[(y-192)%128,(x-128)%128]
@@ -32,7 +43,7 @@ def construct(row, targets=True):
 
 def load(row,targets=False):
     # 模型前向只读预冻结 reference/sketch/mask；独立训练目标显式传 targets=True 才加载。
-    d=OUT/'G1a_controlled_targets'/row['id']
+    d=input_dir(row)
     sketch=Image.open(d/'sketch.png').convert('RGB'); mask,inner,falloff=support(sketch)
     result=dict(sketch=sketch,mask=mask,inner=inner,falloff=falloff,
         references=[Image.open(d/(a+'_reference.png')).convert('RGB') for a in ARMS])
