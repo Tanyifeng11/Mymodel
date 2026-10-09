@@ -170,6 +170,7 @@ def run(action):
             write(OUT/'G2b_smoke'/('component_diagnostic_job_'+os.environ.get('SLURM_JOB_ID','local')+'.json'),components)
             print('LOSS_COMPONENT',name,'value',value['value'],'pixel_nonzero',value['pixel_gradient_nonzero'],
                 'parameter_norm',sum(v['norm'] or 0 for v in unscaled.values()),flush=True)
+            del im,pieces,pixel_grad
         assert all(any(v['norm'] for v in c['gradients'].values()) for c in components.values()),'individual loss gradient zero; see component diagnostic; no formal training'
         projected=(seconds*160+seconds*.5*80+seconds*10+time.monotonic()-began)/3600
         peak=torch.cuda.max_memory_allocated()/2**30
