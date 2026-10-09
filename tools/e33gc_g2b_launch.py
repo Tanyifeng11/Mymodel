@@ -20,7 +20,7 @@ def run():
     pending=subprocess.run(['squeue','-h','-u',os.environ['USER'],'-n','E33GC_G2b_GPU','-o','%i'],capture_output=True,text=True,check=True)
     assert not pending.stdout.strip(),'another G2b GPU job is pending/running'
     used=gpu_seconds();remaining=math.floor((21600-used)/60)
-    request=60
+    request=20
     profile=OUT/'G2b_smoke/smoke_audit.json'
     if profile.exists():
         seconds=json.loads(profile.read_text())['full4_identity_update_seconds']

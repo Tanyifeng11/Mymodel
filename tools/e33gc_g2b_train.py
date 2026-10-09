@@ -1,5 +1,5 @@
 """固定4身份/160更新，原G2 last8链与三个最终RGB损失；不选最佳checkpoint。"""
-import argparse,time,hashlib,json
+import argparse,time,hashlib,json,os
 import cv2,numpy as np,torch
 from torch import nn
 from torch.nn import functional as F
@@ -46,11 +46,11 @@ def losses(images,targets,baseline,masks):
     total=rgb+.5*pair+.25*outside
     return total,dict(rgb=rgb,orientation_pair=pair,outside=outside,total=total)
 
-def gradient_stats(adapter):
+def gradient_stats(adapter,require_nonzero=True):
     values={n:dict(present=p.grad is not None,norm=float(p.grad.norm()) if p.grad is not None else None,
         finite=bool(torch.isfinite(p.grad).all()) if p.grad is not None else None) for n,p in adapter.named_parameters()}
     assert all(v['finite'] for v in values.values() if v['present'])
-    assert sum(v['norm'] or 0 for v in values.values())>0
+    if require_nonzero:assert sum(v['norm'] or 0 for v in values.values())>0
     return values
 
 class TracedInjection(TextureInjection):
@@ -153,8 +153,24 @@ def run(action):
         components={}
         for name in ['rgb','orientation_pair','outside']:
             adapter.zero_grad(set_to_none=True);im=render_case(cases[0],pipe,ns,injection)
-            _,pieces=losses(im,cases[0]['targets'],cases[0]['baseline'],cases[0]['masks']);pieces[name].backward()
-            components[name]=dict(value=float(pieces[name].detach()),gradients=gradient_stats(adapter))
+            _,pieces=losses(im,cases[0]['targets'],cases[0]['baseline'],cases[0]['masks'])
+            pixel_grad=torch.autograd.grad(pieces[name],im,retain_graph=True)
+            pieces[name].backward(retain_graph=True)
+            unscaled=gradient_stats(adapter,False)
+            value=dict(value=float(pieces[name].detach()),gradients=unscaled,
+                pixel_gradient_norms=[float(g.norm()) for g in pixel_grad],
+                pixel_gradient_nonzero=[int(torch.count_nonzero(g)) for g in pixel_grad])
+            # 只读诊断：对相同图反传缩放损失，再还原参数梯度，判断fp16链下溢。
+            if not any(v['norm'] for v in unscaled.values()):
+                adapter.zero_grad(set_to_none=True);(pieces[name]*1024).backward()
+                for parameter in adapter.parameters():
+                    if parameter.grad is not None:parameter.grad.div_(1024)
+                value['scaled_1024_diagnostic_gradients']=gradient_stats(adapter,False)
+            components[name]=value
+            write(OUT/'G2b_smoke'/('component_diagnostic_job_'+os.environ.get('SLURM_JOB_ID','local')+'.json'),components)
+            print('LOSS_COMPONENT',name,'value',value['value'],'pixel_nonzero',value['pixel_gradient_nonzero'],
+                'parameter_norm',sum(v['norm'] or 0 for v in unscaled.values()),flush=True)
+        assert all(any(v['norm'] for v in c['gradients'].values()) for c in components.values()),'individual loss gradient zero; see component diagnostic; no formal training'
         projected=(seconds*160+seconds*.5*80+seconds*10+time.monotonic()-began)/3600
         peak=torch.cuda.max_memory_allocated()/2**30
         audit=dict(pass_autograd=True,full4_identity_update_seconds=seconds,peak_memory_gib=peak,first_gradients=first,
