@@ -1,0 +1,230 @@
+{
+  "reviewer1": {
+    "0b17acdd699e": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂均为近似相同的酒红与白色纵向拼片，未随参考转成横纹；参考细密连续条纹未保留，部分宽条更像服装分片，裙形基本合理。"
+    },
+    "16da79e25b86": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": true,
+      "reason": "独立AI盲审，非人工。三臂均为蓝白粗竖条，R90未转为参考横纹；生成条纹清楚且保留蓝色条纹外观，但粗细、对比度和三臂方向与参考不对应，衬衫结构基本合理。"
+    },
+    "20af9232480b": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂仍为黑白横向波纹，R90没有转为竖纹；参考深绿色较宽条带未得到可靠保留，R90腰部新增深线，整体长裙轮廓仍合理。"
+    },
+    "33a24564bfde": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂均为相似的黑色、米黄色斜向锯齿图案，未见参考要求的纵横转向；亮绿色细条纹外观不对应，短袖上衣轮廓基本保持。"
+    },
+    "58e99218dcb7": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂黑米色斜向锯齿纹样近似不变，未随参考从纵纹变横纹；与亮绿色平行条纹的颜色、形态均不对应，上衣结构基本合理。"
+    },
+    "5ccd42421bfb": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": true,
+      "reason": "独立AI盲审，非人工。蓝白粗竖条在三臂中均保持纵向，R90未出现参考横纹；有清楚蓝色条纹外观而非单纯色块，但参考细纹的粗细、对比度和方向关系未保留，衣形合理。"
+    },
+    "6ce7243e180d": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂均为近似相同的酒红外套与白色袖口、下摆分块，没有衣身周期条纹转向；参考细横纹与竖纹未被对应，所见主要为低频色块和结构边，外套轮廓合理。"
+    },
+    "77359b8f7a77": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂酒红外套外观基本不变，白色条块主要位于袖口和下摆结构位置；不能据此认定真实纹样旋转，参考周期条纹未保留，结构基本合理。"
+    },
+    "939bbdeb3e0f": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂均为近似相同的酒红白色纵向分片裙，未从参考竖纹转为横纹；细密条纹外观缺失，宽色条与裙片结构混合，裙形基本合理。"
+    },
+    "a37303bbebc7": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。黑白横向波纹在三臂中基本维持横向，R90未响应参考竖纹；深绿色条带外观未可靠保留，R90腰部有新增深线，整体裙形仍合理。"
+    },
+    "aa694377b416": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂均为黑白和黄色等多色纵向条带，R90没有转横；与米灰参考的颜色、条宽和方向对应不足，收腰短袖长裙轮廓基本合理。"
+    },
+    "b03c76aab9a5": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": true,
+      "reason": "独立AI盲审，非人工。绿色细横条在三臂均维持横向，R90未转为竖纹；绿色条纹外观清楚、非低频色块，但参考的条宽、明暗及旋转对应不足，短袖裙形合理。"
+    },
+    "b789bf5a6824": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。黑白与黄色等纵向条带在三臂近似相同，R90未转横；未保留米灰周期条纹的外观与三臂对应关系，裙身、腰带及袖部结构基本合理。"
+    },
+    "c720483ea25c": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": true,
+      "reason": "独立AI盲审，非人工。三臂均呈绿色细横条，R90没有参考所示竖纹转向；条纹清楚且绿色条纹外观可辨，但条宽、对比度和旋转关系不对应，短袖裙轮廓基本保持。"
+    },
+    "defa307b40b3": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂均为相似蓝白双轴格纹，未出现参考横纹到竖纹的变化；灰绿色单轴条纹外观不对应，生成领口和纽扣有变化但无袖长上衣整体结构仍合理。"
+    },
+    "fdcd512314a7": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。三臂蓝白双轴格纹基本不变，参考灰绿横纹和竖纹没有对应转向；图案类别及颜色不符，无袖长上衣主体轮廓合理。"
+    }
+  },
+  "reviewer2": {
+    "0b17acdd699e": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均为白色衣身和暗红宽竖向拼条，未见R90转向；与参考紫红均匀细条纹的颜色比例、宽度及铺排不对应。裙形合理，但参考纹样外观未能确认保留。"
+    },
+    "16da79e25b86": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均保持深蓝白色宽竖纹，R90未转成参考横纹；参考是蓝灰均匀细条纹，生成颜色对比和条宽明显不同。上衣轮廓合理，不能仅凭生成有条纹认定参考外观保留。"
+    },
+    "20af9232480b": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均为黑白细横向波纹，R90主要变化在腰部形状，没有横转竖的真实纹样证据；与绿色较宽条带参考不对应。裙形基本合理，参考特定外观未保留。"
+    },
+    "33a24564bfde": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均是黑米色斜向锯齿纹，未见R90转向；与亮绿色细竖纹及其横向参考的颜色、方向和图案类别均不对应。上衣轮廓合理，虽生成花纹清楚但不是可确认的参考纹样外观。"
+    },
+    "58e99218dcb7": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均是黑米色斜向锯齿纹，轴向基本不变；参考绿色平行细条纹没有对应体现。上衣结构合理，清晰的其他图案不能替代参考外观保留。"
+    },
+    "5ccd42421bfb": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂深蓝白色宽竖纹基本相同，未响应R90参考横纹；与蓝灰细条纹参考的宽度、对比和覆盖方式不对应。上衣结构合理，参考特定纹样外观证据不足。"
+    },
+    "6ce7243e180d": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均为大片酒红色夹克与白色袖部、下摆分块，未见纹样旋转；服装结构边和拼色块不能代替参考连续周期条纹。夹克轮廓合理，参考细横纹或竖纹外观不可辨。"
+    },
+    "77359b8f7a77": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂主要呈酒红色面料及白色结构分块，袖部宽色带没有随R90转轴；与参考全幅规则条纹不对应。夹克形状合理，参考周期纹样外观不可辨。"
+    },
+    "939bbdeb3e0f": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂白色裙身、暗红宽竖向拼条基本相同，未见R90转向；参考紫红均匀细纹没有对应体现。裙形合理，生成装饰可见但不足以识别参考纹样外观。"
+    },
+    "a37303bbebc7": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均为黑白细横向波纹，R90仍维持横向，局部腰部形状变化不是图案转向；与绿色较宽条带参考不同。裙形基本合理，参考颜色及周期外观未能确认保留。"
+    },
+    "aa694377b416": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均是黑白黄宽竖纹，R90仍为竖向；与灰棕均匀细条纹参考的颜色、条宽不对应。短袖和系腰裙结构合理，不能将其他清晰条纹视为参考外观保留。"
+    },
+    "b03c76aab9a5": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均为浅底深色细横纹，R90没有转为参考竖纹；虽有绿色倾向，条纹粗细、明暗比例与绿色宽条带参考不同。短袖裙轮廓合理，参考特定外观对应不足，保守记false。"
+    },
+    "b789bf5a6824": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂黑白黄宽竖纹基本不变，没有R90转向；灰棕细条纹参考的配色与条宽未被保留。系腰裙轮廓合理，生成条纹虽可辨但参考特定外观不可确认。"
+    },
+    "c720483ea25c": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂浅底深色细横纹基本相同，R90未响应参考纵纹；输出有绿色倾向但条纹宽度、明暗比例与参考不同。短袖裙结构合理，参考外观对应不足，保守记false。"
+    },
+    "defa307b40b3": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均为蓝白双轴格纹，并加入领口、门襟和纽扣，未见参考单轴条纹的R90转向；图案类别与灰绿条纹参考不对应。无袖上衣轮廓合理，但参考条纹外观未保留。"
+    },
+    "fdcd512314a7": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。三臂均保持蓝白格纹，没有单轴参考纹样的旋转响应；灰绿平行条纹被双轴格纹替代。无袖上衣结构基本合理，清晰格纹不能作为参考条纹外观证据。"
+    }
+  }
+}
