@@ -67,7 +67,7 @@ def run():
         prefix_states=[];images=[];trace=[];replay=[]
         for i,arm in enumerate(['R0','R90','R180']):
             injection.geometry=geom[i:i+1];injection.falloff=falloff
-            cached,baseline=prefix(pipe,ns,row['caption'],rendered['sketch'],rendered['references'][i],pipeline_mask,injection)
+            cached,baseline=prefix(pipe,ns,row['caption'],rendered['sketch'],rendered['references'][i],Image.fromarray(rendered['mask']*255),injection)
             torch.save(cached,dest/(arm+'_prefix.pt'));prefix_states.append(cached);baseline.save(dest/(arm+'_B0.png'))
             with torch.no_grad():rgb,scores=final8(pipe,ns,row['caption'],rendered['sketch'],rendered['references'][i],pipeline_mask,cached,injection,checkpointed=False,trace=True)
             image=png(rgb);image.save(dest/(arm+'_B1.png'));exact=np.array_equal(np.asarray(image),np.asarray(baseline));assert exact,'B1/replay must exact match B0 PNG pixels'
