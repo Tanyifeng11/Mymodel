@@ -85,6 +85,16 @@ def endpoint():
         next_route='future_G2c_G3_protocol_review_only' if passed else 'one_fixed_free_residual_upper_diagnostic')
     bundle('reviewed_endpoint')
 
+def upper():
+    init();reviews=read('tools/e33gc_g2b_upper_reviews.json');keys=read(OUT/'protocol/blind_upper_key.json')
+    names=['visible_rotation','motif_correspondence','structure_safe','appearance_distinct']
+    visual=all(reviews[r][v['token']][k] for r in ['reviewer1','reviewer2'] for v in keys for k in names)
+    numerical=read(OUT/'G2b_upper_bound_if_needed/diagnosis.json')['numerical_pass']
+    write(OUT/'G2b_upper_bound_if_needed/two_AI_blind_review.json',dict(reviews=reviews,AI_visual_pass=visual,human_pass=None,N=2))
+    decision(g2b_free_residual_upper_pass=bool(numerical and visual),
+        next_route='fixed_adapter_conditioning_or_optimization_unresolved' if numerical and visual else 'fixed_last8_channel_failed_stop')
+    bundle('upper_reviewed')
+
 def freeze_B():
     init();assert read(OUT/'decision_summary.json')['main_reference_derived_G2b']=='not_run'
     rows=read(OUT/'G1a_synthetic_reference_control/candidate16_rows.json')
@@ -109,5 +119,5 @@ def freeze_B():
     bundle('routeB_frozen_inputs')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['freeze','freeze_B','endpoint']);a=p.parse_args()
-    {'freeze':freeze,'freeze_B':freeze_B,'endpoint':endpoint}[a.action]()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['freeze','freeze_B','endpoint','upper']);a=p.parse_args()
+    {'freeze':freeze,'freeze_B':freeze_B,'endpoint':endpoint,'upper':upper}[a.action]()

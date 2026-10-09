@@ -4,7 +4,7 @@ import torch,numpy as np,cv2
 from torch import nn
 from torch.nn import functional as F
 from tools.e33gc_g2b_train import *
-from tools.e33gc_g2b_eval import dft_pair
+from tools.e33gc_g2b_eval import dft_pair,panels
 
 class FreeResidual(nn.Module):
     def __init__(self,cases):
@@ -44,11 +44,19 @@ def run_upper():
         assert (time.monotonic()-began)/3600<budget_left,'combined GPU budget exhausted'
     torch.save(dict(residual=adapter.state_dict(),privileged_identity_and_arm=True,updates=80),dest/'checkpoint_step80.pt')
     diagnostic(cases,pipe,ns,injection,80,label='G2b_upper_bound_if_needed')
-    results=[]
+    results=[];blind=[];keys=[]
     for case in cases:
         folder=dest/'step80'/case['row']['id']
         metrics=dft_pair({arm:Image.open(folder/(arm+'.png')).convert('RGB') for arm in ARMS},case['row']['dft_boxes'])
         results.append(dict(id=case['row']['id'],label=case['row']['label'],DFT=metrics))
+        token=hashlib.sha256(('E33GC-G2b/upper/'+case['row']['id']).encode()).hexdigest()[:12]
+        keys.append(dict(token=token,id=case['row']['id'],label=case['row']['label']))
+        blind.append((token,case['row']['caption'],[('ref0',case['inputs']['references'][0]),
+            ('ref90',case['inputs']['references'][1]),('truth0',png(case['targets'][0])),
+            ('truth90',png(case['targets'][1])),('sketch',case['inputs']['sketch'])]+
+            [(arm,Image.open(folder/(arm+'.png')).convert('RGB')) for arm in ARMS]))
+    panels(sorted(blind,key=lambda v:v[0]),OUT/'visual_audit/blind_upper')
+    write(OUT/'protocol/blind_upper_key.json',keys)
     numerical=all(r['DFT']['r90_success'] and r['DFT']['r180_success'] for r in results)
     write(dest/'diagnosis.json',dict(results=results,numerical_pass=numerical,visual_pass=None,updates=80,
         elapsed_seconds=time.monotonic()-began,checkpoint_sha256=sha(dest/'checkpoint_step80.pt'),
