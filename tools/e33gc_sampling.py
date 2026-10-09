@@ -77,7 +77,8 @@ def final8(pipe,ns,caption,sketch,reference,mask,cached,injection,checkpointed=T
     def decode(latents,*args,**kwargs):
         # 捕获真实最后latent的decode；仅交给原PIL后处理的副本detach。
         result=old_decode(latents,*args,**kwargs)
-        outputs.append((result[0].float()/2+.5).clamp(0,1))
+        # 与原E5保持同一fp16归一化/clip顺序；随后float32损失仍保留梯度。
+        outputs.append((result[0]/2+.5).clamp(0,1).float())
         return (result[0].detach(),)
     pipe.prepare_latents=MethodType(lambda self,*args,**kwargs:cached['latent'].to(self.device,self.unet.dtype).clone(),pipe)
     pipe.scheduler.set_timesteps,pipe.scheduler.step=timesteps,step

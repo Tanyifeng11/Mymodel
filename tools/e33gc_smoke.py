@@ -70,7 +70,10 @@ def run():
             cached,baseline=prefix(pipe,ns,row['caption'],rendered['sketch'],rendered['references'][i],Image.fromarray(rendered['mask']*255),injection)
             torch.save(cached,dest/(arm+'_prefix.pt'));prefix_states.append(cached);baseline.save(dest/(arm+'_B0.png'))
             with torch.no_grad():rgb,scores=final8(pipe,ns,row['caption'],rendered['sketch'],rendered['references'][i],pipeline_mask,cached,injection,checkpointed=False,trace=True)
-            image=png(rgb);image.save(dest/(arm+'_B1.png'));exact=np.array_equal(np.asarray(image),np.asarray(baseline));assert exact,'B1/replay must exact match B0 PNG pixels'
+            image=png(rgb);image.save(dest/(arm+'_B1.png'));exact=np.array_equal(np.asarray(image),np.asarray(baseline))
+            pixel_delta=np.abs(np.asarray(image,np.int16)-np.asarray(baseline,np.int16))
+            write(dest/(arm+'_noop_check.json'),dict(exact=exact,max_pixel_error=int(pixel_delta.max()),changed_channel_values=int((pixel_delta!=0).sum()),code_commit=commit()))
+            assert exact,'B1/replay must exact match B0 PNG pixels'
             images.append(rgb);trace.extend(scores);replay.append(dict(arm=arm,exact=exact,B0_sha256=sha(dest/(arm+'_B0.png')),B1_sha256=sha(dest/(arm+'_B1.png')),
                 prefix_latent_sha256=tensor_sha(cached['latent']),noise_sha256=cached['generation']['noise_sha256']))
         assert len({v['noise_sha256'] for v in replay})==1
@@ -115,4 +118,11 @@ def run():
     decision(adapter_noop_exact=True,final8_autograd_pass=True,next_route='await_G0_G1_and_split_resolution')
     frozen_check();bundle('smoke')
 
-if __name__=='__main__':run()
+if __name__=='__main__':
+    import os,traceback
+    try:run()
+    except Exception as exc:
+        write(OUT/'G2_autograd_smoke'/('failure_'+os.environ.get('SLURM_JOB_ID','local')+'.json'),
+            dict(G2_pass=False,error=repr(exc),traceback=traceback.format_exc(),code_commit=commit()))
+        decision(final8_autograd_pass=False,next_route='optimization_interface_invalid')
+        raise
