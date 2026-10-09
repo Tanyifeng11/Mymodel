@@ -14,6 +14,7 @@ cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD:${PYTHONPATH:-}" PYTHONUNBUFFERED=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 case "${1:-}" in
+    supplement) python -m tools.e33tmms_supplement ;;
     controlled-visual) python -m tools.e33tmms_controlled_visual ;;
     finalize) python -m tools.e33tmms_finalize ;;
     *) python -m tools.e33tmms_benchmark "$@" ;;
