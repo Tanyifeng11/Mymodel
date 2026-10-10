@@ -26,12 +26,12 @@ def csv_write(path,records):
         writer=csv.DictWriter(f,fieldnames=keys,extrasaction='ignore');writer.writeheader();writer.writerows(records)
 
 @torch.inference_mode()
-def evaluate(split):
+def evaluate(split,folder=None):
     from eval.eval_utils import prepare_evaluation_masks
     from eval.metrics import (compute_structure_preservation,compute_texture_color_fidelity,
         compute_texture_leakage,compute_texture_pattern_fidelity,compute_clip_i_values)
     from tools.e33tmoc_appearance_eval import frozen_lpips,model_hash
-    folder=OUT/('a_screen' if split=='dev32' else 'a_confirm');rows=read(folder/'manifest.json')
+    folder=Path(folder) if folder is not None else OUT/('a_screen' if split=='dev32' else 'a_confirm');rows=read(folder/'manifest.json')
     arms=read(folder/'params.json');records=[]
     lpips,info=frozen_lpips();lpips=lpips.cuda()
     info['state_sha256']=model_hash(lpips)
