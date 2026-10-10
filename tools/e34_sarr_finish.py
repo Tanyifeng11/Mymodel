@@ -88,7 +88,10 @@ def finalize():
     assert all(checks.values())
     write(OUT/'completion_check.json',dict(checks=checks,pass_complete=True))
     training_updates=sum(len(read(p)) for p in OUT.glob('S2*/training_history.json'))
-    decision(training_updates=training_updates,
+    failed=[stage for stage in ['S0','S1','S2a','S2b','S3','S3b','S4'] if state[stage]=='fail']
+    decision(training_updates=training_updates,training_updates_per_model=training_updates,
+        total_optimizer_updates=2*training_updates,
+        stop_stage=failed[-1] if state.get('stopped') and failed else None,
         mask_valid_n=audit['valid_n'],mask_total_n=128,mask_valid_rate=audit['valid_rate'],
         AI_visual_task_match=review['task_match_pass'],paper_method_sufficient=state['S4']=='pass',
         git_commit=commit(),result_claim='stage-gated feasibility experiment; preserve user S1 exception and actual negative gates')
