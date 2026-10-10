@@ -63,32 +63,35 @@ def accounting(job_ids):
     write(OUT/'resource_accounting.json',dict(jobs=entries,gpu_seconds=gpu_seconds,gpu_hours=gpu_seconds/3600,
         note='Slurm allocated elapsed time, including any failed job; final CPU finish checked after completion'))
 
-def finalize():
-    init();verify_sources()
-    audit=read(OUT/'masks_audit.json');summary=read(OUT/'s0_summary.json')
+def import_review():
     review=read('tools/e34_sarr_s0_review.json')
     rows=read(OUT/'splits/dev128.json')
     assert [r['id'] for r in review['records']]==[r['id'] for r in rows[:24]]
     write(OUT/'s0_AI_visual_review.json',review)
+    decision(S0='pass' if review['task_match_pass'] else 'fail',
+        stopped=not review['task_match_pass'],next_phase='S2a' if review['task_match_pass'] else 'stop_E34_SARR',
+        stop_stage=None if review['task_match_pass'] else 'S0',
+        reason=None if review['task_match_pass'] else 'S0 local RGB refinement task mismatch')
+
+def finalize():
+    init();verify_sources()
+    audit=read(OUT/'masks_audit.json');summary=read(OUT/'s0_summary.json')
+    review=read(OUT/'s0_AI_visual_review.json');rows=read(OUT/'splits/dev128.json')
+    state=read(OUT/'final_decision.json')
     checks=dict(fixed128_generated=summary['n']==128,
         all_cases_validated=all((OUT/'s0_e5_dev'/r['id']/'audit.json').exists() for r in rows),
         exact_replay=any(read(p).get('first_identity_exact_replay') is True for p in (OUT/'s0_e5_dev').glob('*/audit.json')),
         frozen_modules=all(read(p)['pass_unchanged'] for p in (OUT/'jobs').glob('*/frozen_modules.json')),
         source_unchanged=read(OUT/'frozen_check.json')['pass_unchanged'],
         validation_not_generated=not (OUT/'s4_validation').exists(),
-        training_not_started=not (OUT/'checkpoints').exists(),
         engineering_checks=all(read(OUT/'engineering_checks.json')[k] for k in ['step0_exact','zero_mask_exact','outside_exact']))
     assert all(checks.values())
     write(OUT/'completion_check.json',dict(checks=checks,pass_complete=True))
-    mask_pass=audit['valid_rate']>=.80
-    visual_pass=review['task_match_pass']
-    decision(S0='pass' if visual_pass else 'fail',S1='pass' if mask_pass else 'fail',
-        S2a='not_run',S2b='not_run',S3='not_run',S3b='not_run',S4='not_run',
-        stop_stage='S0/S1',stopped=True,training_updates=0,
+    training_updates=sum(len(read(p)) for p in OUT.glob('S2*/training_history.json'))
+    decision(training_updates=training_updates,
         mask_valid_n=audit['valid_n'],mask_total_n=128,mask_valid_rate=audit['valid_rate'],
-        reason='pre-registered safe-mask eligibility failed' if not mask_pass else 'S0 task mismatch',
-        AI_visual_task_match=visual_pass,paper_method_sufficient=False,next_phase='stop_E34_SARR',
-        git_commit=commit(),result_claim='zero-training feasibility diagnosis only; no refiner efficacy claimed')
+        AI_visual_task_match=review['task_match_pass'],paper_method_sufficient=state['S4']=='pass',
+        git_commit=commit(),result_claim='stage-gated feasibility experiment; preserve user S1 exception and actual negative gates')
     write(OUT/'run_manifest.json',dict(git_commit=commit(),protocol_sha256=sha(OUT/'protocol.json'),
         artifacts={str(p.relative_to(OUT)):sha(p) for p in sorted(OUT.rglob('*')) if p.is_file()
             and p.name not in ['run_manifest.json'] and p.suffix not in ['.gz','.tmp','.log','.err']},
@@ -106,9 +109,14 @@ def bundle(label):
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--masks',action='store_true');p.add_argument('--finalize',action='store_true')
     p.add_argument('--amend',action='store_true')
+    p.add_argument('--previews',action='store_true');p.add_argument('--import-review',action='store_true')
     p.add_argument('--bundle');p.add_argument('--jobs',nargs='*',default=[]);args=p.parse_args()
     if args.masks:masks()
     if args.amend:apply_amendments()
+    if args.previews:
+        from tools.e34_sarr_s0 import panels
+        panels(read(OUT/'splits/dev128.json'))
+    if args.import_review:import_review()
     if args.jobs:accounting(args.jobs)
     if args.finalize:finalize()
     if args.bundle:bundle(args.bundle)
