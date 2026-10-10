@@ -63,7 +63,9 @@ def assess(stage):
         for sid in index.get('B3_CONFLICT',{}) if index['B3_CONFLICT'][sid]['struct_iou'] is not None and index['B2_DAGF_LITE'][sid]['struct_iou'] is not None])
     write(folder/'gates.json',dict(arms=audit,conflict_vs_dagf=conflict,coverage=coverage))
     # 固定最差身份集合，所有模型共同展示。
-    worst=sorted(records,key=lambda r:r['struct_iou'] if r['struct_iou'] is not None else 2)[:8]
+    worst=sorted([dict(id=r['id'],arm=arm,delta=r['delta']) for arm in arms
+        for r in paired(records,arm,'struct_iou')],key=lambda r:r['delta'])[:10]
+    write(folder/'worst10.json',worst)
     worst_ids={r['id'] for r in worst};panels(folder,[r for r in read(folder/'manifest.json') if r['id'] in worst_ids],['A0_E5_OFF']+arms,tag='worst_case')
     if stage=='p1':
         candidates=[a for a in ['B2_DAGF_LITE','B3_CONFLICT'] if audit[a]['eligible']]

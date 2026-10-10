@@ -29,12 +29,21 @@ def run():
                 assert record['final_latent_sha256']==off['final_latent_sha256']
                 trace=g.bridge.report();assert trace['counts']['conditional/0']==50 and trace['counts']['unconditional/0']==50
                 records[arm]=dict(exact=True,trace=trace)
+            active_adapter=g.adapters['B2_DAGF_LITE']
+            with torch.no_grad():torch.nn.init.normal_(active_adapter.head.weight,std=.02)
+            active,_,_=g.generate(row,'B2_DAGF_LITE',folder/'DEBUG_NONZERO.png')
+            assert active['final_latent_sha256']!=off['final_latent_sha256']
+            with torch.no_grad():active_adapter.head.weight.zero_();active_adapter.head.bias.zero_()
             restored,_,_=g.generate(row,'A0_E5_OFF',folder/'OFF_AFTER.png')
             assert restored['png_sha256']==off['png_sha256'] and restored['final_latent_sha256']==off['final_latent_sha256']
-            checks.append(dict(id=row['id'],replay_exact=True,zero_exact=records,restored_exact=True))
+            checks.append(dict(id=row['id'],replay_exact=True,zero_exact=records,restored_exact=True,nonzero_intervention_latent_changed=True))
             write(OUT/'p0/replay_checks.json',checks);print('P0 REPLAY',i+1,'/8',flush=True)
             if i==0:
                 with torch.no_grad():
+                    g.bridge.adapter=None
+                    for branch in ('conditional','unconditional'):
+                        a,kw=args[branch]
+                        assert torch.equal(g.pipe.unet(*a,**kw)[0],outputs[branch])
                     for arm,adapter in g.adapters.items():
                         torch.nn.init.normal_(adapter.head.weight,std=.02);adapter.collect=True
                         g.bridge.adapter=adapter
@@ -44,7 +53,8 @@ def run():
                             torch.cuda.synchronize();delta=float((prediction.float()-outputs[branch].float()).abs().mean())
                             assert torch.isfinite(prediction).all()
                             assert delta>0 if branch=='conditional' else delta==0
-                            intervention[arm+'/'+branch]=dict(eps_mae=delta,seconds=time.perf_counter()-start,**adapter.stats)
+                            intervention[arm+'/'+branch]=dict(eps_mae=delta,seconds=time.perf_counter()-start,
+                                peak_memory_gib=torch.cuda.max_memory_allocated()/2**30,**adapter.stats)
                         adapter.head.weight.zero_();adapter.head.bias.zero_()
                     g.bridge.adapter=None
                 write(OUT/'p0/intervention.json',intervention)
