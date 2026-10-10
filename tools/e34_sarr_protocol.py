@@ -84,6 +84,17 @@ def decision(**values):
         S2b='not_run',S3='not_run',S3b='not_run',S4='not_run',paper_method_sufficient=False)
     d.update(values); write(path,d); return d
 
+def apply_amendments():
+    amendment=read('tools/e34_sarr_amendments.json')
+    actual=read(OUT/'masks_audit.json')
+    assert actual['valid_n']==96 and actual['n']==128 and actual['valid_rate']==.75
+    write(OUT/'protocol_amendments.json',amendment)
+    decision(S1='pass_user_exception',S1_original_numerical='fail',
+        S1_observed_valid_rate=.75,S1_original_threshold=.80,
+        S1_user_override=True,stopped=False,next_phase='S0_then_conditional_S2',
+        note='用户观察结果后明确豁免 S1；原始75%保留，掩码和名单不变')
+    return amendment
+
 def bootstrap(values):
     import numpy as np
     a=np.asarray(values,np.float64)

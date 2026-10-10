@@ -105,8 +105,10 @@ def bundle(label):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--masks',action='store_true');p.add_argument('--finalize',action='store_true')
+    p.add_argument('--amend',action='store_true')
     p.add_argument('--bundle');p.add_argument('--jobs',nargs='*',default=[]);args=p.parse_args()
     if args.masks:masks()
+    if args.amend:apply_amendments()
     if args.jobs:accounting(args.jobs)
     if args.finalize:finalize()
     if args.bundle:bundle(args.bundle)

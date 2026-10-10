@@ -1,0 +1,17 @@
+{
+  "experiment": "E34-SARR",
+  "S1": {
+    "effective_decision": "pass",
+    "original_numerical_decision": "fail",
+    "observed_valid": 96,
+    "observed_total": 128,
+    "observed_valid_rate": 0.75,
+    "original_threshold": 0.8,
+    "type": "user_authorized_post_observation_exception",
+    "user_instruction": "将这次的s1算作通过并记录下来，继续做后续的实验",
+    "mask_changed": false,
+    "cohort_changed": false,
+    "invalid_identities": "exact bypass and retain original denominator",
+    "scope": "S1 only; S0, S2, S3 and S4 gates otherwise unchanged"
+  }
+}
