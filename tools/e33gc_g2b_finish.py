@@ -1,5 +1,5 @@
 """汇总既有产物和Slurm用量；不训练、不补选病例、不修改原结果。"""
-import csv,json,re,subprocess
+import csv,json,os,re,subprocess
 from tools.e33gc_g2b_protocol import *
 
 def accounting():
@@ -109,8 +109,13 @@ def run():
         Path('data/e33gc_g2b_renderer.py'),Path('models/e33gc_adapter.py'),Path('tools/e33gc_sampling.py'),
         Path('submit/e33gc_g2b_cpu.sh'),Path('submit/e33gc_g2b_gpu.sh')]
     write(OUT/'protocol/code_hashes.json',{str(p):sha(p) for p in code_files})
+    # 本作业日志在bundle打印和Slurm退出时仍会追加，不能把未封口日志记为稳定产物。
+    jid=os.environ.get('SLURM_JOB_ID','local')
+    excluded=['artifact_manifest.json','job_'+jid+'.log','job_'+jid+'.err']
+    write(OUT/'protocol/artifact_manifest_scope.json',dict(excluded_basenames=excluded,
+        excluded_suffixes=['.gz'],reason='manifest/archive self-reference and current job logs still being written'))
     write(OUT/'artifact_manifest.json',{str(p.relative_to(OUT)):dict(bytes=p.stat().st_size,sha256=sha(p))
-        for p in sorted(OUT.rglob('*')) if p.is_file() and p.suffix not in ['.gz'] and p.name!='artifact_manifest.json'})
+        for p in sorted(OUT.rglob('*')) if p.is_file() and p.suffix not in ['.gz'] and p.name not in excluded})
     bundle('final')
     assert all(checks.values()),checks
 
