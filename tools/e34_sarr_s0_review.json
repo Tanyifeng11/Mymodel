@@ -1,0 +1,194 @@
+{
+  "experiment": "E34-SARR",
+  "review_type": "single_AI_visual_audit",
+  "human_review": false,
+  "subagents_used": false,
+  "cohort": "hash-first24 original train-only dev128; no substitutions",
+  "columns": [
+    "Sketch",
+    "Reference",
+    "GT",
+    "E5 RGB",
+    "HF error"
+  ],
+  "large_motif_or_content_error_n": 12,
+  "local_detail_smoothing_n": 3,
+  "plain_without_clear_need_n": 4,
+  "structural_artifact_n": 5,
+  "denominator": 24,
+  "preregistered_stop_rule": "stop if more than half of fixed24 are large motif identity/layout/content errors",
+  "task_match_pass": true,
+  "task_match_strength": "weak_exploratory_pilot_only",
+  "interpretation": "12/24 large motif/content/layout errors do not exceed the registered majority rule; 3/24 contain plausible local smoothing with valid masks. Most examples do not establish recoverable reference-specific detail. Proceed only with fixed-budget S2a and unchanged reference-necessity/real-E5 gates. No claim of general blur mechanism or image improvement.",
+  "reference_limit": "Displayed reference crops themselves often lack clear high-frequency detail. This may make no-reference restoration equally effective; S2a must test this.",
+  "records": [
+    {
+      "id": "204446309",
+      "category": "large_motif_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Floral embroidery becomes a repeating Nordic-like knit motif; requires content regeneration."
+    },
+    {
+      "id": "121204118",
+      "category": "large_motif_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Abstract floral marks become large black zigzags; not simple blur."
+    },
+    {
+      "id": "194305575",
+      "category": "local_detail_smoothing",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": true,
+      "reason": "Leather gloss and small crease/detail contrast are smoothed; coarse material category remains."
+    },
+    {
+      "id": "162607053",
+      "category": "large_motif_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Fine floral leggings become large simplified red-green shapes; scale and content differ."
+    },
+    {
+      "id": "194648468",
+      "category": "plain_no_clear_refinement_need",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Solid black fabric; no clearly recoverable reference-specific motif at panel resolution."
+    },
+    {
+      "id": "209481547",
+      "category": "false_texture_pattern",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Plain white cotton acquires repeated horizontal texture; high frequency can be spurious."
+    },
+    {
+      "id": "184000479",
+      "category": "large_motif_scale_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Stripe class retained but widths, color proportions and front panels differ substantially."
+    },
+    {
+      "id": "137281725",
+      "category": "large_texture_pattern_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Fine crochet becomes large wavy mesh bands; missing correct pattern content."
+    },
+    {
+      "id": "187121830",
+      "category": "local_detail_smoothing",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": true,
+      "reason": "Denim weave/fine appearance appears smoother; denim category and major layout remain."
+    },
+    {
+      "id": "53887902",
+      "category": "structural_artifact",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Added shoulder decorations and vertical seams; primarily structural hallucination."
+    },
+    {
+      "id": "152294174",
+      "category": "large_motif_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Check/plaid becomes sharp chevron or diagonal forms; not blur."
+    },
+    {
+      "id": "149003380",
+      "category": "plain_no_clear_refinement_need",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Mostly solid navy; shade and structure differ, no clear fine motif to sharpen."
+    },
+    {
+      "id": "192952494",
+      "category": "local_detail_smoothing",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": true,
+      "reason": "Fine ribbing is reduced while garment and lace-up structure remain; local detail candidate."
+    },
+    {
+      "id": "185928035",
+      "category": "structural_artifact",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Added collar/chest stitching and circles; primarily invented internal structure."
+    },
+    {
+      "id": "174397224",
+      "category": "large_logo_content_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Skull and lettering content differ; sharpening cannot restore the correct drawing/text."
+    },
+    {
+      "id": "108561030",
+      "category": "structural_artifact",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Drape and tie placement differ; low frequency structure rather than fine texture."
+    },
+    {
+      "id": "28598818",
+      "category": "structural_artifact",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Lapel, pocket and button layout differ; no clear reference fine pattern."
+    },
+    {
+      "id": "113402150",
+      "category": "plain_no_clear_refinement_need",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Solid black; neckline/strap details differ, no clear reference-specific texture need."
+    },
+    {
+      "id": "180633937",
+      "category": "plain_no_clear_refinement_need",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Solid yellow pants; shade and folds differ, no clear fine reference pattern."
+    },
+    {
+      "id": "31862577",
+      "category": "structural_artifact",
+      "large_motif_layout_content_error": false,
+      "plausible_local_smoothing": false,
+      "reason": "Neckline, draping and construction differ; primarily structure rather than blur."
+    },
+    {
+      "id": "79583392",
+      "category": "large_rip_layout_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Distressing/rip locations and wash pattern change; missing correct content/layout."
+    },
+    {
+      "id": "190065330",
+      "category": "large_motif_layout_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Logo, color-blocking and stripe layout change substantially."
+    },
+    {
+      "id": "127609356",
+      "category": "large_rip_layout_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Wash, knee-rip and cuff layout change substantially."
+    },
+    {
+      "id": "204012322",
+      "category": "large_logo_content_error",
+      "large_motif_layout_content_error": true,
+      "plausible_local_smoothing": false,
+      "reason": "Alice illustration replaced by a different large figure and surrounding motif."
+    }
+  ]
+}
