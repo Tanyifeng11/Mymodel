@@ -21,6 +21,7 @@ METRICS = ['struct_iou', 'struct_edge_f1', 'lpips_gt', 'clip_texture',
 MASK_METRICS = ['struct_iou', 'tcf_lab_delta', 'leak_colored_frac',
                 'tpf_gram_l1', 'tpf_patch_sim', 'leak_edge_density']
 CONFIG = dict(experiment='E35', version=1, training_steps=0, extra_parameters=0,
+    plan_sha256='fcfaaac5ceb7db420e10c134f13c31e44680d456cc1400b8d131c5350df3e7c6',
     width=384, height=512, steps=50, cfg=7., sketch_scale=.6, texture_scale=1., ipa_scale=1.,
     seed=42, caption_policy='original_unchanged', dataset_modified=False,
     split='E34 dev128; SHA256(identity) ascending first32 / remaining96',

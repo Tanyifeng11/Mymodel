@@ -25,6 +25,11 @@ class Generator:
         self.pipe,self.modules,size,self.ns=load_e5()
         assert size==SIZE and type(self.pipe.scheduler).__name__=='DDIMScheduler'
         assert all(not p.requires_grad for m in self.modules.values() for p in m.parameters())
+        historical=read(PREVIOUS/'jobs/s0_shard0/implementation.json')
+        assert sha(E5)==historical['e5_checkpoint_sha256']
+        assert vars(self.ns)==historical['inference_args'], '原始E5推理配置发生变化'
+        actual=dict(self.pipe.scheduler.config);old=historical['scheduler_config']
+        assert {k:v for k,v in actual.items() if not k.startswith('_')}=={k:v for k,v in old.items() if not k.startswith('_')}
         self.before=module_hashes(self.modules)
         self.bridge=FreeUBridge(self.pipe.unet)
         self.structure=self.bridge.structure()
