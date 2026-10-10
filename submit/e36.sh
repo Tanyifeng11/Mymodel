@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=40G
 #SBATCH --gres=gpu:1
-#SBATCH --time=24:00:00
+#SBATCH --time=08:00:00
 #SBATCH -o /share/home/u2515283058/Mymodel/output_eval/e36_dagf_guided_filter_20261010/job_%j.log
 #SBATCH -e /share/home/u2515283058/Mymodel/output_eval/e36_dagf_guided_filter_20261010/job_%j.err
 set -eo pipefail

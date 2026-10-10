@@ -74,7 +74,11 @@ def build_adapters(g):
     first=next(r for r in trace if r['index']==0)
     assert first['shape'][-2:]==[32,24]
     c=first['shape'][1];time_c=first['time_shape'][1]
-    adapters={arm:GuidedKernelFilter(c,time_c,arm).cuda() for arm in ARMS}
+    adapters={}
+    for arm in ARMS:
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(42)
+            adapters[arm]=GuidedKernelFilter(c,time_c,arm).cuda()
     counts={arm:sum(p.numel() for p in m.parameters()) for arm,m in adapters.items()}
     assert max(counts.values())/min(counts.values())<=1.05,counts
     return adapters,counts

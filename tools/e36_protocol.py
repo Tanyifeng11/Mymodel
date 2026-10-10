@@ -42,6 +42,12 @@ def prepare():
     import platform,torch,diffusers,cv2,PIL
     if (OUT/'protocol.json').exists():assert read(OUT/'protocol.json')==CONFIG;return
     old=read(E35/'audit/frozen_hashes.json');assert all(sha(p)==h for p,h in old.items())
+    checkpoint=torch.load(E5,map_location='cpu',weights_only=False);meta=checkpoint['meta'];del checkpoint
+    expected={'joint_i_drop_rate':.05,'joint_t_drop_rate':.20,'joint_ti_drop_rate':.05,
+              'texture_mode':'patch_resampled','texture_condition_mode':'token',
+              'texture_preprocess_mode':'plain_resize','clip_hidden_layer':-1,'region_kernel_size':9}
+    for key,value in expected.items():assert meta[key]==value,(key,meta.get(key),value)
+    write(OUT/'audit/original_e5_training_meta.json',meta)
     train=read(PREVIOUS/'splits/train.json');dev=read(E35/'splits/dev32.json');confirm=read(E35/'splits/confirm96.json')
     chosen=random.Random(CONFIG['seed_split']).sample(sorted(train,key=lambda r:r['id']),1024)
     assert not {r['id'] for r in chosen}&{r['id'] for r in dev+confirm}
@@ -53,6 +59,8 @@ def prepare():
     write(OUT/'audit/frozen_hashes.json',frozen)
     original=read('data/train_bf_texture.json');index={Path(r['cloth']).stem:r for r in original}
     write(OUT/'splits/train_original_records.json',[index[r['id']] for r in chosen])
+    frozen[str(OUT/'splits/train_original_records.json')]=sha(OUT/'splits/train_original_records.json')
+    write(OUT/'audit/frozen_hashes.json',frozen)
     write(OUT/'protocol.json',CONFIG);decision()
     write(OUT/'audit/environment.json',dict(python=platform.python_version(),torch=torch.__version__,
         diffusers=diffusers.__version__,opencv=cv2.__version__,pillow=PIL.__version__,commit=commit()))
