@@ -77,6 +77,14 @@ def init():
     path=OUT/'protocol.json'
     if path.exists(): assert read(path)==CONFIG, '已冻结协议不允许悄悄改变'
     else: write(path,CONFIG)
+    env=OUT/'environment.json'
+    if env.exists():
+        import cv2
+        import PIL
+        import torch
+        locked=read(env)
+        assert cv2.__version__==locked['opencv'] and PIL.__version__==locked['pillow']
+        assert torch.__version__==locked['torch'], '实验期间依赖版本不得静默变化'
 
 def decision(**values):
     path=OUT/'final_decision.json'
