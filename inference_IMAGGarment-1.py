@@ -452,6 +452,9 @@ def generate_one(pipe, generator, args, output_path, sketch_path=None, texture_p
         },
         local_detail_probe_dir=args.local_detail_probe_dir,
         local_detail_output_block=bool(args.local_detail_output_block),
+        tcpm_mask_mode=args.tcpm_mask_mode,
+        tcpm_mask_kernel_size=args.tcpm_mask_kernel_size,
+        tcpm_mask_feather=args.tcpm_mask_feather,
         spatial_mask=spatial_mask,
         debug_spatial=args.debug_spatial,
         force_texture_num_tokens_override=args.force_texture_num_tokens_override,
@@ -867,6 +870,11 @@ if __name__ == "__main__":
                         help='-1 根据 checkpoint 自动启用 E9，0 关闭，1 要求完整 E9 权重；A/B 来源读取 checkpoint')
     parser.add_argument('--tcpm_hidden_ratio', type=float, default=0.25)
     parser.add_argument('--tcpm_residual_scale_init', type=float, default=0.0)
+    parser.add_argument('--tcpm_mask_mode', type=str, default='legacy',
+                        choices=['legacy', 'consistent', 'soft'],
+                        help='BC-TCPM 作用域：legacy 保持旧推理，consistent 对齐训练内侧 mask，soft 保留有界边界权重')
+    parser.add_argument('--tcpm_mask_kernel_size', type=int, default=9)
+    parser.add_argument('--tcpm_mask_feather', type=float, default=0.15)
     parser.add_argument('--conflict_texture_suppress_strength', type=float, default=0.1)
     parser.add_argument('--conflict_palette_suppress_strength', type=float, default=0.4)
     parser.add_argument('--conflict_deltae_norm', type=float, default=50.0)

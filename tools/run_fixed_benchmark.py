@@ -654,6 +654,12 @@ def run_one_inference(args, sample, mode_name, out_dir, paths):
         str(args.conflict_deltae_norm),
         "--conflict_threshold",
         str(args.conflict_threshold),
+        "--tcpm_mask_mode",
+        args.tcpm_mask_mode,
+        "--tcpm_mask_kernel_size",
+        str(args.tcpm_mask_kernel_size),
+        "--tcpm_mask_feather",
+        str(args.tcpm_mask_feather),
         "--alpha1",
         str(args.alpha1),
         "--alpha2",
@@ -1690,6 +1696,9 @@ def build_argparser():
     parser.add_argument("--balanced_gate_max", type=float, default=1.2)
     parser.add_argument("--use_conflict_aware_gate", type=int, choices=[0, 1], default=0)
     parser.add_argument("--use_tcpm_lite", type=int, choices=[0, 1], default=0)
+    parser.add_argument("--tcpm_mask_mode", choices=["legacy", "consistent", "soft"], default="legacy")
+    parser.add_argument("--tcpm_mask_kernel_size", type=int, default=9)
+    parser.add_argument("--tcpm_mask_feather", type=float, default=0.15)
     parser.add_argument("--use_aa_tcr_fuse", type=int, choices=[0, 1], default=0)
     parser.add_argument("--use_text_guided_resampler", type=int, choices=[-1, 0, 1], default=-1)
     parser.add_argument("--disable_nexus_adapter", action="store_true")

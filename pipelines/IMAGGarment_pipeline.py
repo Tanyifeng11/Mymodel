@@ -34,6 +34,7 @@ from texture_preprocess import preprocess_texture_image
 from checkpoint_utils import extract_texture_metadata, infer_texture_num_tokens, infer_clip_embed_dim
 from color_conflict_utils import compute_color_conflict
 from garment_mask_utils import build_region_masks
+from models.bc_tcpm_gate import BoundaryConsistentTCPMGate
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -135,6 +136,8 @@ class IMAGGarment(StableDiffusionPipeline):
             hidden_ratio=tcpm_hidden_ratio,
             residual_scale_init=tcpm_residual_scale_init,
         )
+        # BC-TCPM 不含可学习参数，只负责把推理作用域对齐到训练期 mask。
+        self.bc_tcpm_gate = BoundaryConsistentTCPMGate(kernel_size=9, feather=0.15)
         self.use_palette_tokens = False
         self.num_palette_tokens = 4
         self.palette_token_mlp = None
@@ -1302,7 +1305,16 @@ class IMAGGarment(StableDiffusionPipeline):
                 if use_conflict_aware_gate and color_conflict_score is not None:
                     cond_cross_attention_kwargs["color_conflict_score"] = color_conflict_score
                 if self.use_tcpm_lite and spatial_mask is not None:
-                    cond_cross_attention_kwargs["tcpm_garment_mask"] = spatial_mask
+                    tcpm_mask_mode = kwargs.get("tcpm_mask_mode", "legacy")
+                    tcpm_mask_kernel = int(kwargs.get("tcpm_mask_kernel_size", 9))
+                    tcpm_mask_feather = float(kwargs.get("tcpm_mask_feather", 0.15))
+                    self.bc_tcpm_gate.kernel_size = tcpm_mask_kernel
+                    tcpm_mask = self.bc_tcpm_gate(
+                        spatial_mask,
+                        mode=tcpm_mask_mode,
+                        feather=tcpm_mask_feather,
+                    )
+                    cond_cross_attention_kwargs["tcpm_garment_mask"] = tcpm_mask
 
                 if local_probe is not None:
                     local_probe.step = i
