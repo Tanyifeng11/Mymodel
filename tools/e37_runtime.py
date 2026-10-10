@@ -90,7 +90,7 @@ class FixedInputs:
             kw=dict(encoder_hidden_states=encoder,cross_attention_kwargs=dict(sa_hidden_states=sa,tcpm_garment_mask=mask))
             audit=dict(**record,noise_sha256=digest(noise),latent_sha256=digest(latents),
                 noisy_sha256=digest(noisy),sketch_latent_sha256=digest(ref),dropout='none; fixed diagnostics only')
-            return (noisy,t),kw,noise,sketch,(batch['vae_cloth'].float()+1)/2,(tex.float()+1)/2,audit
+            return (noisy,t),kw,noise,sketch,(batch['vae_cloth'].float()+1)/2,(batch['texture_image'].float()+1)/2,audit
 
 
 def predict(g,args,kw,sketch):
