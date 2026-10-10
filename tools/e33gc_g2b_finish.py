@@ -24,6 +24,38 @@ def accounting():
     write(OUT/'protocol/commands_and_gpu_budget.json',value)
     return value
 
+def upper_pixel_metrics():
+    """仅汇总已有PNG；沿用主评估的轮廓定义，不改变训练或通过门槛。"""
+    import numpy as np
+    from PIL import Image
+    from data.e33gc_g2b_renderer import load
+    from eval.eval_utils import estimate_foreground_mask
+    from eval.metrics import _dilate_binary
+    from tools.e22_o4_metrics import contour
+    records=[]
+    for row in read(OUT/'protocol/g2b_fit_probe_ids.json')['fit'][:2]:
+        inputs=load(row,True);mask=inputs['mask'].astype(bool);inner=inputs['inner'].astype(bool)
+        for i,arm in enumerate(ARMS):
+            current=Image.open(OUT/'G2b_upper_bound_if_needed/step80'/row['id']/(arm+'.png')).convert('RGB')
+            baseline=Image.open(OUT/'G2b_smoke/cache'/row['id']/(arm+'_A0.png')).convert('RGB')
+            target=np.asarray(inputs['targets'][i],float)/255
+            def metrics(image):
+                rgb=np.asarray(image,float)/255;foreground=estimate_foreground_mask(image,image.size)
+                a,b=contour(foreground),contour(mask)
+                precision=(a&_dilate_binary(b,5)).sum()/max(a.sum(),1)
+                recall=(b&_dilate_binary(a,5)).sum()/max(b.sum(),1)
+                return dict(masked_charbonnier=float(np.sqrt((rgb[inner]-target[inner])**2+1e-6).mean()),
+                    contour_f1=float(2*precision*recall/max(precision+recall,1e-12)))
+            before,after=metrics(baseline),metrics(current)
+            delta=np.abs(np.asarray(current,float)-np.asarray(baseline,float))/255
+            records.append(dict(id=row['id'],label=row['label'],arm=arm,baseline=before,upper=after,
+                outside_MAE_vs_A0=float(delta[~inner].mean()),background_MAE_vs_A0=float(delta[~mask].mean()),
+                contour_f1_delta=after['contour_f1']-before['contour_f1']))
+    write(OUT/'G2b_upper_bound_if_needed/pixel_and_contour_metrics.json',dict(records=records,
+        scope='fixed2 identities x3 repeated arms; existing quantized RGB PNG; descriptive only',
+        contour_definition='same estimate_foreground_mask/contour/dilation5 as frozen main evaluator',
+        updates_added=0,changes_gate=False))
+
 def run():
     init();d=read(OUT/'decision_summary.json');budget=accounting()
     fit=read(OUT/'protocol/g2b_fit_probe_ids.json')['fit']
@@ -46,6 +78,7 @@ def run():
     training=read(OUT/'G2b_train/training_complete.json')
     updates=[json.loads(v)['update'] for v in (OUT/'G2b_train/updates.jsonl').read_text().splitlines()]
     upper_needed=d.get('g2b_AI_amended_fit_pass') is False
+    if upper_needed:upper_pixel_metrics()
     checks=dict(original_results_unchanged=read(OUT/'frozen_check.json')['pass_unchanged'],
         independent_split_frozen=d['gc_controlled_dev_new_frozen'],
         real64_input_only_two_AI_reviews=(OUT/'G0a_real_input_annotations/real_input_eligibility.json').exists(),
@@ -62,7 +95,9 @@ def run():
         independent_DFT_and_E26=(OUT/'G2b_eval/identity_metrics.json').exists(),
         blind_AI_endpoint_review=(OUT/'G2b_eval/two_AI_blind_review.json').exists(),
         required_upper_complete=(not upper_needed) or ((OUT/'G2b_upper_bound_if_needed/two_AI_blind_review.json').exists() and
-            read(OUT/'G2b_upper_bound_if_needed/diagnosis.json')['updates']==80),
+            read(OUT/'G2b_upper_bound_if_needed/diagnosis.json')['updates']==80 and
+            [json.loads(v)['update'] for v in (OUT/'G2b_upper_bound_if_needed/updates.jsonl').read_text().splitlines()]==list(range(1,81)) and
+            sha(OUT/'G2b_upper_bound_if_needed/checkpoint_step80.pt')==read(OUT/'G2b_upper_bound_if_needed/diagnosis.json')['checkpoint_sha256']),
         geometry_comparison=(OUT/'G0a_simple_geometry/comparison.json').exists(),
         GPU_budget_pass=budget['GPU_hours']<=6,
         no_later_stages=not any(d[k] for k in ['g3_authorized','g4_authorized','g5_authorized']))
@@ -71,7 +106,8 @@ def run():
         AI_review_amendment=CONFIG['review'],local_report_transferred_to_server=False))
     verify_frozen()
     code_files=list(Path('tools').glob('e33gc_g2b_*.py'))+list(Path('tools').glob('e33gc_g2b_*reviews.json'))+[
-        Path('data/e33gc_g2b_renderer.py'),Path('submit/e33gc_g2b_cpu.sh'),Path('submit/e33gc_g2b_gpu.sh')]
+        Path('data/e33gc_g2b_renderer.py'),Path('models/e33gc_adapter.py'),Path('tools/e33gc_sampling.py'),
+        Path('submit/e33gc_g2b_cpu.sh'),Path('submit/e33gc_g2b_gpu.sh')]
     write(OUT/'protocol/code_hashes.json',{str(p):sha(p) for p in code_files})
     write(OUT/'artifact_manifest.json',{str(p.relative_to(OUT)):dict(bytes=p.stat().st_size,sha256=sha(p))
         for p in sorted(OUT.rglob('*')) if p.is_file() and p.suffix not in ['.gz'] and p.name!='artifact_manifest.json'})

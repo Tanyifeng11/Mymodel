@@ -1,0 +1,34 @@
+{
+  "reviewer1": {
+    "1de96d4a5283": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "独立AI盲审，非人工。R0/R90/R180均为近似相同的酒红外套与白色袖口、下摆分块，未出现参考横条到竖条的真实纹样转向；参考细密周期纹样未保留，主要为低频色块和服装结构边。衣身与双袖完整，无明显断裂或大面积外溢。"
+    },
+    "a00734c95052": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": true,
+      "reason": "独立AI盲审，非人工。三臂均为相似蓝白双轴格纹，未随灰绿参考从横纹变为竖纹，颜色与纹样类别均不对应；格纹自身清楚可辨，并非单纯低频色块。无袖长上衣主体完整，无明显断裂、衣身消失或大面积外溢。"
+    }
+  },
+  "reviewer2": {
+    "1de96d4a5283": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": false,
+      "reason": "AI独立盲审，非人工。R0、R90、R180均主要为酒红色夹克和白色结构分块，未见真实周期纹样的横竖转向；袖部宽色带与衣服结构不能代替参考连续条纹。夹克衣身、袖部完整，无明显大面积外溢；参考条纹外观不可辨。"
+    },
+    "a00734c95052": {
+      "visible_rotation": false,
+      "motif_correspondence": false,
+      "structure_safe": true,
+      "appearance_distinct": true,
+      "reason": "AI独立盲审，非人工。三臂均呈蓝白双轴格纹，R90没有相对R0出现参考单轴条纹的清楚转向；生成格纹与灰绿色横纵条纹参考的颜色、类别和周期不对应。上衣衣身完整，无明显断裂或大面积外溢；蓝白格纹自身清晰可辨，非单纯低频色块，因此仅外观可辨项为true。"
+    }
+  }
+}
