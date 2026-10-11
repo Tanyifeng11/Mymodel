@@ -37,8 +37,7 @@ def spectrum(items):
     return np.concatenate([norm(mag),norm(angular),norm(radial)]).astype(np.float32),True
 
 
-@torch.inference_mode()
-def features(pipe,image,mask=None,mask_valid=True):
+def appearance(image,mask=None):
     image=image.convert('RGB');a=np.asarray(image)
     lab=cv2.cvtColor(a.astype(np.float32)/255,cv2.COLOR_RGB2LAB)
     selected=lab if mask is None else lab[mask]
@@ -47,6 +46,13 @@ def features(pipe,image,mask=None,mask_valid=True):
     selected=selected.reshape(-1,3).astype(np.float64)
     hist=np.histogramdd(a.reshape(-1,3)/255,bins=4,range=((0,1),)*3)[0].ravel()
     color=np.concatenate([selected.mean(0)/100,selected.std(0)/100,hist/hist.sum()]).astype(np.float32)
+    return dict(color=color,lab_mean=selected.mean(0))
+
+
+@torch.inference_mode()
+def features(pipe,image,mask=None,mask_valid=True):
+    image=image.convert('RGB')
+    colors=appearance(image,mask)
     items=patches(image,mask) if mask_valid else []
     fft,valid=spectrum(items)
     local=[Image.fromarray(v).convert('L').convert('RGB') for v in items]
@@ -57,7 +63,7 @@ def features(pipe,image,mask=None,mask_valid=True):
         emb.extend(v.cpu().numpy())
     dim=len(emb[0]);local_emb=np.stack(emb[1:]) if local else np.zeros((1,dim),np.float32)
     return dict(clip=emb[0].astype(np.float32),local=np.concatenate([local_emb.mean(0),local_emb.std(0)]).astype(np.float32),
-        fft=fft,color=color,lab_mean=selected.mean(0),local_valid=np.asarray(bool(local)),fft_valid=np.asarray(valid),
+        fft=fft,**colors,local_valid=np.asarray(bool(local)),fft_valid=np.asarray(valid),
         patch_count=np.asarray(len(items)),mask_valid=np.asarray(mask_valid))
 
 
