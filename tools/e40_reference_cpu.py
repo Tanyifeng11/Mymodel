@@ -11,7 +11,7 @@ def run():
     rows=read(OUT/'references.json');features={}
     for r in rows:
         image=Image.open(r['path']).convert('RGB');a=np.asarray(image)
-        lab=cv2.cvtColor(a.astype(np.float32)/255,cv2.COLOR_RGB2LAB).reshape(-1,3)
+        lab=cv2.cvtColor(a.astype(np.float32)/255,cv2.COLOR_RGB2LAB).reshape(-1,3).astype(np.float64)
         hist=np.histogramdd(a.reshape(-1,3)/255,bins=4,range=((0,1),)*3)[0].ravel()
         fft,valid=spectrum(patches(image))
         color=np.concatenate([lab.mean(0)/100,lab.std(0)/100,hist/hist.sum()]).astype(np.float32)

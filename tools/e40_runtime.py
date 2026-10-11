@@ -43,7 +43,8 @@ def features(pipe,image,mask=None,mask_valid=True):
     lab=cv2.cvtColor(a.astype(np.float32)/255,cv2.COLOR_RGB2LAB)
     selected=lab if mask is None else lab[mask]
     if not len(selected):selected=lab.reshape(-1,3)
-    selected=selected.reshape(-1,3)
+    # 颜色统计用 float64，避免 float32 累加次序泄漏像素空间排列。
+    selected=selected.reshape(-1,3).astype(np.float64)
     hist=np.histogramdd(a.reshape(-1,3)/255,bins=4,range=((0,1),)*3)[0].ravel()
     color=np.concatenate([selected.mean(0)/100,selected.std(0)/100,hist/hist.sum()]).astype(np.float32)
     items=patches(image,mask) if mask_valid else []
