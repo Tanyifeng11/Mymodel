@@ -141,6 +141,11 @@ class Runner(previous.Runner):
 
 def run(shard,shards):
     prepare();g=Runner(shard);started=time.perf_counter()
+    write(OUT/'audit'/('e41_runtime_shard%d.json'%shard),dict(
+        git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        code_sha256={str(p):sha(p) for p in Path('tools').glob('e41_*.py')},
+        job=os.environ.get('SLURM_JOB_ID'),node=os.environ.get('SLURMD_NODENAME'),
+        timesteps=TIMES,generation_updates=0,generation_budget=160))
     try:
         refs=read(OUT/'references.json')
         for i,r in enumerate(refs[shard::shards]):
