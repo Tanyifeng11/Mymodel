@@ -28,22 +28,32 @@ def deliver(root):
     status='五项分析已运行；完整身份仍需按证据边界判断' if full else '实验尚未完成：已完成 FFT/颜色参考检验，GPU 生成及全部表示对比仍在排队'
     data['local_delivery']=dict(updated=datetime.now().isoformat(timespec='seconds'),status=status,
         complete=full,job_state=state,protocol=protocol)
+    for name,key in [('visual_review.json','local_visual_review'),('color_precision_repair.json','color_precision_repair'),
+                     ('local_download_check.json','local_download_check')]:
+        path=local/'audit'/name
+        if path.exists():data[key]=read(path)
     (docs/'E40_pattern_representation_comparison.json').write_text(json.dumps(data,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
     lines=['# E40：纹样身份定义与可测性验证', '', '**状态：'+status+'。**', '',
         '冻结 E5、seed42、CFG7、DDIM50，生成模型训练更新数为 0。新结果服务器目录：`/share/home/u2515283058/Mymodel/output_eval/e40_pattern_identity_20261011`。', '',
         '纹样身份暂定义为（类别、重复单元、周期结构、空间排列、方向关系），颜色、材质与光照属于应被排除的干扰因素。裁剪前后的物理尺度需要统一；裁剪再缩放会改变像素周期。本轮分别检验粗类别、频域结构与增强后的来源检索，尚未建立完整重复单元身份的真值。', '',
         '## 数据与固定协议', '',
         '- 受控数据：四类各 32 个原型；4 档频率×2 个方向×4 个相位。三类有纹图使用相同的双色像素直方图。素色的亮度方差不同，单独报告三类有纹子集。',
-        '- 真实参考：条纹 22、格纹 25、花纹 10、素色 32；按 SHA256 去重。标签来自历史单一 AI 视觉复核，来源组仅为暂定图像来源，未核验布料身份或真实材质。全部 89 张联系表已检查；未据模型结果筛选样本。',
+        '- 真实参考：条纹 22、格纹 25、花纹 10、素色 32；按 SHA256 去重。标签来自历史单一 AI 视觉复核，来源组仅为暂定图像来源，未核验布料身份或真实材质。已检查覆盖全部 89 张参考的 3 张联系表；未据模型结果筛选样本。',
         '- 每个来源包含原图、两次换色、两次裁剪及一次噪声/光照代理，共 1302 个参考视图。来源及其增强始终同折；受控集外折留一频率，真实集按来源分四折。',
         '- 分类器固定 balanced logistic regression，C=1；StandardScaler 和最多 32 维 PCA 只在训练折拟合。不搜索测试集超参数。',
         '- 分类 F1 降幅使用分层、配对来源 bootstrap 1000 次。距离均值使用 2000 次组 bootstrap；真实颜色匹配配对按共享端点的连通分量分组，受控配对按频率/方向分组。少于两个组时置信区间记 NA。',
         '- 三种表示：全图 CLIP image encoder；64×64 灰度 patch 的 CLIP 均值/标准差；相同 patch 上的 FFT magnitude、radial/angular spectrum。最多固定采样 5 个 patch。颜色基线为 LAB 均值/标准差与 4³ RGB 直方图，使用 float64 累加防止像素顺序泄漏。',
-        '- 新增生成固定 16 个既有载体×4 类×2 配色=128 张，同载体共享类别中性文本和初始噪声。参考使用留出的频率 7、方向 15°；不通过 caption 提示纹样。E39 原有 133 张只读复用。',
+        '- 新增生成固定 16 个既有载体×4 类×2 配色=128 张，同载体共享类别中性文本和初始噪声。参考使用留出的频率 7、方向 15°；每类只有一个留出结构模板。128 张不能视为 128 个独立新纹样。不通过 caption 提示纹样。E39 原有 133 张只读复用。',
         '- 服装评估仅使用 sketch-only 高置信度掩码并内缩 9 像素；patch 至少 95% 位于服装内。无有效区域的 LAB、局部和 FFT 指标记 NA。全图 CLIP 仍有背景、形状和参考到服装的域偏移。', '',
         '## 实验 1–2：类别分类与换色稳定性', '',
         '| 数据 | 表示 | 原图 Accuracy | 原图 Macro F1 | 换色1 F1 | 换色2 F1 | 裁剪1 F1 | 裁剪2 F1 | 有纹三类原图 F1 |',
         '|---|---|---:|---:|---:|---:|---:|---:|---:|']
+    if full:
+        c=classification['controlled']['local']['metrics'];r=classification['real']['local']['metrics']
+        conclusion=['**主要结果：局部灰度 CLIP 通过类别、换色稳定性及同色异纹距离初筛；完整纹样身份仍证据不足，暂不进入新方法训练。**', '',
+            f"该表示受控/真实原图 Macro F1 为 {number(c['base']['macro_f1'])}/{number(r['base']['macro_f1'])}，真实换色后为 {number(r['color1']['macro_f1'])}/{number(r['color2']['macro_f1'])}；真实裁剪后降至 {number(r['crop1']['macro_f1'])}/{number(r['crop2']['macro_f1'])}。", '',
+            '全部 16 张生成联系表的单一 AI 复核支持：E5 对配色变化有明显响应，三类有纹结构未随参考稳定变化。生成分类器有域偏移，真实跨材质缺真值，因此只支持本轮受控诊断。', '']
+        lines[4:4]=conclusion
     for domain,results in classification.items():
         for rep,row in results.items():
             m=row['metrics'];patterned=m['base'].get('patterned_only',{}).get('macro_f1')
@@ -89,9 +99,16 @@ def deliver(root):
                     lines.append('| '+' | '.join([domain,rep,color,interval(row['correct']),interval(row['reference_correct']),interval(row['reference_valid_subset'])])+' |')
         lines+=['', 'E39 使用原有文本，不能与受控中性文本合并作同分布证据。R− donor 未知标签、四类之外的 denim/graphic 等不强映射；已知四类的 R+/R90 使用该来源的留出折分类器。逐臂 CLIP、LAB、FFT、local 和分类概率见 JSON。', '',
             '**解释限制：**参考裁块与生成服装的尺度、褶皱和域偏移会增大频域/视觉距离；低颜色距离与高纹样距离仅形成候选诊断。必须结合图板与代理有效性，不能单独判定完整 semantic grounding 失败。', '',
+            '本轮整体参考—生成 LAB 均值距离约 '+number(g['reference_preservation']['color']['mean'])+'，尚未证明颜色精准保持。换色干预与同直方图纹样干预的输出变化属于本次扰动比较，输入干预强度并不等价，不能据距离大小给出通用的“颜色学习能力优于纹样学习能力”因果排序。', '',
+            '图板复核为单一 AI 的探索性观察，未作为生成图准确率真值。三类有纹输入在同配色下往往产生近似结果，部分素色输入减少细纹，但文字标志、大图形或拼缝仍可保持。草图含内部图形、程序参考也存在域偏移，当前不能唯一定位原因。', '',
+            '代表图板：'+', '.join('[载体 '+k+']('+str(local/'review'/('generated_'+k+'.jpg')).replace('\\','/')+')' for k in ['127609356','193312302','210013766'])+'。全部 16 个载体的逐项复核记录已纳入 JSON。', '',
             '## 审计与交付', '',
             f"输入文件核验 {data['analysis']['audits']['input_files_unchanged']} 项、参考视图 {data['analysis']['audits']['reference_views_unchanged']} 项保持不变；两 GPU 进程内部 E5 模块哈希运行前后相同，E39 原 PNG 哈希保持不变。E5 检查点 SHA256：`{protocol['E5_sha256']}`。", '',
             '完整数值、原型、生成图、逐项审计及复核图板留在服务器新目录；本地已下载复核包并核对归档 SHA256。三个总结文件仅存本地 docs。']
+        if 'color_precision_repair' in data:
+            repair=data['color_precision_repair']
+            lines+=['', f"分片 0 在颜色累加精度修正前启动，分片 1 在修正后启动。已在 CPU 上统一重算 {repair['feature_files']} 个特征文件的 LAB/颜色统计，备份原始 NPZ 和旧汇总；FFT、CLIP、local 及其他数组逐项保持完全一致，{repair['generated_and_reused_images_unchanged']} 张新增/复用图像的哈希不变，新增生成数为 0。最终以修复后的汇总为准。", '',
+                '早期网页终端重试使 CPU 汇总与参考检验各重复提交一次，均成功结束；最终资源账本保留全部作业，未因此增加 GPU 生成。']
     else:
         lines+=['', '## 实验 4–5：等待 GPU 资源', '',
             '128 张新增生成尚未完成；CLIP/local 参考提取、E39 重评和生成保持分析仍待运行。依赖统计作业仅在两 GPU 作业成功后开始。这里不提供 E5 新生成结论或完整 Go/Stop 判定。', '',
@@ -106,7 +123,13 @@ def deliver(root):
         decision=data['decision'];passing=', '.join(decision['operational_candidates']) or '无'
         go=['# E40 Go / No-go', '', '**完整纹样身份：证据不足，暂不进入完整 Pattern Identity Grounding 方法验证。**', '',
             '通过受控与真实粗标签的分类、换色和距离初筛的表示：'+passing+'。这只支持相应表示的局部操作性结论。', '',
+            '| 文档准入条件 | 本轮判断 |','|---|---|',
+            '| 身份可独立定义 | 已给出结构属性定义；完整重复单元、排列及尺度的真值不足 |',
+            '| 同纹样跨颜色保持 | local 的受控/真实粗类别初筛通过；完整身份 H1 仅获局部支持 |',
+            '| 同颜色不同纹样可区分 | 三类受控直方图匹配及真实均值色匹配距离初筛通过；真实材质控制未验证 |',
+            '| E5 无法稳定保持身份 | 图板与域外代理支持本次受控纹样保持不足；尚无完整身份真值 |', '',
             '真实同纹跨材质（H2）、同材质异纹（D）、完整重复单元身份与生成图分类器有效性尚未核验。当前状态为 `'+decision['status']+'`。', '',
+            'local 真实原图 Macro F1 '+number(classification['real']['local']['metrics']['base']['macro_f1'])+'，换色表现稳定，但两种裁剪 F1 为 '+number(classification['real']['local']['metrics']['crop1']['macro_f1'])+'/'+number(classification['real']['local']['metrics']['crop2']['macro_f1'])+'，并未建立稳定的裁剪身份表示。FFT 的真实类别初筛未通过，全图 CLIP 的真实换色稳定性初筛未通过。', '',
             '下一步先补核验来源/材质及同纹异材质配对，并给生成图建立独立的纹样标签和尺度校准；确认可测性之后，再决定是否进入方法训练。', '',
             '当前判断属于证据不足；已通过与未通过的门槛、置信区间、有效组数均见数值 JSON 与报告。']
     else:
