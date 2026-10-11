@@ -11,6 +11,10 @@ def verify(root):
     assert marker['skip_gate']=='pilot_only'
     assert marker['original_pilot_decision_sha256']==sha(folder/'pilot/decision.json')
     assert marker['locked_protocol_sha256']==sha(folder/'locked_protocol.json')
+    recovery=folder/'audit/train_partial_160827965_before_fix.sha256'
+    if recovery.exists():
+        original_png_hash=recovery.read_text(encoding='utf-8').splitlines()[0].split()[0]
+        assert sha(folder/'train/samples/160827965/seed42/alpha1.png')==original_png_hash
     stages={};tables={}
     for phase in ['train','validation','holdout']:
         done=(folder/phase/('oof.json' if phase=='train' else 'decision.json')).exists()

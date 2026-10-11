@@ -35,10 +35,11 @@ def deliver(root):
     decisions={p:read(review/p/'decision.json') for p in ['pilot','validation','holdout'] if (review/p/'decision.json').exists()}
     last=list(decisions)[-1];decision=decisions[last];continuation=read(review/'exploratory_continuation.json')
     resources=accounting(review/'slurm_accounting.txt');oof=read(review/'train/oof.json')
+    local_state=read(out/'local_state.json');recovery={k:local_state[k] for k in ['train_failure','train_retry_jobs'] if k in local_state}
     summary=dict(experiment='E43_RRUC',status=decision['status'],last_stage=last,stop_reasons=decision['reasons'],
         original_pilot_status=decisions['pilot']['status'],preregistered_pipeline_pass=False,exploratory_continuation=continuation,
         decisions=decisions,stages=state,train_oof=oof,local_verification=verification,later_verification=later,
-        visual_review=visual,resources=resources,download_sha256=download['actual_sha256'],E5_training_steps=0,
+        visual_review=visual,resources=resources,engineering_recovery=recovery,download_sha256=download['actual_sha256'],E5_training_steps=0,
         generation_model_training_steps=0,claims=dict(pattern_identity=False,unique_causal_bottleneck=False,novel_method=False))
     write(docs/'E43_rgb_utility_statistics.json',summary)
     p=decisions['pilot'];lines=['# E43：参考增量RGB收益校准与探索性延续','',
@@ -89,6 +90,8 @@ def deliver(root):
         '完整50步预检查及PNG同一性通过；本地核验来源隔离、PNG/NPZ哈希、失效回退、来源簇bootstrap和动作记录。原始输入和生成权重在服务器核验，本地未重新加载LPIPS网络。BF旧checkpoint缺失4个未启用pattern_head张量导致跨作业整体哈希差异；已审计其他参数一致、正/零tokens逐位一致且辅助头未调用。各作业生成参数前后不变。','',
         'Slurm已分配累计GPU卡时='+num(resources['total_GPU_card_hours'])+'小时，包含准备后的预检查、Pilot及后续实际分配作业，逐作业状态/退出码/申请资源见统计JSON和slurm_accounting.txt。采集计时和真实部署估计分列，失败重跑资源也保留。','']
     lines+=['- '+v for v in visual['observations']]
+    if recovery:
+        lines+=['','训练分片116858在空sketch内区的RMS特征处失败：fp16将分母下限1e-12舍入为0，产生0/0；原E5前缀有限。提交9583514只将分母下限运算转fp32，非空掩码特征逐位不变。保留67个已完成来源，只续跑剩余61个，不删除失效mask样本、不改变阈值；失败及续跑资源均计入总量。','']
     lines+=['','本实验不支持纹样身份grounding、唯一因果瓶颈或方法新颖性结论。R0可能分布外；未通过门槛不追加FFT或修复器。即使探索性正式评估通过，也只支持后续原型研究，不能消除原Pilot失败和事后继续的限制。FID在128来源规模不报告。','',
         '归档SHA256：`'+download['actual_sha256']+'`。服务器全部产物位于`/share/home/u2515283058/Mymodel/'+str(OUT).replace('\\','/')+'`；三项最终交付只保存本地docs。','']
     (docs/'E43_rgb_utility_report.md').write_text('\n'.join(lines),encoding='utf-8')
