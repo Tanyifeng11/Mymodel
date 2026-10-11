@@ -17,5 +17,7 @@ python -m tools.e39_analyze
 out=output_eval/e39_reference_trajectory_20261011
 sacct -j 116752,116755,116756 -X -P -o JobID,State,ElapsedRaw,AllocTRES,ExitCode,NodeList > "$out/slurm_accounting.txt"
 # 原始 NPZ 全留服务器；本地复核包包含图像、逐项数值、协议和哈希。
+# 先创建排除的归档文件，避免 tar 遍历根目录时目录 mtime 改变。
+touch "$out/e39_review_results.tar.gz"
 tar --exclude='*.npz' --exclude='*.tar.gz' --exclude='*.tar.gz.sha256' -czf "$out/e39_review_results.tar.gz" -C "$out" .
 sha256sum "$out/e39_review_results.tar.gz" > "$out/e39_review_results.tar.gz.sha256"

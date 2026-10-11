@@ -1,6 +1,7 @@
 """按身份汇总 A-G；只生成数据与图，不向服务器写最终 Markdown 报告。"""
 import argparse
 import collections
+import subprocess
 import numpy as np
 from PIL import Image,ImageDraw
 from tools.e39_protocol import *
@@ -118,6 +119,9 @@ def feature_analysis(rows):
 
 
 def analyze():
+    write(OUT/'audit/analysis_code.json',dict(
+        git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        code_sha256={str(p):sha(p) for p in Path('tools').glob('e39_*.py')}))
     rows=read(OUT/'pairs.json')
     assert all((OUT/'cases'/r['id']/'semantics.json').exists() for r in rows)
     assert set(LABELS)=={r['id'] for r in rows}
