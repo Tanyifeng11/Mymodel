@@ -60,6 +60,14 @@ def scores(y, p):
                 per_class_f1=dict(zip(CLASSES, f1.tolist())))
 
 
+def patterned_scores(y, p):
+    indices=[i for i,label in enumerate(y) if label!='solid']
+    result=scores([y[i] for i in indices],[p[i] for i in indices])
+    result['macro_f1']=float(np.mean([result['per_class_f1'][c] for c in CLASSES[:3]])) if indices else None
+    result['averaged_classes']=CLASSES[:3]
+    return result
+
+
 def paired_f1_drop(rows, predictions, variant):
     selected = [r for r in rows if r['id'] in predictions['base'] and r['id'] in predictions[variant]]
     if not selected: return dict(drop=None, ci95=None, source_groups=0)
@@ -118,6 +126,7 @@ def classify(rows, features):
             for variant in VARIANTS:
                 eligible=[r for r in base if r['id'] in predictions[variant]]
                 metrics[variant]=scores([r['pattern'] for r in eligible],[predictions[variant][r['id']] for r in eligible])
+                metrics[variant]['patterned_only']=patterned_scores([r['pattern'] for r in eligible],[predictions[variant][r['id']] for r in eligible])
             results[domain][rep]=dict(metrics=metrics, folds=folds, predictions=predictions,
                 paired_f1_drop={v:paired_f1_drop(base,predictions,v) for v in VARIANTS if v!='base'})
             models[domain][rep]=fitted
