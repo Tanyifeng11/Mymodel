@@ -247,7 +247,8 @@ def generated_tests(models):
 
 
 def reused_tests(models, refs):
-    records=[]; interventions=[]; ref_index={r['id']:r for r in refs if r['variant']=='base'}
+    records=[]; interventions=[]
+    ref_index={r['source_sha256']:r for r in refs if r['variant']=='base' and r['domain']=='real'}
     for row in read(OLD/'pairs.json'):
         folder=OUT/'e39_reuse'/row['id'];audit=read(folder/'audit.json');arms=read(OLD/'cases'/row['id']/'complete.json')['arms']
         features={arm:load(folder/(arm+'_generated.npz')) for arm in arms}
@@ -255,7 +256,7 @@ def reused_tests(models, refs):
             assert sha(OLD/'cases'/row['id']/(arm+'.png'))==audit['original_png_sha256'][arm]
             if arm=='Rzero':continue
             f=features[arm];ref=load(folder/(arm+'_reference.npz'));target=LABELS[row['id']] if arm in ['Rplus','R90'] else None
-            inputrow=ref_index.get('real_'+row['id']);fold=inputrow['fold'] if inputrow else None
+            inputrow=ref_index.get(sha(row['reference']));fold=inputrow['fold'] if inputrow else None
             classifier={rep:probe_record(f,ref,models,rep,'real',target,fold) for rep in REPS} if target in CLASSES else None
             records.append(dict(id=row['id'],arm=arm,target=target,mask_valid=audit['mask_valid'],
                 color_distance=lab_distance(f,ref),distances={rep:distance(f,ref,rep) for rep in REPS[:3]},classifier=classifier))

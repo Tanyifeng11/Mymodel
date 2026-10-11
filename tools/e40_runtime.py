@@ -84,7 +84,9 @@ def run(shard,shards):
     write(OUT/('audit/runtime_%d.json'%shard),dict(job=os.environ.get('SLURM_JOB_ID'),
         git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
         code_sha256={str(p):sha(p) for p in __import__('pathlib').Path('tools').glob('e40_*.py')},
-        device=torch.cuda.get_device_name(),E5_sha256=sha(E5),before=before))
+        device=torch.cuda.get_device_name(),node=os.environ.get('SLURM_JOB_NODELIST'),
+        cpus=os.environ.get('SLURM_CPUS_PER_TASK'),allocated_gpu=os.environ.get('SLURM_GPUS_ON_NODE'),
+        E5_sha256=sha(E5),before=before))
     refs=read(OUT/'references.json')
     for i,r in enumerate(refs[shard::shards]):
         save_features(pipe,Image.open(r['path']),OUT/'features'/('ref_'+r['id']+'_'+r['variant']+'.npz'))
