@@ -14,3 +14,6 @@ cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD" PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 python -m tools.e43_runtime --phase "${E43_PHASE:-precheck}" --shard "${E43_SHARD:-0}" --shards "${E43_SHARDS:-1}"
+if [[ "${E43_PHASE:-precheck}" == validation || "${E43_PHASE:-precheck}" == holdout ]]; then
+  python -m tools.e43_b1 --phase "$E43_PHASE" --shard "${E43_SHARD:-0}" --shards "${E43_SHARDS:-1}"
+fi

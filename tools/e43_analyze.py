@@ -19,6 +19,8 @@ def load(phase):
         for seed in ([42] if phase in ['pilot','train'] else [42,123]):
             p=OUT/phase/'samples'/row['id']/('seed%d'%seed)/'complete.json';assert p.exists(),p
             r=read(p);assert r['group_id']==row['group_id']
+            b1=p.parent/'b1_complete.json'
+            if b1.exists():r['outputs'].append(read(b1)['output'])
             for v in r['outputs']:assert sha(v['output_png'])==v['output_png_sha256']
             for v in r['outputs']:v['metrics'].update(extra.get(v['output_png_sha256'],{}))
             records.append(r)
@@ -191,6 +193,12 @@ def evaluate(phase):
     for kind in policies:
         choose=lambda r,k=kind:policy_arm(r,k,policies,phase)
         report['policies'][kind]=dict(vs_e5=comparison(records,choose),vs_best_fixed=comparison(records,choose,lambda r:best))
+    ours_choose=lambda r:policy_arm(r,'utility',policies,phase)
+    report['simple_controls']={kind:comparison(records,ours_choose,lambda r,k=kind:policy_arm(r,k,policies,phase))
+        for kind in ['time_sketch','token','shuffled']}
+    if all(any(v['arm']=='E36_B1' for v in r['outputs']) for r in records):
+        report['E36_B1']=dict(vs_e5=comparison(records,lambda r:'E36_B1'),
+            policy_vs_B1=comparison(records,ours_choose,lambda r:'E36_B1'),retrained=False)
     oracle=lambda r:min(r['outputs'][:3],key=lambda v:float('inf') if v['metrics']['LPIPS_cloth'] is None else v['metrics']['LPIPS_cloth'])['arm']
     report['oracle_upper_bound_only']=comparison(records,oracle)
     ours=report['policies']['utility'];m=ours['vs_e5']['metrics'];b=ours['vs_best_fixed']['metrics'];reasons=[]

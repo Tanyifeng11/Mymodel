@@ -3,7 +3,7 @@
 #SBATCH -p cpu
 #SBATCH -c 4
 #SBATCH --mem=16G
-#SBATCH -t 00:10:00
+#SBATCH -t 00:30:00
 #SBATCH -o /share/home/u2515283058/Mymodel/output_eval/e43_rgb_utility_20261011/job_%j.log
 #SBATCH -e /share/home/u2515283058/Mymodel/output_eval/e43_rgb_utility_20261011/job_%j.err
 set -eo pipefail
@@ -12,4 +12,7 @@ conda activate Mymodel
 cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD" PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+if [[ "${E43_ANALYZE:-pilot}" == validation || "${E43_ANALYZE:-pilot}" == holdout ]]; then
+  python -m tools.e43_supplementary --phase "$E43_ANALYZE" --device cpu
+fi
 python -m tools.e43_analyze --phase "${E43_ANALYZE:-pilot}"

@@ -126,7 +126,7 @@ class Runner:
         if instrument:
             self.features=[v for k in [0,4,9] for v in self.responses[k]]+self.last_stats+[
                 self.maskinfo['area'],self.maskinfo['boundary'],float(np.asarray(reference.convert('L'),float).std()/255),
-                float(self.tokens.float().norm()),float(self.maskinfo['valid'])]
+                float(self.tokens.float().norm()),float(self.maskinfo['confidence'])]
             assert len(self.features)==14
             record['zero_uncond_tokens_equal']=self.zero_uncond_tokens_equal
         return image,record
@@ -199,7 +199,8 @@ def collect(phase,shard,shards):
             outputs=[dict(arm='alpha1',alpha=1.,effective_alpha=1.,**record)]
             # 特征和mask在任何后缀分支执行前保存；不包含GT或后40步值。
             write(folder/'features.json',dict(values=run.features,mask_valid=run.maskinfo['valid'],feature_steps=[1,5,10],
-                mask_stats=run.maskinfo['stats'],mask_confidence=run.maskinfo['confidence'],group_id=row['group_id']))
+                mask_stats=run.maskinfo['stats'],mask_confidence=run.maskinfo['confidence'],group_id=row['group_id'],
+                feature13='sketch mask confidence; validity separately controls exact fallback'))
             np.save(folder/'reference_token_mean.npy',run.tokens.float().mean(1).cpu().numpy()[0])
             for alpha,arm in [(.65,'low'),(1.35,'high')]:
                 image,r=run.suffix(alpha);image.save(folder/(arm+'.png'));outputs.append(dict(arm=arm,**r))
