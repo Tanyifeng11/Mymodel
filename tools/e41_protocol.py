@@ -1,4 +1,5 @@
 """E41 固定参数、来源分组和160张生成预算。"""
+import argparse
 from itertools import product
 from pathlib import Path
 import numpy as np
@@ -30,6 +31,32 @@ def controlled_records():
             for color in [0,1]:
                 yield dict(id=family+'_p%d_c%d'%(phase_i,color),family=family,fold=phase_i,
                     phase=phase,color=color,shape='ellipse',params=params,domain='controlled')
+
+
+def rotated_reference(path,angle):
+    image=Image.open(path).convert('RGB').resize((256,256))
+    if not angle:return image
+    # 先反射扩展再旋转取中心，避免黑色三角形污染真实参考频谱。
+    expanded=Image.fromarray(np.pad(np.asarray(image),((256,256),(256,256),(0,0)),mode='reflect'))
+    return expanded.rotate(angle,resample=Image.Resampling.BILINEAR).crop((256,256,512,512))
+
+
+def repair_real_rotations():
+    refs=read(OUT/'references.json')
+    assert not any((OUT/'features'/(r['id']+'.npz')).exists() for r in refs if r['domain']=='real')
+    write(OUT/'audit/pre_rotation_repair_references.json',refs)
+    source={('real_'+r['id'].replace('/','_')):r['source'] for r in read(E40/'references.json') if r['domain']=='real' and r['variant']=='base'}
+    changed=0
+    for r in refs:
+        if r['domain']!='real':continue
+        image=rotated_reference(source[r['id'].rsplit('_r',1)[0]],r['rotation'])
+        before=r['sha256'];image.save(r['path']);r['sha256']=sha(r['path']);r['params']=extract(image)
+        changed+=before!=r['sha256']
+    write(OUT/'references.json',refs)
+    protocol=read(OUT/'protocol.json');protocol['real_rotation']='reflect padded rotation, central 256 crop; no black fill';write(OUT/'protocol.json',protocol)
+    write(OUT/'audit/rotation_repair.json',dict(complete=True,changed_views=changed,new_generations=0,
+        reason='Remove artificial black rotation corners before GPU feature extraction; controlled sources and original BF inputs unchanged'))
+    print('E41 REAL ROTATION REPAIRED',changed,flush=True)
 
 
 def calibration():
@@ -65,8 +92,7 @@ def prepare():
     for r in real:
         inputs[r['source']]=sha(r['source'])
         for j,angle in enumerate([0,30,45,90]):
-            image=Image.open(r['source']).convert('RGB').resize((256,256))
-            if angle:image=image.rotate(angle,resample=Image.Resampling.BILINEAR)
+            image=rotated_reference(r['source'],angle)
             path=OUT/'references'/('real_'+r['id'].replace('/','_')+'_r%d.png'%angle);image.save(path)
             refs.append(dict(id=path.stem,path=str(path),sha256=sha(path),family=r['family'],fold=r['fold'],
                 domain='real',params=extract(image),rotation=angle,labels='input extractor pseudo-labels, not independent physical ground truth'))
@@ -106,4 +132,7 @@ def prepare():
     print('E41 PREPARED',len(refs),len(generation),cal['summary'],flush=True)
 
 
-if __name__=='__main__':prepare()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('--repair-real-rotations',action='store_true');args=parser.parse_args()
+    if args.repair_real_rotations:repair_real_rotations()
+    else:prepare()
