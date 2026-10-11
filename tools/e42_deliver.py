@@ -14,6 +14,8 @@ def deliver(root):
     root=Path(root);out=root/OUT;local=out/'local_review';docs=root/'docs'
     a=read(local/'audit.json');c=read(local/'calibration.json');s=read(local/'paired_statistics.json')
     d=read(out/'download_verification.json');assert d['sha256_verified']
+    verification=read(out/'local_audit_verification.json')
+    visual=read(local/'visual_review.json')
     docs.mkdir(exist_ok=True)
     meaning='程序测量校准未通过，停止真实RGB评估。' if s['stop_reason']=='measurement_invalid' else (
         '真实资格来源不足，停止生成端主张。' if s['stop_reason']=='insufficient_support' else '按预注册门槛给出真实RGB重复可观测性判定。')
@@ -44,6 +46,10 @@ def deliver(root):
     for m,r in c.get('heldout',{}).items():
         lines.append(m+'阴性分项：'+str(r['negative_by_type'])+'。')
     lines+=['','FPR以全部已知阴性程序控制为分母；阴性NA单列，不将纯色NA宣称为真实图像可测。阳性NA计入召回损失。']
+    lines+=['','### 校准失败的具体含义','',
+        '开发集联合检出45/54（83.33%），留出集48/54（88.89%）；54张留出阳性至少需检出49张才能达到90%门槛。所有6张漏检均为条纹：条纹12/18（66.67%）、格纹18/18、椭圆18/18。漏检覆盖对比度16、64、160，不仅发生在低对比条件。','',
+        'A单独使用时留出误检8/54（14.81%），B单独使用时误检5/54（9.26%）；联合规则压低误检但未达到预设召回。局部相容性在开发集为17/54（31.48%），留出集21/54（38.89%），不能据此筛出可信的真实A+子集。','',
+        '以上说明本轮检测器及相容性代理尚不足以支撑预注册主张，不说明E5成功或失败。未用这些留出结果改阈值，也未追加实验或重跑校准。完整漏检控制ID及按模板统计见本地 `local_audit_verification.json`。']
     lines+=['','## 全量漏斗及NA','', '| 阶段 | 数量 |','|---|---:|']
     for k,v in s['funnel'].items():lines.append('| '+k+' | '+display(v)+' |')
     lines+=['','掩码/ROI原因：`'+str(a['roi_counts'])+'`。','',
@@ -61,13 +67,16 @@ def deliver(root):
     lines+=['G0='+str(s['G0'])+'；G1='+str(s['G1'])+'；G2='+str(s['G2'])+'。','',
         '## 复核、资源与交付','',
         '程序控制图板为固定前12个控制的正负对（按程序排序均为条纹，不代表全部模板的视觉覆盖；格纹与椭圆的完整数值结果保留在控制JSON）。真实图板仅在进入E5阶段后按原ID排序固定取24条。视觉复核只作说明，不改阈值、不新增标签。复核记录见本地 `visual_review.json`。','',
-        '服务器结果目录：`/share/home/u2515283058/Mymodel/'+str(OUT).replace('\\','/')+'`。作业资源及Slurm环境见audit和随归档下载的资源记录。','',
+        '服务器结果目录：`/share/home/u2515283058/Mymodel/'+str(OUT).replace('\\','/')+'`。作业116813使用CPU4核，申请16GB内存，耗时71秒，COMPLETED、退出码0:0；未记录MaxRSS，不推测峰值内存。Slurm原始记录随归档保存。','',
+        '本地核对：500个原始ID、500个reference哈希、2000个输入路径；阈值锁文件和开发控制哈希一致，锁定事件先于留出校验完成。全部保存的NCC块对互不重叠；按锁定阈值复算的留出混淆计数与服务器一致。无真实RGB测量事件，资格及E5占位CSV均无数据行。','',
+        '两张控制图板均已复核，共48个缩略图。观察到条纹方向及对比变化、单次X图徽、纯色和打乱块；部分图徽接近服装边缘，不能把代理误检单独归因于某个纹样因素。图板不构成独立人工真值。','',
         '归档SHA256已在本地核验：`'+d['actual_sha256']+'`。数据、逐窗口原分数和控制结果保存在本地 `output_eval/e42_real_fabric_repeat_gate_20261011/local_review`；本报告及Go/No-Go仅写本地docs。','',
         '## 结论边界','',
         '只有G0/G1/G2全过才能声称“协议限定的真实R/GT重复子集上，E5最终RGB局部重复覆盖不足”。任何其他状态均不验证这一论文靶点；即使GO也不能推导E5所有纹样失败、密度是主因或内部唯一因果模块。此次不追加诊断轮次、不开始新方法训练。','']
     (docs/'E42_real_repeat_gate_report.md').write_text('\n'.join(lines),encoding='utf-8')
     short=['# E42 Go/No-Go','', '**'+s['status']+'**','',
         '停止原因：'+(s['stop_reason'] or '无')+'。'+meaning,'',
+        '联合检测留出召回48/54=88.89%（门槛90%），误检0/54；其中条纹召回12/18=66.67%。局部相容性留出召回21/54=38.89%。','',
         'G0='+str(s['G0'])+'；G1='+str(s['G1'])+'；G2='+str(s['G2'])+'。','',
         '训练0步、新模型生成0张。未通过门槛时不以重复形成不足作为已验证方法靶点，也不将E41密度探索评分解释为因果结论。','',
         '详情见 [E42_real_repeat_gate_report.md](E42_real_repeat_gate_report.md)。','']
