@@ -4,6 +4,7 @@ import collections
 import numpy as np
 from PIL import Image,ImageDraw
 from tools.e39_protocol import *
+from tools.e39_visual_review import LABELS, COLOR, INPUT_LIMITS
 
 
 def stats(values):
@@ -102,14 +103,14 @@ def feature_analysis(rows):
             probes[layer][mode]=dict(pattern_accuracy=float(correct[valid].mean()) if valid.any() else None,
                 balanced_pattern_accuracy=float(np.mean(balanced)) if balanced else None,classes=classes,class_sources=dict(counts),
                 pattern_views=int(valid.sum()),pattern_sources=int(len(set(groups[valid]))),majority_chance=max([counts[c] for c in classes],default=0)/max(sum(counts[c] for c in classes),1),
-                grouped_identity_folds=True,weak_labels=True,rotation_identity_linear_retrieval=stats(retrieval.astype(float)),
+                grouped_identity_folds=True,single_ai_visual_labels=True,rotation_identity_linear_retrieval=stats(retrieval.astype(float)),
                 retrieval_chance=1/len(items),direction_axial_mae=float(np.mean(errors)) if errors else None,
                 direction_constant_mae=float(np.mean(constant)) if constant else None,direction_views=len(errors),
                 direction_sources=len(set(groups[di])) if len(di) else 0,
                 flat_note='CNN native uses saved 8x8 pool; others full saved flatten')
         del samples[layer]
     write(OUT/'representation_summary.json',dict(sensitivity=sensitivity,linear_probes=probes,
-        limits=['caption labels are weak supervision; low N and correlated original/rotation views',
+        limits=['single AI reference-surface labels, not human ground truth; low N and correlated original/rotation views',
                 'identity retrieval uses original identity as class prototype; tests rotation robustness, not unseen-identity classification',
                 'FFT pseudo labels test direction readout only; not motif ground truth',
                 'representational distance scales cannot be compared directly across dimensions']))
@@ -119,6 +120,12 @@ def feature_analysis(rows):
 def analyze():
     rows=read(OUT/'pairs.json')
     assert all((OUT/'cases'/r['id']/'semantics.json').exists() for r in rows)
+    assert set(LABELS)=={r['id'] for r in rows}
+    write(OUT/'reference_visual_review.json',dict(assessor='single AI, not human or independent validation',
+        label_lock='input contact sheets reviewed before aggregate representation/semantic statistics',
+        rows=[dict(id=r['id'],reference_sha256=sha(r['reference']),surface_label=LABELS[r['id']],
+            caption_pattern=r['pattern'],input_limit=INPUT_LIMITS.get(r['id']),color_review=COLOR.get(r['id'])) for r in rows]))
+    rows=[dict(r,caption_pattern=r['pattern'],pattern=LABELS[r['id']]) for r in rows]
     sensitivity,probes=feature_analysis(rows)
     common=[read(OUT/'cases'/r['id']/'common_trajectory.json') for r in rows]
     trajectory={str(t):{branch:stats([v[i][branch]['relative'] for v in common]) for branch in ['conditional','guided']}
@@ -142,8 +149,14 @@ def analyze():
                   if v['t']==t and v['arm']=='Rplus' and v['branch']=='conditional' and v['kind']=='post_gate_residual']
             attention[str(t)][r['id']]=float(np.mean(vals)) if vals else None
     replay=[read(OUT/'cases'/r['id']/'Rplus_generation.json')['original_e5_png_equal'] for r in rows]
+    verified_effects=[read(OUT/'cases'/r['id']/'semantics.json')['reference_preference_effects'].get('Rcolor',{})
+                     for r in rows if COLOR.get(r['id'],{}).get('verified')]
+    verified_color={key:{measure:stats([e[key][measure] for e in verified_effects if e.get(key)])
+                    for measure in ['donor_gain','donor_vs_original_preference_shift']}
+                    for key in ['clip_texture','tpf_patch','lab_delta','fft_angular_l1','fft_radial_l1','fft_orientation_error']}
     summary=dict(identities=len(rows),steps=50,training_updates=0,
         color_candidates=sum(r['color_valid'] for r in rows),mask_valid=sum(read(OUT/'cases'/r['id']/'semantics.json')['mask_valid'] for r in rows),
+        color_single_ai_verified=sum(v['verified'] for v in COLOR.values()),verified_color_semantics=verified_color,
         original_e5_replay=dict(available=sum(v is not None for v in replay),exact=sum(v is True for v in replay)),
         trajectory_same_latent=trajectory,exact_t_same_latent=exact,latent_to_rgb=final,semantics=semantic,
         attention_residual_norm_fraction={t:stats(list(v.values())) for t,v in attention.items()})
