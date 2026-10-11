@@ -34,7 +34,7 @@ class Runner:
         self.forward=self.p.unet.forward;self.step=self.p.scheduler.step;self.get=self.p.get_image_embeds
         self.calls=0;self.encoder_calls=0
         self.cuda=dict(device=torch.cuda.get_device_name(),slurm_job_id=os.environ.get('SLURM_JOB_ID'),code_commit=commit(),
-            E5_sha256=sha(E5),scheduler=dict(self.p.scheduler.config),frozen_modules=self.before)
+            E5_sha256=sha(E5),scheduler=dict(self.p.scheduler.config),inference_args=vars(self.ns),frozen_modules=self.before)
 
     def call(self,x,t,kw):
         self.calls+=1
@@ -101,7 +101,9 @@ class Runner:
                 self.response(index,eps-self.guided(z,t,zero=True),eps)
             result=self.step(eps,t,z,**kw);v=result[0]
             self.trace.append(tensor_hash(v))
-            if index==9:self.prefix=v.detach().clone()
+            if index==9:
+                self.prefix=v.detach().clone();torch.cuda.synchronize()
+                self.prefix_seconds=time.perf_counter()-started;self.prefix_calls=self.calls
             self.final=v.detach().clone();return result
         sketch=Image.open(row['sketch']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
         reference=Image.open(row['reference']).convert('RGB')
@@ -119,6 +121,7 @@ class Runner:
             self.p.prepare_latents=old_prepare;self.p.get_image_embeds=self.get;self.p.unet.forward=self.forward;self.p.scheduler.step=self.step
         torch.cuda.synchronize()
         record=dict(seconds=time.perf_counter()-started,unet_calls=self.calls,reference_encoder_calls=2 if instrument else 1,
+            prefix_seconds=self.prefix_seconds,prefix_unet_calls=self.prefix_calls,prefix_latent_hash=tensor_hash(self.prefix),
             peak_memory_bytes=torch.cuda.max_memory_allocated(),initial_hash=tensor_hash(self.initial),trajectory_hashes=list(self.trace))
         if instrument:
             self.features=[v for k in [0,4,9] for v in self.responses[k]]+self.last_stats+[
@@ -132,6 +135,7 @@ class Runner:
     def suffix(self,alpha,start=10,unmasked=False,zero_delta=False,force_invalid=False):
         effective=alpha if self.maskinfo['valid'] and not force_invalid else 1.
         z=(self.prefix if start==10 else self.initial).clone();trace=[];before=self.calls
+        branch_start_hash=tensor_hash(z)
         m=torch.ones_like(self.mask) if unmasked else self.mask
         self.p.scheduler.set_timesteps(50,device=self.p.device)
         torch.cuda.synchronize();started=time.perf_counter();torch.cuda.reset_peak_memory_stats()
@@ -143,7 +147,8 @@ class Runner:
         image=(image/2+.5).clamp(0,1).cpu().permute(0,2,3,1).float().numpy();image=self.p.numpy_to_pil(image)[0]
         torch.cuda.synchronize()
         return image,dict(alpha=alpha,effective_alpha=effective,start_step=start+1,unmasked=unmasked,zero_delta=zero_delta,
-            seconds=time.perf_counter()-started,unet_calls=self.calls-before,peak_memory_bytes=torch.cuda.max_memory_allocated(),trajectory_hashes=trace)
+            branch_start_hash=branch_start_hash,seconds=time.perf_counter()-started,unet_calls=self.calls-before,
+            peak_memory_bytes=torch.cuda.max_memory_allocated(),trajectory_hashes=trace)
 
     def frozen(self):
         assert self.hash_modules(self.modules)==self.before,'生成模型参数改变'
@@ -155,9 +160,10 @@ def precheck():
     if path.exists():assert read(path)['passed'];return
     rows=read(OUT/'split_sources.json')['pilot'];run=Runner();folder=OUT/'precheck';folder.mkdir(exist_ok=True)
     checks=[]
-    for row in rows[:2]:
-        original,a=run.baseline(row,42,instrument=False);original.save(folder/(row['id']+'_original.png'))
-        wrapped,b=run.baseline(row,42);wrapped.save(folder/(row['id']+'_alpha1.png'))
+    for index,row in enumerate(rows[:2]):
+        seed=[42,123][index]
+        original,a=run.baseline(row,seed,instrument=False);original.save(folder/(row['id']+'_original.png'))
+        wrapped,b=run.baseline(row,seed);wrapped.save(folder/(row['id']+'_alpha1.png'))
         assert a['trajectory_hashes']==b['trajectory_hashes'] and np.array_equal(np.asarray(original),np.asarray(wrapped))
         assert sha(folder/(row['id']+'_original.png'))==sha(folder/(row['id']+'_alpha1.png'))
         tests=[]
@@ -166,7 +172,7 @@ def precheck():
             assert r['trajectory_hashes']==b['trajectory_hashes'][start:]
             assert np.array_equal(np.asarray(image),np.asarray(wrapped))
             tests.append(dict(r,start=start,invalid_mask=invalid,pass_identical=True))
-        checks.append(dict(id=row['id'],original=a,wrapped=b,tests=tests,full_trajectory_and_png_equal=True))
+        checks.append(dict(id=row['id'],seed=seed,original=a,wrapped=b,tests=tests,full_trajectory_and_png_equal=True))
     from tools.e33tmoc_appearance_eval import frozen_lpips
     metric,info=frozen_lpips();metric.cuda();value=metric_record(folder/(rows[0]['id']+'_alpha1.png'),rows[0],metric)
     write(path,dict(passed=True,checks=checks,metric_smoke=value,lpips_initialization=info,frozen=run.frozen(),**verify_inputs()))
@@ -188,6 +194,8 @@ def collect(phase,shard,shards):
             if (folder/'complete.json').exists():continue
             folder.mkdir(parents=True,exist_ok=True)
             baseline,record=run.baseline(row,seed);baseline.save(folder/'alpha1.png')
+            np.savez_compressed(folder/'common_prefix.npz',initial=run.initial.cpu().numpy(),step10=run.prefix.cpu().numpy(),
+                timesteps=run.p.scheduler.timesteps.cpu().numpy())
             outputs=[dict(arm='alpha1',alpha=1.,effective_alpha=1.,**record)]
             # 特征和mask在任何后缀分支执行前保存；不包含GT或后40步值。
             write(folder/'features.json',dict(values=run.features,mask_valid=run.maskinfo['valid'],feature_steps=[1,5,10],
