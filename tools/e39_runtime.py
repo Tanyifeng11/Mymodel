@@ -1,6 +1,8 @@
 """只读钩子围绕原 E5 推理；同 latent 反事实和自由轨迹分开保存。"""
 import copy
 import hashlib
+import os
+import subprocess
 import time
 from types import MethodType
 import numpy as np
@@ -43,6 +45,9 @@ class Runner:
         F.scaled_dot_product_attention=self.sdpa
         self.install_hooks()
         write(OUT/'audit'/('runtime_shard%d.json'%shard),dict(checkpoint_sha256=sha(E5),
+            git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            code_sha256={str(p):sha(p) for p in Path('tools').glob('e39_*.py')},
+            slurm_job_id=os.environ.get('SLURM_JOB_ID'),node=os.environ.get('SLURMD_NODENAME'),
             scheduler=dict(self.p.scheduler.config),inference_args=vars(self.ns),
             frozen_modules=self.before,device=torch.cuda.get_device_name(),initial_sha256=digest(self.initial),
             processors={k:type(v).__name__ for k,v in self.p.unet.attn_processors.items()}))
@@ -269,7 +274,11 @@ def run(shard,shards,limit=None):
     try:
         for i,row in enumerate(selected):
             folder=OUT/'cases'/row['id'];folder.mkdir(parents=True,exist_ok=True)
-            if (folder/'complete.json').exists():continue
+            if (folder/'complete.json').exists():
+                from tools.e39_semantics import evaluate
+                g.arm='analysis';g.capturing=False
+                if not (folder/'semantics.json').exists():evaluate(g.p,row,folder)
+                continue
             image=Image.open(row['reference']).convert('RGB')
             references=dict(Rplus=image,Rminus=Image.open(row['wrong']['reference']).convert('RGB'),
                 Rzero=Image.new('RGB',image.size),R90=image.transpose(Image.Transpose.ROTATE_90))
@@ -279,6 +288,8 @@ def run(shard,shards,limit=None):
             assert all(torch.equal(runs['Rplus']['negative']['encoder_hidden_states'],r['negative']['encoder_hidden_states']) for r in runs.values())
             g.probes(runs,folder)
             write(folder/'complete.json',dict(id=row['id'],arms=list(runs),training_updates=0,shard=shard))
+            from tools.e39_semantics import evaluate
+            g.arm='analysis';g.capturing=False;evaluate(g.p,row,folder)
             print('E39 CASE COMPLETE',shard,i+1,len(selected),row['id'],flush=True)
             del runs;torch.cuda.empty_cache()
     finally:g.close()
