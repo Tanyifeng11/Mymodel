@@ -209,24 +209,32 @@ def calibrate(rows,geometry):
     return cal
 
 
-def reference_windows(path):
+def reference_windows(path,ensure_two=False):
     with Image.open(path) as im:rgb=np.asarray(im.convert('RGB'))
     h,w=rgb.shape[:2];dx=round(w*.05);dy=round(h*.05)
     rgb=rgb[dy:h-dy,dx:w-dx];mask=np.ones(rgb.shape[:2],bool)
-    rois,_=windows(mask)
+    rois,all_rois=windows(mask)
+    if ensure_two and len(rois)<2:
+        # 纯几何修复：大窗贪心可能阻挡本可放下的两个小窗，不看图像内容。
+        from tools.e42_repeat import overlap
+        for side in sorted(CONFIG['sizes'],reverse=True):
+            selected=[]
+            for q in all_rois:
+                if q[2]==side and not any(overlap(q,r) for r in selected):selected.append(q)
+            if len(selected)>=2:rois=selected;break
     return [measure_window(rgb,q) for q in rois]
 
 
-def observability(rows,geometry,cal):
-    assert cal['pass_calibration']
+def observability(rows,geometry,cal,allow_uncalibrated=False):
+    assert cal['pass_calibration'] or allow_uncalibrated
     t=cal['threshold'];mt=cal['compatibility_threshold'];records=[];details={}
-    event('reference_GT_begin',calibration_sha256=sha(OUT/'calibration.json'))
+    event('reference_GT_begin',calibration_sha256=sha(OUT/'calibration.json'),uncalibrated_override=allow_uncalibrated)
     for i,row in enumerate(rows):
         record=dict(sample_id=row['sample_id'],group_id=row['group_id'],asset_status=row['asset_status'],roi_status=row['roi_status'],modes={})
         if row['asset_status']!='ok' or row['roi_status']!='ok':
             records.append(record);continue
         g=geometry[row['sample_id']];size=tuple(g['size'])
-        rw=reference_windows(row['reference_path'])
+        rw=reference_windows(row['reference_path'],ensure_two=allow_uncalibrated)
         with Image.open(row['gt_path']) as im:rgb=np.asarray(im.convert('RGB').resize(size,Image.Resampling.BILINEAR))
         yw=[measure_window(rgb,q) for q in g['rois']]
         for mode in MODES:
@@ -301,7 +309,7 @@ def bootstrap(records):
         no_repeat=float(values[:,1].mean()),no_repeat_ci95=ci[:,1].tolist())
 
 
-def gate(rows,cal,eligibility=None,results=None):
+def gate(rows,cal,eligibility=None,results=None,exploratory=False):
     audit=read(OUT/'audit.json');funnel=dict(N_total=len(rows),N_assets=sum(r['asset_status']=='ok' for r in rows),
         N_valid_roi=sum(r['asset_status']=='ok' and r['roi_status']=='ok' for r in rows),N_R_repeat=None,N_R_GT_repeat=None,N_Aplus=None)
     stats=dict(funnel=funnel,calibration_pass=cal['pass_calibration'],status='INCONCLUSIVE_MEASUREMENT',
@@ -311,7 +319,7 @@ def gate(rows,cal,eligibility=None,results=None):
         na_reasons=dict(Counter(r['roi_status'] for r in rows if r['roi_status']!='ok')))
     if not audit['protocol_verified']:
         stats.update(stop_reason='protocol_unverified');return stats
-    if not cal['pass_calibration']:return stats
+    if not cal['pass_calibration'] and not exploratory:return stats
     for mode in MODES:
         available=[r['modes'][mode] for r in eligibility if mode in r['modes']]
         a=[r for r in eligibility if r['modes'].get(mode,{}).get('layer') in ['A','A+']]
@@ -333,9 +341,9 @@ def gate(rows,cal,eligibility=None,results=None):
         stats['modes'][mode]=m
     main=stats['modes']['joint'];funnel.update(N_R_repeat=sum(r['modes'].get('joint',{}).get('reference',{}).get('status')=='repeat' for r in eligibility),
         N_R_GT_repeat=main['A_n'],N_Aplus=main['Aplus_n'])
-    stats['G0']=True # 不稳定GT以明确原因排除，主集合只含通过独立ROI复核者。
+    stats['G0']=bool(cal['pass_calibration'])
     stats['G1']=main['Aplus_groups']>=30
-    if not stats['G1']:
+    if not stats['G1'] and not exploratory:
         stats.update(status='INCONCLUSIVE_MEASUREMENT',stop_reason='insufficient_support')
         stats['stages'].update(reference_gt='complete',e5='not_run',statistics='support_gate_complete')
         return stats
@@ -345,6 +353,11 @@ def gate(rows,cal,eligibility=None,results=None):
     stats.update(status='GO_REPEAT_FORMATION_DEFICIT' if stats['G2'] else 'NO_STRONG_REPEAT_FORMATION_DEFICIT',stop_reason='')
     if not direction_ok:stats.update(status='INCONCLUSIVE_MEASUREMENT',stop_reason='proxy_disagreement_or_insufficient_measurement')
     stats['stages'].update(reference_gt='complete',e5='complete',statistics='complete')
+    if exploratory:
+        stats.update(status='EXPLORATORY_UNVALIDATED_MEASUREMENT',stop_reason='user_requested_G0_override',
+            G0=bool(cal['pass_calibration']),go_claim_allowed=False,
+            numerical_thresholds_only=dict(G1=stats['G1'],G2=stats['G2']),
+            limitation='Frozen detector and compatibility calibration failed. Bootstrap describes these proxies; it does not quantify measurement bias or validate a causal bottleneck.')
     return stats
 
 
