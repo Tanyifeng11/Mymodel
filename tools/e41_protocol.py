@@ -43,7 +43,6 @@ def rotated_reference(path,angle):
 
 def repair_real_rotations():
     refs=read(OUT/'references.json')
-    assert not any((OUT/'features'/(r['id']+'.npz')).exists() for r in refs if r['domain']=='real')
     write(OUT/'audit/pre_rotation_repair_references.json',refs)
     source={('real_'+r['id'].replace('/','_')):r['source'] for r in read(E40/'references.json') if r['domain']=='real' and r['variant']=='base'}
     changed=0

@@ -269,10 +269,11 @@ def panels(rows):
 
 def analyze():
     assert sha(E5)==EXPECTED_E5
+    assert read(OUT/'audit/reference_repair_complete.json')['complete']
     assert all(sha(path)==digest for path,digest in read(OUT/'input_hashes.json').items())
     refs=read(OUT/'references.json');rows=read(OUT/'generation.json')
     assert all(sha(r['path'])==r['sha256'] for r in refs)
-    for i in [0,1]:assert read(OUT/'audit'/('frozen_shard%d.json'%i))['unchanged']
+    for i in [0,1,2]:assert read(OUT/'audit'/('frozen_shard%d.json'%i))['unchanged']
     assert len(rows)==160 and all((OUT/'generated'/r['id']/'Rplus.png').exists() for r in rows)
     rep,compression=representation(refs);vae,models=vae_analysis(refs)
     gen=generation_analysis(rows,models);cond=conditioning(rows);real=reused();cal=read(OUT/'calibration.json')
