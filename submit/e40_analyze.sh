@@ -11,10 +11,14 @@ source /share/apps/anaconda3/etc/profile.d/conda.sh
 conda activate Mymodel
 cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD" PYTHONUNBUFFERED=1 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4
-if [ "${E40_REPAIR_COLORS:-0}" = 1 ]; then python -m tools.e40_color_repair; fi
-python -m tools.e40_analyze
 out=output_eval/e40_pattern_identity_20261011
-sacct -j "116775,116776,116777,116778,116779,116780,116781,$SLURM_JOB_ID" -X -P -o JobID,JobName,State,ElapsedRaw,AllocTRES,ExitCode,NodeList > "$out/slurm_accounting.txt"
+if [ "${E40_FINALIZE_ONLY:-0}" = 1 ]; then
+  python -m tools.e40_finalize
+else
+  if [ "${E40_REPAIR_COLORS:-0}" = 1 ]; then python -m tools.e40_color_repair; fi
+  python -m tools.e40_analyze
+  sacct -j "116775,116776,116777,116778,116779,116780,116781,$SLURM_JOB_ID" -X -P -o JobID,JobName,State,ElapsedRaw,AllocTRES,ExitCode,NodeList > "$out/slurm_accounting.txt"
+fi
 touch "$out/e40_review_results.tar.gz"
 tar -czf "$out/e40_review_results.tar.gz" --exclude='*.npz' --exclude='*.tar.gz*' --exclude='job_*' -C "$out" .
 sha256sum "$out/e40_review_results.tar.gz" > "$out/e40_review_results.tar.gz.sha256"
