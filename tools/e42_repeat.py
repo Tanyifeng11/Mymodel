@@ -104,7 +104,7 @@ def candidates(ac,size):
 def pair_similarity(hp,dx,dy):
     """固定栅格、全局不重叠块对；不按块相关性择优采样。"""
     h,w,_=hp.shape;b=max(4,min(12,int(np.hypot(dx,dy)/3)))
-    occupied=[];values=[]
+    occupied=[];values=[];pair_boxes=[]
     for y in range(0,h-b+1,b):
         for x in range(0,w-b+1,b):
             u=x+dx;v=y+dy
@@ -114,7 +114,7 @@ def pair_similarity(hp,dx,dy):
             f=hp[y:y+b,x:x+b].reshape(-1);g=hp[v:v+b,u:u+b].reshape(-1)
             f=f-f.mean();g=g-g.mean();norm=float(np.linalg.norm(f)*np.linalg.norm(g))
             if norm<.02:continue
-            values.append(float(np.dot(f,g)/norm));occupied.extend([a,q])
+            values.append(float(np.dot(f,g)/norm));occupied.extend([a,q]);pair_boxes.append([a,q])
             if len(values)>=CONFIG['pair_limit']:break
         if len(values)>=CONFIG['pair_limit']:break
     # 半周期差排除单色区域的平移一致；不能代替重复块对证据。
@@ -122,7 +122,7 @@ def pair_similarity(hp,dx,dy):
     x0=max(0,-hx);x1=min(w,w-hx);y0=max(0,-hy);y1=min(h,h-hy)
     diff=float(np.sqrt(np.mean((hp[y0:y1,x0:x1]-hp[y0+hy:y1+hy,x0+hx:x1+hx])**2)))
     return dict(ncc=float(np.quantile(values,.25)) if len(values)>=3 else -1.,
-        pair_count=len(values),pair_correlations=values,half_shift_difference=diff)
+        pair_count=len(values),pair_correlations=values,pair_boxes=pair_boxes,half_shift_difference=diff)
 
 
 def signature(hp):

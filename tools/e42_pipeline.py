@@ -155,6 +155,8 @@ def rates(records,t,mode):
     tp=sum(score(r) for r in pos);fp=sum(score(r) for r in neg)
     return dict(positive_n=len(pos),negative_n=len(neg),true_positive=tp,false_positive=fp,
         tpr=tp/len(pos),fpr=fp/len(neg),
+        positive_NA=sum(summarize(r['windows'],t,mode)['status']=='NA' for r in pos),
+        negative_NA=sum(summarize(r['windows'],t,mode)['status']=='NA' for r in neg),
         negative_by_type={k:dict(n=sum(r['family']==k for r in neg),false_positive=sum(score(r) for r in neg if r['family']==k)) for k in sorted({r['family'] for r in neg})})
 
 
