@@ -8,16 +8,19 @@ from PIL import Image,ImageDraw
 from tools.e43_protocol import *
 from tools.e43_metrics import safe_gain
 
-KEYS=['LPIPS_cloth','HP_gray','LAB','IoU','EdgeF1','Leak']
+KEYS=['LPIPS_cloth','HP_gray','LAB','IoU','EdgeF1','Leak','CLIP_real','CLIP_texture']
 
 
 def load(phase):
     records=[];rows=read(OUT/'split_sources.json')[phase]
+    sidecar=OUT/phase/'supplementary_metrics.json'
+    extra=read(sidecar)['values'] if sidecar.exists() else {}
     for row in rows:
         for seed in ([42] if phase in ['pilot','train'] else [42,123]):
             p=OUT/phase/'samples'/row['id']/('seed%d'%seed)/'complete.json';assert p.exists(),p
             r=read(p);assert r['group_id']==row['group_id']
             for v in r['outputs']:assert sha(v['output_png'])==v['output_png_sha256']
+            for v in r['outputs']:v['metrics'].update(extra.get(v['output_png_sha256'],{}))
             records.append(r)
     return records
 
@@ -38,7 +41,7 @@ def comparison(records,choose,base_choose=lambda r:'alpha1'):
         arms={q['arm']:q for q in r['outputs']};name=choose(r);v=arms[name]['metrics'];base=arms[base_choose(r)]['metrics']
         selected.append(name)
         for k in KEYS:
-            d=v[k]-base[k] if v[k] is not None and base[k] is not None else None;values[k].append((r['group_id'],d))
+            d=v[k]-base[k] if v.get(k) is not None and base.get(k) is not None else None;values[k].append((r['group_id'],d))
         if v['IoU'] is not None and base['IoU'] is not None:tail.append(v['IoU']-base['IoU'])
         g=safe_gain(base,v)
         if g is not None and g['catastrophic']:fail.append(dict(id=r['id'],seed=r['seed'],arm=name,metrics=v,base=base))
@@ -112,7 +115,7 @@ def dataset(records):
 
 
 def fit():
-    assert read(OUT/'pilot/decision.json')['pass_stage']
+    assert pilot_permission()
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.linear_model import Ridge
@@ -137,7 +140,10 @@ def fit():
             if kind=='shuffled':target=target[np.random.default_rng(43042+fold).permutation(len(tr))]
             mods=models()
             for j,m in enumerate(mods):m.fit(a,target[:,j]);predicted[te,j]=m.predict(b)
-            folds.append(dict(fold=fold,train_groups=len(tr),validation_groups=len(te),train_only_standardization=True))
+            train_ids=[keep[i]['group_id'] for i in tr];test_ids=[keep[i]['group_id'] for i in te]
+            assert not set(train_ids)&set(test_ids)
+            folds.append(dict(fold=fold,train_groups=len(tr),validation_groups=len(te),train_only_standardization=True,
+                train_group_ids=train_ids,validation_group_ids=test_ids))
         if kind=='token':a,pca=matrix(kind,x,tokens,training=True)
         else:a=matrix(kind,x,tokens);pca=None
         target=y.copy()
@@ -146,11 +152,17 @@ def fit():
         for j,m in enumerate(mods):m.fit(a,target[:,j])
         saved[kind]=dict(models=mods,pca=pca)
         action=np.where(predicted.max(1)>.005,predicted.argmax(1)+1,0);actual=np.where(action>0,y[np.arange(len(y)),np.maximum(action-1,0)],0.)
+        arms={r['group_id']:['alpha1','low','high'][int(a)] for r,a in zip(keep,action)}
         oof_report[kind]=dict(mse=float(np.mean((predicted-y)**2)),actual_utility_mean=float(actual.mean()),
-            choices=dict(Counter(action.tolist())),oracle_utility_mean=float(np.maximum(0,y.max(1)).mean()),folds=folds)
+            choices=dict(Counter(action.tolist())),oracle_utility_mean=float(np.maximum(0,y.max(1)).mean()),folds=folds,
+            oracle_minus_actual_utility=float(np.maximum(0,y.max(1)).mean()-actual.mean()),
+            actual_oof_vs_e5=comparison(keep,lambda r:arms[r['group_id']]),
+            fixed_low_vs_e5=comparison(keep,lambda r:'low'),fixed_high_vs_e5=comparison(keep,lambda r:'high'))
     with (OUT/'policy.pkl').open('wb') as f:pickle.dump(saved,f)
     write(OUT/'train/oof.json',dict(n_train_measurable=len(keep),fixed_train_n=len(records),threshold=.005,results=oof_report,
         GT_used_only_for_training_supervision=True,source_disjoint=True))
+    state=read(OUT/'state.json');state.update(train='complete',policy_fit='complete',stage='validation_ready',complete=False)
+    write(OUT/'state.json',state)
     dump_csv('train',records);print('E43 RIDGE FIT',len(keep),oof_report,flush=True)
 
 
@@ -169,10 +181,13 @@ def evaluate(phase):
     with (OUT/'policy.pkl').open('rb') as f:policies=pickle.load(f)
     fixed={a:comparison(records,lambda r,arm=a:arm) for a in ['alpha1','low','high']}
     if phase=='validation':
-        best=min(fixed,key=lambda a:fixed[a]['metrics']['LPIPS_cloth']['mean'])
+        best=min(fixed,key=lambda a:float('inf') if fixed[a]['metrics']['LPIPS_cloth']['mean'] is None else fixed[a]['metrics']['LPIPS_cloth']['mean'])
         write(OUT/'best_fixed_val.json',dict(arm=best,policy_sha256=sha(OUT/'policy.pkl'),threshold=.005,threshold_adjusted=False))
     else:best=read(OUT/'best_fixed_val.json')['arm']
-    report=dict(fixed=fixed,best_fixed_val=best,policies={})
+    report=dict(fixed=fixed,best_fixed_val=best,policies={},
+        exploratory_continuation=(OUT/'exploratory_continuation.json').exists(),
+        original_pilot_status=read(OUT/'pilot/decision.json')['status'],
+        preregistered_pipeline_pass=read(OUT/'pilot/decision.json')['pass_stage'])
     for kind in policies:
         choose=lambda r,k=kind:policy_arm(r,k,policies,phase)
         report['policies'][kind]=dict(vs_e5=comparison(records,choose),vs_best_fixed=comparison(records,choose,lambda r:best))
@@ -195,6 +210,8 @@ def evaluate(phase):
         if ours['vs_e5']['catastrophic_flags']:reasons.append('catastrophic_structure_flags')
         if phase=='holdout' and any(v['LPIPS_cloth']['mean'] is None or v['LPIPS_cloth']['mean']>=0 for v in ours['vs_e5']['per_seed'].values()):reasons.append('seed_direction_unstable')
     report.update(pass_stage=not reasons,status=('PASS_VALIDATION' if phase=='validation' else 'GO_PROTOTYPE_ONLY') if not reasons else ('INCONCLUSIVE' if not sufficient else 'NO_GO'),reasons=reasons,**verify_inputs())
+    if phase=='holdout' and not reasons and report['exploratory_continuation']:
+        report['status']='EXPLORATORY_PASS_HOLDOUT'
     write(OUT/phase/'decision.json',report);dump_csv(phase,records);sheets(phase,records)
     state=read(OUT/'state.json');state.update(stage='holdout_ready' if phase=='validation' and not reasons else 'finished_'+phase,
         complete=bool(reasons or phase=='holdout'));state[phase]='complete';write(OUT/'state.json',state)
@@ -202,7 +219,8 @@ def evaluate(phase):
 
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--phase',choices=['pilot','fit','validation','holdout'],required=True);a=p.parse_args()
-    if a.phase=='pilot':pilot()
+    p=argparse.ArgumentParser();p.add_argument('--phase',choices=['continue','pilot','fit','validation','holdout'],required=True);a=p.parse_args()
+    if a.phase=='continue':authorize_continuation()
+    elif a.phase=='pilot':pilot()
     elif a.phase=='fit':fit()
     else:evaluate(a.phase)

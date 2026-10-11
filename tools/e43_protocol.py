@@ -97,4 +97,31 @@ def verify_inputs():
     return dict(input_hashes_unchanged=True,n_input_files=len(hashes))
 
 
-if __name__=='__main__':prepare()
+def pilot_permission():
+    if read(OUT/'pilot/decision.json')['pass_stage']:
+        return True
+    path=OUT/'exploratory_continuation.json'
+    return path.exists() and read(path).get('skip_gate')=='pilot_only'
+
+
+def authorize_continuation():
+    """用户明确要求继续；只另记Pilot例外，保留原协议和NO_GO文件。"""
+    assert read(OUT/'preflight.json')['passed']
+    decision=read(OUT/'pilot/decision.json')
+    path=OUT/'exploratory_continuation.json'
+    if not path.exists():
+        write(path,dict(authorization='用户：继续完成后续的实验',skip_gate='pilot_only',
+            original_pilot_status=decision['status'],original_pilot_decision_sha256=sha(OUT/'pilot/decision.json'),
+            locked_protocol_sha256=sha(OUT/'locked_protocol.json'),code_commit=commit(),
+            interpretation='post-Pilot exploratory continuation; original preregistered pipeline remains NO_GO',
+            unchanged=['source lists','budgets','generation settings','Ridge settings','validation gate','holdout gate']))
+    state=read(OUT/'state.json');state.update(stage='train_ready_exploratory',complete=False,
+        exploratory_continuation=True,original_pilot_status=decision['status'])
+    write(OUT/'state.json',state)
+    print('E43 EXPLORATORY CONTINUATION AUTHORIZED; original Pilot',decision['status'],flush=True)
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('--continue-exploratory',action='store_true');args=parser.parse_args()
+    if args.continue_exploratory:authorize_continuation()
+    else:prepare()

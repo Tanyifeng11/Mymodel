@@ -181,7 +181,7 @@ def precheck():
 
 def collect(phase,shard,shards):
     assert read(OUT/'preflight.json')['passed']
-    if phase=='train':assert read(OUT/'pilot/decision.json')['pass_stage']
+    if phase=='train':assert pilot_permission(),'Pilot未通过且无用户继续授权'
     if phase=='validation':assert (OUT/'policy.pkl').exists()
     if phase=='holdout':assert read(OUT/'validation/decision.json')['pass_stage']
     from tools.e33tmoc_appearance_eval import frozen_lpips
