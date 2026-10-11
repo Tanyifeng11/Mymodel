@@ -10,6 +10,9 @@ def number(v):
 
 def deliver(root):
     root=Path(root);out=root/OUT;review=out/'local_review';docs=root/'docs'
+    if (review/'exploratory_continuation.json').exists():
+        from tools.e43_deliver_later import deliver as deliver_later
+        return deliver_later(root)
     download=read(out/'download_verification.json');assert download['sha256_verified']
     config=read(review/'locked_protocol.json');state=read(review/'state.json');preflight=read(review/'preflight.json');assert preflight['passed']
     verification=read(out/'local_verification.json');assert verification['passed']

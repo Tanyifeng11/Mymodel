@@ -52,6 +52,35 @@ def comparison(records,choose,base_choose=lambda r:'alpha1'):
         per_seed={str(s):{k:bootstrap([(g,d) for (g,d),r in zip(v,records) if r['seed']==s]) for k,v in values.items()} for s in sorted({r['seed'] for r in records})})
 
 
+def efficiency(records,choose):
+    calls=[];seconds=[];collected_calls=0;collected_seconds=0.;peak=0
+    for r in records:
+        arms={v['arm']:v for v in r['outputs']};base=arms['alpha1'];selected=arms[choose(r)]
+        calls.append(base['unet_calls'] if selected['arm']=='alpha1' else base['prefix_unet_calls']+selected['unet_calls'])
+        seconds.append(base['seconds'] if selected['arm']=='alpha1' else base['prefix_seconds']+selected['seconds'])
+        for value in r['outputs']:
+            collected_calls+=value['unet_calls'];collected_seconds+=value['seconds'];peak=max(peak,value['peak_memory_bytes'])
+    return dict(policy_unet_calls_mean=float(np.mean(calls)),original_E5_unet_calls=100,
+        policy_seconds_composed_mean=float(np.mean(seconds)),seconds_are_independent_deployment_measurement=False,
+        note='共同前缀与所选后缀的录制时间组合估计，未含CPU Ridge和特征文件IO；采集三分支成本另列',
+        collection_unet_calls=collected_calls,collection_recorded_generation_seconds=collected_seconds,peak_memory_bytes=peak)
+
+
+def source_directions(phase,records,choose):
+    # caption类别仅作描述性分层，不当作人工服装/纹样真值，也不用于控制器决策。
+    import re
+    rows={r['id']:r for r in read(OUT/'split_sources.json')[phase]}
+    groups={'caption_clothing':{},'reference_path_parent':{}}
+    words=['dress','skirt','trousers','pants','jeans','shorts','jacket','coat','sweater','blouse','shirt','top']
+    for r in records:
+        row=rows[r['id']];caption=row['caption'].lower()
+        kind=next((w for w in words if re.search(r'\b'+w+r's?\b',caption)),'unclassified')
+        for axis,key in [('caption_clothing',kind),('reference_path_parent',str(Path(row['reference']).parent))]:
+            groups[axis].setdefault(key,[]).append(r)
+    return dict(label_status='caption/path-derived descriptive groups; not verified semantic labels',
+        strata={axis:{key:comparison(values,choose) for key,values in strata.items()} for axis,strata in groups.items()})
+
+
 def sheets(phase,records):
     rows={r['id']:r for r in read(OUT/'split_sources.json')[phase]};dest=OUT/phase/'contact_sheets';dest.mkdir(exist_ok=True)
     for i in range(0,len(records),6):
@@ -159,13 +188,15 @@ def fit():
             choices=dict(Counter(action.tolist())),oracle_utility_mean=float(np.maximum(0,y.max(1)).mean()),folds=folds,
             oracle_minus_actual_utility=float(np.maximum(0,y.max(1)).mean()-actual.mean()),
             actual_oof_vs_e5=comparison(keep,lambda r:arms[r['group_id']]),
-            fixed_low_vs_e5=comparison(keep,lambda r:'low'),fixed_high_vs_e5=comparison(keep,lambda r:'high'))
+            fixed_low_vs_e5=comparison(keep,lambda r:'low'),fixed_high_vs_e5=comparison(keep,lambda r:'high'),
+            rows=[dict(id=r['id'],group_id=r['group_id'],predicted_utility=p.tolist(),actual_utility=t.tolist(),
+                chosen_arm=arms[r['group_id']]) for r,p,t in zip(keep,predicted,y)])
     with (OUT/'policy.pkl').open('wb') as f:pickle.dump(saved,f)
     write(OUT/'train/oof.json',dict(n_train_measurable=len(keep),fixed_train_n=len(records),threshold=.005,results=oof_report,
         GT_used_only_for_training_supervision=True,source_disjoint=True))
     state=read(OUT/'state.json');state.update(train='complete',policy_fit='complete',stage='validation_ready',complete=False)
     write(OUT/'state.json',state)
-    dump_csv('train',records);print('E43 RIDGE FIT',len(keep),oof_report,flush=True)
+    dump_csv('train',records);sheets('train',records);print('E43 RIDGE FIT',len(keep),flush=True)
 
 
 def policy_arm(r,kind,policies,phase):
@@ -193,7 +224,13 @@ def evaluate(phase):
     for kind in policies:
         choose=lambda r,k=kind:policy_arm(r,k,policies,phase)
         report['policies'][kind]=dict(vs_e5=comparison(records,choose),vs_best_fixed=comparison(records,choose,lambda r:best))
+    write(OUT/phase/'selected_actions.json',dict(policy_sha256=sha(OUT/'policy.pkl'),threshold=.005,
+        actions={kind:[dict(id=r['id'],seed=r['seed'],arm=policy_arm(r,kind,policies,phase),
+            features_sha256=sha(OUT/phase/'samples'/r['id']/('seed%d'%r['seed'])/'features.json'))
+            for r in records] for kind in policies},GT_read_for_decision=False))
     ours_choose=lambda r:policy_arm(r,'utility',policies,phase)
+    report['efficiency']=efficiency(records,ours_choose)
+    report['source_directions']=source_directions(phase,records,ours_choose)
     report['simple_controls']={kind:comparison(records,ours_choose,lambda r,k=kind:policy_arm(r,k,policies,phase))
         for kind in ['time_sketch','token','shuffled']}
     if all(any(v['arm']=='E36_B1' for v in r['outputs']) for r in records):
