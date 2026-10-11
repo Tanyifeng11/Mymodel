@@ -106,7 +106,7 @@ def deliver(root):
     for name,ci in d['bottleneck']['exploratory_top_difference_ci95'].items():
         lines.append('| '+name+' | '+', '.join(fmt(v) for v in ci)+' |')
     visual=d.get('visual_review',{})
-    lines+=['', '以下为单AI视觉复核，非独立人工真值。']
+    lines+=['', '以下为单AI视觉复核，非独立人工真值。', '']
     lines+=['- '+s for s in visual.get('observations',[])]
     lines+=['', '## 计算资源与版本审计', '', '| 作业 | 任务 | 状态 | 实际秒数 | CPU核数 | GPU数 |', '|---|---|---|---:|---:|---:|']
     for job in audit.get('jobs',[]):
@@ -124,7 +124,7 @@ def deliver(root):
         '受控提取器校准结果、编码器到token的配对可读性变化、同latent条件响应及七点图像域轨迹已经记录。', '',
         '存在编码器到token误差上升证据的属性：'+('、'.join(supported) if supported else '无明确检出')+'。', '',
         '综合瓶颈分的探索性排序：'+(' > '.join(rank) if rank else 'NA')+'；该分包含epsilon响应代理与未经生成域校准的图像描述符，不能当作唯一因果瓶颈。', '',
-        '密度在全部五组权重下均位列探索评分首位，但89个最终密度代理估计超过1；该排序不能当作物理占位率丢失的结论。四属性最终token仍均可读，表示压缩不足以解释全部失败。', '',
+        '密度在全部五组权重下均位列探索评分首位，但89个最终密度代理估计超过1；该排序不能当作物理占位率丢失的结论。受控域四属性最终token仍均可读；仅凭该读出不能判断表示压缩是否足以解释全部迁移失败。', '',
         '真实参考的最终token主读出四属性均未通过有效性门槛。真实纹样的物理尺度、独立生成图属性标签，以及masked garment latent读出的有效性仍未验证。下一步应先在14个有效载体上用独立标注/单元定位校准生成域测量，再决定是否针对某属性/阶段改模型。', '',
         '文档Stop条件“四属性均无明显衰减但纹样错误”目前无法被严格确认，也没有据此否定整个方向。当前状态：`'+d['bottleneck']['status']+'`。', '']
     (docs/'E41_go_no_go.md').write_text('\n'.join(go),encoding='utf-8')
