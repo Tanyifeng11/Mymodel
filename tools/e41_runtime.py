@@ -69,6 +69,7 @@ class Runner(previous.Runner):
     @torch.inference_mode()
     def trajectory(self,row,folder,archive):
         mask,valid,mask_info=eval_mask(row,(384,512));records=[];arrays={}
+        canonical_mask=cv2.resize(mask.astype('uint8'),(256,256),interpolation=cv2.INTER_NEAREST)>0 if valid else None
         if mask is not None:Image.fromarray((mask*255).astype('uint8')).save(folder/'evaluation_mask.png')
         for t in TIMES:
             idx=int(np.where(archive['timesteps']==t)[0][0])
@@ -78,7 +79,7 @@ class Runner(previous.Runner):
             x0=(z-(1-alpha).sqrt()*eps)/alpha.sqrt()
             image,saturation=self.decode(x0)
             path=folder/('pred_x0_t%d.png'%t);image.save(path)
-            metrics=extract(image,mask) if valid else {a:None for a in ATTRS}
+            metrics=extract(image.resize((256,256),Image.Resampling.BILINEAR),canonical_mask) if valid else {a:None for a in ATTRS}
             lm=cv2.resize(mask.astype('uint8'),(48,64),interpolation=cv2.INTER_NEAREST)>0 if valid else None
             latent=x0.detach().cpu().numpy()
             if lm is not None:latent=latent*lm[None,None]
@@ -86,9 +87,9 @@ class Runner(previous.Runner):
             arrays['z_t%d'%t]=z.cpu().numpy().astype(np.float16)
             arrays['readout_t%d'%t]=latent_readout(latent)
             records.append(dict(t=t,attributes=metrics,saturated_fraction=saturation,path=str(path),mask_valid=valid))
-        final=extract(Image.open(folder/'Rplus.png'),mask) if valid else {a:None for a in ATTRS}
+        final=extract(Image.open(folder/'Rplus.png').resize((256,256),Image.Resampling.BILINEAR),canonical_mask) if valid else {a:None for a in ATTRS}
         write(folder/'attributes.json',dict(reference=extract(Image.open(row['reference'])),trajectory=records,final=final,
-            mask_valid=valid,mask_stats=mask_info,labels='generated attributes are uncalibrated-domain proxies'))
+            mask_valid=valid,mask_stats=mask_info,coordinate='all RGB measurements mapped to 256x256; image coordinates only, no physical fabric scale',labels='generated attributes are uncalibrated-domain proxies'))
         np.savez_compressed(folder/'seven_latents.npz',**arrays)
 
     @torch.inference_mode()
@@ -127,13 +128,14 @@ class Runner(previous.Runner):
 
     @torch.inference_mode()
     def vae_standard(self,row,path):
-        image=render(row['params'],row['phase'],row['color'],size=512).crop((0,0,384,512))
-        pixels=to_tensor(image)[None].to(self.p.device,self.p.vae.dtype)*2-1
+        image=render(row['params'],row['phase'],row['color'])
+        input_image=image.resize((384,512),Image.Resampling.BILINEAR)
+        pixels=to_tensor(input_image)[None].to(self.p.device,self.p.vae.dtype)*2-1
         latent=self.p.vae.encode(pixels).latent_dist.mean*self.p.vae.config.scaling_factor
         decoded,saturation=self.decode(latent)
         np.savez_compressed(path,readout=latent_readout(latent.cpu().numpy()))
         write(path.with_suffix('.json'),dict(id=row['id'],params=row['params'],family=row['family'],fold=row['fold'],
-            reference=extract(image),roundtrip=extract(decoded),saturation=saturation,
+            reference=extract(image),roundtrip=extract(decoded.resize((256,256),Image.Resampling.BILINEAR)),saturation=saturation,
             scope='VAE encoded full-field procedural standard; generated garment latents have domain shift'))
 
 
