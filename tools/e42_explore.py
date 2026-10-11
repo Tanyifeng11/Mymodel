@@ -1,5 +1,6 @@
 """用户明确跳过G0后执行的探索性后续；不得把旧calibration改为通过。"""
 import os
+import argparse
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,9 +11,11 @@ from tools.e42_repeat import OUT as BASE,read,write,sha
 OUT=BASE/'exploratory_override_20261011'
 
 
-def run():
+def run(resume=False):
     cv2.setNumThreads(1)
     OUT.mkdir(parents=True,exist_ok=True)
+    if resume:
+        return resume_after_eligibility()
     assert not (OUT/'override_protocol.json').exists(),'探索性批次已有记录，禁止覆盖或重复提交'
     names=['manifest.csv','manifest_records.json','geometry.json','input_hashes.json','calibration.json','detector_lock.json','audit.json']
     base_hashes={str(BASE/n):sha(BASE/n) for n in names}
@@ -34,6 +37,22 @@ def run():
     p.event('user_override_locked',protocol_sha256=sha(OUT/'override_protocol.json'),calibration_pass=False)
     assert all(sha(path)==digest for path,digest in read(OUT/'input_hashes.json').items())
     eligibility,details=p.observability(rows,geometry,cal,allow_uncalibrated=True)
+    finish(rows,geometry,cal,eligibility,details,protocol,base_hashes)
+
+
+def resume_after_eligibility():
+    assert not (OUT/'paired_statistics.json').exists(),'已经完成，不能重复运行'
+    lock=read(OUT/'eligibility_lock.json');protocol=read(OUT/'override_protocol.json')
+    for file,key in [('eligibility_records.json','eligibility_sha256'),('reference_gt_windows.json','reference_gt_windows_sha256'),('calibration.json','calibration_sha256')]:
+        assert sha(OUT/file)==lock[key],file+' 锁定哈希不符'
+    assert sha(OUT/'geometry.json')==protocol['original_file_hashes'][str(BASE/'geometry.json')]
+    p.OUT=OUT
+    p.event('eligibility_checkpoint_resume',job_id=os.environ.get('SLURM_JOB_ID'),code_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip())
+    finish(read(OUT/'manifest_records.json'),read(OUT/'geometry.json'),read(OUT/'calibration.json'),
+        read(OUT/'eligibility_records.json'),read(OUT/'reference_gt_windows.json'),protocol,protocol['original_file_hashes'])
+
+
+def finish(rows,geometry,cal,eligibility,details,protocol,base_hashes):
     results=p.evaluate_e5(rows,geometry,cal,eligibility,details)
     stats=p.gate(rows,cal,eligibility,results,exploratory=True)
     p.contact_sheets(rows,eligibility,geometry)
@@ -41,7 +60,8 @@ def run():
     write(OUT/'paired_statistics.json',stats)
     audit=read(OUT/'audit.json');audit.update(original_job=audit['slurm'].get('SLURM_JOB_ID'),
         slurm={k:v for k,v in os.environ.items() if k.startswith('SLURM_')},started=protocol['created'],finished=p.now(),
-        code_commit=protocol['code_commit'],status=stats['status'],stage_status=stats['stages'],
+        code_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),status=stats['status'],stage_status=stats['stages'],
+        jobs_seen=sorted({path.stem.replace('job_','') for path in OUT.glob('job_*.log')}),
         G0_bypassed_by_user=True,calibration_pass=False,base_file_hashes_unchanged=all(sha(path)==h for path,h in base_hashes.items()),
         input_hashes_unchanged=all(sha(path)==h for path,h in read(OUT/'input_hashes.json').items()))
     assert audit['base_file_hashes_unchanged'] and audit['input_hashes_unchanged']
@@ -49,4 +69,5 @@ def run():
     p.event('exploratory_complete',status=stats['status'],funnel=stats['funnel'])
 
 
-if __name__=='__main__':run()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('--resume',action='store_true');run(parser.parse_args().resume)

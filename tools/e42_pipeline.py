@@ -33,8 +33,9 @@ def csv_write(path,rows,fields=None):
 
 
 def event(stage,**values):
+    payload=dict(values);payload.setdefault('time',now());payload['stage']=stage
     with (OUT/'events.jsonl').open('a',encoding='utf-8') as f:
-        f.write(__import__('json').dumps(dict(time=now(),stage=stage,**values),ensure_ascii=False)+'\n')
+        f.write(__import__('json').dumps(payload,ensure_ascii=False)+'\n')
     print(stage,values,flush=True)
 
 
