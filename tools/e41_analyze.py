@@ -150,7 +150,20 @@ def generation_analysis(rows,models):
             if early and late and early['error'] is not None and late['error'] is not None:
                 pairs.append(late['error']-early['error']);groups.append(r['carrier'])
         change[a]=stats(pairs,groups)
+    intervention_matrix={}
+    lookup={(r['carrier'],r['condition'],r['attribute']):r for r in records if r['t']=='RGB'}
+    for changed in ATTRS:
+        intervention_matrix[changed]={}
+        selected=[r for r in rows if r['attribute']==changed]
+        for measured in ATTRS:
+            values=[];groups=[];inputs={}
+            for r in selected:
+                base=lookup[(r['carrier'],'base',measured)];other=lookup[(r['carrier'],r['condition'],measured)]
+                values.append(error(other['generated'],base['generated'],measured));groups.append(r['carrier'])
+                inputs[r['condition']]=error(other['reference'],base['reference'],measured)
+            intervention_matrix[changed][measured]=dict(output_change=stats(values,groups),measured_input_change_by_condition=inputs)
     return dict(records=records,summary=summary,latent_proxy_records=latent_records,late_minus_early_error=change,
+        intervention_matrix=intervention_matrix,
         new_images=160,valid_masks=sum(read(OUT/'generated'/r['id']/'attributes.json')['mask_valid'] for r in rows),
         trajectory_note='guided predicted x0 decoded using original VAE; all RGB measurements mapped to common256 square coordinates; group bootstrap carriers',
         decoder_attribution='unverified: latent readout has unvalidated garment domain transfer')
@@ -265,6 +278,28 @@ def panels(rows):
             canvas.paste(Image.open(OUT/'generated'/r['id']/'Rplus.png').resize((150,200)),(i*154,262))
             draw.text((i*154+2,3),r['condition'][:22],fill='black')
         canvas.save(folder/('generated_'+carrier+'.jpg'))
+        baseline=next(r for r in selected if r['condition']=='base');source=OUT/'generated'/baseline['id']
+        canvas=Image.new('RGB',(8*154,230),'white');draw=ImageDraw.Draw(canvas)
+        for i,t in enumerate(TIMES+['RGB']):
+            path=source/('Rplus.png' if t=='RGB' else 'pred_x0_t%d.png'%t)
+            canvas.paste(Image.open(path).resize((150,200)),(i*154,24));draw.text((i*154+3,3),str(t),fill='black')
+        canvas.save(folder/('trajectory_'+carrier+'.jpg'))
+
+
+def plots(gen,cond):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig,axes=plt.subplots(2,2,figsize=(11,7))
+    for ax,a in zip(axes.ravel(),ATTRS):
+        values=[gen['summary'][a][str(t)] for t in TIMES+['RGB']]
+        means=[v['mean'] if v['mean'] is not None else np.nan for v in values]
+        ax.plot(range(8),means,'o-',color='#24446a')
+        lo=[v['ci95'][0] if v['ci95'] else np.nan for v in values];hi=[v['ci95'][1] if v['ci95'] else np.nan for v in values]
+        ax.fill_between(range(8),lo,hi,alpha=.18,color='#24446a')
+        ax.set(title=a+' (image proxy)',xticks=range(8),xticklabels=list(map(str,TIMES))+['RGB'],ylabel='MAE (degrees / abs log ratio / fraction)')
+        ax.grid(axis='y',alpha=.2)
+    fig.tight_layout();fig.savefig(OUT/'review/attribute_trajectory.png',dpi=160);plt.close(fig)
 
 
 def analyze():
@@ -283,7 +318,7 @@ def analyze():
         audit=dict(input_files_unchanged=len(read(OUT/'input_hashes.json')),reference_views_unchanged=len(refs),
             checkpoint_unchanged=True,generation_updates=0,new_images=160,
             analysis_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()))
-    write(OUT/'E41_attribute_trajectory.json',result);panels(rows)
+    write(OUT/'E41_attribute_trajectory.json',result);panels(rows);plots(gen,cond)
     flat=[]
     for a,stages in gen['summary'].items():
         for t,s in stages.items():flat.append(dict(attribute=a,timestep=t,**s))
