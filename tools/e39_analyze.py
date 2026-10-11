@@ -152,7 +152,8 @@ def analyze():
     write(OUT/'audit/inputs_unchanged.json',dict(unchanged=True,files=len(frozen)))
     panels(rows);plots(summary,sensitivity,probes)
     write(OUT/'artifact_hashes.json',{str(p.relative_to(OUT)):sha(p) for p in sorted(OUT.rglob('*'))
-        if p.is_file() and p.name not in ['artifact_hashes.json','e39_review_results.tar.gz']})
+        if p.is_file() and p.name!='artifact_hashes.json' and not p.name.startswith('job_')
+        and '.tar.gz' not in p.name})
     print('E39 ANALYSIS COMPLETE',len(rows),flush=True)
 
 
