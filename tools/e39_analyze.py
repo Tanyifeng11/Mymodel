@@ -174,12 +174,18 @@ def panels(rows):
     folder=OUT/'panels';folder.mkdir(exist_ok=True)
     for i,r in enumerate(rows):
         case=OUT/'cases'/r['id'];arms=read(case/'complete.json')['arms']
-        canvas=Image.new('RGB',(160*(2+len(arms)),248),'white');draw=ImageDraw.Draw(canvas)
-        views=[('Sketch',r['sketch']),('Reference',r['reference'])]+[(a,case/(a+'.png')) for a in arms]
-        for j,(label,path) in enumerate(views):
-            canvas.paste(Image.open(path).convert('RGB').resize((160,216)),(160*j,32))
-            draw.text((160*j+3,4),label,fill='black')
-        draw.text((3,19),r['id'],fill='black');canvas.save(folder/('%02d_%s.png'%(i,r['id'])))
+        canvas=Image.new('RGB',(160*(1+len(arms)),500),'white');draw=ImageDraw.Draw(canvas)
+        canvas.paste(Image.open(r['sketch']).convert('RGB').resize((160,216)),(0,32))
+        draw.text((3,4),'Sketch '+r['id'],fill='black')
+        draw.text((3,264),'Top: input reference',fill='black')
+        draw.text((3,284),'Bottom: generated RGB',fill='black')
+        draw.text((3,304),'Rzero: zero tensors',fill='black')
+        for j,arm in enumerate(arms,1):
+            canvas.paste(Image.open(case/(arm+'_reference.png')).convert('RGB').resize((160,216)),(160*j,32))
+            canvas.paste(Image.open(case/(arm+'.png')).convert('RGB').resize((160,216)),(160*j,280))
+            draw.text((160*j+3,4),arm+' reference',fill='black')
+            draw.text((160*j+3,256),arm+' RGB',fill='black')
+        canvas.save(folder/('%02d_%s.png'%(i,r['id'])))
 
 
 def plots(summary,sensitivity,probes):
