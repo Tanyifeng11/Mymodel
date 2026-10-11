@@ -35,14 +35,15 @@ def deliver(root):
         '## 程序控制与一次性留出校验','',
         '直接复用E40条纹/格纹renderer及E41椭圆renderer，程序贴入仅草图选取的8个有效轮廓。开发period12/20/28、angle0/30；留出period14/18/24、angle15/45，相位另留出；对比16/64/160并包含同亮度色差图。开发和留出各54阳性+54阴性，阴性为纯色、单图徽和随机8px块打乱。它们不构成BF训练数据或真实人工真值。','',
         '阈值只由开发控制选择，锁定后留出仅检验一次；真实GT/G不得反向调阈值。候选阈值27组，兼容阈值65个预定值；留出未用于选优。联合检测TPR≥0.90/FPR≤0.05且两单代理TPR>FPR；相容性检验同样要求TPR≥0.90/FPR≤0.05。','',
-        '| 判据 | 留出阳性 | 留出阴性 | TPR | FPR |','|---|---:|---:|---:|---:|']
-    for m,r in c.get('heldout',{}).items():lines.append('| '+' | '.join([m,str(r['positive_n']),str(r['negative_n']),display(r['tpr']),display(r['fpr'])])+' |')
+        '| 判据 | 留出阳性 | 留出阴性 | 阳性NA | 阴性NA | TPR | FPR |','|---|---:|---:|---:|---:|---:|---:|']
+    for m,r in c.get('heldout',{}).items():lines.append('| '+' | '.join([m,str(r['positive_n']),str(r['negative_n']),str(r['positive_NA']),str(r['negative_NA']),display(r['tpr']),display(r['fpr'])])+' |')
     mr=c.get('compatibility_heldout')
-    if mr:lines.append('| 局部相容性 | '+' | '.join(display(mr[k]) for k in ['positive_n','negative_n','tpr','fpr'])+' |')
+    if mr:lines.append('| 局部相容性 | '+' | '.join([display(mr['positive_n']),display(mr['negative_n']),'—','—',display(mr['tpr']),display(mr['fpr'])])+' |')
     lines+=['','检测器阈值：`'+str(c.get('threshold'))+'`；相容性阈值：`'+str(c.get('compatibility_threshold'))+'`。','',
         '检测校准通过：'+str(c.get('detector_pass'))+'；相容性校准通过：'+str(c.get('compatibility_pass'))+'。','']
     for m,r in c.get('heldout',{}).items():
         lines.append(m+'阴性分项：'+str(r['negative_by_type'])+'。')
+    lines+=['','FPR以全部已知阴性程序控制为分母；阴性NA单列，不将纯色NA宣称为真实图像可测。阳性NA计入召回损失。']
     lines+=['','## 全量漏斗及NA','', '| 阶段 | 数量 |','|---|---:|']
     for k,v in s['funnel'].items():lines.append('| '+k+' | '+display(v)+' |')
     lines+=['','掩码/ROI原因：`'+str(a['roi_counts'])+'`。','',
