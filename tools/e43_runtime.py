@@ -72,7 +72,9 @@ class Runner:
 
     def response(self,index,delta,plus):
         d=delta.float();p=plus.float();m=self.mask
-        rms=lambda x,w:float(((x.square()*w).sum()/(w.sum()*x.shape[1]).clamp_min(1e-12)).sqrt())
+        # 空内区在fp16中把1e-12下限舍入为0；只将分母下限运算升至fp32。
+        # 非空分母仍使用原fp16求和/乘法结果，已完成样本的特征不改变。
+        rms=lambda x,w:float(((x.square()*w).sum()/(w.sum()*x.shape[1]).float().clamp_min(1e-12)).sqrt())
         self.responses[index]=[rms(d,m),float(d.square().mean().sqrt())]
         if index==9:
             cos=lambda w:float((d*p*w).sum()/((d.square()*w).sum().sqrt()*(p.square()*w).sum().sqrt()).clamp_min(1e-12))
