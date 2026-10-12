@@ -21,6 +21,9 @@ class ReferenceAttentionProcessor(nn.Module):
         self.enabled = False
         self.branch = 'unconditional'
         self.trace = []
+        # 推理因果干预默认关闭，不增加参数或改变原实验行为。
+        self.spatial_intervention = 'global'
+        self.diagnostic_observer = None
 
     def __call__(self, attn, hidden_states, encoder_hidden_states=None,
                 attention_mask=None, temb=None, scale=1.0, cond_hidden_states=None,
@@ -73,6 +76,14 @@ class ReferenceAttentionProcessor(nn.Module):
         if len(shape) == 4:
             delta = delta.transpose(1, 2).reshape(shape)
         delta = delta / attn.rescale_output_factor
+        raw_delta = delta
+        if self.variant == 'B1' and self.spatial_intervention == 'interior':
+            mask = self.mask.to(delta)
+            if delta.ndim == 3:
+                mask = mask.flatten(2).transpose(1, 2)
+            delta = delta * mask
+        if self.diagnostic_observer is not None:
+            self.diagnostic_observer(base, raw_delta, delta)
         if len(self.trace) < 8:
             self.trace.append(dict(branch=self.branch, target_shape=list(shape),
                 reference_shape=list(self.features.shape), delta_rms=float(delta.detach().float().square().mean().sqrt()),

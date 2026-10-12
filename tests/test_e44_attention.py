@@ -24,6 +24,30 @@ class Original(nn.Module):
 
 
 class TestReferenceAttention(unittest.TestCase):
+    def test_fixed_weight_spatial_intervention(self):
+        torch.manual_seed(42)
+        attn=SimpleNamespace(spatial_norm=None,group_norm=None,heads=2,
+            to_q=nn.Linear(8,8),to_k=nn.Linear(8,8),to_v=nn.Linear(8,8),
+            to_out=nn.ModuleList([nn.Linear(8,8),nn.Identity()]),rescale_output_factor=1.)
+        original=Original().requires_grad_(False)
+        p=ReferenceAttentionProcessor(original,'layer',8,5,'B1')
+        p.gate.data.fill_(.2);p.enabled=True;p.features=torch.randn(1,4,5)
+        p.mask=torch.tensor([[[[0.,1.,0.],[1.,0.,1.]]]])
+        x=torch.randn(1,6,8);sa={'layer':torch.randn(1,6,8)}
+        base=original(attn,x,sa_hidden_states=sa)
+        global_output=p(attn,x,sa_hidden_states=sa)
+        observed=[]
+        p.diagnostic_observer=lambda base,raw,applied:observed.append((raw.clone(),applied.clone()))
+        self.assertTrue(torch.equal(global_output,p(attn,x,sa_hidden_states=sa)))
+        self.assertTrue(torch.equal(observed[-1][0],observed[-1][1]))
+        p.spatial_intervention='interior'
+        masked=p(attn,x,sa_hidden_states=sa)
+        selected=p.mask.flatten().bool()
+        self.assertTrue(torch.equal(masked[:,~selected],base[:,~selected]))
+        self.assertTrue(torch.equal(masked[:,selected],global_output[:,selected]))
+        self.assertEqual(float(observed[-1][1][:,~selected].abs().max()),0.)
+        self.assertTrue(torch.equal(p(attn,x),original(attn,x)))
+
     def test_zero_cfg_and_gradients(self):
         torch.set_num_threads(1)
         torch.manual_seed(42)
