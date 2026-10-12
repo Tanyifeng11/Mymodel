@@ -48,6 +48,15 @@ class Runtime:
         self.bf_pre_handle=self.pipe.bf_texture_conditioner.register_forward_pre_hook(self.before_bf,with_kwargs=True)
         self.bf_handle=self.pipe.bf_texture_conditioner.stage3.register_forward_hook(self.capture_bf)
         self.unet_handle=self.pipe.unet.register_forward_pre_hook(self.before_unet,with_kwargs=True)
+        self.shape_audit={};self.shape_handles=[]
+        def shape_hook(name):
+            def capture(module,args):
+                branch='conditional' if self.mask_info is not None and self.allow_reference else 'reference_off_or_initial'
+                self.shape_audit.setdefault(name,dict(input_shape=list(args[0].shape),width=module.to_q.out_features,first_context=branch))
+            return capture
+        for name,module in self.pipe.unet.named_modules():
+            if name.endswith('attn1'):
+                self.shape_handles.append(module.register_forward_pre_hook(shape_hook(name)))
         self.empty_text=self.pipe.text_encoder(self.pipe.tokenizer('',padding='max_length',truncation=True,
             max_length=self.pipe.tokenizer.model_max_length,return_tensors='pt').input_ids.to(self.pipe.device))[0].detach()
         if variant!='B0':
@@ -74,7 +83,9 @@ class Runtime:
         return [p for n,p in self.processor.named_parameters() if not n.startswith('original.')] if self.processor else []
 
     def capture_bf(self,module,args,result):
-        if self.capture_positive:self.bf_feature=result.detach()
+        if self.capture_positive:
+            self.bf_feature=result.detach()
+            self.shape_audit.setdefault('bf.stage3',dict(output_shape=list(result.shape)))
 
     def before_bf(self,module,args,kwargs):
         # get_image_embeds 先算正条件再算零输入负条件，不能让负条件覆盖空间缓存。
@@ -187,6 +198,8 @@ class Runtime:
         from tools.e22_4_generation import module_hashes
         dict(self.pipe.unet.named_modules())[LAYER[:-10]].set_processor(self.original)
         self.unet_handle.remove();self.bf_handle.remove();self.bf_pre_handle.remove()
+        for handle in self.shape_handles:handle.remove()
+        write(OUT/'manifests'/('shape_'+self.variant+'.json'),self.shape_audit)
         after=module_hashes(self.modules);assert self.before==after
         writer_check=None
         if self.writer:

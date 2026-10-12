@@ -71,7 +71,8 @@ def evaluate(stage='p1'):
             a=Image.open(path).convert('RGB');b=Image.open(row['gt']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
             tensor=lambda im:torch.from_numpy(np.asarray(im,np.float32).transpose(2,0,1)/127.5-1)[None].cuda()
             bundle=prepare_evaluation_masks(SIZE,sketch_path=row['sketch'],mask_policy='sketch_only')
-            s=bundle['stats'];valid=s.get('mask_source')=='sketch_flood_fill' and not s.get('mask_low_confidence',True)
+            _,_,mask_info=sketch_masks(Image.open(row['sketch']).convert('RGB').resize(SIZE),'cpu')
+            valid=mask_info['valid']
             rec=dict(id=row['id'],variant=variant,mask_valid=bool(valid),lpips_gt=float(metric(tensor(a),tensor(b)).mean()),
                 iou=None,contour_f1=None,leak=None,lab=None,hp_gray=None)
             if valid:

@@ -39,6 +39,7 @@ def run():
                 checks[arm].append(dict(id=row['id'],off_exact=True,zero_exact=True,mask=zero['mask']))
                 if i==diagnostic:
                     assert r.processor.trace, '首例必须实际通过新增分支'
+                    assert r.processor.trace[0]['target_shape']==[1,768,640],r.processor.trace[0]
                     write(OUT/'p0'/('shapes_'+arm+'.json'),r.processor.trace)
                     f=r.processor.features.clone()
                     assert torch.isfinite(f).all() and f.shape[1]==256
@@ -60,7 +61,7 @@ def run():
                     r.generate(row,OUT/'p0'/arm/'feature_change.png',reference=donor)
                     assert not torch.equal(f,r.processor.features)
                     write(OUT/'p0'/('feature_'+arm+'.json'),dict(finite=True,tokens=256,
-                        reference_changed=True,writer_calls=r.writer.calls if r.writer else 0))
+                        reference_changed=True,diagnostic_id=row['id'],writer_calls=r.writer.calls if r.writer else 0))
                 write(OUT/'p0/replay_checks.json',checks)
                 print('E44 P0',arm,i+1,'/8',flush=True)
             data=TrainingInputs(r);seed_all(42)
