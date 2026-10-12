@@ -175,6 +175,10 @@ def finish(jobs):
     for filename in ['input_hashes.json','model_file_hashes.json']:
         assert all(sha(p)==h for p,h in read(OUT/'manifests'/filename).items())
     code=list(Path('tools').glob('e45*.py'))+[Path('models/e45_pnp_anchor.py'),Path('submit/e45_gpu.sh')]
+    code += [Path(p) for p in ['tools/e44_runtime.py','tools/e44_b1_mask.py','tools/e44_metrics.py',
+        'tools/e44_protocol.py','tools/e35_freeu_protocol.py','models/reference_attention_variants.py',
+        'models/reference_feature_writer.py','adapter/attention_processor.py','garment_mask_utils.py',
+        'eval/eval_utils.py','eval/metrics.py','pipelines/IMAGGarment_pipeline.py']]
     include={str(p.relative_to(OUT)):sha(p) for p in sorted(OUT.rglob('*'))
         if p.is_file() and p.suffix in ['.json','.csv','.png','.txt'] and p.name!='run_manifest.json'}
     large={str(p.relative_to(OUT)):sha(p) for p in sorted(OUT.rglob('*.pt'))}

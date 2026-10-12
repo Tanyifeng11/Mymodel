@@ -148,6 +148,10 @@ def evaluate():
     model=CLIPModel.from_pretrained('models/clip',config=clip_config,local_files_only=True).cuda().eval().requires_grad_(False)
     processor=CLIPProcessor.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
     records=[];sensitivity=[];source_checks=[]
+    old_p1={(r['variant'],r['id']):r for r in read(OLD/'p1/metrics.json')}
+    old_mask={r['id']:r for r in read(OLD/'b1_mask_intervention_20261012/metrics.json')
+        if r['variant']=='interior'}
+    baseline_metric_errors=[]
     for row in rows:
         gt=Image.open(row['gt']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
         sketch=Image.open(row['sketch']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
@@ -194,10 +198,19 @@ def evaluate():
                 source_checks.append(dict(id=row['id'],arm=arm,source=str(historical(arm,row['id'])),
                     source_sha256=sha(historical(arm,row['id'])),replay_sha256=sha(path)))
                 assert source_checks[-1]['source_sha256']==source_checks[-1]['replay_sha256']
+                baseline=old_mask[row['id']] if arm=='C2' else old_p1[('B0' if arm=='C0' else 'B1',row['id'])]
+                for key in KEYS:
+                    if key not in baseline:continue
+                    assert (rec[key] is None)==(baseline[key] is None), (arm,row['id'],key,'有效分母变化')
+                    if rec[key] is not None:
+                        error=abs(rec[key]-baseline[key])
+                        baseline_metric_errors.append(error)
+                        assert error<=2e-6, (arm,row['id'],key,'历史指标回放不一致',error)
         write(OUT/'s2/metrics.json',records)
         print('E45 METRICS',row['id'],len(records),flush=True)
     write(OUT/'s2/metric_protocol.json',dict(lpips=info,original_E44_definition=True,
-        synthetic_proxy_limitation=True,gt_not_used_in_generation=True,counts='global32/regional28'))
+        synthetic_proxy_limitation=True,gt_not_used_in_generation=True,counts='global32/regional28',
+        baseline_metric_max_error=max(baseline_metric_errors),baseline_metric_tolerance=2e-6))
     write(OUT/'s2/baseline_source_audit.json',source_checks)
     write(OUT/'s2/threshold_sensitivity.json',sensitivity)
     threshold_summary={}
