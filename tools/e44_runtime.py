@@ -116,9 +116,16 @@ class Runtime:
         old_latents,old_step=pipe.prepare_latents,pipe.scheduler.step
         pipe.prepare_latents=MethodType(lambda _self,*a,**kw:initial.clone(),pipe)
         steps=[];final=[];contexts={};outputs={};handles=[]
+        epsilon={'conditional':[],'unconditional':[]};feature_samples=[]
         def scheduler_step(*a,**kw):
             result=old_step(*a,**kw);steps.append(int(a[1]));final[:]=[result[0]];return result
         pipe.scheduler.step=scheduler_step
+        def record_epsilon(_m,a,kw,out):
+            branch='conditional' if 'sa_hidden_states' in (kw.get('cross_attention_kwargs') or {}) else 'unconditional'
+            epsilon[branch].append(out[0].detach().cpu())
+            if branch=='conditional' and self.processor is not None and self.processor.enabled and len(epsilon[branch]) in [1,50]:
+                feature_samples.append(self.processor.features.detach().cpu())
+        handles.append(pipe.unet.register_forward_hook(record_epsilon,with_kwargs=True))
         if capture:
             def pre(_m,a,kw):
                 branch='conditional' if 'sa_hidden_states' in kw['cross_attention_kwargs'] else 'unconditional'
@@ -126,14 +133,16 @@ class Runtime:
             def post(_m,a,kw,out):
                 branch='conditional' if 'sa_hidden_states' in kw['cross_attention_kwargs'] else 'unconditional'
                 if branch not in outputs:outputs[branch]=out[0].clone()
-            handles=[pipe.unet.register_forward_pre_hook(pre,with_kwargs=True),pipe.unet.register_forward_hook(post,with_kwargs=True)]
-        old_get=pipe.get_image_embeds
+            handles +=[pipe.unet.register_forward_pre_hook(pre,with_kwargs=True),pipe.unet.register_forward_hook(post,with_kwargs=True)]
+        old_bf=pipe.bf_texture_conditioner.forward
         if zero_reference:
-            # BF 的 R0 使用既有零输入条件嵌入，保留原负条件；Writer 分支 OFF。
-            def zero_get(_self,*a,**kw):
-                positive,negative=old_get(*a,**kw)
-                return negative.clone(),negative
-            pipe.get_image_embeds=MethodType(zero_get,pipe)
+            # 输入零化保留 BF 偏置、正分支文本及原负分支规则；不使用黑色参考图。
+            def zero_bf(_self,*a,**kw):
+                kw=dict(kw)
+                for key in ['clip_image_embeds','clip_vision_tokens','texture_images']:
+                    if kw.get(key) is not None:kw[key]=torch.zeros_like(kw[key])
+                return old_bf(*a,**kw)
+            pipe.bf_texture_conditioner.forward=MethodType(zero_bf,pipe.bf_texture_conditioner)
         torch.cuda.synchronize();torch.cuda.reset_peak_memory_stats();started=time.perf_counter()
         try:
             image=pipe(prompt=row['caption'],null_prompt='',negative_prompt=' worst quality, low quality',
@@ -144,14 +153,21 @@ class Runtime:
                 spatial_mask=to_tensor(raw)[None].to(pipe.device,torch.float16),
                 generator=torch.Generator(device=pipe.device).manual_seed(seed))[0]
         finally:
-            pipe.prepare_latents,pipe.scheduler.step,pipe.get_image_embeds=old_latents,old_step,old_get
+            pipe.prepare_latents,pipe.scheduler.step=old_latents,old_step
+            pipe.bf_texture_conditioner.forward=old_bf
             for h in handles:h.remove()
         torch.cuda.synchronize();assert len(steps)==50 and torch.isfinite(final[0]).all()
         path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);image.save(path)
+        trace_path=path.with_suffix('.pt')
+        torch.save(dict(initial_latent=initial.cpu(),final_latent=final[0].cpu(),
+            conditional_epsilon=torch.stack(epsilon['conditional']),unconditional_epsilon=torch.stack(epsilon['unconditional']),
+            reference_features_first_last=feature_samples,mask=mask.cpu()),trace_path)
+        Image.fromarray((mask[0,0].cpu().numpy()*255).astype('uint8')).save(path.with_name(path.stem+'_mask.png'))
         record=dict(id=row['id'],variant=self.variant,seed=seed,mask=info,seconds=time.perf_counter()-started,
             peak_memory_gib=torch.cuda.max_memory_allocated()/2**30,steps=steps,
             initial_sha256=digest(initial),final_sha256=digest(final[0]),png_sha256=sha(path),
-            reference_sha256=hashlib.sha256(ref.tobytes()).hexdigest(),gt_used_in_inference=False)
+            reference_sha256=hashlib.sha256(ref.tobytes()).hexdigest(),gt_used_in_inference=False,
+            diagnostics_sha256=sha(trace_path),writer_calls=self.writer.calls if self.writer else 0)
         write(path.with_suffix('.json'),record)
         return record,contexts,outputs
 
