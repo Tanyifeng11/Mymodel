@@ -83,7 +83,7 @@ def counterfactual(variant):
 @torch.inference_mode()
 def evaluate(stage='p1'):
     from eval.eval_utils import prepare_evaluation_masks,estimate_foreground_mask,json_safe
-    from eval.metrics import compute_structure_preservation,compute_texture_leakage,compute_texture_color_fidelity
+    from eval.metrics import compute_texture_leakage,compute_texture_color_fidelity
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
     from tools.e33tmoc_appearance_eval import frozen_lpips
     rows=read(OUT/'splits'/('dev32.json' if stage=='p1' else 'confirm96.json'))
@@ -105,9 +105,11 @@ def evaluate(stage='p1'):
             rec=dict(id=row['id'],variant=variant,mask_valid=bool(valid),lpips_gt=float(metric(tensor(a),tensor(b)).mean()),
                 iou=None,contour_f1=None,leak=None,lab=None,hp_gray=None)
             if valid:
-                rec['iou']=json_safe(compute_structure_preservation(str(path),row['sketch'],mask_bundle=bundle)).get('struct_iou')
                 foreground,_=estimate_foreground_mask(a,SIZE,return_info=True)
-                rec['contour_f1']=contour_f1(foreground,bundle['garment']) if foreground is not None else None
+                if foreground is None:foreground=np.zeros((SIZE[1],SIZE[0]),bool)
+                garment=bundle['garment']
+                rec['iou']=float((foreground&garment).sum()/max((foreground|garment).sum(),1))
+                rec['contour_f1']=contour_f1(foreground,garment)
                 rec['leak']=json_safe(compute_texture_leakage(str(path),target_path=row['gt'],mask_bundle=bundle)).get('leak_colored_frac')
                 rec['lab']=json_safe(compute_texture_color_fidelity(str(path),row['reference'],mask_bundle=bundle)).get('tcf_lab_delta')
                 inner=np.asarray(bundle['garment']).astype('uint8')

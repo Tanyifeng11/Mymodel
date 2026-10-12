@@ -14,7 +14,8 @@ def external_contour(mask):
 
 def contour_f1(generated,sketch,tolerance=3):
     a,b=external_contour(generated),external_contour(sketch)
-    if not a.any() or not b.any():return None
+    if not b.any():return None
+    if not a.any():return 0.
     near_a=cv2.distanceTransform((~a).astype('uint8'),cv2.DIST_L2,5)<=tolerance
     near_b=cv2.distanceTransform((~b).astype('uint8'),cv2.DIST_L2,5)<=tolerance
     precision=float(near_b[a].mean());recall=float(near_a[b].mean())

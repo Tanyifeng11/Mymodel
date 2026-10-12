@@ -11,6 +11,7 @@ class TestMetrics(unittest.TestCase):
         mask=np.zeros((128,128),bool);mask[15:110,30:95]=True
         shifted=np.roll(mask,15,axis=1)
         self.assertLess(contour_f1(shifted,mask),contour_f1(mask,mask))
+        self.assertEqual(contour_f1(np.zeros_like(mask),mask),0.)
 
 
 if __name__=='__main__':unittest.main()
