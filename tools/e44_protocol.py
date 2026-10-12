@@ -53,6 +53,12 @@ def prepare():
         texture_mode='patch_resampled',texture_preprocess_mode='plain_resize').items():
         assert meta[key]==value,(key,meta.get(key))
     write(OUT/'manifests/e5_training_meta.json',meta)
+    model_files={str(E5):E5_SHA}
+    for root in [Path('models/stable-diffusion-v1-5'),Path('models/clip')]:
+        for p in sorted(root.rglob('*')):
+            if p.is_file() and p.suffix in ['.bin','.safetensors','.pt','.json']:
+                model_files[str(p)]=sha(p)
+    write(OUT/'manifests/model_file_hashes.json',model_files)
     old=Path('output_eval/e35_freeu_skip_20261010/splits')
     dev=read(old/'dev32.json'); confirm=read(old/'confirm96.json')
     pool=read('output_eval/e34_sarr_20261010/splits/train.json')
