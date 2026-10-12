@@ -34,11 +34,13 @@ def deliver(root):
     assert set(later['stages']).issubset(set(visual.get('stages_reviewed',[]))),'后阶段固定联系表尚未人工视觉复核'
     decisions={p:read(review/p/'decision.json') for p in ['pilot','validation','holdout'] if (review/p/'decision.json').exists()}
     last=list(decisions)[-1];decision=decisions[last];continuation=read(review/'exploratory_continuation.json')
+    # 服务器state沿用旧Pilot的stop_reason；保留原记录，交付状态按最后阶段decision解释。
+    server_state=dict(state);state=dict(state,original_pilot_stop_reason=decisions['pilot']['reasons'],stop_reason=decision['reasons'])
     resources=accounting(review/'slurm_accounting.txt');oof=read(review/'train/oof.json')
     local_state=read(out/'local_state.json');recovery={k:local_state[k] for k in ['train_failure','train_retry_jobs'] if k in local_state}
     summary=dict(experiment='E43_RRUC',status=decision['status'],last_stage=last,stop_reasons=decision['reasons'],
         original_pilot_status=decisions['pilot']['status'],preregistered_pipeline_pass=False,exploratory_continuation=continuation,
-        decisions=decisions,stages=state,train_oof=oof,local_verification=verification,later_verification=later,
+        decisions=decisions,stages=state,server_state_record=server_state,train_oof=oof,local_verification=verification,later_verification=later,
         visual_review=visual,resources=resources,engineering_recovery=recovery,download_sha256=download['actual_sha256'],E5_training_steps=0,
         generation_model_training_steps=0,claims=dict(pattern_identity=False,unique_causal_bottleneck=False,novel_method=False))
     write(docs/'E43_rgb_utility_statistics.json',summary)
@@ -94,6 +96,8 @@ def deliver(root):
             '| 项目 | 门槛 | 实际值 | 余量 |','|---|---:|---:|---:|']
         lines+=['| '+' | '.join([label,rule,num(value),num(margin)])+' |' for label,rule,value,margin,_ in gates]
         lines+=['','灾难性结构标记要求0，实际'+str(len(ours['catastrophic_flags']))+'。正式阶段另要求LPIPS对E5的CI上界<0及两个种子方向稳定；原始数值见上述表和统计JSON。','']
+        if 'not_better_than_best_fixed_val' in d['reasons']:
+            lines+=['本次停止依据是预定的验证均值门槛：策略−最佳固定的LPIPS为'+interval(best)+'，要求<0。置信区间跨0时，不能据此声称策略显著更差；结论是尚未证明其超过最佳固定调节，因此按门槛停止。','']
         for name,v in d['simple_controls'].items():lines.append('- '+name+'：ΔLPIPS='+interval(v['metrics']['LPIPS_cloth'])+'。')
         if 'E36_B1' in d:lines.append('- 复用已有E36-B1 step800权重，本实验不重训练；utility−B1 ΔLPIPS='+interval(d['E36_B1']['policy_vs_B1']['metrics']['LPIPS_cloth'])+'。')
         else:lines.append('- E36-B1缺少完整可核验结果，未填成绩。')

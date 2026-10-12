@@ -49,6 +49,7 @@ def verify(root):
                 for v in r['outputs']:
                     path=sample/(v['arm']+'.png');assert sha(path)==v['output_png_sha256']
                     assert Image.open(path).size==(384,512);png_n+=1
+                    if phase!='train':assert v['output_png_sha256'] in extra
                     v['metrics'].update(extra.get(v['output_png_sha256'],{}))
                 records.append(r)
         for path in (folder/phase).glob('*shard*.json'):
@@ -63,7 +64,8 @@ def verify(root):
                 for name,h in value['frozen']['frozen_modules'].items():
                     if name!='bf_texture_conditioner':assert h==original[name]
         stages[phase]=dict(rows=len(records),fixed_sources=len(splits[phase]),generated_pngs=png_n,invalid_mask_rows=invalid,
-            valid_sources=len(splits[phase])-len({r['id'] for r in invalid}),CLIP_rows=len(extra))
+            valid_sources=len(splits[phase])-len({r['id'] for r in invalid}),CLIP_unique_png_hashes=len(extra),
+            CLIP_rows=read(extra_path)['rows'] if extra_path.exists() else 0)
         tables[phase]=records
 
     def check_comparison(records,choose,base_choose,reported):
