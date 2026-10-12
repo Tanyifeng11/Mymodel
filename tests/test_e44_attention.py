@@ -8,9 +8,18 @@ from models.reference_attention_variants import ReferenceAttentionProcessor
 
 
 class Original(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.to_k_ref=nn.Linear(8,8,bias=False)
+        self.to_v_ref=nn.Linear(8,8,bias=False)
+
     def __call__(self,attn,x,sa_hidden_states=None,**kwargs):
         q,k,v=[layer(x).reshape(1,-1,2,4).transpose(1,2) for layer in [attn.to_q,attn.to_k,attn.to_v]]
         a=F.scaled_dot_product_attention(q,k,v).transpose(1,2).reshape_as(x)
+        if sa_hidden_states is not None:
+            k,v=[layer(sa_hidden_states['layer']).reshape(1,-1,2,4).transpose(1,2)
+                for layer in [self.to_k_ref,self.to_v_ref]]
+            a=a+.6*F.scaled_dot_product_attention(q,k,v).transpose(1,2).reshape_as(x)
         return attn.to_out[0](a)
 
 
@@ -23,9 +32,12 @@ class TestReferenceAttention(unittest.TestCase):
             to_out=nn.ModuleList([nn.Linear(8,8),nn.Identity()]),rescale_output_factor=1.)
         for layer in [attn.to_q,attn.to_k,attn.to_v,*attn.to_out]:layer.requires_grad_(False)
         x=torch.randn(1,6,8);sa={'layer':torch.randn(1,6,8)}
-        base=Original()(attn,x,sa_hidden_states=sa)
+        original=Original().requires_grad_(False)
+        base=original(attn,x,sa_hidden_states=sa)
+        unconditional=original(attn,x)
+        self.assertFalse(torch.equal(base,unconditional))
         for variant in ['B1','B2','B3']:
-            p=ReferenceAttentionProcessor(Original(),'layer',8,5,variant)
+            p=ReferenceAttentionProcessor(original,'layer',8,5,variant)
             p.enabled=True;p.features=torch.randn(1,4,5);p.mask=torch.ones(1,1,2,3)
             self.assertTrue(torch.equal(p(attn,x,sa_hidden_states=sa),base))
             optimizer=torch.optim.AdamW(p.parameters(),lr=.01)
@@ -35,7 +47,12 @@ class TestReferenceAttention(unittest.TestCase):
                 self.assertGreater(float(first.grad.norm()),0)
                 if step==2:self.assertGreater(float(p.to_k_ref.weight.grad.norm()),0)
                 optimizer.step()
-            self.assertTrue(torch.equal(p(attn,x,sa_hidden_states=None),base))
+            self.assertTrue(torch.equal(p(attn,x,sa_hidden_states=None),unconditional))
+            if variant!='B1':
+                p.mask[0,0,0,0]=0
+                output=p(attn,x,sa_hidden_states=sa)
+                self.assertTrue(torch.equal(output[:,0],base[:,0]))
+                self.assertGreater(float((output[:,1:]-base[:,1:]).abs().max()),0)
             p.enabled=False
             self.assertTrue(torch.equal(p(attn,x,sa_hidden_states=sa),base))
 
