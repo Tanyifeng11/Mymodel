@@ -79,6 +79,21 @@ def deliver(root):
         ours=d['policies']['utility']['vs_e5'];lines+=['','Δ为策略−基线，LPIPS/HP/LAB/Leak越低越好，IoU/EdgeF1/CLIP越高越好。',
             '策略动作计数：`'+str(ours['choices'])+'`；无效mask行数='+str(len(later['stages'][phase]['invalid_mask_rows']))+'；IoU差第5百分位='+num(ours['delta_iou_p05'])+'；灾难性阈值标记='+str(len(ours['catastrophic_flags']))+'。所有失败ID和有效分母见统计JSON及rgb_results.csv。','',
             '简单控制器比较（utility策略−对照）：']
+        m=ours['metrics'];best=d['policies']['utility']['vs_best_fixed']['metrics']['LPIPS_cloth'];formal=phase=='holdout'
+        gates=[('可测来源数','>=30',m['LPIPS_cloth']['groups'],m['LPIPS_cloth']['groups']-30,'来源数−30')]
+        for label,value,limit,lower,strict in [
+            ('LPIPS vs E5',m['LPIPS_cloth']['mean'],-.005 if formal else 0,False,not formal),
+            ('LPIPS vs Best-fixed',best['ci95'][1] if formal and best['ci95'] else best['mean'],0,False,True),
+            ('IoU',m['IoU']['ci95'][0] if formal and m['IoU']['ci95'] else m['IoU']['mean'],-.005,True,False),
+            ('EdgeF1',m['EdgeF1']['ci95'][0] if formal and m['EdgeF1']['ci95'] else m['EdgeF1']['mean'],-.01,True,False),
+            ('Leak',m['Leak']['ci95'][1] if formal and m['Leak']['ci95'] else m['Leak']['mean'],.002,False,False),
+            ('灰度高通误差',m['HP_gray']['mean'],0,False,True)]:
+            op=('>' if strict else '>=') if lower else ('<' if strict else '<=')
+            gates.append((label,op+num(limit),value,None if value is None else (value-limit if lower else limit-value),'距门槛的余量'))
+        lines+=['','逐项门槛（余量正数表示有空间，负数表示短缺；严格不等式下余量为0仍失败）：','',
+            '| 项目 | 门槛 | 实际值 | 余量 |','|---|---:|---:|---:|']
+        lines+=['| '+' | '.join([label,rule,num(value),num(margin)])+' |' for label,rule,value,margin,_ in gates]
+        lines+=['','灾难性结构标记要求0，实际'+str(len(ours['catastrophic_flags']))+'。正式阶段另要求LPIPS对E5的CI上界<0及两个种子方向稳定；原始数值见上述表和统计JSON。','']
         for name,v in d['simple_controls'].items():lines.append('- '+name+'：ΔLPIPS='+interval(v['metrics']['LPIPS_cloth'])+'。')
         if 'E36_B1' in d:lines.append('- 复用已有E36-B1 step800权重，本实验不重训练；utility−B1 ΔLPIPS='+interval(d['E36_B1']['policy_vs_B1']['metrics']['LPIPS_cloth'])+'。')
         else:lines.append('- E36-B1缺少完整可核验结果，未填成绩。')
@@ -86,6 +101,7 @@ def deliver(root):
         for seed,m in ours['per_seed'].items():lines.append('- seed'+seed+'：ΔLPIPS='+interval(m['LPIPS_cloth'])+'。')
         lines+=['','caption服装词和参考路径目录仅作描述性分层，未经人工语义核验，不是纹样身份真值。主要来源方向应结合统计JSON中的source_directions及有效来源数判断，不能用合并均值掩盖分组退化。','',
             '策略估计UNet调用/图='+num(d['efficiency']['policy_unet_calls_mean'])+'，原E5为100；估计时间/图='+num(d['efficiency']['policy_seconds_composed_mean'])+'秒。'+d['efficiency']['note']+'；未实测独立部署速度，不把三分支采集总时间当部署成本。','']
+        lines+=['本阶段采集记录UNet调用总数='+str(d['efficiency']['collection_unet_calls'])+'；采集生成时间总和='+num(d['efficiency']['collection_recorded_generation_seconds'])+'秒；记录的峰值显存='+num(d['efficiency']['peak_memory_bytes']/2**30)+' GiB（含本阶段对照采集，非独立部署峰值）。','']
     lines+=['','## 审计、资源与视觉复核','',
         '完整50步预检查及PNG同一性通过；本地核验来源隔离、PNG/NPZ哈希、失效回退、来源簇bootstrap和动作记录。原始输入和生成权重在服务器核验，本地未重新加载LPIPS网络。BF旧checkpoint缺失4个未启用pattern_head张量导致跨作业整体哈希差异；已审计其他参数一致、正/零tokens逐位一致且辅助头未调用。各作业生成参数前后不变。','',
         'Slurm已分配累计GPU卡时='+num(resources['total_GPU_card_hours'])+'小时，包含准备后的预检查、Pilot及后续实际分配作业，逐作业状态/退出码/申请资源见统计JSON和slurm_accounting.txt。采集计时和真实部署估计分列，失败重跑资源也保留。','']

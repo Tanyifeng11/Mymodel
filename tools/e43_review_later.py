@@ -53,6 +53,10 @@ def verify(root):
                 records.append(r)
         for path in (folder/phase).glob('*shard*.json'):
             value=read(path)
+            if path.name.startswith('b1_shard'):
+                assert value['available'] and value['adapter_hash_unchanged']
+                assert value['replay']['adapter_off_50step_and_png_equal']
+                assert value['adapter_training_steps_this_experiment']==0
             if 'frozen' in value:
                 assert value['frozen']['parameters_unchanged'] and value['input_hashes_unchanged']
                 original=read(folder/'preflight.json')['frozen']['frozen_modules']
