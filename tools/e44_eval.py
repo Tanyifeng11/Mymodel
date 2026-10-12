@@ -3,12 +3,13 @@ import argparse
 import csv
 import gc
 import hashlib
+import textwrap
 import numpy as np
 import torch
 from PIL import Image,ImageDraw
 from tools.e44_protocol import *
 from tools.e44_runtime import Runtime,sketch_masks
-from tools.e44_metrics import contour_f1,highpass_error,calibration,paired
+from tools.e44_metrics import contour_f1,highpass_error,calibration,paired,patch_readout
 
 
 def generate(stage='p1',variant='B0'):
@@ -28,7 +29,7 @@ def generate(stage='p1',variant='B0'):
 def counterfactual(variant):
     rows=read(OUT/'splits/dev32.json')[:8];r=Runtime(variant)
     if variant!='B0':r.load(OUT/'p1'/variant/'checkpoints/step0800.pt')
-    records=[]
+    records=[];responses=[]
     try:
         for i,row in enumerate(rows):
             ref=Image.open(row['reference']).convert('RGB')
@@ -37,6 +38,12 @@ def counterfactual(variant):
             donor=rows[(i+1)%len(rows)]
             variants=dict(Rplus=ref,R90=ref.transpose(Image.Transpose.ROTATE_90),
                 Rminus=Image.open(donor['reference']).convert('RGB'),Rcolor=color,R0=ref)
+            _,soft,mask_info=sketch_masks(Image.open(row['sketch']).convert('RGB').resize(SIZE),'cpu')
+            support=soft[0,0].numpy()>.99
+            boxes=[[x,y,x+64,y+64] for y in range(0,SIZE[1]-63,32) for x in range(0,SIZE[0]-63,32)
+                if support[y:y+64,x:x+64].mean()>=.95]
+            boxes=sorted(boxes,key=lambda b:hashlib.sha256((row['id']+str(b)).encode()).hexdigest())[:16]
+            images={};readouts={}
             for name,image in variants.items():
                 path=OUT/'p1/counterfactuals'/variant/row['id']/(name+'.png')
                 if path.with_suffix('.json').exists():record=read(path.with_suffix('.json'))
@@ -45,8 +52,30 @@ def counterfactual(variant):
                     different_motif_confirmed=None if name=='Rminus' else False,
                     r90_applicability='requires readable asymmetric motif; automatic selection not assumed',
                     rcolor_geometry_preservation='hue-only transform; gamut and brightness changes reported as limitation')
+                generated=Image.open(path).convert('RGB');images[name]=generated
+                readouts[name]=patch_readout(generated,boxes)
+                record['geometry_readout']=readouts[name]
                 records.append(record)
+            plus=np.asarray(images['Rplus'],np.float32)/255
+            for name,image in images.items():
+                difference=np.abs(np.asarray(image,np.float32)/255-plus).mean(2)
+                orientation=readouts[name]['orientation'];base_orientation=readouts['Rplus']['orientation']
+                response=dict(id=row['id'],variant=variant,condition=name,mask_valid=mask_info['valid'],
+                    rgb_mae_vs_Rplus=float(difference.mean()),
+                    interior_mae=float(difference[support].mean()) if support.any() else None,
+                    outside_mae=float(difference[~support].mean()),
+                    hp_gray_vs_Rplus=highpass_error(image,images['Rplus'],support) if support.any() else None,
+                    direction_change=None if orientation is None or base_orientation is None else abs((orientation-base_orientation+90)%180-90),
+                    readable_patches=readouts[name]['readable_n'],fixed_patch_n=len(boxes),
+                    real_motif_applicability=None,real_direction_success=None,
+                    note='response magnitude and stripe-calibrated readout only; real motif validity needs visual review')
+                responses.append(response)
+            sheet=Image.new('RGB',(6*128,192),'white');draw=ImageDraw.Draw(sheet)
+            for j,(name,image) in enumerate([('Reference',ref)]+list(images.items())):
+                draw.text((128*j+2,2),name,fill='black');sheet.paste(image.resize((128,171)),(128*j,20))
+            sheet.save(OUT/'p1/counterfactuals'/variant/row['id']/'panel.png')
             write(OUT/'p1/counterfactuals'/variant/'manifest.json',records)
+            write(OUT/'p1/counterfactuals'/variant/'responses.json',responses)
             print('E44 COUNTERFACTUAL',variant,i+1,len(rows),flush=True)
     finally:r.close()
 
@@ -152,13 +181,20 @@ def assess(stage,records):
 def panels(stage,rows,arms,subfolder='contact_sheets'):
     folder=OUT/stage/subfolder;folder.mkdir(parents=True,exist_ok=True)
     for start in range(0,len(rows),4):
-        canvas=Image.new('RGB',((3+len(arms))*128,4*194),'white');draw=ImageDraw.Draw(canvas)
-        for i,row in enumerate(rows[start:start+4]):
+        page=rows[start:start+4]
+        captions=[textwrap.fill(row['caption'],width=max(40,(3+len(arms))*19)) for row in page]
+        heights=[194+12*len(c.splitlines()) for c in captions]
+        canvas=Image.new('RGB',((3+len(arms))*128,sum(heights)),'white');draw=ImageDraw.Draw(canvas)
+        offset=0
+        for i,row in enumerate(page):
+            draw.multiline_text((2,offset+2),captions[i],fill='black',spacing=0)
+            top=offset+12*len(captions[i].splitlines())
             entries=[('Sketch',row['sketch']),('Reference',row['reference']),('GT',row['gt'])]
             entries +=[(a,str(OUT/stage/'images'/a/(row['id']+'.png'))) for a in arms]
             for j,(name,path) in enumerate(entries):
-                draw.text((128*j+2,194*i+2),row['id']+' '+name,fill='black')
-                canvas.paste(Image.open(path).convert('RGB').resize((128,171)),(128*j,194*i+20))
+                draw.text((128*j+2,top+2),row['id']+' '+name,fill='black')
+                canvas.paste(Image.open(path).convert('RGB').resize((128,171)),(128*j,top+20))
+            offset+=heights[i]
         canvas.save(folder/('page%02d.png'%(start//4)))
 
 
