@@ -16,6 +16,7 @@ class TrainingInputs:
     def __init__(self,runtime,split='train1024'):
         from train_GAM_texture_joint import JointTextureDataset
         self.r=runtime;self.p=runtime.pipe
+        self.meta=read(OUT/'manifests/e5_training_meta.json')
         self.rows=read(OUT/'splits'/(split+'.json'))
         self.dataset=JointTextureDataset(str(OUT/'splits'/(split+'_records.json')),
             self.p.tokenizer,'/share/home/u2515283058/datasets/BF/training',
@@ -45,7 +46,7 @@ class TrainingInputs:
         sketch_latent=p.vae.encode(batch['vae_sketch'].to(dtype)).latent_dist.sample()*p.vae.config.scaling_factor
         text=p.text_encoder(ids)[0];vision=p.image_encoder(clip,output_hidden_states=True)
         tokens=p.bf_texture_conditioner(clip_image_embeds=vision.image_embeds,texture_images=tex,
-            clip_vision_tokens=vision.hidden_states[-1][:,1:],texture_mode='patch_resampled',
+            clip_vision_tokens=vision.hidden_states[int(self.meta['clip_hidden_layer'])][:,1:],texture_mode='patch_resampled',
             text_embeds=text,text_mask=text_content_mask(ids,p.tokenizer.eos_token_id),
             local_detail_source='off',local_detail_grid=4)[0]
         tokens=p.tcpm_lite(tokens,text)
@@ -55,7 +56,9 @@ class TrainingInputs:
         sa={n:proc.cache['hidden_states'].detach() for n,proc in p.reference_unet.attn_processors.items() if 'attn1' in n}
         # 原 E5 条件 mask 不改；新分支的 mask 单独从 Sketch 计算，禁止 GT 回退。
         from garment_mask_utils import build_region_masks
-        old_mask=build_region_masks(batch['garment_mask'].float(),kernel_size=9)[0]
+        old_mask=batch['garment_mask'].float()
+        if self.meta['tcpm_mask_inner_only']:
+            old_mask=build_region_masks(old_mask,kernel_size=int(self.meta['region_kernel_size']))[0]
         sketch=Image.open(row['sketch']).convert('RGB')
         _,mask,info=sketch_masks(sketch,p.device)
         self.r.set_reference(tex,mask,info,allow=drop not in ['image','both'])
@@ -75,7 +78,7 @@ def loss_forward(runtime,args,kw,noise,mask):
         prediction=runtime.pipe.unet(*args,**kw).sample
     diffusion=F.mse_loss(prediction.float(),noise.float())
     outside=1-mask.float()
-    keep=((prediction.float()-teacher.float()).square()*outside).sum()/(outside.sum()*4).clamp_min(1e-8)
+    keep=((prediction.float()-teacher.float()).square()*outside).sum()/outside.sum().clamp_min(1e-8)
     return diffusion+.1*keep,dict(diffusion=float(diffusion.detach()),keep=float(keep.detach()),
         conditional_eps_mae=float((prediction.detach().float()-teacher.float()).abs().mean()))
 

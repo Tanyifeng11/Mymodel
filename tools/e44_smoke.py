@@ -3,12 +3,16 @@ import gc
 import torch
 from tools.e34_sarr_protocol import seed_all
 from tools.e44_protocol import *
-from tools.e44_runtime import Runtime
+from tools.e44_runtime import Runtime,sketch_masks
+from PIL import Image
 from tools.e44_train import TrainingInputs,loss_forward,gradients
 
 
 def run():
     prepare();rows=read(OUT/'splits/dev32.json')[:8];replay={}
+    mask_audit=[dict(id=row['id'],**sketch_masks(Image.open(row['sketch']).convert('RGB').resize(SIZE),'cpu')[2]) for row in rows]
+    write(OUT/'p0/mask_audit.json',mask_audit)
+    diagnostic=next(i for i,info in enumerate(mask_audit) if info['valid'])
     seed_all(42);r=Runtime('B0')
     try:
         for row in rows:
@@ -27,13 +31,13 @@ def run():
         try:
             for i,row in enumerate(rows):
                 r.active=False
-                off,contexts,outputs=r.generate(row,OUT/'p0'/arm/(row['id']+'_off.png'),capture=i==0)
+                off,contexts,outputs=r.generate(row,OUT/'p0'/arm/(row['id']+'_off.png'),capture=i==diagnostic)
                 r.active=True
                 zero,_,_=r.generate(row,OUT/'p0'/arm/(row['id']+'_zero.png'))
                 assert off['png_sha256']==zero['png_sha256']==replay[row['id']]['png_sha256']
                 assert off['final_sha256']==zero['final_sha256']==replay[row['id']]['final_sha256']
                 checks[arm].append(dict(id=row['id'],off_exact=True,zero_exact=True,mask=zero['mask']))
-                if i==0:
+                if i==diagnostic:
                     assert r.processor.trace, '首例必须实际通过新增分支'
                     write(OUT/'p0'/('shapes_'+arm+'.json'),r.processor.trace)
                     f=r.processor.features.clone()
@@ -52,8 +56,8 @@ def run():
                         write(OUT/'p0'/('cfg_'+arm+'.json'),interventions)
                     r.processor.load_state_dict(initial,strict=False)
                     # 冻结特征必须随 Reference 改变；下一例回放也核验逐步提取。
-                    other=rows[1]
-                    r.generate(other,OUT/'p0'/arm/'feature_change.png')
+                    donor=Image.open(rows[(i+1)%len(rows)]['reference']).convert('RGB')
+                    r.generate(row,OUT/'p0'/arm/'feature_change.png',reference=donor)
                     assert not torch.equal(f,r.processor.features)
                     write(OUT/'p0'/('feature_'+arm+'.json'),dict(finite=True,tokens=256,
                         reference_changed=True,writer_calls=r.writer.calls if r.writer else 0))

@@ -1,5 +1,6 @@
 """固定完整50步 RGB、参考反事实及配对门槛；无测试集调参。"""
 import argparse
+import csv
 import gc
 import hashlib
 import numpy as np
@@ -53,13 +54,16 @@ def counterfactual(variant):
 @torch.inference_mode()
 def evaluate(stage='p1'):
     from eval.eval_utils import prepare_evaluation_masks,estimate_foreground_mask,json_safe
-    from eval.metrics import compute_structure_preservation,compute_texture_leakage,compute_texture_color_fidelity,compute_clip_i_values,_get_clip_model
+    from eval.metrics import compute_structure_preservation,compute_texture_leakage,compute_texture_color_fidelity
+    from transformers import CLIPConfig,CLIPModel,CLIPProcessor
     from tools.e33tmoc_appearance_eval import frozen_lpips
     rows=read(OUT/'splits'/('dev32.json' if stage=='p1' else 'confirm96.json'))
     folder=OUT/stage;records=[]
     metric,lpips_info=frozen_lpips();metric=metric.cuda()
     write(folder/'metric_calibration.json',calibration())
-    clip_model,clip_processor=_get_clip_model(device='cuda',model_name='models/clip')
+    clip_config=CLIPConfig.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
+    clip_model=CLIPModel.from_pretrained('models/clip',config=clip_config,local_files_only=True).cuda().eval().requires_grad_(False)
+    clip_processor=CLIPProcessor.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
     for variant in ['B0']+ARMS:
         group=[]
         for row in rows:
@@ -80,23 +84,33 @@ def evaluate(stage='p1'):
                 import cv2
                 inner=cv2.erode(inner,np.ones((19,19),np.uint8))>0
                 if inner.any():rec['hp_gray']=highpass_error(a,b,inner)
-            inputs=clip_processor(text=[row['caption']],images=[a],return_tensors='pt',padding=True,truncation=True)
+            ref=Image.open(row['reference']).convert('RGB')
+            inputs=clip_processor(text=[row['caption']],images=[a,ref,b],return_tensors='pt',padding=True,truncation=True)
             inputs={k:v.to('cuda') for k,v in inputs.items()}
             text_f=clip_model.get_text_features(input_ids=inputs['input_ids'],attention_mask=inputs.get('attention_mask'))
             image_f=clip_model.get_image_features(pixel_values=inputs['pixel_values'])
-            rec['clip_text']=float(torch.nn.functional.cosine_similarity(text_f,image_f).mean())
+            image_f=torch.nn.functional.normalize(image_f,dim=-1)
+            text_f=torch.nn.functional.normalize(text_f,dim=-1)
+            rec['clip_text']=float((text_f[0]*image_f[0]).sum())
+            rec['clip_reference']=float((image_f[0]*image_f[1]).sum())
+            rec['clip_real']=float((image_f[0]*image_f[2]).sum())
             group.append(rec)
-        paths=[str(folder/'images'/variant/(r['id']+'.png')) for r in rows]
-        for key,source in [('clip_reference','reference'),('clip_real','gt')]:
-            values=compute_clip_i_values(paths,[r[source] for r in rows],batch_size=4,device='cuda',model_name='models/clip')
-            for rec,value in zip(group,values):rec[key]=float(value)
         records.extend(group);write(folder/'metrics.json',records)
         print('E44 METRICS',variant,len(group),flush=True)
     write(folder/'metric_protocol.json',dict(lpips=lpips_info,fixed_n=len(rows),
         outer_contour=True,noncolor_metric='standardized gray highpass GT error; synthetic calibrated only',
         invalid_masks='NA regional metrics; retain full cohort and global LPIPS/CLIP',
         real_pattern_identity_validated=False,fid_kid='not computed at32/96'))
+    with (folder/'metrics.csv').open('w',newline='',encoding='utf-8') as f:
+        writer=csv.DictWriter(f,fieldnames=list(records[0]));writer.writeheader();writer.writerows(records)
     assess(stage,records);panels(stage,rows,['B0']+ARMS)
+    base={r['id']:r for r in records if r['variant']=='B0'}
+    by_id={r['id']:r for r in rows}
+    for arm in ARMS:
+        worst=sorted((r for r in records if r['variant']==arm),
+            key=lambda r:r['lpips_gt']-base[r['id']]['lpips_gt'],reverse=True)[:10]
+        write(folder/'worst_cases'/(arm+'.json'),worst)
+        panels(stage,[by_id[r['id']] for r in worst],['B0',arm],subfolder='worst_cases/'+arm)
 
 
 def assess(stage,records):
@@ -134,8 +148,8 @@ def assess(stage,records):
         paper_claim_supported=False)
 
 
-def panels(stage,rows,arms):
-    folder=OUT/stage/'contact_sheets';folder.mkdir(parents=True,exist_ok=True)
+def panels(stage,rows,arms,subfolder='contact_sheets'):
+    folder=OUT/stage/subfolder;folder.mkdir(parents=True,exist_ok=True)
     for start in range(0,len(rows),4):
         canvas=Image.new('RGB',((3+len(arms))*128,4*194),'white');draw=ImageDraw.Draw(canvas)
         for i,row in enumerate(rows[start:start+4]):
