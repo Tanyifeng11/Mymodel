@@ -40,6 +40,10 @@ def generate(arm):
         try:result=r.generate(row,path)
         finally:
             if ctl:ctl.close()
+        if ctl:
+            assert len(ctl.steps)==ctl.unconditional_calls==50
+            write(path.with_name(path.stem+'_scale.json'),dict(mode='G3',constant=SAFE_SCALE,
+                steps=ctl.steps,unconditional_calls=ctl.unconditional_calls))
         return result
     try:
         if arm=='D_safe':

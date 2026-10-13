@@ -61,11 +61,14 @@ def import_history(rows,arms=('B','D','D_safe')):
             if arm=='D_safe':
                 calibrated=read(E46/'protocol_calibrated.json')
                 assert calibrated['lambda_E']==SAFE_SCALE and calibrated['frozen_before_dev']
+                gate_path=source.with_name(source.stem+'_gate.json');gate=read(gate_path)
+                assert gate['mode']=='G3' and gate['constant']==SAFE_SCALE
             target=image_path(arm,row['id']);target.parent.mkdir(parents=True,exist_ok=True)
             for ext in ['.png','.json','.pt']:
                 src=source.with_suffix(ext);dst=target.with_suffix(ext)
                 if dst.exists():assert sha(dst)==sha(src)
                 else:shutil.copy2(src,dst)
+            if arm=='D_safe':shutil.copy2(gate_path,target.with_name(target.stem+'_gate.json'))
             provenance.append(dict(arm=arm,id=row['id'],source=str(source),png_sha256=sha(source),
                 trace_sha256=sha(source.with_suffix('.pt')),source_metadata_sha256=sha(source.with_suffix('.json'))))
         write(OUT/'p2'/(arm+'_complete.json'),dict(identities=32,reused=True,source='E46 G3' if arm=='D_safe' else 'E44'))
