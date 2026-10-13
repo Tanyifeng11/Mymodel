@@ -20,7 +20,7 @@ KEYS=['lpips_gt','contour_f1','iou','leak','lab','hp_gray','clip_text','clip_ref
 BAD=['172600892','180633937','193488637','204446309']
 
 
-def image_path(arm,identity):return OUT/'p2/images'/arm/(identity+'.png')
+def image_path(arm,identity,stage='p2'):return OUT/stage/'images'/arm/(identity+'.png')
 
 
 def generate(arm):
@@ -73,7 +73,7 @@ def import_history(rows,arms=('B','D','D_safe')):
 
 
 @torch.inference_mode()
-def evaluate():
+def evaluate(stage='p2'):
     from eval.eval_utils import prepare_evaluation_masks,estimate_foreground_mask,json_safe
     from eval.metrics import compute_texture_leakage,compute_texture_color_fidelity
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
@@ -81,7 +81,9 @@ def evaluate():
     from tools.e44_b1_mask import overlay
     assert read(OUT/'decision.json')['P0']=='pass'
     assert read(OUT/'p1/C/complete.json')['updates']==800
-    rows=read(OUT/'splits/dev32.json');import_history(rows)
+    arms=ARMS if stage=='p2' else ['B','D','D_safe']
+    rows=read(OUT/'splits'/('dev32.json' if stage=='p2' else 'confirm96.json'))
+    if stage=='p2':import_history(rows)
     metric,lpips_info=frozen_lpips();metric=metric.cuda()
     config=CLIPConfig.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
     model=CLIPModel.from_pretrained('models/clip',config=config,local_files_only=True).cuda().eval().requires_grad_(False)
@@ -96,9 +98,9 @@ def evaluate():
         sketch=Image.open(row['sketch']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
         _,_,mask=sketch_masks(sketch,'cpu')
         bundle=prepare_evaluation_masks(SIZE,sketch_path=row['sketch'],mask_policy='sketch_only')
-        garment=bundle['garment'];folder=OUT/'p2/masks'/row['id'];folder.mkdir(parents=True,exist_ok=True)
-        for arm in ARMS:
-            path=image_path(arm,row['id']);a=Image.open(path).convert('RGB')
+        garment=bundle['garment'];folder=OUT/stage/'masks'/row['id'];folder.mkdir(parents=True,exist_ok=True)
+        for arm in arms:
+            path=image_path(arm,row['id'],stage);a=Image.open(path).convert('RGB')
             rec=dict(id=row['id'],variant=arm,mask_valid=bool(mask['valid']),**{k:None for k in KEYS})
             rec['lpips_gt']=float(metric(tensor(a),tensor(gt)).mean())
             fg=estimate_foreground_mask(a,SIZE)
@@ -117,20 +119,26 @@ def evaluate():
             images=torch.nn.functional.normalize(model.get_image_features(pixel_values=inputs['pixel_values']),dim=-1)
             rec['clip_text']=float((text[0]*images[0]).sum());rec['clip_reference']=float((images[0]*images[1]).sum())
             rec['clip_real']=float((images[0]*images[2]).sum());records.append(rec)
-            historical=old44[('B0' if arm=='B' else 'B1',row['id'])] if arm in ['B','D'] else old46[('G3',row['id'])] if arm=='D_safe' else None
-            if historical:
+            historical=(old44[('B0' if arm=='B' else 'B1',row['id'])] if arm in ['B','D'] else old46[('G3',row['id'])] if arm=='D_safe' else None) if stage=='p2' else None
+            if historical and stage=='p2':
                 for k in KEYS:
                     assert (rec[k] is None)==(historical[k] is None)
                     if rec[k] is not None:
                         error=abs(rec[k]-historical[k]);assert error<=2e-6,(arm,row['id'],k,error)
                         errors.append(error)
-        write(OUT/'p2/metrics.json',records);print('e47 METRICS',row['id'],len(records),flush=True)
-    with (OUT/'p2/metrics.csv').open('w',newline='',encoding='utf-8') as f:
+        write(OUT/stage/'metrics.json',records);print('e47 METRICS',stage,row['id'],len(records),flush=True)
+    with (OUT/stage/'metrics.csv').open('w',newline='',encoding='utf-8') as f:
         writer=csv.DictWriter(f,fieldnames=list(records[0]));writer.writeheader();writer.writerows(records)
-    write(OUT/'p2/metric_protocol.json',dict(lpips=lpips_info,history_max_error=max(errors),
+    write(OUT/stage/'metric_protocol.json',dict(lpips=lpips_info,history_max_error=max(errors,default=None),
         mask_backend='opencv',tolerance=2e-6,contour_tolerance_px=3,seed_unit='identity',
         fid_kid='not_run at dev32',motif_identity_validated=False))
-    assess(records);panels(rows,ARMS,OUT/'p2/panels')
+    panels(rows,arms,OUT/stage/'panels',stage=stage)
+    if stage!='p2':
+        from tools.e47_confirm import assess_confirm
+        assess_confirm(records)
+        write(OUT/stage/'evaluation_complete.json',dict(identities=len(rows),arms=arms,seed=42,commit=commit()))
+        return
+    assess(records)
     panels([r for r in rows if r['id'] in BAD],ARMS,OUT/'p2/critical',cell=256)
     for arm,base in [('B','A'),('C','A'),('D','B'),('D_safe','B')]:
         index={r['id']:r for r in records if r['variant']==base};lookup={r['id']:r for r in rows}
@@ -193,14 +201,14 @@ def assess(records):
         strict_unseen_generalization=False,paper_claim_supported=False)
 
 
-def panels(rows,arms,folder,cell=128):
+def panels(rows,arms,folder,cell=128,stage='p2'):
     folder.mkdir(parents=True,exist_ok=True);height=round(cell*4/3)
     per_page=4 if cell==128 else 1
     for start in range(0,len(rows),per_page):
         page=rows[start:start+per_page];canvas=Image.new('RGB',((3+len(arms))*cell,len(page)*(height+25)),'white')
         draw=ImageDraw.Draw(canvas)
         for y,row in enumerate(page):
-            entries=[('Sketch',row['sketch']),('Reference',row['reference']),('GT',row['gt'])]+[(a,image_path(a,row['id'])) for a in arms]
+            entries=[('Sketch',row['sketch']),('Reference',row['reference']),('GT',row['gt'])]+[(a,image_path(a,row['id'],stage)) for a in arms]
             for x,(label,path) in enumerate(entries):
                 draw.text((x*cell+2,y*(height+25)+2),row['id']+' '+label,fill='black')
                 canvas.paste(Image.open(path).convert('RGB').resize((cell,height)),(x*cell,y*(height+25)+24))
