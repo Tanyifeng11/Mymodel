@@ -53,14 +53,14 @@ def import_history(rows,arms=('B','D','D_safe')):
         for row in rows:
             source=(E46/'p1/images/G3' if arm=='D_safe' else OLD/'p1/images'/('B0' if arm=='B' else 'B1'))/(row['id']+'.png')
             meta=read(source.with_suffix('.json'));assert sha(source)==meta['png_sha256']
+            assert sha(source.with_suffix('.pt'))==meta['diagnostics_sha256']
             assert meta['seed']==42 and len(meta['steps'])==50 and not meta['gt_used_in_inference']
             expected=hashlib.sha256(Image.open(row['reference']).convert('RGB').tobytes()).hexdigest()
             assert meta['reference_sha256']==expected
             assert all(sha(row[k])==frozen[row[k]] for k in ['gt','sketch','reference'])
             if arm=='D_safe':
                 calibrated=read(E46/'protocol_calibrated.json')
-                # 标定文件中可能保留多项诊断，数值必须等于唯一冻结强度。
-                assert str(SAFE_SCALE) in str(calibrated)
+                assert calibrated['lambda_E']==SAFE_SCALE and calibrated['frozen_before_dev']
             target=image_path(arm,row['id']);target.parent.mkdir(parents=True,exist_ok=True)
             for ext in ['.png','.json','.pt']:
                 src=source.with_suffix(ext);dst=target.with_suffix(ext)
