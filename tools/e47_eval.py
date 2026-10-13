@@ -174,17 +174,21 @@ def assess(records):
     aux_inconclusive=(not gates['D_safe']['extreme_events'] and gates['D_safe']['appearance_gain']>0
         and aux_delta['contour_f1']['mean']>=-.020 and aux_delta['iou']['mean']>=-.010
         and aux_delta['leak']['mean']<=.005)
-    allow_confirm=useful and (strong_safe or safe_aux or aux_inconclusive)
-    reason='可解释 TCPM 条件增量且存在安全配置' if allow_confirm else 'TCPM 条件增量或结构折中未满足开发继续条件'
+    application_worth=gates['D_safe']['appearance_ci_positive'] and (safe_aux or aux_inconclusive)
+    # 两个问题分别判断：缺乏协同证据不等于固定应用配置没有确认价值。
+    allow_confirm=(useful and strong_safe) or application_worth
+    reason=('固定 D-safe 有外观收益且零极端，可做一次冻结后的风险确认；协同主张单独判断'
+        if allow_confirm else '未找到值得确认的外观/结构折中，停止后续试验')
     write(OUT/'p2/means.json',means);write(OUT/'p2/valid_counts.json',counts)
     write(OUT/'p2/identity_effects.json',contributions);write(OUT/'p2/factorial_effects.json',effects)
     write(OUT/'p2/gates.json',gates);write(OUT/'p2/paired_deltas.json',deltas)
     write(OUT/'p2/subgroups.json',{name:{arm:{k:paired([r for r in records if select(r)],arm,'B',k) for k in KEYS}
         for arm in ['D','D_safe']} for name,select in [('old_bad4',lambda r:r['id'] in BAD),
             ('other24',lambda r:r['mask_valid'] and r['id'] not in BAD)]})
-    decision(P2='pass_pending_visual' if allow_confirm else 'NO_GO',P3='not_run',
+    decision(P2=('INCONCLUSIVE' if not safe_aux and not strong_safe else 'pass_pending_visual') if allow_confirm else 'NO_GO',P3='not_run',
         continue_to_confirmation=allow_confirm,stop_reason=reason,
         positive_interaction_ci=effects['Interaction_LPIPS']['ci95'][0]>0,
+        module_synergy_direction=useful,application_confirmation_worth=application_worth,
         D_safe_confirmation_only_inconclusive=aux_inconclusive and not safe_aux,
         strict_unseen_generalization=False,paper_claim_supported=False)
 
