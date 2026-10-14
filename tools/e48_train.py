@@ -16,8 +16,13 @@ TRAIN_ARMS=['DECOUPLED','BOUNDARY']
 def freeze():
     assert read(OUT/'probe/evaluation_complete.json')['complete']
     assert read(OUT/'audit/complete.json')['passed']
+    gates=read(OUT/'probe/gates.json');means=read(OUT/'probe/means.json')
     value=dict(experiment='e48',arms=TRAIN_ARMS,training=CONFIG['training'],
         source_diagnosis_sha256=sha(OUT/'mechanism_summary.json'),
+        source_metrics_sha256=sha(OUT/'probe/metrics.json'),
+        component_evidence={a:dict(lpips=means[a]['lpips_gt'],f1=means[a]['contour_f1'],
+            extreme_events=gates[a]['extreme_events']) for a in ['D','COMP_ADD','COMP_SELF']},
+        rationale='reference addition reproduces failure tails; test decoupling as a controlled alternative and boundary distillation as direct protection',
         parent_B1_sha256=B1_SHA,base_sha256=E5_SHA,
         initialization='fresh B1 seed42; DECOUPLED same parameters but separate reference softmax',
         boundary='Sketch external contour dilation/erosion 19x19; distill same-state E5 epsilon',
@@ -154,10 +159,12 @@ def generate(arm,stage):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['freeze','train','generate','evaluate'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['freeze','train','generate','evaluate','run'])
     parser.add_argument('--arm',choices=TRAIN_ARMS);parser.add_argument('--stage',default='probe',choices=['probe','dev32'])
     args=parser.parse_args();torch.set_num_threads(2)
-    if args.action=='freeze':freeze()
+    if args.action=='run':
+        train(args.arm);generate(args.arm,'probe');generate(args.arm,'dev32')
+    elif args.action=='freeze':freeze()
     elif args.action=='train':train(args.arm)
     elif args.action=='generate':generate(args.arm,args.stage)
     else:
