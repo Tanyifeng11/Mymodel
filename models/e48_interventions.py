@@ -99,7 +99,8 @@ class Intervention:
         elif self.arm in CONFIG['windows']:
             low,high=CONFIG['windows'][self.arm];multiplier=float(low<=index<high)
         elif self.arm=='ENERGY_LATE':multiplier=read(OUT/'audit/calibration.json')['late_lambda']
-        applied=raw*multiplier
+        # 历史 G3 先将系数舍入至残差 dtype；Python scalar 乘法的舍入顺序不同。
+        applied=raw*torch.as_tensor(multiplier,device=raw.device,dtype=raw.dtype)
         self.current.update(raw_energy=float(raw.float().square().sum()),
             applied_energy=float(applied.float().square().sum()),multiplier=multiplier,
             injection_raw=regional_stats(raw,self.token_weights),
