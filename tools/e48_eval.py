@@ -65,6 +65,12 @@ def assess(records,stage):
     write(OUT/stage/'gates.json',gates);write(OUT/stage/'paired_deltas.json',deltas)
     write(OUT/stage/'control_comparisons.json',comparisons)
     promoted=[a for a in REPAIRS+['DECOUPLED','BOUNDARY'] if a in gates and gates[a]['passed']]
+    if stage=='new96':
+        candidate=read(OUT/'new96/protocol.json')['candidate'];passed=gates[candidate]['passed']
+        decision(new96='pass' if passed else 'NO_GO',candidate=candidate,
+            final_decision='CONDITIONAL_GO' if passed else 'NO_GO',unseen_generalization=False,
+            next='local archive verification and report; no further tuning on new96')
+        return
     decision(**{stage:'complete'},candidate_passed=promoted,
         next='diagnosis-driven training or full dev32' if stage=='probe' else 'freeze one candidate only if all gates pass')
 
@@ -99,7 +105,7 @@ def evaluate(stage,arms=None):
     from tools.e33tmoc_appearance_eval import frozen_lpips
     from tools.e44_b1_mask import overlay
     arms=(ARMS+[a for a in COMPONENT_ARMS if (OUT/stage/(a+'_complete.json')).exists()]) if arms is None else arms
-    rows=read(OUT/'splits'/('probe.json' if stage=='probe' else 'dev32.json'))
+    rows=read(OUT/'splits'/('probe.json' if stage=='probe' else 'new96.json' if stage=='new96' else 'dev32.json'))
     assert all(read(OUT/stage/(a+'_complete.json'))['n']==len(rows) for a in arms)
     metric,lpips_info=frozen_lpips();metric=metric.cuda()
     config=CLIPConfig.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
@@ -150,7 +156,7 @@ def evaluate(stage,arms=None):
             features=F.normalize(model.get_image_features(pixel_values=inputs['pixel_values']),dim=-1)
             rec.update(clip_text=float((text[0]*features[0]).sum()),
                 clip_reference=float((features[0]*features[1]).sum()),clip_real=float((features[0]*features[2]).sum()))
-            if arm in ['B','D','SAFE']:
+            if stage!='new96' and arm in ['B','D','SAFE']:
                 old=historic[('D_safe' if arm=='SAFE' else arm,row['id'])]
                 for k in KEYS[:9]:
                     assert (rec[k] is None)==(old[k] is None)

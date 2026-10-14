@@ -31,7 +31,8 @@ def run_case(r,row,arm,stage,audit=False,diagnose=False,compare=True):
         assert saved['arm']==arm and saved['diagnose']==diagnose
         assert sha(path)==saved['generation']['png_sha256']
         return saved
-    ctl=Intervention(r,row,arm,audit=audit,diagnose=diagnose)
+    baseline=image_path('B',row['id'],'new96').with_suffix('.pt') if stage=='new96' else None
+    ctl=Intervention(r,row,arm,audit=audit,diagnose=diagnose,baseline_path=baseline)
     ctl.install()
     try:record,_,_=r.generate(row,path)
     finally:ctl.close()

@@ -29,6 +29,7 @@ def finish(phase,jobs):
         gpu_hours=sum(r['gpu_hours'] for r in ledger),cpu_hours=sum(r['cpu_hours'] for r in ledger),
         failed_jobs_included=True,missing_maxrss='unavailable, not zero'))
     inputs=read(OUT/'manifests/input_hashes.json')
+    if (OUT/'new96/input_hashes.json').exists():inputs.update(read(OUT/'new96/input_hashes.json'))
     assert all(sha(p)==expected for p,expected in inputs.items())
     code=[p for pattern in ['tools/e48*.py','models/e48*.py','submit/e48*.sh'] for p in Path('.').glob(pattern)]
     code += [Path(p) for p in ['tools/e44_runtime.py','tools/e44_train.py','tools/e44_metrics.py',

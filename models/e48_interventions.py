@@ -56,7 +56,7 @@ def decomposition(attn,p,cache):
 
 
 class Intervention:
-    def __init__(self,r,row,arm,audit=False,diagnose=False):
+    def __init__(self,r,row,arm,audit=False,diagnose=False,baseline_path=None):
         from tools.e44_runtime import sketch_masks
         from PIL import Image
         self.r,self.p,self.arm=r,r.processor,arm
@@ -74,7 +74,7 @@ class Intervention:
         self.baseline=None
         if arm=='LATENT_LOCK':
             from diffusers import DDIMScheduler
-            source=history('B',row['id']).with_suffix('.pt')
+            source=baseline_path if baseline_path is not None else history('B',row['id']).with_suffix('.pt')
             self.baseline=torch.load(source,map_location='cpu',weights_only=False)
             self.baseline_scheduler=DDIMScheduler.from_config(r.pipe.scheduler.config)
             self.baseline_scheduler.set_timesteps(50,device=r.pipe.device)
