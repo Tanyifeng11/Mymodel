@@ -58,6 +58,29 @@ def forward_loss(r,args,kw,noise,mask,arm,boundary):
     return total,dict(diffusion=float(diff.detach()),keep=float(keep.detach()),boundary=float(edge.detach()))
 
 
+def zero_gate_audit(r,arm):
+    from tools.e47_runtime import exact_trace
+    from tools.e44_runtime import digest
+    folder=OUT/'training'/arm/'zero_gate'
+    assert float(r.processor.gate)==0
+    before={k:digest(v) for k,v in r.processor.trainable_state().items()}
+    modes=[(m,m.training) for m in r.processor.modules()]
+    r.processor.eval();r.active=True;results=[]
+    try:
+        # 八例均在冻结的诊断名单内；不按本次生成效果挑选身份。
+        for row in read(OUT/'splits/probe.json')[:8]:
+            path=folder/'images'/(row['id']+'.png')
+            record,_,_=r.generate(row,path)
+            baseline=history('B',row['id'])
+            trace=exact_trace(path.with_suffix('.pt'),baseline.with_suffix('.pt'))
+            assert sha(path)==sha(baseline) and trace['bit_exact'],(arm,row['id'],trace)
+            results.append(dict(id=row['id'],png_exact=True,trace=trace,seconds=record['seconds']))
+        assert before=={k:digest(v) for k,v in r.processor.trainable_state().items()}
+    finally:
+        for module,training in modes:module.training=training
+    write(folder/'complete.json',dict(passed=True,n=len(results),results=results,commit=commit()))
+
+
 def train(arm):
     from tools.e47_runtime import close
     from tools.e44_runtime import sketch_masks
@@ -65,14 +88,17 @@ def train(arm):
     from tools.e22_4_generation import module_hashes
     freeze();folder=OUT/'training'/arm
     assert not (folder/'complete.json').exists(),'禁止重复训练选择结果'
-    seed_all(42);r=make_runtime(arm);data=inputs(r);seed_all(42)
+    seed_all(42);r=make_runtime(arm);data=inputs(r)
     assert sum(p.numel() for p in r.parameters())==820481
+    zero_gate_audit(r,arm)
     # 只从 Sketch 构造权重，不使用 GT 分割；缓存不消耗训练 RNG。
     boundaries={}
     for row in read(OUT/'splits/train1024.json'):
         raw,_,info=sketch_masks(Image.open(row['sketch']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR),'cpu')
         maps=region_masks(raw)
         boundaries[row['id']]=weights_at(maps,(64,48),r.pipe.device)['boundary'] if info['valid'] else torch.zeros(1,1,64,48,device=r.pipe.device)
+    # 回放不进入训练消费序列；重置后与 E44 使用完全相同的 RNG 起点。
+    seed_all(42);torch.cuda.reset_peak_memory_stats()
     optimizer=torch.optim.AdamW(r.parameters(),lr=1e-4,weight_decay=.01)
     scaler=torch.amp.GradScaler('cuda');sequence=[];history=[];step=0;empty=0
     started=time.perf_counter();before=r.before
