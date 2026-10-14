@@ -98,9 +98,16 @@ def audit():
             r.processor.gate.data.fill_(.01)
             r.pipe.unet.zero_grad(set_to_none=True)
             loss,_=loss_forward(r,args,kw,noise,mask)
-            loss.backward()
+            # 与正式训练相同的 loss scaling；不更新参数，只验收可微路径。
+            # 未缩放的 FP16 审计会把极小逐元素梯度提前量化为零。
+            optimizer=torch.optim.AdamW(r.parameters(),lr=1e-4,weight_decay=.01)
+            scaler=torch.amp.GradScaler('cuda')
+            scaler.scale(loss).backward(); scaler.unscale_(optimizer)
             names=['gate','to_k_ref.weight','to_v_ref.weight','style_embed.proj_in.weight','style_embed.latents']
             grads=gradients(r)
+            write(OUT/'audit'/arm/'gradient_probe.json',dict(id=record['id'],
+                gate=float(r.processor.gate.detach()),loss_scale=scaler.get_scale(),gradients=grads,
+                optimizer_updates=0,commit=commit()))
             assert all(grads.get(n) is not None and np.isfinite(grads[n]) and grads[n]>0 for n in names),grads
             results[arm]['gradient_flow']={n:grads[n] for n in names}
             r.active=True
