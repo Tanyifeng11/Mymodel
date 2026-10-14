@@ -36,6 +36,17 @@ def finish(phase,jobs):
         'models/reference_attention_variants.py','garment_mask_utils.py','eval/eval_utils.py']]
     files=[p for p in OUT.rglob('*') if p.is_file() and not p.name.endswith(('.tar.gz','.sha256','.tmp'))
         and not p.name.startswith('run_manifest_')]
+    if phase=='audit':
+        # 训练可能同时进行；验收包不能读取正在改写的 history/checkpoint/log。
+        selected=[]
+        for p in files:
+            parts=p.relative_to(OUT).parts
+            if len(parts)>1 and (parts[0] in ['audit','splits','source_diagnosis','manifests']
+                    or parts[0].startswith('failed_audit_')): selected.append(p)
+            elif len(parts)==1 and (p.name in ['protocol.json','decision.json']
+                    or p.stem in ['gpu_'+str(j) for j in jobs]
+                    or p.stem in ['resource_ledger_audit','slurm_audit']): selected.append(p)
+        files=selected
     manifest=OUT/('run_manifest_'+phase+'.json')
     write(manifest,dict(experiment='e49',phase=phase,commit=commit(),input_hashes_unchanged=True,
         code_sha256={str(p):sha(p) for p in sorted(code)},files={str(p.relative_to(OUT)):sha(p) for p in sorted(files)},
