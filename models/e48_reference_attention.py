@@ -25,6 +25,11 @@ class IndependentReferenceProcessor(ReferenceAttentionProcessor):
         k,v=self.to_k_ref(f).to(q.dtype),self.to_v_ref(f).to(q.dtype)
         def split(y):return y.reshape(b,-1,heads,c//heads).transpose(1,2)
         reference=F.scaled_dot_product_attention(split(q),split(k),split(v))
+        # 仅工程诊断启用：记录真实反向输入，比较半精度与单精度 SDPA。
+        if getattr(self,'capture_backward',False) and torch.is_grad_enabled():
+            cache=dict(q=split(q).detach(),k=split(k).detach(),v=split(v).detach())
+            self.backward_cache=cache
+            reference.register_hook(lambda grad:cache.update(gradient=grad.detach()))
         delta=(self.gate*reference).transpose(1,2).reshape(b,n,c)
         delta=F.linear(delta,attn.to_out[0].weight,None);delta=attn.to_out[1](delta)
         if len(shape)==4:delta=delta.transpose(1,2).reshape(shape)
