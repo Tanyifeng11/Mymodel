@@ -12,6 +12,10 @@ def freeze():
     if path.exists():return read(path)
     for stage in ['probe','dev32']:assert read(OUT/stage/'evaluation_complete.json')['complete']
     assert read(OUT/'holdout_audit/complete.json')['complete']
+    trained={a:read(OUT/'training'/a/'complete.json') for a in ['DECOUPLED','BOUNDARY']}
+    assert all(r['updates']==800 and r['frozen_base_unchanged'] for r in trained.values())
+    # 最终汇总反映真实训练记录，不能沿用 prepare() 的 not_run 初值。
+    decision(training='complete',training_updates={a:r['updates'] for a,r in trained.items()})
     probe=read(OUT/'probe/gates.json');dev=read(OUT/'dev32/gates.json')
     possible=[a for a in REPAIRS+['DECOUPLED','BOUNDARY'] if a in dev and a in probe
         and dev[a]['passed'] and probe[a]['passed']]

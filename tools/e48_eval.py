@@ -98,7 +98,7 @@ def mechanism_summary():
 
 
 @torch.inference_mode()
-def evaluate(stage,arms=None,device='cuda'):
+def evaluate(stage,arms=None):
     from eval.eval_utils import prepare_evaluation_masks,estimate_foreground_mask,json_safe
     from eval.metrics import compute_texture_leakage,compute_texture_color_fidelity
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
@@ -107,11 +107,11 @@ def evaluate(stage,arms=None,device='cuda'):
     arms=(ARMS+[a for a in COMPONENT_ARMS if (OUT/stage/(a+'_complete.json')).exists()]) if arms is None else arms
     rows=read(OUT/'splits'/('probe.json' if stage=='probe' else 'new96.json' if stage=='new96' else 'dev32.json'))
     assert all(read(OUT/stage/(a+'_complete.json'))['n']==len(rows) for a in arms)
-    metric,lpips_info=frozen_lpips();metric=metric.to(device)
+    metric,lpips_info=frozen_lpips();metric=metric.cuda()
     config=CLIPConfig.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
-    model=CLIPModel.from_pretrained('models/clip',config=config,local_files_only=True).to(device).eval().requires_grad_(False)
+    model=CLIPModel.from_pretrained('models/clip',config=config,local_files_only=True).cuda().eval().requires_grad_(False)
     processor=CLIPProcessor.from_pretrained('models/clip/models/image_encoder',local_files_only=True)
-    tensor=lambda im:torch.from_numpy(np.asarray(im,np.float32).transpose(2,0,1)/127.5-1)[None].to(device)
+    tensor=lambda im:torch.from_numpy(np.asarray(im,np.float32).transpose(2,0,1)/127.5-1)[None].cuda()
     records=[];sensitivity=[];profiles=[]
     historic={(r['variant'],r['id']):r for s in ['p2','p3'] for r in read(PARENT/s/'metrics.json')}
     for row in rows:
@@ -151,7 +151,7 @@ def evaluate(stage,arms=None,device='cuda'):
                             iou=float((f&garment).sum()/max((f|garment).sum(),1)),
                             **{'f1_%dpx'%t:contour_f1(f,garment,t) for t in [1,3,5,9]}))
             inputs=processor(text=[row['caption']],images=[a,ref,gt],return_tensors='pt',padding=True,truncation=True)
-            inputs={k:v.to(device) for k,v in inputs.items()}
+            inputs={k:v.cuda() for k,v in inputs.items()}
             text=F.normalize(model.get_text_features(input_ids=inputs['input_ids'],attention_mask=inputs.get('attention_mask')),dim=-1)
             features=F.normalize(model.get_image_features(pixel_values=inputs['pixel_values']),dim=-1)
             rec.update(clip_text=float((text[0]*features[0]).sum()),
@@ -167,7 +167,6 @@ def evaluate(stage,arms=None,device='cuda'):
     with (OUT/stage/'metrics.csv').open('w',newline='',encoding='utf-8') as f:
         writer=csv.DictWriter(f,fieldnames=list(records[0]));writer.writeheader();writer.writerows(records)
     write(OUT/stage/'metric_protocol.json',dict(lpips=lpips_info,contour_tolerance_px=3,
-        compute_device=str(device),torch_version=torch.__version__,cpu_threads=torch.get_num_threads(),
         fixed_threshold_grid=dict(distance=[12,18,24],brightness=[230,235,240],tolerance=[1,3,5,9]),
         no_threshold_based_model_selection=True,motif_identity_validated=False))
     write(OUT/stage/'threshold_sensitivity.json',sensitivity);write(OUT/stage/'width_profiles.json',profiles)
@@ -186,7 +185,7 @@ def evaluate(stage,arms=None,device='cuda'):
         panels([lookup[r['id']] for r in worst],['B','D',arm],stage,OUT/stage/'overlays'/arm,overlays=True)
     assess(records,stage)
     if stage=='probe':mechanism_summary()
-    write(OUT/stage/'evaluation_complete.json',dict(complete=True,n=len(rows),arms=arms,device=str(device),commit=commit()))
+    write(OUT/stage/'evaluation_complete.json',dict(complete=True,n=len(rows),arms=arms,commit=commit()))
 
 
 from torch.nn import functional as F
