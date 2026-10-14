@@ -17,6 +17,11 @@ def freeze():
     assert read(OUT/'probe/evaluation_complete.json')['complete']
     assert read(OUT/'audit/complete.json')['passed']
     gates=read(OUT/'probe/gates.json');means=read(OUT/'probe/means.json')
+    for name in ['metrics.json','gates.json','means.json','evaluation_complete.json']:
+        source=OUT/'probe'/name;target=OUT/'training/source_diagnosis'/name
+        target.parent.mkdir(parents=True,exist_ok=True)
+        if target.exists():assert sha(target)==sha(source)
+        else:shutil.copy2(source,target)
     value=dict(experiment='e48',arms=TRAIN_ARMS,training=CONFIG['training'],
         source_diagnosis_sha256=sha(OUT/'mechanism_summary.json'),
         source_metrics_sha256=sha(OUT/'probe/metrics.json'),
@@ -159,7 +164,7 @@ def generate(arm,stage):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['freeze','train','generate','evaluate','run'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['freeze','train','generate','evaluate','evaluate_all','run'])
     parser.add_argument('--arm',choices=TRAIN_ARMS);parser.add_argument('--stage',default='probe',choices=['probe','dev32'])
     args=parser.parse_args();torch.set_num_threads(2)
     if args.action=='run':
@@ -167,6 +172,10 @@ def main():
     elif args.action=='freeze':freeze()
     elif args.action=='train':train(args.arm)
     elif args.action=='generate':generate(args.arm,args.stage)
+    elif args.action=='evaluate_all':
+        from tools.e48_eval import evaluate
+        evaluate('probe',arms=ARMS+COMPONENT_ARMS+TRAIN_ARMS)
+        evaluate('dev32',arms=ARMS+TRAIN_ARMS)
     else:
         from tools.e48_eval import evaluate
         extra=COMPONENT_ARMS if args.stage=='probe' else []
