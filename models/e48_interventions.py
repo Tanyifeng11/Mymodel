@@ -21,6 +21,7 @@ def split(value,heads):
     return value.reshape(b,n,heads,c//heads).transpose(1,2)
 
 
+@torch.no_grad()
 def decomposition(attn,p,cache):
     q=cache['q'];dtype=q.dtype
     qh=split(q,attn.heads)
@@ -105,13 +106,18 @@ class Intervention:
             applied_energy=float(applied.float().square().sum()),multiplier=multiplier,
             injection_raw=regional_stats(raw,self.token_weights),
             injection_applied=regional_stats(applied,self.token_weights))
-        if self.diagnose and index in SELECTED_STEPS:
+        if (self.diagnose and index in SELECTED_STEPS) or self.arm in COMPONENT_ARMS:
             self.components,self.current['softmax']=decomposition(module,self.p,self.capture)
             self.current['component_sum_relative_error']=float(
                 (self.components['added'].float()+self.components['suppressed'].float()-raw.float()).norm()
                 /raw.float().norm().clamp_min(1e-8))
             self.current['component_added']=regional_stats(self.components['added'],self.token_weights)
             self.current['component_suppressed']=regional_stats(self.components['suppressed'],self.token_weights)
+        if self.arm in COMPONENT_ARMS:
+            applied=self.components['added' if self.arm=='COMP_ADD' else 'suppressed']
+            self.current.update(applied_energy=float(applied.float().square().sum()),
+                injection_applied=regional_stats(applied,self.token_weights))
+            return self.base+applied
         if multiplier==1.:return result
         if multiplier==0.:return self.base
         return self.base+applied
@@ -200,7 +206,7 @@ class Intervention:
         self.p.diagnostic_observer=self.observe
         module=dict(self.r.pipe.unet.named_modules())[LAYER[:-10]]
         self.handles.append(module.register_forward_hook(self.output))
-        if self.diagnose:
+        if self.diagnose or self.arm in COMPONENT_ARMS:
             for name in ['q','k','v']:
                 self.handles.append(getattr(module,'to_'+name).register_forward_hook(self.capture_projection(name)))
             self.handles.append(self.p.to_k_ref.register_forward_hook(self.capture_projection('kr')))

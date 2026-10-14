@@ -64,7 +64,7 @@ def assess(records,stage):
     write(OUT/stage/'means.json',means);write(OUT/stage/'valid_counts.json',counts)
     write(OUT/stage/'gates.json',gates);write(OUT/stage/'paired_deltas.json',deltas)
     write(OUT/stage/'control_comparisons.json',comparisons)
-    promoted=[a for a in REPAIRS if a in gates and gates[a]['passed']]
+    promoted=[a for a in REPAIRS+['DECOUPLED','BOUNDARY'] if a in gates and gates[a]['passed']]
     decision(**{stage:'complete'},candidate_passed=promoted,
         next='diagnosis-driven training or full dev32' if stage=='probe' else 'freeze one candidate only if all gates pass')
 
@@ -98,7 +98,7 @@ def evaluate(stage,arms=None):
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
     from tools.e33tmoc_appearance_eval import frozen_lpips
     from tools.e44_b1_mask import overlay
-    arms=ARMS if arms is None else arms
+    arms=(ARMS+[a for a in COMPONENT_ARMS if (OUT/stage/(a+'_complete.json')).exists()]) if arms is None else arms
     rows=read(OUT/'splits'/('probe.json' if stage=='probe' else 'dev32.json'))
     assert all(read(OUT/stage/(a+'_complete.json'))['n']==len(rows) for a in arms)
     metric,lpips_info=frozen_lpips();metric=metric.cuda()
@@ -165,9 +165,10 @@ def evaluate(stage,arms=None):
         no_threshold_based_model_selection=True,motif_identity_validated=False))
     write(OUT/stage/'threshold_sensitivity.json',sensitivity);write(OUT/stage/'width_profiles.json',profiles)
     for label,group in [('time',['B','D','SAFE','EARLY','MIDDLE','LATE']),
-        ('space',['B','D','SAFE','EPS_LOCK','ENERGY_EPS','LATENT_LOCK','ENERGY_LATE'])]:
+        ('space',['B','D','SAFE','EPS_LOCK','ENERGY_EPS','LATENT_LOCK','ENERGY_LATE']),
+        ('components',['B','D','COMP_ADD','COMP_SELF']),('trained',['B','D','SAFE','DECOUPLED','BOUNDARY'])]:
         selected=[a for a in group if a in arms]
-        panels(rows,selected,stage,OUT/stage/'panels'/label)
+        if any(a not in ['B','D','SAFE'] for a in selected):panels(rows,selected,stage,OUT/stage/'panels'/label)
     base={r['id']:r for r in records if r['variant']=='B'};lookup={r['id']:r for r in rows}
     for arm in arms:
         if arm=='B':continue

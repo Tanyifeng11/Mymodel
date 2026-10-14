@@ -96,6 +96,12 @@ def import_history(rows,arm,stage):
 def generate(arm,stage):
     prepare();assert read(OUT/'audit/complete.json')['passed']
     rows=read(OUT/'splits'/('probe.json' if stage=='probe' else 'dev32.json'))
+    if arm in COMPONENT_ARMS:
+        assert stage=='probe'
+        write(OUT/'component_protocol.json',dict(arms=COMPONENT_ARMS,scope='exploratory full RGB diagnosis',
+            fixed_weights=B1_SHA,formula='project(gate*p_ref*reference) or project(-gate*p_ref*self)',
+            identities=[r['id'] for r in rows],freeze_before_component_images=True,
+            motivation='same-state reference component produced larger boundary epsilon effect; verify final image'))
     if arm in ['B','D','SAFE']:
         import_history(rows,arm,stage);return
     if stage=='dev32':
@@ -110,7 +116,7 @@ def generate(arm,stage):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('action',choices=['prepare','audit','generate','batch','evaluate'])
-    parser.add_argument('--arm',choices=ARMS);parser.add_argument('--arms',nargs='+',choices=ARMS)
+    parser.add_argument('--arm',choices=ARMS+COMPONENT_ARMS);parser.add_argument('--arms',nargs='+',choices=ARMS+COMPONENT_ARMS)
     parser.add_argument('--stage',choices=['probe','dev32'],default='probe');args=parser.parse_args()
     torch.set_num_threads(2)
     if args.action=='prepare':prepare()
