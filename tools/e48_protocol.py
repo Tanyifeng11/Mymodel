@@ -81,4 +81,3 @@ def prepare():
     if frozen.exists():assert read(frozen)==hashes
     else:write(frozen,hashes)
     return probe
-

@@ -210,4 +210,3 @@ class Intervention:
         self.p.diagnostic_observer=None;self.r.active=True
         for handle in self.handles:handle.remove()
         self.handles=[]
-
