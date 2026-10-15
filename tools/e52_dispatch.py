@@ -20,7 +20,12 @@ def submit(name,action,gpu=True,depends=None,minutes=120,extra=None):
     command=['sbatch','--parsable','--job-name=E52_'+name,'--time=%02d:%02d:00'%(minutes//60,minutes%60)]
     if depends:command+=['--dependency=afterok:'+':'.join(str(x) for x in depends)]
     command+=['submit/e52_gpu.sh' if gpu else 'submit/e52_cpu.sh',action]+(extra or [])
-    output=subprocess.check_output(command,text=True).strip();job=int(output.split(';')[0])
+    response=subprocess.run(command,text=True,capture_output=True)
+    if response.returncode:
+        path=OUT/'resources/submission_failures.json';failures=read(path) if path.exists() else []
+        failures.append(dict(name=name,command=command,error=response.stderr,at=datetime.datetime.now(datetime.timezone.utc).isoformat()))
+        write(path,failures);raise RuntimeError(response.stderr.strip())
+    output=response.stdout.strip();job=int(output.split(';')[0])
     record=dict(name=name,id=job,gpu=gpu,cpus=2 if gpu else 8,minutes=minutes,depends=depends or [],
         command=command,submitted=datetime.datetime.now(datetime.timezone.utc).isoformat(),commit=commit())
     path=OUT/'resources/jobs.json';jobs=read(path) if path.exists() else []
@@ -28,29 +33,67 @@ def submit(name,action,gpu=True,depends=None,minutes=120,extra=None):
     return job
 
 def launch(p0):
-    path=OUT/'resources/dispatch_complete.json';assert not path.exists(),'已有作业图，不能重复提交'
-    snapshot=resources();write(OUT/'resources/initial_cluster.json',snapshot)
-    # 无空闲时排四个短单卡分片，允许 Slurm 回填；实际并发仍由可用 GPU 决定。
-    workers=min(8,snapshot['free']) if snapshot['free'] else 4
+    snapshot=resources()
+    if not (OUT/'resources/initial_cluster.json').exists():write(OUT/'resources/initial_cluster.json',snapshot)
     jobs_path=OUT/'resources/jobs.json'
     if not jobs_path.exists():write(jobs_path,[dict(name='P0',id=p0,gpu=True,cpus=2,minutes=40,depends=[],
         command=['sbatch','submit/e52_gpu.sh','audit'],submitted='previously submitted through portal',commit='aa44b26')])
-    data=submit('DATA','data',False,minutes=20)
-    provenance=submit('TOKEN','provenance',depends=[p0,data],minutes=20)
-    probe=submit('PROBE','generate',depends=[provenance],minutes=30,extra=['--stage','probe','--arm','all'])
-    pilot=[submit('PILOT_%d'%i,'generate',depends=[provenance],minutes=40 if workers>=4 else 100,
-        extra=['--stage','pilot','--arm','all','--shard',str(i),'--shards',str(workers)]) for i in range(workers)]
-    pilot_eval=submit('PILOT_EVAL','evaluate',depends=pilot,minutes=25,extra=['--stage','pilot'])
-    frozen=submit('FREEZE','freeze',False,depends=[pilot_eval,probe],minutes=15)
-    locked=[submit('LOCK_%d'%i,'generate',depends=[frozen],minutes=60 if workers>=4 else 120,
-        extra=['--stage','lock','--arm','all','--shard',str(i),'--shards',str(workers)]) for i in range(workers)]
-    locked_eval=submit('LOCK_EVAL','evaluate',depends=locked,minutes=30,extra=['--stage','lock'])
-    natural=[submit('N96_%d'%i,'generate',depends=[locked_eval],minutes=40 if workers>=4 else 120,
-        extra=['--stage','natural','--arm','all','--shard',str(i),'--shards',str(workers)]) for i in range(workers)]
-    natural_eval=submit('N96_EVAL','evaluate',depends=natural,minutes=30,extra=['--stage','natural'])
-    final=submit('FINAL','finish',False,depends=[natural_eval],minutes=20)
-    write(path,dict(submitted=True,workers=workers,final_job=final,commit=commit(),
-        scientific_training_updates=0,dependency_failure='downstream not_run until failed stage repaired; never infer science failure'))
+    plan_path=OUT/'resources/dispatch_plan.json'
+    if not plan_path.exists():
+        prior=read(jobs_path);pilot=next((r for r in prior if r['name'].startswith('PILOT_') and '--shards' in r['command']),None)
+        workers=int(pilot['command'][pilot['command'].index('--shards')+1]) if pilot else min(8,snapshot['free']) if snapshot['free'] else 4
+        write(plan_path,dict(workers=workers,max_active_jobs=5,incremental=True,
+            reason='submit only ready stages, preserve accepted jobs, respect cluster submit limits',commit=commit()))
+    advance()
+
+def advance():
+    path=OUT/'resources/dispatch_plan.json'
+    if not path.exists():return
+    plan=read(path);workers=plan['workers'];jobs=read(OUT/'resources/jobs.json')
+    lookup={r['name']:r for r in jobs};ids=','.join(str(r['id']) for r in jobs)
+    output=subprocess.check_output(['sacct','-X','-j',ids,'--format=JobIDRaw,State','-P','-n'],text=True)
+    states={int(line.split('|')[0]):line.split('|')[1] for line in output.splitlines() if line.split('|')[0].isdigit()}
+    queue=subprocess.check_output(['squeue','-h','-u','u2515283058'],text=True)
+    slots=max(0,plan['max_active_jobs']-len(queue.splitlines()))
+    def done(name,marker=None):
+        return name in lookup and states.get(lookup[name]['id'])=='COMPLETED' and (marker is None or (OUT/marker).exists())
+    def ensure(name,action,gpu=True,parents=None,minutes=120,extra=None):
+        nonlocal slots
+        if name in lookup:return lookup[name]['id']
+        if slots<=0:return None
+        try:identity=submit(name,action,gpu,[lookup[x]['id'] for x in parents or []],minutes,extra)
+        except RuntimeError as error:
+            print('E52 SUBMIT DEFERRED',name,str(error),flush=True);slots=0;return None
+        slots-=1;lookup[name]=dict(id=identity,name=name);return identity
+    ensure('DATA','data',False,minutes=20)
+    if done('P0','audit/p0_complete.json') and done('DATA','splits/natural.json'):
+        ensure('TOKEN','provenance',parents=['P0','DATA'],minutes=20)
+    if done('TOKEN','audit/token_provenance.json'):
+        ensure('PROBE','generate',parents=['TOKEN'],minutes=30,extra=['--stage','probe','--arm','all'])
+        for i in range(workers):ensure('PILOT_%d'%i,'generate',parents=['TOKEN'],minutes=40 if workers>=4 else 100,
+            extra=['--stage','pilot','--arm','all','--shard',str(i),'--shards',str(workers)])
+    pilot=['PILOT_%d'%i for i in range(workers)]
+    if all(done(name,'resources/pilot_shard%d_complete.json'%i) for i,name in enumerate(pilot)):
+        ensure('PILOT_EVAL','evaluate',parents=pilot,minutes=25,extra=['--stage','pilot'])
+    if done('PILOT_EVAL','metrics/pilot/summary.json') and done('PROBE','resources/probe_shard0_complete.json'):
+        ensure('FREEZE','freeze',False,parents=['PILOT_EVAL','PROBE'],minutes=15)
+    if done('FREEZE','manifest/confirmation.json'):
+        for i in range(workers):ensure('LOCK_%d'%i,'generate',parents=['FREEZE'],minutes=60 if workers>=4 else 120,
+            extra=['--stage','lock','--arm','all','--shard',str(i),'--shards',str(workers)])
+    locked=['LOCK_%d'%i for i in range(workers)]
+    if all(done(name,'resources/lock_shard%d_complete.json'%i) for i,name in enumerate(locked)):
+        ensure('LOCK_EVAL','evaluate',parents=locked,minutes=30,extra=['--stage','lock'])
+    if done('LOCK_EVAL','metrics/lock/summary.json'):
+        for i in range(workers):ensure('N96_%d'%i,'generate',parents=['LOCK_EVAL'],minutes=40 if workers>=4 else 120,
+            extra=['--stage','natural','--arm','all','--shard',str(i),'--shards',str(workers)])
+    natural=['N96_%d'%i for i in range(workers)]
+    if all(done(name,'resources/natural_shard%d_complete.json'%i) for i,name in enumerate(natural)):
+        ensure('N96_EVAL','evaluate',parents=natural,minutes=30,extra=['--stage','natural'])
+    if done('N96_EVAL','metrics/natural/summary.json'):
+        ensure('FINAL','finish',False,parents=['N96_EVAL'],minutes=20)
+    write(OUT/'resources/dispatch_complete.json',dict(submitted=True,incremental=True,workers=workers,
+        final_job=lookup.get('FINAL',{}).get('id'),commit=commit(),slots_remaining=slots,
+        scientific_training_updates=0,dependency_failure='repair failed engineering stage before advancing; science failure is never an automatic retry'))
 
 def status():
     jobs=read(OUT/'resources/jobs.json') if (OUT/'resources/jobs.json').exists() else []
@@ -62,7 +105,8 @@ def status():
             value=read(p);print(name,{k:v for k,v in value.items() if k in ['P0','P1','P2','P3','P4','P5','H_G','H_C','H_D','MODEL','passed','oracle_valid','valid_fraction','workers','final_job']})
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['launch','status']);parser.add_argument('--p0',type=int,default=117877)
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['launch','advance','status']);parser.add_argument('--p0',type=int,default=117877)
     args=parser.parse_args()
     if args.action=='launch':launch(args.p0)
+    elif args.action=='advance':advance()
     else:status()
