@@ -13,6 +13,7 @@ FEATURE = 'up_blocks.0.resnets.1'
 CONFIG = dict(experiment='e50', version=1, training_updates=0, new_parameters=0,
     base_sha256=E5_SHA, b1_sha256=B1_SHA, seed=42, steps=50, cfg=7., size=list(SIZE),
     scales=dict(sketch=.6, texture=1., ipa=1.), arms=ARMS,
+    known_bad=['172600892','180633937','193488637','204446309','150553679','79583392','163690164'],
     cohort='same preselected e48 probe16; 7 known failures plus 9 fixed controls; development only',
     structure=dict(source='independent historical E5 same-seed full trajectory; exact epsilon replay each step',
         attention_layers=ATTENTIONS, attention='replace self affinity with independent E5 Q/K; retain student V and original Sketch term',
