@@ -42,7 +42,7 @@ def launch(p0):
     if not plan_path.exists():
         prior=read(jobs_path);pilot=next((r for r in prior if r['name'].startswith('PILOT_') and '--shards' in r['command']),None)
         workers=int(pilot['command'][pilot['command'].index('--shards')+1]) if pilot else min(8,snapshot['free']) if snapshot['free'] else 4
-        write(plan_path,dict(workers=workers,max_active_jobs=5,incremental=True,
+        write(plan_path,dict(workers=workers,max_active_jobs=5,max_gpu_active_jobs=4,incremental=True,
             reason='submit only ready stages, preserve accepted jobs, respect cluster submit limits',commit=commit()))
     advance()
 
@@ -53,18 +53,19 @@ def advance():
     lookup={r['name']:r for r in jobs};ids=','.join(str(r['id']) for r in jobs)
     output=subprocess.check_output(['sacct','-X','-j',ids,'--format=JobIDRaw,State','-P','-n'],text=True)
     states={int(line.split('|')[0]):line.split('|')[1] for line in output.splitlines() if line.split('|')[0].isdigit()}
-    queue=subprocess.check_output(['squeue','-h','-u','u2515283058'],text=True)
+    queue=subprocess.check_output(['squeue','-h','-u','u2515283058','-o','%P'],text=True)
     slots=max(0,plan['max_active_jobs']-len(queue.splitlines()))
+    gpu_slots=max(0,plan.get('max_gpu_active_jobs',4)-sum(line.strip()=='gpu' for line in queue.splitlines()))
     def done(name,marker=None):
         return name in lookup and states.get(lookup[name]['id'])=='COMPLETED' and (marker is None or (OUT/marker).exists())
     def ensure(name,action,gpu=True,parents=None,minutes=120,extra=None):
-        nonlocal slots
+        nonlocal slots,gpu_slots
         if name in lookup:return lookup[name]['id']
-        if slots<=0:return None
+        if slots<=0 or gpu and gpu_slots<=0:return None
         try:identity=submit(name,action,gpu,[lookup[x]['id'] for x in parents or []],minutes,extra)
         except RuntimeError as error:
             print('E52 SUBMIT DEFERRED',name,str(error),flush=True);slots=0;return None
-        slots-=1;lookup[name]=dict(id=identity,name=name);return identity
+        slots-=1;gpu_slots-=int(gpu);lookup[name]=dict(id=identity,name=name);return identity
     ensure('DATA','data',False,minutes=20)
     if done('P0','audit/p0_complete.json') and done('DATA','splits/natural.json'):
         ensure('TOKEN','provenance',parents=['P0','DATA'],minutes=20)
