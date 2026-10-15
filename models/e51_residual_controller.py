@@ -47,7 +47,15 @@ class ConditionalResidualController(nn.Module):
 
 
 class ControlledB1Processor(ReferenceAttentionProcessor):
-    def __call__(self,attn,hidden_states,**kwargs):
+    def __call__(self,attn,hidden_states,encoder_hidden_states=None,attention_mask=None,temb=None,
+            scale=1.,cond_hidden_states=None,sa_hidden_states=None,balanced_gate_timestep=None,
+            tcpm_garment_mask=None,local_detail_tokens=None,local_detail_mask=None,local_detail_spatial_shape=None):
+        # Diffusers 会按显式签名过滤 cross_attention_kwargs；必须保留原条件参数。
+        kwargs=dict(encoder_hidden_states=encoder_hidden_states,attention_mask=attention_mask,temb=temb,
+            scale=scale,cond_hidden_states=cond_hidden_states,sa_hidden_states=sa_hidden_states,
+            balanced_gate_timestep=balanced_gate_timestep,tcpm_garment_mask=tcpm_garment_mask,
+            local_detail_tokens=local_detail_tokens,local_detail_mask=local_detail_mask,
+            local_detail_spatial_shape=local_detail_spatial_shape)
         if not self.enabled or kwargs.get('sa_hidden_states') is None or self.features is None:
             return super().__call__(attn,hidden_states,**kwargs)
         if self.raw_bypass:return super().__call__(attn,hidden_states,**kwargs)
