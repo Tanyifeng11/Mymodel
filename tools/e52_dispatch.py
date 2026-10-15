@@ -1,6 +1,7 @@
 """一次提交有阶段门禁的作业图；以 Slurm 依赖控制顺序，不在登录节点跑模型。"""
 import argparse
 import datetime
+import os
 import re
 import subprocess
 from tools.e52_protocol import *
@@ -56,8 +57,13 @@ def advance():
     queue=subprocess.check_output(['squeue','-h','-u','u2515283058','-o','%P'],text=True)
     slots=max(0,plan['max_active_jobs']-len(queue.splitlines()))
     gpu_slots=max(0,plan.get('max_gpu_active_jobs',4)-sum(line.strip()=='gpu' for line in queue.splitlines()))
+    current_job=os.environ.get('SLURM_JOB_ID')
     def done(name,marker=None):
-        return name in lookup and states.get(lookup[name]['id'])=='COMPLETED' and (marker is None or (OUT/marker).exists())
+        if name not in lookup:return False
+        marker_ready=marker is None or (OUT/marker).exists()
+        # postamble 此时父作业仍是 RUNNING；产物完成后可提交 afterok 子作业，避免额外等一次心跳。
+        current_ready=marker is not None and str(lookup[name]['id'])==current_job and marker_ready
+        return marker_ready and (states.get(lookup[name]['id'])=='COMPLETED' or current_ready)
     def ensure(name,action,gpu=True,parents=None,minutes=120,extra=None):
         nonlocal slots,gpu_slots
         if name in lookup:return lookup[name]['id']
