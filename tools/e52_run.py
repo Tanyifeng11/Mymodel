@@ -35,10 +35,17 @@ def audit():
     decision(P0='pass');print('E52 P0 PASS',flush=True)
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','audit','provenance','generate','evaluate','freeze','finish'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','data','audit','provenance','generate','evaluate','freeze','finish'])
     p.add_argument('--stage',default='pilot');p.add_argument('--arm');p.add_argument('--shard',type=int,default=0);p.add_argument('--shards',type=int,default=1)
     args=p.parse_args();torch.set_num_threads(2)
     if args.action=='prepare':prepare()
+    elif args.action=='data':
+        from tools.e52_data import synthesize
+        from tools.e52_natural import select
+        from tools.e52_texture import calibrate
+        rows=synthesize('pilot',24)
+        freeze(OUT/'manifest/texture_metric_pre_pilot.json',calibrate(rows))
+        select()
     elif args.action=='audit':audit()
     elif args.action=='provenance':
         from tools.e52_provenance import run

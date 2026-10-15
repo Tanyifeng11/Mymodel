@@ -31,6 +31,7 @@ def case(r,row,arm,stage,writer=None,teacher_path=None,mapping=None,diagnose=Tru
     if done.exists():
         value=read(done);assert sha(path)==value['generation']['png_sha256']
         assert value['base_reference_sha256']==sha(row['reference'])
+        assert value['writer_reference_sha256']==sha(writer or row['reference'])
         return value
     r.active=arm not in ['E5','E5_ALT'];r.writer_override=writer
     teacher=torch.load(teacher_path,map_location='cpu',weights_only=False) if teacher_path else None
@@ -43,7 +44,7 @@ def case(r,row,arm,stage,writer=None,teacher_path=None,mapping=None,diagnose=Tru
     record.update(base_reference_sha256=sha(row['reference']),writer_reference_sha256=sha(writer or row['reference']),
         e5_sha256=E5_SHA,b1_sha256=B1_SHA,code_commit=commit())
     write(path.with_suffix('.json'),record)
-    if ctl:torch.save(dict(latents=torch.stack(ctl.latents),steps=ctl.steps),path.with_name(path.stem+'_states.pt'))
+    if ctl:torch.save(dict(latents=torch.stack(ctl.latents),steps=ctl.steps,attention_records=ctl.attention_records),path.with_name(path.stem+'_states.pt'))
     value=dict(id=row['id'],arm=arm,stage=stage,generation=record,
         base_reference_sha256=sha(row['reference']),writer_reference_sha256=sha(writer or row['reference']),
         teacher_path=str(teacher_path) if teacher_path else None,

@@ -15,7 +15,13 @@ class Diagnostic:
         self.valid=info['valid'];self.weights=weights_at(region_masks(raw),(64,48),r.pipe.device)
         self.feature_weights=weights_at(region_masks(raw),(32,24),r.pipe.device)
         self.teacher=teacher;self.mapping=mapping;self.patch=patch
-        self.steps=[];self.latents=[];self.handles=[];self.cache={};self.phase=None
+        self.target_query_count=None
+        if mapping is not None:
+            import cv2
+            import numpy as np
+            labels=np.load(row['geometry'])['target_labels']
+            self.target_query_count=int((cv2.resize((labels>0).astype('float32'),(24,32),interpolation=cv2.INTER_AREA)>=.5).sum())
+        self.steps=[];self.latents=[];self.attention_records=[];self.handles=[];self.cache={};self.phase=None
         self.raw=None;self.patch_site=None;self.activations={};self.topology=[]
         self.sites=['up_blocks.2.attentions.0.transformer_blocks.0.attn1',
             'up_blocks.2.resnets.1','up_blocks.2.attentions.1.transformer_blocks.0.attn1']
@@ -51,7 +57,7 @@ class Diagnostic:
             multiplier=float(index<15)
         if self.arm=='SHRINK_EARLY':multiplier*=CONFIG['shrink']
         correction=None
-        if self.arm in ['ORACLE','WRONG','RANDOM']:
+        if self.arm in ['ORACLE','WRONG','RANDOM','ORACLE_ALPHA0']:
             assert self.mapping is not None
             q=split(self.cache['q'],module.heads);k=split(self.cache['k'],module.heads)
             kr=split(self.cache['kr'].to(q),module.heads);vr=split(self.cache['vr'].to(q),module.heads)
@@ -63,11 +69,13 @@ class Diagnostic:
             # 背景/无对应 query 完全沿用原注意力；不把零行解释为关闭注入。
             valid=oracle.sum(-1)>0
             oracle=torch.where(valid[...,None],oracle,original)
-            blend=(1-CONFIG['alpha'])*original+CONFIG['alpha']*oracle
+            alpha=0. if self.arm=='ORACLE_ALPHA0' else CONFIG['alpha']
+            blend=(1-alpha)*original+alpha*oracle
             delta=(pref[...,None]*(blend-original))@vr.float()
             correction=projection(module,(self.p.gate*delta).to(q.dtype))
             self.current['routing']=dict(p_ref_max_error=float((pref*blend.sum(-1)-pref).abs().max()),
-                row_sum_error=float((blend.sum(-1)-1).abs().max()),coverage=float(valid.float().mean()),
+                row_sum_error=float((blend.sum(-1)-1).abs().max()),coverage_all_queries=float(valid.float().mean()),
+                coverage_foreground=float(valid[0,0].sum())/max(self.target_query_count,1),
                 entropy_original=float((-(original*original.clamp_min(1e-20).log()).sum(-1)).mean()),
                 entropy_new=float((-(blend*blend.clamp_min(1e-20).log()).sum(-1)).mean()),
                 original_ref_value_rms=float((original@vr.float()).square().mean().sqrt()),
@@ -81,6 +89,22 @@ class Diagnostic:
             regions=regional_stats(applied,self.feature_weights))
         if index in STEPS and self.phase=='candidate':
             components,stats=decomposition(module,self.p,self.cache)
+            q=split(self.cache['q'],module.heads)
+            kr=split(self.cache['kr'].to(q),module.heads)
+            logits=q.float()@kr.float().transpose(-1,-2)/math.sqrt(q.shape[-1])
+            attention=torch.softmax(logits,-1)
+            entropy=-(attention*attention.clamp_min(1e-20).log()).sum(-1)
+            stats['reference_entropy_by_head']=entropy.mean(-1).flatten().tolist()
+            ks=split(self.cache['k'].to(q),module.heads)
+            self_logits=q.float()@ks.float().transpose(-1,-2)/math.sqrt(q.shape[-1])
+            pref=torch.sigmoid(torch.logsumexp(logits,-1)-torch.logsumexp(self_logits,-1))
+            stats['p_ref_by_head']=pref.mean(-1).flatten().tolist()
+            queries=torch.linspace(0,q.shape[2]-1,24,device=q.device).long()
+            self.attention_records.append(dict(index=index,p_ref=pref.cpu(),reference_entropy=entropy.cpu(),
+                reference_attention_samples=attention[:,:,queries].to(torch.float16).cpu(),
+                query_indices=queries.cpu(),head_query_shape=list(pref.shape)))
+            stats['writer_token_norm_mean']=float(self.p.features.float().norm(dim=-1).mean())
+            stats['writer_token_norm_std']=float(self.p.features.float().norm(dim=-1).std())
             stats['component_sum_relative_error']=float((components['added'].float()+components['suppressed'].float()
                 -raw.float()).norm()/raw.float().norm().clamp_min(1e-8))
             self.current['softmax']=stats
@@ -123,8 +147,12 @@ class Diagnostic:
                     self.p.enabled=False;self.phase='teacher_e5'
                     baseline=self.old_forward(*newargs,**newkw)
                     assert torch.equal(baseline[0],teacher_eps),'独立 E5 教师轨迹回放失败'
+                    saved_injection=self.current.get('injection');saved_routing=self.current.get('routing')
                     self.p.enabled=enabled;self.phase='teacher_probe';self.cache={}
                     probe=self.old_forward(*newargs,**newkw) if enabled else baseline
+                    self.current['teacher_state_injection']=self.current.get('injection')
+                    self.current['injection']=saved_injection
+                    if saved_routing is not None:self.current['routing']=saved_routing
                     self.current['teacher_state_effect']=regional_stats(probe[0].float()-baseline[0].float(),self.weights) if self.valid else None
                     self.current['teacher_state_replay_exact']=True
                 u=self.teacher['unconditional_epsilon'][self.index].to(latent.device)
