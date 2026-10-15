@@ -1,4 +1,4 @@
-"""一次提交有阶段门禁的作业图；以 Slurm 依赖控制顺序，不在登录节点跑模型。"""
+"""按阶段增量提交作业；模型在计算节点运行，短控制器锁防止重复补交。"""
 import argparse
 import datetime
 import os
@@ -48,6 +48,15 @@ def launch(p0):
     advance()
 
 def advance():
+    lock=OUT/'resources/dispatch.lock';lock.parent.mkdir(parents=True,exist_ok=True)
+    with lock.open('a') as handle:
+        if os.name=='posix':
+            import fcntl
+            try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:return
+        _advance_unlocked()
+
+def _advance_unlocked():
     path=OUT/'resources/dispatch_plan.json'
     if not path.exists():return
     plan=read(path);workers=plan['workers'];jobs=read(OUT/'resources/jobs.json')
@@ -68,7 +77,9 @@ def advance():
         nonlocal slots,gpu_slots
         if name in lookup:return lookup[name]['id']
         if slots<=0 or gpu and gpu_slots<=0:return None
-        try:identity=submit(name,action,gpu,[lookup[x]['id'] for x in parents or []],minutes,extra)
+        # 已成功结束的父作业由 marker+sacct 门禁核验；不再把过期 JobID 发给 Slurm。
+        dependencies=[lookup[x]['id'] for x in parents or [] if states.get(lookup[x]['id'])!='COMPLETED']
+        try:identity=submit(name,action,gpu,dependencies,minutes,extra)
         except RuntimeError as error:
             print('E52 SUBMIT DEFERRED',name,str(error),flush=True);slots=0;return None
         slots-=1;gpu_slots-=int(gpu);lookup[name]=dict(id=identity,name=name);return identity
