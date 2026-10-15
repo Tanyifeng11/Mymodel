@@ -30,21 +30,22 @@ def submit(name,action,gpu=True,depends=None,minutes=120,extra=None):
 def launch(p0):
     path=OUT/'resources/dispatch_complete.json';assert not path.exists(),'已有作业图，不能重复提交'
     snapshot=resources();write(OUT/'resources/initial_cluster.json',snapshot)
-    workers=min(8,max(1,snapshot['free']))
+    # 无空闲时排四个短单卡分片，允许 Slurm 回填；实际并发仍由可用 GPU 决定。
+    workers=min(8,snapshot['free']) if snapshot['free'] else 4
     jobs_path=OUT/'resources/jobs.json'
     if not jobs_path.exists():write(jobs_path,[dict(name='P0',id=p0,gpu=True,cpus=2,minutes=40,depends=[],
         command=['sbatch','submit/e52_gpu.sh','audit'],submitted='previously submitted through portal',commit='aa44b26')])
     data=submit('DATA','data',False,minutes=20)
     provenance=submit('TOKEN','provenance',depends=[p0,data],minutes=20)
     probe=submit('PROBE','generate',depends=[provenance],minutes=30,extra=['--stage','probe','--arm','all'])
-    pilot=[submit('PILOT_%d'%i,'generate',depends=[provenance],minutes=100,
+    pilot=[submit('PILOT_%d'%i,'generate',depends=[provenance],minutes=40 if workers>=4 else 100,
         extra=['--stage','pilot','--arm','all','--shard',str(i),'--shards',str(workers)]) for i in range(workers)]
     pilot_eval=submit('PILOT_EVAL','evaluate',depends=pilot,minutes=25,extra=['--stage','pilot'])
     frozen=submit('FREEZE','freeze',False,depends=[pilot_eval,probe],minutes=15)
-    locked=[submit('LOCK_%d'%i,'generate',depends=[frozen],minutes=120,
+    locked=[submit('LOCK_%d'%i,'generate',depends=[frozen],minutes=60 if workers>=4 else 120,
         extra=['--stage','lock','--arm','all','--shard',str(i),'--shards',str(workers)]) for i in range(workers)]
     locked_eval=submit('LOCK_EVAL','evaluate',depends=locked,minutes=30,extra=['--stage','lock'])
-    natural=[submit('N96_%d'%i,'generate',depends=[locked_eval],minutes=120,
+    natural=[submit('N96_%d'%i,'generate',depends=[locked_eval],minutes=40 if workers>=4 else 120,
         extra=['--stage','natural','--arm','all','--shard',str(i),'--shards',str(workers)]) for i in range(workers)]
     natural_eval=submit('N96_EVAL','evaluate',depends=natural,minutes=30,extra=['--stage','natural'])
     final=submit('FINAL','finish',False,depends=[natural_eval],minutes=20)
