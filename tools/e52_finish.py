@@ -44,7 +44,8 @@ def finish():
     g=summary['primary']['G'];d=summary['primary']['D'];direction=summary['direction_amplitude']
     sham=summary['sham'];holm=summary['holm_p']
     g_supported=(g['ci95'][1]<0 and holm.get('G',1)<.05 and direction['ci95'][0]>0
-        and summary['direction_random_label']['p_upper']<.05 and abs(g['mean'])>abs(sham['mean']))
+        and summary['direction_random_label']['p_upper']<.05 and abs(g['mean'])>abs(sham['mean'])
+        and summary['geometry_minus_sham']['ci95'][1]<0)
     hg='SUPPORTED_IN_SYNTHETIC_DOMAIN' if g_supported else 'NOT_SUPPORTED_IN_TESTED_GEOMETRY_RANGE' if g['ci95'][0]>=0 else 'INCONCLUSIVE'
     hc='NOT_IDENTIFIABLE' if not provenance['oracle_valid'] else 'INCONCLUSIVE'
     correspondence=None

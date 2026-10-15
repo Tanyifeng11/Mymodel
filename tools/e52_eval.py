@@ -102,6 +102,8 @@ def summarize(records,stage,rows):
         summary['primary']={k:paired([r['gamma_'+k] for r in contrasts]) for k in ['G','C','D']}
         summary['gamma_T']=paired([r['gamma_T'] for r in contrasts]);summary['G_T']=paired([r['interaction_G_T'] for r in contrasts])
         summary['sham']=paired([r['sham_delta'] for r in contrasts]);summary['direction']=directions
+        summary['geometry_minus_sham']=paired([r['gamma_G']-r['sham_delta'] for r in contrasts
+            if r['gamma_G'] is not None and r['sham_delta'] is not None])
         summary['direction_amplitude']=paired([r['generated_signed_amplitude'] for r in directions])
         # 各部位类别内打乱参考变化正负标签，保留几何类别分布。
         amplitudes=np.array([r['generated_signed_amplitude'] or 0. for r in directions]);signs=np.array([r['sign'] for r in directions])
