@@ -81,7 +81,7 @@ def advance():
             extra=['--stage','pilot','--arm','all','--shard',str(i),'--shards',str(workers)])
     pilot=['PILOT_%d'%i for i in range(workers)]
     if all(done(name,'resources/pilot_shard%d_complete.json'%i) for i,name in enumerate(pilot)):
-        ensure('PILOT_EVAL','evaluate',parents=pilot,minutes=25,extra=['--stage','pilot'])
+        ensure('PILOT_EVAL','evaluate',False,parents=pilot,minutes=25,extra=['--stage','pilot'])
     if done('PILOT_EVAL','metrics/pilot/summary.json') and done('PROBE','resources/probe_shard0_complete.json'):
         ensure('FREEZE','freeze',False,parents=['PILOT_EVAL','PROBE'],minutes=15)
     if done('FREEZE','manifest/confirmation.json'):
@@ -89,7 +89,7 @@ def advance():
             extra=['--stage','lock','--arm','all','--shard',str(i),'--shards',str(workers)])
     locked=['LOCK_%d'%i for i in range(workers)]
     if all(done(name,'resources/lock_shard%d_complete.json'%i) for i,name in enumerate(locked)):
-        ensure('LOCK_EVAL','evaluate',parents=locked,minutes=30,extra=['--stage','lock'])
+        ensure('LOCK_EVAL','evaluate',False,parents=locked,minutes=30,extra=['--stage','lock'])
     if done('LOCK_EVAL','metrics/lock/summary.json'):
         for i in range(workers):ensure('N96_%d'%i,'generate',parents=['LOCK_EVAL'],minutes=40 if workers>=4 else 120,
             extra=['--stage','natural','--arm','all','--shard',str(i),'--shards',str(workers)])
