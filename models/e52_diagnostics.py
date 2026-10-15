@@ -16,11 +16,19 @@ class Diagnostic:
         self.feature_weights=weights_at(region_masks(raw),(32,24),r.pipe.device)
         self.teacher=teacher;self.mapping=mapping;self.patch=patch
         self.target_query_count=None
+        self.uv_distance=None
         if mapping is not None:
             import cv2
             import numpy as np
             labels=np.load(row['geometry'])['target_labels']
             self.target_query_count=int((cv2.resize((labels>0).astype('float32'),(24,32),interpolation=cv2.INTER_AREA)>=.5).sum())
+            from tools.e52_generate import pooled_uv
+            data=np.load(row['geometry'])
+            target,_,_=pooled_uv(data['target_uv'],data['target_labels'],(24,32))
+            reference,_,valid_reference=pooled_uv(data['reference_uv0'],data['target_labels'],(16,16))
+            distance=np.linalg.norm(target[:,None]-reference[None],axis=-1)
+            distance[:,~valid_reference]=2**.5
+            self.uv_distance=torch.from_numpy(distance).to(r.pipe.device)
         self.steps=[];self.latents=[];self.attention_records=[];self.handles=[];self.cache={};self.phase=None
         self.raw=None;self.patch_site=None;self.activations={};self.topology=[]
         self.sites=['up_blocks.2.attentions.0.transformer_blocks.0.attn1',
@@ -80,6 +88,8 @@ class Diagnostic:
                 entropy_new=float((-(blend*blend.clamp_min(1e-20).log()).sum(-1)).mean()),
                 original_ref_value_rms=float((original@vr.float()).square().mean().sqrt()),
                 new_ref_value_rms=float((blend@vr.float()).square().mean().sqrt()))
+            self.current['routing'].update(reference_alignment_error_original=float((original*self.uv_distance).sum(-1)[valid].mean()),
+                reference_alignment_error_new=float((blend*self.uv_distance).sum(-1)[valid].mean()))
             assert self.current['routing']['p_ref_max_error']<2e-6
         applied=raw if correction is None else raw+correction
         applied=applied*torch.as_tensor(multiplier,device=raw.device,dtype=raw.dtype)

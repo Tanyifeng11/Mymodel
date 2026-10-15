@@ -55,24 +55,39 @@ def run():
         # 空间来源合格后仍须在 pilot 校准映射熵，不能在确认集调温度。
         if valid>=.70:
             from tools.e52_runtime import case
-            from tools.e52_generate import mapping
+            from tools.e52_generate import mapping,pooled_uv
             entropy=[]
             for row in read(OUT/'splits/calibration.json'):
                 value=case(r,row,'B1','calibration',diagnose=True)
                 entropy.extend(h for s in value['steps'] if 'softmax' in s for h in s['softmax']['reference_entropy_by_head'])
             target=float(np.mean(entropy));temperatures=[]
             for sigma in [.025,.05,.075,.10,.15,.25,.5,1.,2.]:
-                values=[]
+                values=[];distances=[];wrong_distances=[];coverages=[]
                 for row in read(OUT/'splits/pilot.json'):
                     m=mapping(row,'ORACLE',sigma,positions).numpy();valid_rows=m.sum(-1)>0
                     values.extend((-(m*np.log(np.maximum(m,1e-20))).sum(-1))[valid_rows].tolist())
-                temperatures.append(dict(sigma=sigma,entropy=float(np.mean(values)),distance=abs(float(np.mean(values))-target)))
-            selected=min(temperatures,key=lambda x:(x['distance'],x['sigma']))
-            result.update(mapping_sigma=selected['sigma'],intervention_temperature_calibration='train8 original entropy, pilot UV only; no outcome optimization',
+                    data=np.load(row['geometry']);tu,_,tv=pooled_uv(data['target_uv'],data['target_labels'],(24,32))
+                    ru,_,_=pooled_uv(data['reference_uv0'],data['target_labels'],(16,16))
+                    distance=np.linalg.norm(tu[:,None]-ru[None],axis=-1)
+                    wrong=mapping(row,'WRONG',sigma,positions).numpy()
+                    distances.extend((m*distance).sum(-1)[valid_rows].tolist())
+                    wrong_distances.extend((wrong*distance).sum(-1)[valid_rows].tolist())
+                    coverages.append(float(valid_rows.sum())/max(int(tv.sum()),1))
+                error=float(np.mean(distances));gap=float(np.mean(wrong_distances))-error
+                temperatures.append(dict(sigma=sigma,entropy=float(np.mean(values)),distance=abs(float(np.mean(values))-target),
+                    uv_error=error,wrong_uv_gap=gap,coverage_foreground=float(np.mean(coverages)),
+                    mapping_valid=bool(error<=.12 and gap>=.025 and np.mean(coverages)>=.70)))
+            candidates=[x for x in temperatures if x['mapping_valid']]
+            selected=min(candidates,key=lambda x:(x['distance'],x['sigma'])) if candidates else None
+            result.update(mapping_sigma=selected['sigma'] if selected else None,
+                oracle_valid=selected is not None,
+                intervention_temperature_calibration='train8 original entropy; pilot UV accuracy constraint; no outcome optimization',
                 entropy_calibration=dict(target_entropy=target,grid=temperatures,selected=selected,
-                    entropy_unmatched=selected['distance']>.25))
+                    max_uv_error=.12,min_wrong_uv_gap=.025,min_foreground_coverage=.70,
+                    entropy_unmatched=selected['distance']>.25 if selected else None))
+            if selected is None:result['status']='TOKEN_ORACLE_NOT_VALID_MAPPING_QUALITY'
         write(path,result)
-        decision(P3='token_provenance_pass' if valid>=.70 else 'NOT_IDENTIFIABLE_WITH_CURRENT_WRITER_TOKENS',
-            H_C='NOT_RUN' if valid>=.70 else 'NOT_IDENTIFIABLE')
+        decision(P3='token_provenance_pass' if result['oracle_valid'] else 'NOT_IDENTIFIABLE_WITH_CURRENT_WRITER_TOKENS',
+            H_C='NOT_RUN' if result['oracle_valid'] else 'NOT_IDENTIFIABLE')
         return result
     finally:release(r)

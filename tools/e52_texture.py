@@ -10,6 +10,7 @@ def descriptor(image,mask):
     mask=cv2.resize(mask.astype('uint8'),(96,128),interpolation=cv2.INTER_NEAREST)>0
     mask=cv2.erode(mask.astype('uint8'),np.ones((3,3),np.uint8))>0
     if mask.sum()<32:return None
+    if float(gray[mask].std())<.02 or float((gray-cv2.GaussianBlur(gray,(0,0),3))[mask].std())<.005:return None
     channels=[gray-cv2.GaussianBlur(gray,(0,0),sigma) for sigma in [1.,3.,8.]]
     channels.append(gray)
     parts=[]
@@ -20,7 +21,8 @@ def descriptor(image,mask):
 def score(image,row,correct):
     root=row['atlas_folder'];geometry=np.load(row['geometry']);mask=geometry['target_labels']>0
     descriptor_generated=descriptor(image,mask)
-    if descriptor_generated is None:return dict(texture_retrieval_correct=None,texture_margin=None,texture_distances=None)
+    if descriptor_generated is None:return dict(texture_retrieval_correct=0,texture_margin=0.,texture_distances=None,
+        texture_status='NO_READABLE_PATTERN',orientation_error=None,period_error=None,phase_error=None)
     library=[descriptor(Image.open(root+'/correct%d.png'%k),mask) for k in range(8)]
     distances=[float(1-np.dot(descriptor_generated,candidate)) for candidate in library]
     wrong=min(distances[k] for k in range(8) if k!=correct)

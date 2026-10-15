@@ -95,7 +95,7 @@ def finish():
     write(OUT/'complete.json',dict(complete=True,scientific_training_updates=0,resources=resources,
         completed_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),commit=commit(),
         manual_final_interpretation='pending local audit',raw_pt_tensors='retained on server, excluded from portable review archive'))
-    files={str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and p.suffix not in ['.pt','.gz']}
+    files={str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and p.suffix not in ['.pt','.gz'] and not p.name.startswith('e52_final_review.')}
     write(OUT/'manifest/review_sha256.json',files)
     archive=OUT/'e52_final_review.tar.gz'
     with tarfile.open(archive,'w:gz',compresslevel=4) as tar:
