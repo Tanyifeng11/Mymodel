@@ -19,12 +19,30 @@ def pattern(caption):
     return 'unknown'
 
 def select():
+    from concurrent.futures import ThreadPoolExecutor
     from tools.e48_holdout import validation_rows,exposure_sources,phash_matrix
     from tools.e44_runtime import sketch_masks
     path=OUT/'splits/natural.json'
-    if path.exists():return read(path)
     audit=SOURCE/'holdout_audit'
     prior=read(audit/'complete.json');assert prior['eligible']>=96
+    assert sha('data/train_bf_texture.json')==prior['input_sha256']
+    assert sha(prior['training_signatures']['path'])==prior['training_signatures']['sha256']
+    assert sha(audit/'validation_signatures.json')==prior['validation_signatures_sha256']
+    chain=OUT/'audit/natural_signature_chain.json'
+    if not chain.exists():
+        signatures={**read(prior['training_signatures']['path']),**read(audit/'validation_signatures.json')}
+        items=sorted(signatures.items())
+        def verify(item):
+            p,value=item;assert sha(p)==value['file_sha256'],('DATA_SIGNATURE_CHANGED_REAUDIT_REQUIRED',p)
+            return p
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for i,p in enumerate(pool.map(verify,items)):
+                if i%5000==0:print('E52 INPUT SIGNATURE',i,len(items),flush=True)
+        write(chain,dict(unchanged=True,files=len(items),
+            validation_signature_sha256=sha(audit/'validation_signatures.json'),
+            training_signature_sha256=prior['training_signatures']['sha256'],
+            reuse='pixel hashes and pHash reused only after original file bytes verified unchanged'))
+    if path.exists():return read(path)
     previous={r['id']:r for r in read(audit/'eligible.json')}
     current,counts=validation_rows();lookup={r['id']:r for r in current}
     signatures=read(audit/'validation_signatures.json')
