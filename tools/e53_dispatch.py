@@ -26,9 +26,50 @@ def status():
     d=OUT/'decision.json'
     if d.exists():print('DECISION',read(d),flush=True)
 
+def states():
+    path=OUT/'resources/jobs.json';jobs=read(path) if path.exists() else []
+    if not jobs:return {},{}
+    output=subprocess.check_output(['sacct','-X','-n','-P','-j',','.join(str(j['id']) for j in jobs),'--format=JobIDRaw,State'],text=True)
+    byid={int(line.split('|')[0]):line.split('|')[1].split()[0] for line in output.splitlines() if line.split('|')[0].isdigit()}
+    return {j['name']:j for j in jobs},byid
+
+def advance():
+    import fcntl
+    (OUT/'resources').mkdir(parents=True,exist_ok=True)
+    with (OUT/'resources/dispatch.lock').open('w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        jobs,st=states()
+        if any(st.get(j['id']) in ['FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL'] for j in jobs.values()):print('ENGINEERING_REPAIR_REQUIRED');return
+        if not (OUT/'audit/energy_gate.json').exists() or not read(OUT/'audit/energy_gate.json')['passed']:return
+        approval=OUT/'audit/human_mapping_review.json'
+        if not approval.exists() or not read(approval)['approved']:print('HUMAN_MAPPING_REVIEW_REQUIRED');return
+        active=sum(st.get(j['id'],'PENDING')!='COMPLETED' for j in jobs.values());slots=5-active
+        def add(name,action,gpu,dependencies=(),extra=()):
+            nonlocal slots
+            if name in jobs:return jobs[name]['id']
+            if slots<=0:return None
+            identity=submit(name,action,gpu,dependencies,extra);jobs[name]=dict(id=identity,name=name);slots-=1;return identity
+        for stage in ['pilot','lock']:
+            gate=OUT/'configs/lock.json' if stage=='lock' else approval
+            if not gate.exists():break
+            ids=[]
+            for shard in range(4):
+                identity=add(stage.upper()+str(shard),'generate',True,extra=['--stage',stage,'--shard',str(shard),'--shards','4'])
+                if identity is not None:ids.append(identity)
+            if len(ids)<4:break
+            evaluator=add(stage.upper()+'_EVAL','evaluate',False,ids,['--stage',stage])
+            summary=OUT/'metrics'/stage/'summary.json'
+            if not evaluator or not summary.exists() or st.get(evaluator)!='COMPLETED':break
+            if stage=='pilot':
+                freezer=add('FREEZE','freeze',False,[evaluator])
+                if not freezer or st.get(freezer)!='COMPLETED':break
+            else:add('FINAL','finish',False,[evaluator])
+        status()
+
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='status':status();return
+    if args.action=='advance':advance();return
     data=submit('DATA','data',False);audit=submit('REPLAY','audit',True,[data]);submit('ENERGY','energy',True,[audit]);status()
 
 if __name__=='__main__':main()

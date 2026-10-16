@@ -14,3 +14,4 @@ cd /share/home/u2515283058/Mymodel
 export PYTHONPATH="$PWD:${PYTHONPATH:-}" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4
 python -m tools.e53_run "$@"
+python -m tools.e53_dispatch advance || true
