@@ -53,7 +53,7 @@ def panels(rows,name):
 
 
 def prepare():
-    freeze(OUT/'config.json',CONFIG)
+    freeze(protocol_path(),CONFIG)
     assert sha(E5)==E5_SHA and sha(B1)==B1_SHA
     model_files=read('output_eval/e53_b1_oracle_20261016/manifest/model_file_sha256.json')
     assert all(sha(p)==h for p,h in model_files.items()),'FROZEN_MODEL_CHANGED'
@@ -63,7 +63,7 @@ def prepare():
     freeze(OUT/'manifests/e5_training_meta.json',read(HISTORY/'manifests/e5_training_meta.json'))
     for arm in TRAIN_ARMS+ZERO_ARMS:
         kind=arm.split('_')[0];folder=OUT/'modules'/arm
-        write(folder/'config.yaml',dict(arm=arm,protocol_sha256=sha(OUT/'config.json'),paper=PAPERS.get(kind)))
+        write(folder/'config.yaml',dict(arm=arm,protocol_sha256=sha(protocol_path()),paper=PAPERS.get(kind)))
         # 用户方案明确要求每模块卡；只描述实际实现，不冒充完整论文复现。
         folder.mkdir(parents=True,exist_ok=True)
         (folder/'module_card.md').write_text('# '+arm+'\n\n文献机制适配，非完整论文复现。\n\n'+str(CONFIG['revisions'].get(kind,CONFIG.get(kind,'按冻结计算路径实现')))+'\n',encoding='utf-8')

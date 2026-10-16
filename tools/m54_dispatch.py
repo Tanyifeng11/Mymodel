@@ -35,7 +35,7 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','recheck_M11']);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','recheck_modules','repair_round0']);args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
         prepare=submit('PREPARE','prepare',False)
@@ -43,9 +43,16 @@ def main():
     elif args.action=='advance':advance()
     elif args.action=='input_candidates':submit('INPUT_CANDIDATES_R1','input_candidates',False,
         slurm_options=['--cpus-per-task=16','--mem=32G','--time=04:00:00'])
-    elif args.action=='recheck_M11':
+    elif args.action=='recheck_modules':
         original=next(x for x in read(OUT/'resources/jobs.json') if x['name']=='ROUND0')
-        submit('ROUND0_M11_R1','audit',True,[original['id']],['--arm','M11'],logical_name='ROUND0')
+        protocol=submit('PROTOCOL_R1','prepare',False,[original['id']])
+        m11=submit('ROUND0_M11_R1','audit',True,[protocol],['--arm','M11'],logical_name='ROUND0')
+        submit('ROUND0_M9_R1','audit',True,[m11],['--arm','M9'],logical_name='ROUND0')
+    elif args.action=='repair_round0':
+        latest={j.get('logical_name',j['name']):j for j in read(OUT/'resources/jobs.json')}
+        failed=latest['ROUND0']['id']
+        protocol=submit('PREPARE_REPAIR_R1','prepare_retry',False,extra=['--failed-job',str(failed)])
+        submit('ROUND0_R1','audit',True,[protocol],logical_name='ROUND0')
     status()
 
 
@@ -65,6 +72,7 @@ def advance():
         review=OUT/'audit/input_review/pilot_approval.json'
         if not review.exists():print('ASSISTANT_PILOT_INPUT_REVIEW_PENDING');return
         assert read(review)['passed']
+        assert read(review)['split_sha256']==sha(split_path('pilot')),'INPUT_REVIEW_SPLIT_MISMATCH'
         if not (OUT/'round1/evaluation_complete.json').exists():
             base=submit('R1_BASELINES','batch_generate',True,extra=['--stage','round1','--arms','E5','B1','SAFE'])
             shards=[]

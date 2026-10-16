@@ -1,12 +1,13 @@
 """科研有效性门禁：防止零初始化恒等失败或双零导致永久死梯度。"""
 import unittest
+import inspect
 import torch
 from torch import nn
 from models.m54_candidates import Candidate,M54Processor,high_frequency
 
 
 class Original(nn.Module):
-    def forward(self,attn,x,**kwargs):return x
+    def forward(self,attn,x,**kwargs):return x+(.25 if kwargs.get('sa_hidden_states') is not None else 0.)
 
 
 class Attention(nn.Module):
@@ -45,7 +46,18 @@ class M54Tests(unittest.TestCase):
         p.mode='M9';p.candidate=Candidate('M9',16);p.new_branch_active=True
         p.geometry=torch.rand(1,3,4,4);p.timestep=torch.tensor([500])
         self.assertTrue(torch.equal(b1,p(attn,x,**kw)))
-        p.enabled=False;self.assertTrue(torch.equal(x,p(attn,x,**kw)))
+        p.enabled=False;self.assertTrue(torch.equal(x+.25,p(attn,x,**kw)))
+
+    def test_diffusers_keyword_dispatch_preserves_existing_sketch_path(self):
+        torch.manual_seed(42);attn=Attention();x=torch.randn(1,16,16)
+        p=M54Processor(Original(),'layer',16,16,'B1');p.mode='M2';p.enabled=True
+        p.features=torch.randn(1,256,16);p.candidate=Candidate('M2',16)
+        p.geometry=torch.ones(1,3,4,4);p.timestep=torch.tensor([500]);p.spatial_prior=None
+        # 复现外部Attention.forward的签名过滤约定；zero模块仍须保留原Sketch贡献。
+        incoming={'sa_hidden_states':{},'tcpm_garment_mask':torch.ones(1,1,4,4)}
+        accepted={k:v for k,v in incoming.items() if k in inspect.signature(p.__call__).parameters}
+        self.assertEqual(set(accepted),set(incoming))
+        self.assertTrue(torch.equal(p(attn,x,**accepted),x+.25))
 
     def test_temperature_changes_routing_without_reference_mass_shrink(self):
         torch.manual_seed(42);attn=Attention();x=torch.randn(1,16,16)

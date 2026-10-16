@@ -75,8 +75,7 @@ def evaluate(stage):
     from tools.e33tmoc_appearance_eval import frozen_lpips
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
     source=stage.split('_u')[0].split('_s')[0]
-    if source=='round1':source='pilot'
-    rows=read(OUT/'splits'/(source+'.json'))
+    rows=read(split_path(source))
     arms=[p.name[:-len('_complete.json')] for p in sorted((OUT/stage).glob('*_complete.json')) if p.name!='evaluation_complete.json']
     assert 'E5' in arms and 'B1' in arms
     for arm in arms:assert read(OUT/stage/(arm+'_complete.json'))['n']==len(rows)

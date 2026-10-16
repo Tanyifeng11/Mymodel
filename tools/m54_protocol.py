@@ -7,14 +7,14 @@ HISTORY=Path('output_eval/e48_b1_structure_20261014')
 TRAIN_ARMS=['M1','M11','M9','M4','M3','M5','M2','M6']
 LAYER_ARMS={f'M7_A{i}':f'up_blocks.2.attentions.{i}.transformer_blocks.0.attn1.processor' for i in range(3)}
 ZERO_ARMS=list(LAYER_ARMS)+['M8_T100','M8_T085','M8_T070','M10','HF_ONLY']
-CONFIG=dict(experiment='M54',version=1,source_plan_sha256='8fdb4b2e4f847694c09dfc02ecce3f65b9cf66cd708dfc098568e3428dbf12cd',
+CONFIG=dict(experiment='M54',version=2,source_plan_sha256='8fdb4b2e4f847694c09dfc02ecce3f65b9cf66cd708dfc098568e3428dbf12cd',
     user_authorization='开始实施；确认前一轮展示的五项修订',e5_sha256=E5_SHA,b1_sha256=B1_SHA,
     size=list(SIZE),steps=50,seed=42,cfg=7.,scales=dict(sketch=.6,texture=1.,ipa=1.),layer=LAYER,
     target_hw=[32,24],reference_hw=[16,16],conditional_only=True,
     training=dict(identities=1024,resolution=list(SIZE),updates=800,deepening_total_updates=2400,
         microbatch=1,accumulation=8,lr=1e-4,weight_decay=.01,grad_clip=1.,seed=42,
         outside_keep=.1,ATV_M1=.001,boundary_keep_M9=.1,reference_dropout_M5=.10,
-        teacher='same-state E5; M9 teacher is frozen B1',checkpoint_selection='fixed final; no dev selection'),
+        teacher='same-state frozen E5 for all candidates; M9 initial identity baseline is B1',checkpoint_selection='fixed final; no dev selection'),
     revisions=dict(M9='only new structure branch trainable; frozen B1 exception; zero-conv output, alpha initial1; initial=B1',
         M10='fixed nonzero statistics residual through frozen original output projection and frozen B1 gain; no zero learned layer',
         M1='train target LayerNorm and Q/K/V, zero output; ATV .001',
@@ -54,3 +54,11 @@ def decision(**changes):
     result.update(changes);write(path,result);return result
 
 def image_path(stage,arm,identity):return OUT/stage/'images'/arm/(identity+'.png')
+
+def split_path(stage):
+    if stage=='round1':stage='pilot'
+    active=OUT/'active_inputs.json'
+    if active.exists() and stage in read(active)['splits']:return OUT/read(active)['splits'][stage]
+    return OUT/'splits'/(stage+'.json')
+
+def protocol_path():return OUT/'config_r1.json'

@@ -98,7 +98,14 @@ class Candidate(nn.Module):
 
 class M54Processor(ReferenceAttentionProcessor):
     """固定B1臂沿用原始参数；独立训练臂只更新candidate。"""
-    def __call__(self,attn,hidden_states,encoder_hidden_states=None,attention_mask=None,temb=None,scale=1.,**kwargs):
+    def __call__(self,attn,hidden_states,encoder_hidden_states=None,attention_mask=None,temb=None,scale=1.,
+                 cond_hidden_states=None,sa_hidden_states=None,balanced_gate_timestep=None,
+                 tcpm_garment_mask=None,local_detail_tokens=None,local_detail_mask=None,local_detail_spatial_shape=None):
+        # Diffusers按显式签名过滤cross_attention_kwargs；仅写**kwargs会丢失Sketch条件。
+        kwargs=dict(cond_hidden_states=cond_hidden_states,sa_hidden_states=sa_hidden_states,
+            balanced_gate_timestep=balanced_gate_timestep,tcpm_garment_mask=tcpm_garment_mask,
+            local_detail_tokens=local_detail_tokens,local_detail_mask=local_detail_mask,
+            local_detail_spatial_shape=local_detail_spatial_shape)
         # M7与tau1使用原融合SDPA，要求精确回放而不是近似重写。
         if self.mode in ['B1','SAFE'] or self.mode.startswith('M7') or self.mode=='M8_T100':
             result=super().__call__(attn,hidden_states,encoder_hidden_states,attention_mask,temb,scale,**kwargs)

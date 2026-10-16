@@ -33,8 +33,8 @@ def seed_all(seed=42):
 
 def loss_forward(r,args,kw,noise,mask):
     p=r.processor
-    if r.arm=='M9':p.new_branch_active=False
-    else:r.active=False
+    # M9的零输出基底是B1，但保护项仍沿用文档统一E5教师，不能保留受损边界。
+    r.active=False
     try:
         with torch.no_grad(),torch.autocast('cuda',dtype=torch.float16):teacher=r.pipe.unet(*args,**kw).sample
     finally:r.active=True;p.new_branch_active=True
@@ -124,6 +124,7 @@ def train(arm,total=800):
     from tools.m54_runtime import make_runtime,release
     assert arm in TRAIN_ARMS and total in [800,2400]
     assert read(OUT/'audit/round0_complete.json')['passed']
+    assert read(protocol_path())==CONFIG,'EFFECTIVE_PROTOCOL_NOT_FROZEN'
     folder=OUT/'training'/arm
     done=folder/('complete%04d.json'%total)
     if done.exists():assert read(done)['updates']==total;return
@@ -178,8 +179,7 @@ def generate(arm,stage='pilot',updates=800,seed=42):
     assert read(OUT/'audit/round0_complete.json')['passed']
     basearm='M5' if arm.startswith('M5_S') else arm
     if basearm in TRAIN_ARMS:assert read(OUT/'training'/basearm/('complete%04d.json'%updates))['updates']==updates
-    splitstage='pilot' if stage=='round1' else stage
-    rows=read(OUT/'splits'/(splitstage+'.json'));folderstage=stage if updates==800 else stage+'_u'+str(updates)
+    rows=read(split_path(stage));folderstage=stage if updates==800 else stage+'_u'+str(updates)
     if seed!=42:folderstage+='_s'+str(seed)
     r=make_runtime(arm,folderstage+'/'+arm+'/runtime')
     if basearm in TRAIN_ARMS:r.load(OUT/'training'/basearm/'checkpoints'/('step%04d.pt'%updates));r.processor.candidate.eval().requires_grad_(False)
@@ -203,11 +203,12 @@ def generate(arm,stage='pilot',updates=800,seed=42):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','audit','train','generate','evaluate','batch_generate','input_candidates','review_input'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','prepare_retry','audit','train','generate','evaluate','batch_generate','input_candidates','review_input','activate_inputs'])
     p.add_argument('--arm');p.add_argument('--stage',default='pilot');p.add_argument('--updates',type=int,default=800);p.add_argument('--seed',type=int,default=42)
     p.add_argument('--arms',nargs='+')
     p.add_argument('--diagnostic',action='store_true')
     p.add_argument('--review-result',choices=['PASS','FAIL']);p.add_argument('--review-note');p.add_argument('--reviewed-ids',nargs='+')
+    p.add_argument('--failed-job',type=int)
     args=p.parse_args()
     import os
     torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK','2')) if args.action=='input_candidates' else 2)
@@ -215,22 +216,36 @@ def main():
         write(OUT/'resources/code_entries'/(os.environ['SLURM_JOB_ID']+'.json'),dict(commit=commit(),arguments=vars(args),
             entry_utc=datetime.now(timezone.utc).isoformat(),source_files={str(p):sha(p) for pattern in ['tools/m54*.py','models/m54*.py','submit/m54*.sh'] for p in Path('.').glob(pattern)}))
     try:
-        if args.action=='prepare':
+        if args.action in ['prepare','prepare_retry']:
+            if args.action=='prepare_retry':
+                import subprocess
+                assert args.failed_job
+                state=subprocess.check_output(['sacct','-X','-n','-P','-j',str(args.failed_job),'--format=State'],text=True).strip()
+                assert state.split('|')[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL']
+                archive=OUT/'failures'/('round0_'+str(args.failed_job)+'_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S'))
+                for name in ['audit/replay','audit/modules']:
+                    source=OUT/name
+                    if source.exists():
+                        target=archive/name;target.resolve().relative_to(OUT.resolve());target.parent.mkdir(parents=True,exist_ok=True);source.rename(target)
+                write(archive/'archive.json',dict(original_job=args.failed_job,reason='processor signature lost Sketch kwargs in Diffusers dispatch; preserve all failed tensors/images before replay repair',scientific_training_updates=0,commit=commit()))
             from tools.m54_prepare import prepare
             prepare()
         elif args.action=='audit':audit(args.arm)
         elif args.action=='input_candidates':
             from tools.m54_input_candidates import build
             build()
+        elif args.action=='activate_inputs':
+            from tools.m54_activate_inputs import activate
+            activate()
         elif args.action=='review_input':
             assert args.review_result and args.review_note and args.reviewed_ids
-            rows=read(OUT/'splits'/(args.stage+'.json'));ids={r['id'] for r in rows}
+            rows=read(split_path(args.stage));ids={r['id'] for r in rows}
             assert set(args.reviewed_ids)<=ids
             passed=args.review_result=='PASS'
             if passed:assert set(args.reviewed_ids)==ids
             path=OUT/'audit/input_review'/(args.stage+'_approval.json' if passed else args.stage+'_review_r0.json')
             freeze(path,dict(passed=passed,reviewer='assistant',independent_human_review='NOT_RUN',
-                actual_reviewed_ids=args.reviewed_ids,note=args.review_note,split_sha256=sha(OUT/'splits'/(args.stage+'.json')),commit=commit()))
+                actual_reviewed_ids=args.reviewed_ids,note=args.review_note,split_sha256=sha(split_path(args.stage)),commit=commit()))
         elif args.action=='train':train(args.arm,args.updates)
         elif args.action=='generate':generate(args.arm,args.stage,args.updates,args.seed)
         elif args.action=='batch_generate':
