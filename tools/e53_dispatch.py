@@ -4,7 +4,7 @@ import subprocess
 from datetime import datetime,timezone
 from tools.e53_protocol import *
 
-def submit(name,action,gpu,dependencies=(),extra=()):
+def submit(name,action,gpu,dependencies=(),extra=(),logical_name=None,supersedes=None):
     path=OUT/'resources/jobs.json';jobs=read(path) if path.exists() else []
     if any(x['name']==name for x in jobs):return next(x['id'] for x in jobs if x['name']==name)
     cmd=['sbatch','--parsable','--job-name=E53_'+name]
@@ -15,7 +15,9 @@ def submit(name,action,gpu,dependencies=(),extra=()):
         p=OUT/'resources/submission_failures.json';failures=read(p) if p.exists() else []
         failures.append(dict(utc=datetime.now(timezone.utc).isoformat(),command=cmd,stdout=result.stdout,stderr=result.stderr,returncode=result.returncode));write(p,failures)
         raise RuntimeError(result.stderr)
-    identity=int(result.stdout.strip().split(';')[0]);jobs.append(dict(name=name,id=identity,gpu=gpu,action=action,dependencies=list(dependencies),extra=list(extra),commit=commit(),utc=datetime.now(timezone.utc).isoformat()));write(path,jobs)
+    identity=int(result.stdout.strip().split(';')[0]);record=dict(name=name,id=identity,gpu=gpu,action=action,dependencies=list(dependencies),extra=list(extra),commit=commit(),utc=datetime.now(timezone.utc).isoformat())
+    if logical_name:record.update(logical_name=logical_name,supersedes=supersedes)
+    jobs.append(record);write(path,jobs)
     print('SUBMITTED',name,identity,flush=True);return identity
 
 def status():
@@ -31,7 +33,7 @@ def states():
     if not jobs:return {},{}
     output=subprocess.check_output(['sacct','-X','-n','-P','-j',','.join(str(j['id']) for j in jobs),'--format=JobIDRaw,State'],text=True)
     byid={int(line.split('|')[0]):line.split('|')[1].split()[0] for line in output.splitlines() if line.split('|')[0].isdigit()}
-    return {j['name']:j for j in jobs},byid
+    return {j.get('logical_name',j['name']):j for j in jobs},byid
 
 def advance():
     import fcntl
@@ -39,7 +41,10 @@ def advance():
     with (OUT/'resources/dispatch.lock').open('w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         jobs,st=states()
-        if any(st.get(j['id']) in ['FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL'] for j in jobs.values()):print('ENGINEERING_REPAIR_REQUIRED');return
+        if any(st.get(j['id']) in ['FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL'] for j in jobs.values()):
+            from tools.e53_repair import retry_pilot
+            if not retry_pilot():print('ENGINEERING_REPAIR_REQUIRED_OR_RECHECK_PENDING');return
+            jobs,st=states()
         if not (OUT/'audit/energy_gate.json').exists() or not read(OUT/'audit/energy_gate.json')['passed']:return
         from tools.e53_review import review_approved
         if not review_approved('pilot'):print('PILOT_MAPPING_REVIEW_REQUIRED');return
@@ -67,9 +72,10 @@ def advance():
         status()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','repair_energy']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='status':status();return
     if args.action=='advance':advance();return
+    if args.action=='repair_energy':submit('ENERGY_REPAIR_R1','repair_energy',True);status();return
     data=submit('DATA','data',False);audit=submit('REPLAY','audit',True,[data]);submit('ENERGY','energy',True,[audit]);status()
 
 if __name__=='__main__':main()

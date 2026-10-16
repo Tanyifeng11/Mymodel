@@ -33,6 +33,13 @@ def case(r,row,arm,stage,spec,energy_targets=None,full=False):
     path=image_path(stage,arm,row['id']);done=path.with_name(path.stem+'_trace.json')
     if done.exists():
         data=read(done);assert sha(path)==data['generation']['png_sha256'];return data
+    raw=OUT/'traces'/stage/arm/row['id']
+    if raw.exists():
+        # 无完成标记的张量来自中断条件；原样归档后从同一固定seed重跑。
+        from datetime import datetime,timezone
+        archived=OUT/'failures'/'partial_traces'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')/stage/arm/row['id']
+        archived.parent.mkdir(parents=True,exist_ok=True);raw.rename(archived)
+        write(archived.parent/(row['id']+'_archive.json'),dict(source=str(raw),archive=str(archived),reason='condition had no completed trace; preserve failed partial tensors before deterministic rerun',commit=commit()))
     r.e53_row=row;r.writer_key=(spec['geometry'],spec['texture']);r.active=arm!='E5'
     ctl=OracleDiagnostic(r,row,arm,dict(spec,stage=stage),energy_targets,full);ctl.install()
     try:record,_,_=r.generate(row,path)

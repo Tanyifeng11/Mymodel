@@ -11,7 +11,7 @@ from tools.e44_b1_mask import region_masks,weights_at,regional_stats
 
 def rms(x):return x.float().square().mean().sqrt()
 
-def match_energy(value,target,tolerance=1e-4):
+def match_energy(value,target,tolerance=1e-4,context=None):
     """匹配应用增量的投影后RMS，复核cast后的实际值；0预算严格返回0。"""
     target=float(target);source=float(rms(value))
     if target==0:return torch.zeros_like(value),dict(before=source,after=0.,target=0.,gain=0.,relative_error=0.)
@@ -22,8 +22,22 @@ def match_energy(value,target,tolerance=1e-4):
         error=abs(actual/target-1)
         if error<tolerance:break
         factor*=target/max(actual,1e-30)
-    assert torch.isfinite(applied).all() and error<tolerance,('ENERGY_MATCH_FAIL',error)
-    return applied,dict(before=source,after=actual,target=target,gain=factor,relative_error=error)
+    legacy_error=error;method='iterative_rescale'
+    if error>=tolerance:
+        # FP16已量化的向量在gain≈1处有平台，比例迭代可能在平台两侧振荡。
+        # cast后RMS对正gain单调；二分搜索同一个全局标量，不改变方向或放宽门限。
+        method='bisection_after_rescale';low=0.;high=2*max(factor,target/source)
+        for _ in range(32):
+            factor=(low+high)/2;applied=(value.float()*factor).to(value.dtype);actual=float(rms(applied));error=abs(actual/target-1)
+            if error<tolerance:break
+            if actual<target:low=factor
+            else:high=factor
+    if not torch.isfinite(applied).all() or error>=tolerance:
+        from datetime import datetime,timezone
+        path=OUT/'failures'/('energy_tensor_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')+'.pt');path.parent.mkdir(parents=True,exist_ok=True)
+        torch.save(dict(value=value.detach().cpu(),target=target,source=source,gain=factor,relative_error=error,legacy_relative_error=legacy_error,context=context),path)
+        raise AssertionError(('ENERGY_MATCH_FAIL',error,str(path)))
+    return applied,dict(before=source,after=actual,target=target,gain=factor,relative_error=error,method=method,legacy_relative_error=legacy_error)
 
 def attention(q,k,ks):
     logits=q.float()@k.float().transpose(-1,-2)/math.sqrt(q.shape[-1])
@@ -102,7 +116,7 @@ class OracleDiagnostic:
             assert torch.count_nonzero(projected)==0,'ORIGINAL_SUBSTITUTION_NOT_ZERO'
             assert torch.equal(value,self.raw),'REPLAY_DELTA_CHANGED'
         target=self.energy_targets[self.index] if self.energy_targets is not None else float(rms(value))
-        applied,energy=match_energy(value,target,CONFIG['energy']['tolerance'])
+        applied,energy=match_energy(value,target,CONFIG['energy']['tolerance'],dict(stage=self.spec['stage'],identity=self.row['id'],arm=self.arm,step=self.index))
         self.current.update(energy=energy,unconditional_energy=0.,raw_original_rms=float(rms(self.raw)),reference_rms=float(rms(ref)),self_rms=float(rms(own)),delta_cosine_original=float(F.cosine_similarity(applied.float().flatten(),self.raw.float().flatten(),dim=0)),shape=list(applied.shape),reference_shape=list(self.p.features.shape))
         if self.energy_targets is None and mode in ['ORIGINAL','REPLAY']:
             assert torch.equal(applied,self.raw),'MATCH_OFF_CHANGED_DELTA'

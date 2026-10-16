@@ -16,6 +16,13 @@ def main():
     x=torch.randn(1,768,640).half()
     for target in [0,.01,.1,1,5]:
         _,r=match_energy(x,target);assert r['relative_error']<1e-4
+    # 全局gain接近1时，FP16平台会让旧比例迭代振荡；保留固定门限核验fallback。
+    source=float(x.float().square().mean().sqrt());fallbacks=0
+    for offset in [.00011,.00019,.00030,-.00019]:
+        y,r=match_energy(x,source*(1+offset));assert r['relative_error']<1e-4
+        assert abs(float(y.float().square().mean().sqrt())/r['target']-1)<1e-4
+        fallbacks+=r['method']=='bisection_after_rescale'
+    print('E53 FP16 NEAR-UNIT GAIN CHECK',fallbacks,'bisection fallbacks',flush=True)
     base=np.linspace(.1,.9,50);total=np.dot(base,base)
     for window in ['ALL','EARLY','MIDDLE','LATE']+[[i] for i in KEY_STEPS]:
         t=np.asarray(targets(base,window));assert abs(np.dot(t,t)/total-1)<1e-12
