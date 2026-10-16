@@ -63,7 +63,7 @@ def energy_gate():
 def generate(stage,shard=0,shards=1):
     from tools.e53_runtime import runtime,case,clear,release
     assert read(OUT/'audit/exact_replay.json')['passed'] and read(OUT/'audit/energy_gate.json')['passed']
-    approval=read(OUT/'audit/human_mapping_review.json');assert approval['approved'] and approval['reviewer']=='user','MANUAL_MAPPING_REVIEW_REQUIRED'
+    approval=read(OUT/'audit'/('human_mapping_review_'+stage+'.json'));assert approval['approved'] and approval['reviewer']=='user','MANUAL_MAPPING_REVIEW_REQUIRED'
     if stage=='lock':assert read(OUT/'configs/lock.json')['frozen']
     rows=read(OUT/'splits'/(stage+'.json'));arms=PILOT_ARMS if stage=='pilot' else LOCK_ARMS;r=runtime(stage+'/runtime_%d'%shard)
     try:
@@ -78,15 +78,20 @@ def generate(stage,shard=0,shards=1):
     write(OUT/'resources'/('%s_shard%d_complete.json'%(stage,shard)),dict(stage=stage,shard=shard,shards=shards,n=sum(i%shards==shard for i in range(len(rows))),arms=arms,commit=commit()))
 
 def freeze_lock():
-    from tools.e53_data import synthesize,mapping_review
+    from tools.e53_data import synthesize,mapping_review,transport_validation
+    from tools.e53_texture import calibrate
     assert read(OUT/'metrics/pilot/summary.json')['engineering_complete']
     assert read(OUT/'audit/texture_calibration.json')['passed']
-    assert read(OUT/'audit/human_mapping_review.json')['approved']
+    assert read(OUT/'audit/human_mapping_review_pilot.json')['approved']
     # 不按pilot效果删除对照：固定矩阵早于任何pilot模型输出。
     rows=synthesize('lock',64);mapping_review(rows,'lock')
+    texture=calibrate(rows);transport=transport_validation(rows)
+    freeze(OUT/'audit/texture_calibration_lock_r2.json',texture);freeze(OUT/'audit/transport_calibration_lock_r2.json',transport)
+    assert texture['passed'] and transport['passed'],'LOCK_DATA_MEASUREMENT_GATE_FAIL'
     freeze(OUT/'splits/lock.json',rows)
     freeze(OUT/'configs/lock.json',dict(frozen=True,arms=LOCK_ARMS,sigma_uv=CONFIG['sigma_uv'],wrong_shift=CONFIG['wrong_shift'],thresholds=CONFIG['practical'],identity_ids=[x['id'] for x in rows],predeclared_matrix=True,commit=commit()))
-    decision(pilot='COMPLETE',lock='FROZEN_NOT_RUN')
+    from tools.e53_finish import mapping_package
+    mapping_package('lock');decision(pilot='COMPLETE',lock='FROZEN_WAITING_HUMAN_MAPPING_REVIEW')
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','data','audit','energy','generate','evaluate','freeze','finish','accept_mapping'])
@@ -109,8 +114,8 @@ def main():
             evaluate(a.stage)
         else:
             assert a.review_note,'必须提供已收到的真人核验说明，不能由模型冒充'
-            write(OUT/'audit/human_mapping_review.json',dict(approved=True,reviewer='user',note=a.review_note,utc=datetime.now(timezone.utc).isoformat(),scope='pilot mapping review images; Lock shares same frozen renderer/mapping rule'))
-            decision(human_mapping_review='APPROVED_BY_USER')
+            write(OUT/'audit'/('human_mapping_review_'+a.stage+'.json'),dict(approved=True,reviewer='user',note=a.review_note,utc=datetime.now(timezone.utc).isoformat(),scope=a.stage+' actual mapping review images'))
+            decision(**{'human_mapping_review_'+a.stage:'APPROVED_BY_USER'})
     except Exception:
         from pathlib import Path
         stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')

@@ -3,9 +3,10 @@ import argparse
 import tarfile
 from tools.e53_protocol import *
 
-def mapping_package():
-    root=OUT;paths=['synthetic/pilot_r2','figures/pilot_r2/mapping_review','splits/pilot_r2.json','audit/renderer_pilot_r2.json','audit/mapping_pilot_r2.json','audit/texture_calibration_r2.json','audit/transport_calibration_r2.json','manifest/synthetic_pilot_r2_sha256.json','data_revision.json']
-    archive=OUT/'e53_mapping_review_r2.tar.gz'
+def mapping_package(stage='pilot'):
+    suffix='' if stage=='pilot' else '_lock'
+    root=OUT;paths=['synthetic/'+stage+'_r2','figures/'+stage+'_r2/mapping_review','splits/'+stage+'_r2.json','audit/renderer_'+stage+'_r2.json','audit/mapping_'+stage+'_r2.json','audit/texture_calibration'+suffix+'_r2.json','audit/transport_calibration'+suffix+'_r2.json','manifest/synthetic_'+stage+'_r2_sha256.json','data_revision.json']
+    archive=OUT/('e53_mapping_review'+suffix+'_r2.tar.gz')
     with tarfile.open(archive,'w:gz') as tar:
         for name in paths:tar.add(root/name,arcname=name)
     archive.with_name(archive.name+'.sha256').write_text(sha(archive)+'  '+archive.name+'\n',encoding='utf-8')
@@ -28,4 +29,4 @@ def finish():
     archive.with_name(archive.name+'.sha256').write_text(sha(archive)+'  '+archive.name+'\n',encoding='utf-8');print('FINAL_ARCHIVE',archive.stat().st_size,sha(archive),flush=True)
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['mapping','finish']);args=p.parse_args();mapping_package() if args.action=='mapping' else finish()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['mapping','finish']);p.add_argument('--stage',default='pilot',choices=['pilot','lock']);args=p.parse_args();mapping_package(args.stage) if args.action=='mapping' else finish()
