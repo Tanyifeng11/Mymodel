@@ -93,14 +93,39 @@ def mapping_review(rows,stage='pilot'):
 def transport_validation(rows):
     records=[]
     for row in rows:
-        atlas=np.asarray(Image.open(row['atlas_folder']+'/atlas0.png').convert('L'),np.float32)
+        atlas=np.asarray(Image.open(row['atlas_folder']+'/atlas0.png').convert('RGB'))
         for sigma in CONFIG['sigma_sensitivity']:
             m,_,t,r=matrices(row,sigma=sigma);wrong,_,_,_=matrices(row,mode='SHIFT',sigma=sigma);valid=m.sum(1)>.99
-            def sample(uv):return cv2.remap(atlas,(uv[:,0]*511).astype('float32')[:,None],(uv[:,1]*511).astype('float32')[:,None],cv2.INTER_LINEAR).ravel()
+            # 直接调用生成输入的同一个渲染器，保留反射边界及负U白色背景。
+            # 旧默认黑色填充会把SL018边缘查询读为0，而实际图像是255。
+            def sample(uv):return np.asarray(render(atlas,uv[:,None,:]).convert('L'),np.float32).ravel()
             truth=sample(t[0]);ref=sample(r[0]);corr=lambda x:float(np.corrcoef(x[valid],truth[valid])[0,1])
-            records.append(dict(id=row['id'],pattern=row['pattern'],sigma=sigma,oracle_corr=corr(m@ref),shift_corr=corr(wrong@ref)))
+            ys=((np.arange(32)+.5)*512/32).astype(int);xs=((np.arange(24)+.5)*384/24).astype(int)
+            actual=np.asarray(Image.open(row['gt']).convert('L'),np.float32)[np.ix_(ys,xs)].ravel()
+            assert np.array_equal(truth,actual),'SCALAR_SAMPLER_RENDERER_PIXEL_MISMATCH'
+            records.append(dict(id=row['id'],pattern=row['pattern'],sigma=sigma,oracle_corr=corr(m@ref),shift_corr=corr(wrong@ref),all768_truth_pixels_bit_exact=True))
     primary=[x for x in records if x['sigma']==CONFIG['sigma_uv']]
-    return dict(passed=all(x['oracle_corr']>.5 and x['oracle_corr']-x['shift_corr']>.05 for x in primary),records=records,criterion='known rendered scalar texture at actual feature-grid coordinates: oracle corr>0.5 and oracle-minus-shift>0.05 for each identity; sigma0.03 retained, not selected from model outputs')
+    return dict(passed=all(x['oracle_corr']>.5 and x['oracle_corr']-x['shift_corr']>.05 for x in primary),records=records,criterion='known rendered scalar texture at actual feature-grid coordinates: oracle corr>0.5 and oracle-minus-shift>0.05 for each identity; sigma0.03 retained, not selected from model outputs',sampler='same RGB renderer, reflection border and negative-U white background, then grayscale; bit-exact target PNG query pixels')
+
+def transport_sampler_recheck():
+    import os
+    checks={};inputs={}
+    for stage in ['pilot','lock']:
+        source=read(OUT/'manifest'/('synthetic_'+stage+'_r2_sha256.json'))
+        assert all(sha(p)==h for p,h in source.items()),'FROZEN_INPUT_CHANGED'
+        inputs.update(source);rows=read(OUT/'splits'/(stage+'_r2.json'))
+        value=transport_validation(rows)
+        old=OUT/'audit'/('transport_calibration_'+('r2' if stage=='pilot' else 'lock_r2')+'.json')
+        value.update(original_audit_sha256=sha(old),input_manifest_sha256=sha(OUT/'manifest'/('synthetic_'+stage+'_r2_sha256.json')),commit=commit())
+        freeze(OUT/'audit'/('transport_calibration_'+stage+'_renderer_R1.json'),value)
+        primary=[r for r in value['records'] if r['sigma']==CONFIG['sigma_uv']]
+        checks[stage]=dict(data_gate_passed=value['passed'],n=len(rows),failed=[r for r in primary if not(r['oracle_corr']>.5 and r['oracle_corr']-r['shift_corr']>.05)])
+    assert all(sha(p)==h for p,h in inputs.items()),'FROZEN_INPUT_CHANGED_DURING_RECHECK'
+    write(OUT/'audit/transport_sampler_recheck_R1.json',dict(engineering_passed=True,frozen_lock_data_qualified=checks['lock']['data_gate_passed'],checks=checks,
+        all_inputs_unchanged=True,input_files=len(inputs),all768_target_truth_pixels_bit_exact=True,scientific_parameters_changed=False,
+        model_generations_changed=False,training_updates=0,job=int(os.environ['SLURM_JOB_ID']),commit=commit()))
+    decision(engineering_transport_sampler='PASS_R1',lock='BLOCKED_FROZEN_INPUT_CALIBRATION' if not checks['lock']['data_gate_passed'] else 'DATA_CALIBRATION_PASSED')
+    print('E53 RENDERER SAMPLER RECHECK',checks,flush=True)
 
 def main():
     assert not (OUT/'images/pilot').exists(),'不能在模型Pilot输出后改变渲染器'

@@ -73,9 +73,12 @@ def advance():
         status()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','repair_energy','storage_repair']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','repair_energy','storage_repair','close_gated']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='status':status();return
     if args.action=='advance':advance();return
+    if args.action=='close_gated':
+        recheck=submit('TRANSPORT_RECHECK_R1','recheck_transport',False)
+        submit('STOP_REVIEW','finish_stopped',False,[recheck]);status();return
     if args.action=='repair_energy':submit('ENERGY_REPAIR_R1','repair_energy',True);status();return
     if args.action=='storage_repair':
         storage=submit('STORAGE_COMPRESS_R1','compress_storage',False,slurm_options=['--cpus-per-task=8','--time=04:00:00'])

@@ -96,7 +96,7 @@ def freeze_lock():
     mapping_package('lock');decision(pilot='COMPLETE',lock='FROZEN_WAITING_MAPPING_REVIEW')
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','data','audit','energy','repair_energy','compress_storage','repair_storage','generate','evaluate','freeze','finish','accept_mapping','accept_assistant_mapping'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','data','audit','energy','repair_energy','compress_storage','repair_storage','recheck_transport','generate','evaluate','freeze','finish','finish_stopped','accept_mapping','accept_assistant_mapping'])
     p.add_argument('--stage',default='pilot',choices=['pilot','lock']);p.add_argument('--shard',type=int,default=0);p.add_argument('--shards',type=int,default=1)
     p.add_argument('--review-note');p.add_argument('--user-delegation');p.add_argument('--reviewed-ids');a=p.parse_args();torch.set_num_threads(2)
     try:
@@ -115,11 +115,17 @@ def main():
         elif a.action=='repair_storage':
             from tools.e53_repair import storage_repair_gate
             storage_repair_gate()
+        elif a.action=='recheck_transport':
+            from tools.e53_data import transport_sampler_recheck
+            transport_sampler_recheck()
         elif a.action=='generate':generate(a.stage,a.shard,a.shards)
         elif a.action=='freeze':freeze_lock()
         elif a.action=='finish':
             from tools.e53_finish import finish
             finish()
+        elif a.action=='finish_stopped':
+            from tools.e53_finish import finish_stopped
+            finish_stopped()
         elif a.action=='evaluate':
             from tools.e53_eval import evaluate
             evaluate(a.stage)
