@@ -138,7 +138,7 @@ class M54Processor(ReferenceAttentionProcessor):
                 self.last_attention=dict(entropy=float(-(a*a.clamp_min(1e-30).log()).sum(-1).mean()),
                     top1_mass=float(a.max(-1).values.mean()),top5_mass=float(a.topk(5,dim=-1).values.sum(-1).mean()),p_ref=float(p_ref.mean()))
             delta=F.linear(delta.to(q),attn.to_out[0].weight,None);delta=attn.to_out[1](delta)
-        delta=delta.to(base.dtype)/attn.rescale_output_factor
+        delta=(delta*getattr(self,'effect_scale',1.)).to(base.dtype)/attn.rescale_output_factor
         if len(shape)==4:delta=delta.transpose(1,2).reshape(shape)
         self.last_delta=dict(rms=float(delta.detach().float().square().mean().sqrt()),**getattr(self,'last_attention',{}))
         if hasattr(self,'candidate'):self.last_delta.update(self.candidate.last)

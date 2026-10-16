@@ -37,7 +37,7 @@ CONFIG=dict(experiment='M54',version=1,source_plan_sha256='8fdb4b2e4f847694c09df
 PAPERS={
  'M1':'https://arxiv.org/abs/2312.01725','M2':'https://arxiv.org/abs/2308.06721',
  'M3':'https://arxiv.org/abs/2403.05139','M4':'https://arxiv.org/abs/2409.08258',
- 'M5':'https://arxiv.org/abs/2308.06091','M6':'https://arxiv.org/abs/2402.09812',
+ 'M5':'https://ojs.aaai.org/index.php/AAAI/article/view/32973','M6':'https://arxiv.org/abs/2402.09812',
  'M7':'https://arxiv.org/abs/2404.02733','M8':'https://arxiv.org/abs/2311.03335',
  'M9':'https://arxiv.org/abs/2302.08453','M10':None,'M11':None}
 

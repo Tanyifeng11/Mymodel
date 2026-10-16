@@ -22,11 +22,8 @@ class Inputs:
     def next(self,disable_dropout=False):
         args,kw,noise,mask,record=self.data.next(disable_dropout)
         row=self.rows[record['id']];self.r.geometry(row['sketch'],row['reference']);self.count+=1
-        if self.r.arm=='M5' and not disable_dropout:
-            import hashlib
-            value=int(hashlib.sha256(('M54_DROP_'+str(self.count)).encode()).hexdigest()[:8],16)/2**32
-            record['outfitting_dropout']=value<.10
-            if value<.10:self.r.allow_reference=False
+        # 历史image .05 + both .05已给出reference dropout .10，不再叠加为.19。
+        if self.r.arm=='M5':record['outfitting_dropout']=record['dropout'] in ['image','both']
         return args,kw,noise,mask,record
 
 
@@ -168,23 +165,27 @@ def train(arm,total=800):
 def generate(arm,stage='pilot',updates=800,seed=42):
     from tools.m54_runtime import make_runtime,release
     assert read(OUT/'audit/round0_complete.json')['passed']
-    if arm in TRAIN_ARMS:assert read(OUT/'training'/arm/('complete%04d.json'%updates))['updates']==updates
-    rows=read(OUT/'splits'/(stage+'.json'));folderstage=stage if updates==800 else stage+'_u'+str(updates)
+    basearm='M5' if arm.startswith('M5_S') else arm
+    if basearm in TRAIN_ARMS:assert read(OUT/'training'/basearm/('complete%04d.json'%updates))['updates']==updates
+    splitstage='pilot' if stage=='round1' else stage
+    rows=read(OUT/'splits'/(splitstage+'.json'));folderstage=stage if updates==800 else stage+'_u'+str(updates)
     if seed!=42:folderstage+='_s'+str(seed)
     r=make_runtime(arm,folderstage+'/'+arm+'/runtime')
-    if arm in TRAIN_ARMS:r.load(OUT/'training'/arm/'checkpoints'/('step%04d.pt'%updates));r.processor.candidate.eval().requires_grad_(False)
+    if basearm in TRAIN_ARMS:r.load(OUT/'training'/basearm/'checkpoints'/('step%04d.pt'%updates));r.processor.candidate.eval().requires_grad_(False)
     try:
         for row in rows:
             path=image_path(folderstage,arm,row['id'])
             if path.exists() and path.with_suffix('.json').exists():assert sha(path)==read(path.with_suffix('.json'))['png_sha256'];continue
             record,_,_=r.generate(row,path,seed=seed);print('M54 RGB',arm,folderstage,row['id'],record['seconds'],flush=True)
     finally:release(r)
-    write(OUT/folderstage/(arm+'_complete.json'),dict(n=len(rows),arm=arm,updates=updates if arm in TRAIN_ARMS else 0,seed=seed,commit=commit()))
+    write(OUT/folderstage/(arm+'_complete.json'),dict(n=len(rows),arm=arm,updates=updates if basearm in TRAIN_ARMS else 0,seed=seed,commit=commit()))
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','audit','train','generate','evaluate'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','audit','train','generate','evaluate','batch_generate'])
     p.add_argument('--arm');p.add_argument('--stage',default='pilot');p.add_argument('--updates',type=int,default=800);p.add_argument('--seed',type=int,default=42)
+    p.add_argument('--arms',nargs='+')
+    p.add_argument('--diagnostic',action='store_true')
     args=p.parse_args();torch.set_num_threads(2)
     try:
         if args.action=='prepare':
@@ -193,9 +194,14 @@ def main():
         elif args.action=='audit':audit()
         elif args.action=='train':train(args.arm,args.updates)
         elif args.action=='generate':generate(args.arm,args.stage,args.updates,args.seed)
+        elif args.action=='batch_generate':
+            for arm in args.arms:generate(arm,args.stage,args.updates,args.seed)
+            if args.diagnostic:
+                for arm in ['E5','B1','ORACLE']:generate(arm,'oracle_diagnostic')
         else:
             from tools.m54_eval import evaluate
             evaluate(args.stage)
+            if args.stage=='round1':evaluate('oracle_diagnostic')
     except Exception:
         path=OUT/'failures'/(args.action+'_'+(args.arm or 'all')+'_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')+'.json')
         write(path,dict(arguments=vars(args),traceback=traceback.format_exc(),commit=commit()))

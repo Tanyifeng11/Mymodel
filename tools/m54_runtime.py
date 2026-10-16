@@ -12,8 +12,10 @@ from tools.m54_protocol import *
 
 class M54Runtime(Runtime):
     def __init__(self,arm):
+        recipe=arm
+        arm='M5' if arm.startswith('M5_S') else arm
         super().__init__('B0' if arm=='E5' else 'B1')
-        self.arm=arm;self.variant=arm;self.geometry_cache={};self.prior_cache={};self.audit_steps=[]
+        self.arm=arm;self.recipe=recipe;self.variant=recipe;self.geometry_cache={};self.prior_cache={};self.audit_steps=[]
         if self.processor is None:return
         p=self.processor
         if arm not in TRAIN_ARMS or arm=='M9':Runtime.load(self,B1)
@@ -21,10 +23,13 @@ class M54Runtime(Runtime):
         p.geometry=None;p.timestep=torch.tensor([0],device=self.pipe.device);p.spatial_prior=None
         p.last_delta={};p.last_attention={}
         p.new_branch_active=True
+        p.effect_scale={'M5_S075':.75,'M5_S100':1.,'M5_S125':1.25}.get(recipe,1.)
         if arm=='SAFE':p.gate.data.mul_(SAFE_SCALE)
         if arm in TRAIN_ARMS:
             with torch.random.fork_rng(devices=[]):
                 torch.manual_seed(42);p.candidate=Candidate(arm,self.width).to(self.pipe.device)
+            choice=OUT/'round1/selection.json'
+            if arm=='M1' and choice.exists():p.candidate.tau=read(choice)['M1_temperature']
         p.diagnostic_observer=lambda base,raw,delta:setattr(p,'last_delta',dict(rms=float(delta.detach().float().square().mean().sqrt())))
 
     def parameters(self):
@@ -69,7 +74,8 @@ class M54Runtime(Runtime):
         if self.arm=='ORACLE':
             from tools.e53_mapping import matrices
             assert row.get('geometry') and row.get('synthetic')
-            self.processor.oracle=torch.from_numpy(matrices(row)[0]).to(self.pipe.device)
+            # 本诊断Writer读取G0T0，矩阵必须匹配G0，不能误用E53默认GN。
+            self.processor.oracle=torch.from_numpy(matrices(row,geometry='0')[0]).to(self.pipe.device)
         old=self.pipe.unet.forward;steps=[];p=self.processor
         def forward(*args,**kw):
             conditional='sa_hidden_states' in (kw.get('cross_attention_kwargs') or {})
@@ -90,7 +96,8 @@ class M54Runtime(Runtime):
         try:record,contexts,outputs=super().generate(row,path,**kwargs)
         finally:self.pipe.unet.forward=old
         assert len(steps)==50
-        record.update(module=self.arm,parameters=sum(v.numel() for v in self.parameters()),
+        record.update(module=self.recipe,effect_scale=getattr(self.processor,'effect_scale',1.),
+            parameters=sum(v.numel() for v in self.parameters()),
             delta_rms=float(np.mean([s.get('rms',0.) for s in steps])),
             epsilon_shift_rms=float(np.mean([s['epsilon_shift_rms'] for s in steps])))
         write(Path(path).with_suffix('.json'),record)
@@ -100,12 +107,14 @@ class M54Runtime(Runtime):
     def save(self,path,step,optimizer=None,scaler=None):
         path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
         torch.save(dict(arm=self.arm,step=step,config=CONFIG,state_dict=self.processor.candidate.state_dict(),
+            attention_temperature=self.processor.candidate.tau,
             optimizer=optimizer.state_dict() if optimizer else None,scaler=scaler.state_dict() if scaler else None),path)
         write(path.with_suffix('.json'),dict(step=step,sha256=sha(path),commit=commit()))
 
     def load(self,path):
         state=torch.load(path,map_location='cpu',weights_only=False)
         assert state['config']==CONFIG and state['arm']==self.arm
+        assert state.get('attention_temperature',1.)==self.processor.candidate.tau
         self.processor.candidate.load_state_dict(state['state_dict']);return state
 
 

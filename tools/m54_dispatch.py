@@ -32,12 +32,59 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status']);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance']);args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
         prepare=submit('PREPARE','prepare',False)
         submit('ROUND0','audit',True,[prepare])
+    elif args.action=='advance':advance()
     status()
+
+
+def advance():
+    import fcntl
+    with (OUT/'resources/dispatch.lock').open('w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        jobs=read(OUT/'resources/jobs.json')
+        raw=subprocess.check_output(['sacct','-X','-n','-P','-j',','.join(str(j['id']) for j in jobs),'--format=JobIDRaw,State'],text=True)
+        states={int(s.split('|')[0]):s.split('|')[1].split()[0] for s in raw.splitlines() if s.split('|')[0].isdigit()}
+        latest={j.get('logical_name',j['name']):j for j in jobs}
+        failed=[j for j in latest.values() if states.get(j['id']) in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL']]
+        if failed:print('ENGINEERING_REPAIR_REQUIRED',[(j['name'],j['id']) for j in failed]);return
+        if not (OUT/'audit/round0_complete.json').exists():return
+        assert read(OUT/'audit/round0_complete.json')['passed']
+        if states.get(latest['ROUND0']['id'])!='COMPLETED':return
+        review=OUT/'audit/input_review/pilot_approval.json'
+        if not review.exists():print('ASSISTANT_PILOT_INPUT_REVIEW_PENDING');return
+        assert read(review)['passed']
+        if not (OUT/'round1/evaluation_complete.json').exists():
+            base=submit('R1_BASELINES','batch_generate',True,extra=['--stage','round1','--arms','E5','B1','SAFE'])
+            shards=[]
+            for i,arms in enumerate([list(LAYER_ARMS),['M8_T100','M8_T085','M8_T070'],['M10','HF_ONLY']]):
+                extra=['--stage','round1','--arms']+arms
+                if i==2:extra+=['--diagnostic']
+                shards.append(submit('R1_ZERO'+str(i),'batch_generate',True,[base],extra))
+            submit('R1_EVAL','evaluate',False,[base]+shards,['--stage','round1']);return
+        choice=OUT/'round1/selection.json'
+        if not choice.exists():
+            gates=read(OUT/'round1/gates.json');means=read(OUT/'round1/means.json')
+            possible=[a for a in ['M8_T100','M8_T085','M8_T070'] if gates[a]['passed']]
+            winner=min(possible,key=lambda a:(means[a]['lpips_gt'],a)) if possible else 'M8_T100'
+            freeze(choice,dict(M1_temperature={'M8_T100':1.,'M8_T085':.85,'M8_T070':.70}[winner],
+                M8_selected=winner,selection='minimum LPIPS among six-gate passers; otherwise tau1',before_training=True))
+        active=sum(states.get(j['id'],'PENDING') not in ['COMPLETED'] for j in latest.values())
+        slots=max(0,4-active)
+        for arm in TRAIN_ARMS:
+            if 'TRAIN_'+arm not in latest:
+                if slots<=0:break
+                submit('TRAIN_'+arm,'train',True,extra=['--arm',arm]);slots-=1
+        # 后续Pilot生成以实际训练完成检查点为准，绝不将工程失败当作科研淘汰。
+        for arm in TRAIN_ARMS:
+            job=latest.get('TRAIN_'+arm)
+            if job and states.get(job['id'])=='COMPLETED' and 'PILOT_'+arm not in latest and slots>0:
+                recipes=['M5_S075','M5_S100','M5_S125'] if arm=='M5' else [arm]
+                submit('PILOT_'+arm,'batch_generate',True,extra=['--stage','pilot','--arms']+recipes);slots-=1
+        decision(R1='COMPLETE',R2='IN_PROGRESS')
 
 
 if __name__=='__main__':main()
