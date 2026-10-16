@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.nn import functional as F
+from torchvision.transforms.functional import to_tensor
 from models.m54_candidates import Candidate,M54Processor
 from tools.e44_runtime import Runtime,sketch_masks,digest
 from tools.m54_protocol import *
@@ -16,6 +17,7 @@ class M54Runtime(Runtime):
         arm='M5' if arm.startswith('M5_S') else arm
         super().__init__('B0' if arm=='E5' else 'B1')
         self.arm=arm;self.recipe=recipe;self.variant=recipe;self.geometry_cache={};self.prior_cache={};self.audit_steps=[]
+        self.effects_enabled=True;self.counter_latent=None;self.counter_id=None
         if self.processor is None:return
         p=self.processor
         if arm not in TRAIN_ARMS or arm=='M9':Runtime.load(self,B1)
@@ -30,7 +32,7 @@ class M54Runtime(Runtime):
                 torch.manual_seed(42);p.candidate=Candidate(arm,self.width).to(self.pipe.device)
             choice=OUT/'round1/selection.json'
             if arm=='M1' and choice.exists():p.candidate.tau=read(choice)['M1_temperature']
-        p.diagnostic_observer=lambda base,raw,delta:setattr(p,'last_delta',dict(rms=float(delta.detach().float().square().mean().sqrt())))
+        p.diagnostic_observer=lambda base,raw,delta:setattr(p,'last_delta',dict(rms=float(((base+delta)-base).detach().float().square().mean().sqrt())))
 
     def parameters(self):
         if self.processor is not None and hasattr(self.processor,'candidate'):return list(self.processor.candidate.parameters())
@@ -69,6 +71,12 @@ class M54Runtime(Runtime):
         if self.processor is not None:
             self.processor.timestep=torch.as_tensor(args[1] if len(args)>1 else kwargs['timestep'],device=self.pipe.device).reshape(-1)
 
+    @torch.no_grad()
+    def counter_reference(self,row):
+        pixels=to_tensor(Image.open(row['reference']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR))[None].to(self.pipe.device)*2-1
+        self.counter_latent=self.pipe.vae.encode(pixels.to(self.pipe.vae.dtype)).latent_dist.mean*self.pipe.vae.config.scaling_factor
+        self.counter_id=row['id']
+
     def generate(self,row,path,**kwargs):
         self.geometry(row['sketch'],row['reference'])
         if self.arm=='ORACLE':
@@ -80,6 +88,8 @@ class M54Runtime(Runtime):
         def forward(*args,**kw):
             conditional='sa_hidden_states' in (kw.get('cross_attention_kwargs') or {})
             if not conditional:return old(*args,**kw)
+            if not self.effects_enabled:
+                output=old(*args,**kw);steps.append(dict(step=len(steps),epsilon_shift_rms=None));return output
             enabled=p.enabled if p is not None else False
             if p is not None:p.enabled=False
             try:
@@ -89,17 +99,28 @@ class M54Runtime(Runtime):
             if p is not None:p.last_delta={}
             output=old(*args,**kw)
             effect=output[0].float()-teacher[0].float()
-            steps.append(dict(step=len(steps),epsilon_shift_rms=float(effect.square().mean().sqrt()),
-                **(dict(p.last_delta) if p is not None else dict(rms=0.))))
+            item=dict(step=len(steps),epsilon_shift_rms=float(effect.square().mean().sqrt()),
+                **(dict(p.last_delta) if p is not None else dict(rms=0.)))
+            if self.counter_latent is not None and len(steps) in [0,24,49]:
+                features=p.features;latent=self.writer.latent
+                try:
+                    self.writer.latent=self.counter_latent;p.features=self.writer.write(p.timestep)
+                    counter=old(*args,**kw)[0].float()
+                    item['reference_sensitivity_rms']=float((counter-output[0].float()).square().mean().sqrt())
+                finally:p.features=features;self.writer.latent=latent
+            steps.append(item)
             return output
         self.pipe.unet.forward=forward
         try:record,contexts,outputs=super().generate(row,path,**kwargs)
         finally:self.pipe.unet.forward=old
         assert len(steps)==50
-        record.update(module=self.recipe,effect_scale=getattr(self.processor,'effect_scale',1.),
+        shifts=[s['epsilon_shift_rms'] for s in steps if s['epsilon_shift_rms'] is not None]
+        sensitivity=[s['reference_sensitivity_rms'] for s in steps if 'reference_sensitivity_rms' in s]
+        record.update(module=self.recipe,effect_scale=getattr(self.processor,'effect_scale',1.),production_profile=not self.effects_enabled,
             parameters=sum(v.numel() for v in self.parameters()),
             delta_rms=float(np.mean([s.get('rms',0.) for s in steps])),
-            epsilon_shift_rms=float(np.mean([s['epsilon_shift_rms'] for s in steps])))
+            epsilon_shift_rms=float(np.mean(shifts)) if shifts else None,
+            reference_sensitivity_rms=float(np.mean(sensitivity)) if sensitivity else None,counter_reference_id=self.counter_id)
         write(Path(path).with_suffix('.json'),record)
         write(Path(path).with_name(Path(path).stem+'_effects.json'),steps)
         return record,contexts,outputs

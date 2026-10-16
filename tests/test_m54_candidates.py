@@ -2,7 +2,7 @@
 import unittest
 import torch
 from torch import nn
-from models.m54_candidates import Candidate,M54Processor
+from models.m54_candidates import Candidate,M54Processor,high_frequency
 
 
 class Original(nn.Module):
@@ -39,13 +39,31 @@ class M54Tests(unittest.TestCase):
     def test_frozen_b1_and_M9_identity(self):
         torch.manual_seed(42);attn=Attention();x=torch.randn(1,16,16)
         p=M54Processor(Original(),'layer',16,16,'B1');p.features=torch.randn(1,256,16)
-        p.mask=torch.ones(1,1,4,4);p.enabled=True;p.mode='B1';p.gate.data.fill_(.2)
+        p.mask=torch.ones(1,1,4,4);p.enabled=True;p.mode='B1';p.gate.data.fill_(.2);p.last_delta={}
         kw=dict(sa_hidden_states={});b1=p(attn,x,**kw)
         p.mode='M8_T100';self.assertTrue(torch.equal(b1,p(attn,x,**kw)))
         p.mode='M9';p.candidate=Candidate('M9',16);p.new_branch_active=True
         p.geometry=torch.rand(1,3,4,4);p.timestep=torch.tensor([500])
         self.assertTrue(torch.equal(b1,p(attn,x,**kw)))
         p.enabled=False;self.assertTrue(torch.equal(x,p(attn,x,**kw)))
+
+    def test_temperature_changes_routing_without_reference_mass_shrink(self):
+        torch.manual_seed(42);attn=Attention();x=torch.randn(1,16,16)
+        p=M54Processor(Original(),'layer',16,16,'B1');p.features=torch.randn(1,256,16)
+        p.mask=torch.ones(1,1,4,4);p.enabled=True;p.gate.data.fill_(.2)
+        p.mode='M8_T085';a=p(attn,x,sa_hidden_states={});first=dict(p.last_attention)
+        p.mode='M8_T070';b=p(attn,x,sa_hidden_states={});second=dict(p.last_attention)
+        self.assertEqual(first['p_ref'],second['p_ref'])
+        self.assertLess(second['entropy'],first['entropy'])
+        self.assertFalse(torch.equal(a,b))
+
+    def test_high_frequency_branch_does_not_invent_constant_reference_content(self):
+        module=Candidate('M11',16)
+        with torch.no_grad():module.output.weight.normal_(std=.1)
+        reference=torch.ones(1,256,16)
+        self.assertTrue(torch.equal(high_frequency(reference),torch.zeros_like(reference)))
+        output=module(torch.randn(1,16,16),reference,torch.randn(1,16,16),4,torch.ones(1,3,4,4),torch.tensor([500]))
+        self.assertTrue(torch.equal(output,torch.zeros_like(output)))
 
 
 if __name__=='__main__':unittest.main()

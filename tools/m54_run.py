@@ -50,13 +50,18 @@ def loss_forward(r,args,kw,noise,mask):
     return loss,dict(diffusion=float(diffusion.detach()),keep=float(keep.detach()),boundary=float(boundary.detach()),atv=float(atv.detach()))
 
 
-def audit():
+def audit(recheck_arm=None):
     from tools.m54_runtime import make_runtime,release
     from tools.e47_runtime import exact_trace
     assert read(OUT/'audit/prepare_complete.json')['passed']
-    if (OUT/'audit/round0_complete.json').exists():assert read(OUT/'audit/round0_complete.json')['passed'];return
+    previous=OUT/'audit/round0_complete.json'
+    if previous.exists() and recheck_arm is None:assert read(previous)['passed'];return
+    if recheck_arm:
+        assert recheck_arm in TRAIN_ARMS and read(previous)['passed']
+        old=read(previous)
+        freeze(OUT/'audit'/('round0_before_'+recheck_arm+'_R1.json'),old)
     rows=read(OUT/'splits/dev32.json')[:2];replay={}
-    for arm,oldarm in [('E5','B'),('B1','D')]:
+    for arm,oldarm in ([] if recheck_arm else [('E5','B'),('B1','D')]):
         r=make_runtime(arm,'audit/replay/'+arm)
         try:
             entries=[]
@@ -68,8 +73,9 @@ def audit():
                 entries.append(dict(id=row['id'],trace=check,png_exact=True))
             replay[arm]=entries
         finally:release(r)
-    results={}
-    for arm in TRAIN_ARMS:
+    results=old['modules'] if recheck_arm else {}
+    if recheck_arm:replay=old['replay']
+    for arm in ([recheck_arm] if recheck_arm else TRAIN_ARMS):
         seed_all();r=make_runtime(arm,'audit/modules/'+arm)
         try:
             data=Inputs(r);seed_all()
@@ -105,7 +111,11 @@ def audit():
                 zero_output_gradient=gradients,live_gradients=live,off_isolation=True,optimizer_updates=0,
                 parameters=sum(v.numel() for v in r.parameters()),training_identity=record['id'])
         finally:release(r)
-    write(OUT/'audit/round0_complete.json',dict(passed=True,replay=replay,modules=results,commit=commit(),training_updates=0))
+    value=dict(passed=True,replay=replay,modules=results,commit=commit(),training_updates=0)
+    if recheck_arm:
+        value.update(previous_audit_sha256=sha(OUT/'audit'/('round0_before_'+recheck_arm+'_R1.json')),rechecked_arm=recheck_arm)
+        freeze(OUT/'audit'/('module_recheck_'+recheck_arm+'_R1.json'),value)
+    write(OUT/'audit/round0_complete.json',value)
     decision(R0='PASS')
     print('M54 ROUND0 PASS',flush=True)
 
@@ -118,6 +128,7 @@ def train(arm,total=800):
     done=folder/('complete%04d.json'%total)
     if done.exists():assert read(done)['updates']==total;return
     seed_all();r=make_runtime(arm,'training/'+arm+'/runtime');data=Inputs(r)
+    assert sum(v.numel() for v in r.parameters())==read(OUT/'audit/round0_complete.json')['modules'][arm]['parameters'],'MODULE_REAUDIT_REQUIRED'
     optimizer=torch.optim.AdamW(r.parameters(),lr=1e-4,weight_decay=.01);scaler=torch.amp.GradScaler('cuda')
     step=0;sequence=[];history=[];p=r.processor;p.candidate.train();started=time.perf_counter()
     if total==2400:
@@ -173,10 +184,20 @@ def generate(arm,stage='pilot',updates=800,seed=42):
     r=make_runtime(arm,folderstage+'/'+arm+'/runtime')
     if basearm in TRAIN_ARMS:r.load(OUT/'training'/basearm/'checkpoints'/('step%04d.pt'%updates));r.processor.candidate.eval().requires_grad_(False)
     try:
-        for row in rows:
+        for index,row in enumerate(rows):
             path=image_path(folderstage,arm,row['id'])
             if path.exists() and path.with_suffix('.json').exists():assert sha(path)==read(path.with_suffix('.json'))['png_sha256'];continue
+            if arm.startswith('M7'):r.counter_reference(rows[(index+1)%len(rows)])
             record,_,_=r.generate(row,path,seed=seed);print('M54 RGB',arm,folderstage,row['id'],record['seconds'],flush=True)
+        # 独立的真实生产路径计时：关闭教师/参考交换诊断，不将诊断成本当推理延迟。
+        r.effects_enabled=False;r.counter_latent=None;r.counter_id=None
+        profile=[]
+        for row in rows[:2]:
+            path=image_path('profiles/'+folderstage,arm,row['id'])
+            rec,_,_=r.generate(row,path,seed=seed)
+            assert sha(path)==sha(image_path(folderstage,arm,row['id'])),'PRODUCTION_PROFILE_CHANGED_PNG'
+            profile.append(rec)
+        write(OUT/folderstage/(arm+'_profile.json'),dict(n=2,full50_steps=True,diagnostic_teacher_disabled=True,records=profile))
     finally:release(r)
     write(OUT/folderstage/(arm+'_complete.json'),dict(n=len(rows),arm=arm,updates=updates if basearm in TRAIN_ARMS else 0,seed=seed,commit=commit()))
 
@@ -197,7 +218,7 @@ def main():
         if args.action=='prepare':
             from tools.m54_prepare import prepare
             prepare()
-        elif args.action=='audit':audit()
+        elif args.action=='audit':audit(args.arm)
         elif args.action=='input_candidates':
             from tools.m54_input_candidates import build
             build()

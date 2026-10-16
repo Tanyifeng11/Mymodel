@@ -94,6 +94,7 @@ def evaluate(stage):
         DINO_used=False,ViT_used=True,auxiliary_only=True,lpips=lpips_info))
     tensor=lambda im:torch.from_numpy(np.asarray(im,np.float32).transpose(2,0,1)/127.5-1)[None].cuda()
     records=[]
+    profiles={a:read(OUT/stage/(a+'_profile.json')) for a in arms if (OUT/stage/(a+'_profile.json')).exists()}
     for row in rows:
         gt=Image.open(row['gt']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
         bundle=prepare_evaluation_masks(SIZE,sketch_path=row['sketch'],mask_policy='sketch_only');garment=bundle['garment']
@@ -105,7 +106,13 @@ def evaluate(stage):
             rec=dict(id=row['id'],variant=arm,**{k:None for k in KEYS})
             rec.update(lpips_gt=float(metric(tensor(image),tensor(gt)).mean()),parameters=meta.get('parameters',0),
                 delta_rms=meta.get('delta_rms',0.),epsilon_shift_rms=meta.get('epsilon_shift_rms',0.),
-                latency_seconds=meta['seconds'],peak_vram_gib=meta['peak_memory_gib'])
+                reference_sensitivity_rms=meta.get('reference_sensitivity_rms'),diagnostic_latency_seconds=meta['seconds'],
+                latency_seconds=float(np.median([x['seconds'] for x in profiles[arm]['records']])) if arm in profiles else None,
+                peak_vram_gib=max(x['peak_memory_gib'] for x in profiles[arm]['records']) if arm in profiles else None,
+                production_profile_n=profiles[arm]['n'] if arm in profiles else 0)
+            effects=read(path.with_name(path.stem+'_effects.json'))
+            for key in ['entropy','top1_mass','top5_mass','spatial_spread']:
+                values=[x[key] for x in effects if key in x];rec[key]=float(np.mean(values)) if values else None
             fg=estimate_foreground_mask(image,SIZE)
             if fg is None:fg=np.zeros((SIZE[1],SIZE[0]),bool)
             if garment is not None and meta['mask']['valid']:

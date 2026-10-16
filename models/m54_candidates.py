@@ -15,6 +15,14 @@ def high_frequency(x):
 def split_heads(x,heads):return x.reshape(x.shape[0],-1,heads,x.shape[-1]//heads).transpose(1,2)
 
 
+def attention_summary(attention):
+    a=attention.detach();yy,xx=torch.meshgrid(torch.linspace(0,1,16,device=a.device),torch.linspace(0,1,16,device=a.device),indexing='ij')
+    coords=torch.stack([xx.flatten(),yy.flatten()],-1);center=a@coords
+    spread=((a@coords.square().sum(-1))-center.square().sum(-1)).clamp_min(0).sqrt().mean()
+    return dict(entropy=float(-(a*a.clamp_min(1e-30).log()).sum(-1).mean()),
+        top1_mass=float(a.max(-1).values.mean()),top5_mass=float(a.topk(5,dim=-1).values.sum(-1).mean()),spatial_spread=float(spread))
+
+
 class Candidate(nn.Module):
     def __init__(self,kind,width=640):
         super().__init__();self.kind=kind;self.width=width;self.tau=1.;self.last={};self.atv=None
@@ -24,7 +32,8 @@ class Candidate(nn.Module):
             self.output=nn.Conv2d(32,width,1)
             self.alpha=nn.Parameter(torch.ones(()))
         else:
-            self.ref_norm=nn.LayerNorm(width)
+            # M11不允许归一化偏置在零高频输入上凭空生成参考内容。
+            self.ref_norm=nn.LayerNorm(width,bias=(kind!='M11'))
             self.key=nn.Linear(width,width,bias=False);self.value=nn.Linear(width,width,bias=False)
             if kind in ['M1','M6']:
                 self.target_norm=nn.LayerNorm(width);self.query=nn.Linear(width,width,bias=False)
@@ -65,8 +74,7 @@ class Candidate(nn.Module):
             logits=logits+spatial_prior.clamp_min(1e-30).log()[:,None]
         else:logits=(qh@kh.transpose(-1,-2))/(math.sqrt(c//heads)*self.tau)
         attention=logits.softmax(-1);aligned=(attention@vh).transpose(1,2).reshape(b,n,c)
-        self.last=dict(entropy=float(-(attention.detach()*attention.detach().clamp_min(1e-30).log()).sum(-1).mean()),
-            top1_mass=float(attention.detach().max(-1).values.mean()),top5_mass=float(attention.detach().topk(5,dim=-1).values.sum(-1).mean()))
+        self.last=attention_summary(attention)
         if self.kind=='M1':
             yy,xx=torch.meshgrid(torch.linspace(0,1,16,device=x.device),torch.linspace(0,1,16,device=x.device),indexing='ij')
             center=attention.mean(1)@torch.stack([xx.flatten(),yy.flatten()],-1)
@@ -93,7 +101,17 @@ class M54Processor(ReferenceAttentionProcessor):
     def __call__(self,attn,hidden_states,encoder_hidden_states=None,attention_mask=None,temb=None,scale=1.,**kwargs):
         # M7与tau1使用原融合SDPA，要求精确回放而不是近似重写。
         if self.mode in ['B1','SAFE'] or self.mode.startswith('M7') or self.mode=='M8_T100':
-            return super().__call__(attn,hidden_states,encoder_hidden_states,attention_mask,temb,scale,**kwargs)
+            result=super().__call__(attn,hidden_states,encoder_hidden_states,attention_mask,temb,scale,**kwargs)
+            if self.mode=='M8_T100' and self.enabled and self.features is not None:
+                x=hidden_states
+                if attn.spatial_norm is not None:x=attn.spatial_norm(x,temb)
+                if x.ndim==4:x=x.flatten(2).transpose(1,2)
+                if attn.group_norm is not None:x=attn.group_norm(x.transpose(1,2)).transpose(1,2)
+                q=split_heads(attn.to_q(x),attn.heads).float()
+                k=split_heads(self.to_k_ref(self.norm(self.features.float())).to(x),attn.heads).float()
+                logits=q@k.transpose(-1,-2)/math.sqrt(q.shape[-1])
+                self.last_delta.update(attention_summary(logits.softmax(-1)))
+            return result
         base=self.original(attn,hidden_states,encoder_hidden_states=encoder_hidden_states,attention_mask=attention_mask,temb=temb,scale=scale,**kwargs)
         if not self.enabled or kwargs.get('sa_hidden_states') is None or self.features is None:return base
         x=hidden_states
@@ -109,8 +127,10 @@ class M54Processor(ReferenceAttentionProcessor):
                 delta=self.candidate(x,self.features,q,heads,self.geometry,self.timestep)
             delta=delta.to(b1.dtype)/attn.rescale_output_factor
             if len(shape)==4:delta=delta.transpose(1,2).reshape(shape)
-            self.last_delta=dict(rms=float(delta.detach().float().square().mean().sqrt()))
-            return b1+delta
+            result=b1+delta
+            self.last_delta=dict(rms=float((result-base).detach().float().square().mean().sqrt()),
+                structure_rms=float(delta.detach().float().square().mean().sqrt()))
+            return result
         if hasattr(self,'candidate') and self.mode!='M9':
             with torch.autocast(device_type=x.device.type,enabled=False):
                 delta=self.candidate(x,self.features,q,heads,self.geometry,self.timestep,self.spatial_prior)
@@ -135,11 +155,11 @@ class M54Processor(ReferenceAttentionProcessor):
                     m=self.oracle.to(a);valid=m.sum(-1)>.99
                     a=torch.where(valid[None,None,:,None],m[None,None],a)
                 ref=a@vr.float();delta=(self.gate*p_ref*(ref-self_value)).transpose(1,2).reshape(b,n,c)
-                self.last_attention=dict(entropy=float(-(a*a.clamp_min(1e-30).log()).sum(-1).mean()),
-                    top1_mass=float(a.max(-1).values.mean()),top5_mass=float(a.topk(5,dim=-1).values.sum(-1).mean()),p_ref=float(p_ref.mean()))
+                self.last_attention=dict(**attention_summary(a),p_ref=float(p_ref.detach().mean()))
             delta=F.linear(delta.to(q),attn.to_out[0].weight,None);delta=attn.to_out[1](delta)
         delta=(delta*getattr(self,'effect_scale',1.)).to(base.dtype)/attn.rescale_output_factor
         if len(shape)==4:delta=delta.transpose(1,2).reshape(shape)
-        self.last_delta=dict(rms=float(delta.detach().float().square().mean().sqrt()),**getattr(self,'last_attention',{}))
+        result=base+delta
+        self.last_delta=dict(rms=float((result-base).detach().float().square().mean().sqrt()),**getattr(self,'last_attention',{}))
         if hasattr(self,'candidate'):self.last_delta.update(self.candidate.last)
-        return base+delta
+        return result

@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 from tools.m54_protocol import *
 
 
-def submit(name,action,gpu,dependencies=(),extra=(),slurm_options=()):
+def submit(name,action,gpu,dependencies=(),extra=(),slurm_options=(),logical_name=None):
     path=OUT/'resources/jobs.json';jobs=read(path) if path.exists() else []
     existing=next((x for x in jobs if x['name']==name),None)
     if existing:return existing['id']
@@ -18,8 +18,10 @@ def submit(name,action,gpu,dependencies=(),extra=(),slurm_options=()):
         p=OUT/'resources/submission_failures.json';failures=read(p) if p.exists() else []
         failures.append(dict(command=cmd,stdout=result.stdout,stderr=result.stderr,utc=datetime.now(timezone.utc).isoformat()));write(p,failures)
         raise RuntimeError(result.stderr)
-    identity=int(result.stdout.strip().split(';')[0]);jobs.append(dict(name=name,id=identity,action=action,gpu=gpu,
-        dependencies=list(dependencies),extra=list(extra),slurm_options=list(slurm_options),commit=commit(),utc=datetime.now(timezone.utc).isoformat()))
+    identity=int(result.stdout.strip().split(';')[0]);record=dict(name=name,id=identity,action=action,gpu=gpu,
+        dependencies=list(dependencies),extra=list(extra),slurm_options=list(slurm_options),commit=commit(),utc=datetime.now(timezone.utc).isoformat())
+    if logical_name:record['logical_name']=logical_name
+    jobs.append(record)
     write(path,jobs);print('M54 SUBMITTED',name,identity,flush=True);return identity
 
 
@@ -33,7 +35,7 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates']);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','recheck_M11']);args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
         prepare=submit('PREPARE','prepare',False)
@@ -41,6 +43,9 @@ def main():
     elif args.action=='advance':advance()
     elif args.action=='input_candidates':submit('INPUT_CANDIDATES_R1','input_candidates',False,
         slurm_options=['--cpus-per-task=16','--mem=32G','--time=04:00:00'])
+    elif args.action=='recheck_M11':
+        original=next(x for x in read(OUT/'resources/jobs.json') if x['name']=='ROUND0')
+        submit('ROUND0_M11_R1','audit',True,[original['id']],['--arm','M11'],logical_name='ROUND0')
     status()
 
 
