@@ -1,12 +1,13 @@
 """复用冻结E5/Writer；新模块和产物仅落M54目录。"""
 import gc
+import time
 import cv2
 import numpy as np
 import torch
 from PIL import Image
 from torch.nn import functional as F
 from torchvision.transforms.functional import to_tensor
-from models.m54_candidates import Candidate,M54Processor
+from models.m54_candidates import Candidate,CandidateCombination,M54Processor
 from tools.e44_runtime import Runtime,sketch_masks,digest
 from tools.m54_protocol import *
 
@@ -14,6 +15,8 @@ from tools.m54_protocol import *
 class M54Runtime(Runtime):
     def __init__(self,arm):
         recipe=arm
+        combination=recipe_components(arm) if arm.startswith('C_') else None
+        if combination:arm=combination[0]['arm']
         arm='M5' if arm.startswith('M5_S') else arm
         super().__init__('B0' if arm=='E5' else 'B1')
         self.arm=arm;self.recipe=recipe;self.variant=recipe;self.geometry_cache={};self.prior_cache={};self.audit_steps=[]
@@ -32,6 +35,22 @@ class M54Runtime(Runtime):
                 torch.manual_seed(42);p.candidate=Candidate(arm,self.width).to(self.pipe.device)
             choice=OUT/'round1/selection.json'
             if arm=='M1' and choice.exists():p.candidate.tau=read(choice)['M1_temperature']
+        if combination:
+            assert arm in TRAIN_ARMS and arm!='M9'
+            components=[];scales=[];sources=[]
+            for entry in combination:
+                component_arm=family(entry['arm']);module=Candidate(component_arm,self.width).to(self.pipe.device)
+                if component_arm=='M1':module.tau=read(OUT/'round1/selection.json')['M1_temperature']
+                checkpoint=OUT/'training'/component_arm/'checkpoints'/('step%04d.pt'%entry['updates'])
+                assert sha(checkpoint)==read(checkpoint.with_suffix('.json'))['sha256']
+                state=torch.load(checkpoint,map_location='cpu',weights_only=False)
+                assert state['config']==CONFIG and state['arm']==component_arm and state['step']==entry['updates']
+                assert state['attention_temperature']==module.tau
+                module.load_state_dict(state['state_dict']);module.eval().requires_grad_(False)
+                components.append(module);scales.append({'M5_S075':.75,'M5_S100':1.,'M5_S125':1.25}.get(entry['arm'],1.))
+                sources.append(dict(arm=entry['arm'],updates=entry['updates'],checkpoint_sha256=sha(checkpoint)))
+            p.candidate=CandidateCombination(components,scales).eval().requires_grad_(False);p.effect_scale=1.
+            self.arm=recipe;self.combination_sources=sources
         p.diagnostic_observer=lambda base,raw,delta:setattr(p,'last_delta',dict(rms=float(((base+delta)-base).detach().float().square().mean().sqrt())))
 
     def parameters(self):
@@ -121,9 +140,39 @@ class M54Runtime(Runtime):
             delta_rms=float(np.mean([s.get('rms',0.) for s in steps])),
             epsilon_shift_rms=float(np.mean(shifts)) if shifts else None,
             reference_sensitivity_rms=float(np.mean(sensitivity)) if sensitivity else None,counter_reference_id=self.counter_id)
+        if hasattr(self,'combination_sources'):record['combination_sources']=self.combination_sources
         write(Path(path).with_suffix('.json'),record)
         write(Path(path).with_name(Path(path).stem+'_effects.json'),steps)
         return record,contexts,outputs
+
+    @torch.inference_mode()
+    def profile(self,row,path,seed=42):
+        """真实完整推理计时：不安装教师/epsilon轨迹钩子，PNG写盘在计时之外。"""
+        self.geometry(row['sketch'],row['reference']);pipe=self.pipe
+        if self.arm=='ORACLE':
+            from tools.e53_mapping import matrices
+            self.processor.oracle=torch.from_numpy(matrices(row,geometry='0')[0]).to(self.pipe.device)
+        sketch=Image.open(row['sketch']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
+        ref=Image.open(row['reference']).convert('RGB')
+        raw,mask,info=sketch_masks(sketch,pipe.device)
+        pixels=to_tensor(ref.resize(SIZE,Image.Resampling.BILINEAR))[None].to(pipe.device)*2-1
+        self.set_reference(pixels,mask,info,allow=True)
+        torch.cuda.synchronize();torch.cuda.reset_peak_memory_stats();started=time.perf_counter()
+        image=pipe(prompt=row['caption'],null_prompt='',negative_prompt=' worst quality, low quality',
+            ref_image=to_tensor(sketch)[None]*2-1,texture_clip_image=ref,width=384,height=512,
+            num_inference_steps=50,guidance_scale=7.,sketch_scale=.6,ipa_scale=1.,
+            texture_mode=self.ns.texture_mode,texture_condition_mode='token',texture_preprocess_mode='plain_resize',
+            texture_num_tokens=pipe.effective_texture_num_tokens,texture_scale=1.,
+            spatial_mask=to_tensor(raw)[None].to(pipe.device,torch.float16),
+            generator=torch.Generator(device=pipe.device).manual_seed(seed))[0]
+        torch.cuda.synchronize();seconds=time.perf_counter()-started
+        peak=torch.cuda.max_memory_allocated()/2**30
+        path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);image.save(path)
+        record=dict(id=row['id'],arm=self.recipe,seed=seed,seconds=seconds,peak_memory_gib=peak,
+            full50_steps=True,teacher_disabled=True,epsilon_trace_hooks_disabled=True,png_sha256=sha(path),
+            timing_scope='pipeline call including conditional Writer; input loading/reference latent setup and PNG serialization excluded',
+            gt_used_in_inference=False)
+        write(path.with_suffix('.json'),record);return record
 
     def save(self,path,step,optimizer=None,scaler=None):
         path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)

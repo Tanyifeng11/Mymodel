@@ -3,7 +3,7 @@ import unittest
 import inspect
 import torch
 from torch import nn
-from models.m54_candidates import Candidate,M54Processor,high_frequency
+from models.m54_candidates import Candidate,CandidateCombination,M54Processor,high_frequency
 
 
 class Original(nn.Module):
@@ -76,6 +76,19 @@ class M54Tests(unittest.TestCase):
         self.assertTrue(torch.equal(high_frequency(reference),torch.zeros_like(reference)))
         output=module(torch.randn(1,16,16),reference,torch.randn(1,16,16),4,torch.ones(1,3,4,4),torch.tensor([500]))
         self.assertTrue(torch.equal(output,torch.zeros_like(output)))
+
+    def test_combination_preserves_learned_paths_and_adds_no_parameters(self):
+        torch.manual_seed(54)
+        appearance=Candidate('M1',16);protector=Candidate('M9',16)
+        with torch.no_grad():
+            appearance.output.weight.normal_(std=.02);protector.output.weight.normal_(std=.02)
+        inputs=(torch.randn(1,16,16),torch.randn(1,256,16),torch.randn(1,16,16),4,
+                torch.ones(1,3,4,4),torch.tensor([500]),None)
+        wrapper=CandidateCombination([appearance,protector],[.75,1.]).requires_grad_(False)
+        expected=appearance(*inputs)*.75+protector(*inputs)
+        self.assertTrue(torch.equal(wrapper(*inputs),expected))
+        self.assertEqual(sum(p.numel() for p in wrapper.parameters()),sum(p.numel() for p in appearance.parameters())+sum(p.numel() for p in protector.parameters()))
+        self.assertFalse(any(p.requires_grad for p in wrapper.parameters()))
 
 
 if __name__=='__main__':unittest.main()

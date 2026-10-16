@@ -125,6 +125,8 @@ def train(arm,total=800):
     assert arm in TRAIN_ARMS and total in [800,2400]
     assert read(OUT/'audit/round0_complete.json')['passed']
     assert read(protocol_path())==CONFIG,'EFFECTIVE_PROTOCOL_NOT_FROZEN'
+    require_input_review('pilot')
+    if total==2400:assert arm in [family(a) for a in read(OUT/'selection/top4.json')['selected']]
     folder=OUT/'training'/arm
     done=folder/('complete%04d.json'%total)
     if done.exists():assert read(done)['updates']==total;return
@@ -177,12 +179,21 @@ def train(arm,total=800):
 def generate(arm,stage='pilot',updates=800,seed=42):
     from tools.m54_runtime import make_runtime,release
     assert read(OUT/'audit/round0_complete.json')['passed']
-    basearm='M5' if arm.startswith('M5_S') else arm
-    if basearm in TRAIN_ARMS:assert read(OUT/'training'/basearm/('complete%04d.json'%updates))['updates']==updates
-    rows=read(split_path(stage));folderstage=stage if updates==800 else stage+'_u'+str(updates)
-    if seed!=42:folderstage+='_s'+str(seed)
+    require_input_review(stage)
+    basearm=family(arm)
+    components=recipe_components(arm,updates)
+    for entry in components:
+        if family(entry['arm']) in TRAIN_ARMS:
+            assert read(OUT/'training'/family(entry['arm'])/('complete%04d.json'%entry['updates']))['updates']==entry['updates']
+    rows=read(split_path(stage));folderstage=result_stage(stage,updates,seed)
+    done=OUT/folderstage/(arm+'_complete.json')
+    if done.exists():assert read(done)['n']==len(rows) and read(done)['seed']==seed;return
     r=make_runtime(arm,folderstage+'/'+arm+'/runtime')
-    if basearm in TRAIN_ARMS:r.load(OUT/'training'/basearm/'checkpoints'/('step%04d.pt'%updates));r.processor.candidate.eval().requires_grad_(False)
+    if basearm in TRAIN_ARMS:
+        path=OUT/'training'/basearm/'checkpoints'/('step%04d.pt'%updates)
+        assert sha(path)==read(path.with_suffix('.json'))['sha256']
+        assert r.load(path)['step']==updates
+        r.processor.candidate.eval().requires_grad_(False)
     try:
         for index,row in enumerate(rows):
             path=image_path(folderstage,arm,row['id'])
@@ -194,16 +205,18 @@ def generate(arm,stage='pilot',updates=800,seed=42):
         profile=[]
         for row in rows[:2]:
             path=image_path('profiles/'+folderstage,arm,row['id'])
-            rec,_,_=r.generate(row,path,seed=seed)
+            rec=r.profile(row,path,seed=seed)
             assert sha(path)==sha(image_path(folderstage,arm,row['id'])),'PRODUCTION_PROFILE_CHANGED_PNG'
             profile.append(rec)
-        write(OUT/folderstage/(arm+'_profile.json'),dict(n=2,full50_steps=True,diagnostic_teacher_disabled=True,records=profile))
+        write(OUT/folderstage/(arm+'_profile.json'),dict(n=2,full50_steps=True,diagnostic_teacher_disabled=True,
+            epsilon_trace_hooks_disabled=True,image_serialization_excluded=True,records=profile))
     finally:release(r)
-    write(OUT/folderstage/(arm+'_complete.json'),dict(n=len(rows),arm=arm,updates=updates if basearm in TRAIN_ARMS else 0,seed=seed,commit=commit()))
+    write(done,dict(n=len(rows),arm=arm,updates=updates if basearm in TRAIN_ARMS else 0,components=components,
+        seed=seed,split_sha256=sha(split_path(stage)),commit=commit()))
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','prepare_retry','audit','train','generate','evaluate','batch_generate','input_candidates','review_input','activate_inputs'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','prepare_retry','audit','train','generate','evaluate','batch_generate','input_candidates','review_input','activate_inputs','finalize'])
     p.add_argument('--arm');p.add_argument('--stage',default='pilot');p.add_argument('--updates',type=int,default=800);p.add_argument('--seed',type=int,default=42)
     p.add_argument('--arms',nargs='+')
     p.add_argument('--diagnostic',action='store_true')
@@ -237,6 +250,9 @@ def main():
         elif args.action=='activate_inputs':
             from tools.m54_activate_inputs import activate
             activate()
+        elif args.action=='finalize':
+            from tools.m54_finalize import finalize
+            finalize()
         elif args.action=='review_input':
             assert args.review_result and args.review_note and args.reviewed_ids
             rows=read(split_path(args.stage));ids={r['id'] for r in rows}

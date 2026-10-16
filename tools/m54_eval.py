@@ -50,16 +50,19 @@ def assess(records,stage):
     for arm in arms:
         if arm=='E5':continue
         delta={k:paired(records,arm,'E5',k) for k in KEYS};deltas[arm]=delta
+        versus_b1={k:paired(records,arm,'B1',k) for k in KEYS}
         extreme=[dict(id=r['id'],delta=r['contour_f1']-base[r['id']]['contour_f1']) for r in records
             if r['variant']==arm and r['contour_f1'] is not None and base[r['id']]['contour_f1'] is not None
             and r['contour_f1']-base[r['id']]['contour_f1']<-.15]
         gain=means['E5']['lpips_gt']-means[arm]['lpips_gt']
-        complete=all(counts[arm][k]==len(base) for k in ['contour_f1','iou','leak','lpips_gt'])
+        complete=all(counts[a][k]==len(base) and delta[k]['n']==len(base)
+            for a in [arm,'E5','B1'] for k in ['contour_f1','iou','leak','lpips_gt'])
         checks=dict(f1=complete and delta['contour_f1']['ci95'][0]>=-.020,
             iou=complete and delta['iou']['ci95'][0]>=-.010,leak=complete and delta['leak']['ci95'][1]<=.005,
-            tail=complete and not extreme,lpips=delta['lpips_gt']['ci95'][1]<0,
+            tail=complete and not extreme,lpips=complete and delta['lpips_gt']['ci95'][1]<0,
             retention=strong_gain>0 and gain>=.5*strong_gain)
         gates[arm]=dict(checks=checks,passed=all(checks.values()),gain_retention=gain/strong_gain if strong_gain>0 else None,
+            paired_E5=delta,paired_B1=versus_b1,
             baseline_B1_gain=strong_gain,extreme_events=extreme,regional_metrics_complete=complete,
             pilot_clear_rejection=len(extreme)>=3,
             ambiguous_pilot_exception='nonpositive appearance/large structure drop needs preregistered numerical review; no post-hoc waiver')
@@ -76,6 +79,7 @@ def evaluate(stage):
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
     source=stage.split('_u')[0].split('_s')[0]
     rows=read(split_path(source))
+    assert len({r['id'] for r in rows})==len(rows),'DUPLICATE_EVALUATION_ID'
     arms=[p.name[:-len('_complete.json')] for p in sorted((OUT/stage).glob('*_complete.json')) if p.name!='evaluation_complete.json']
     assert 'E5' in arms and 'B1' in arms
     for arm in arms:assert read(OUT/stage/(arm+'_complete.json'))['n']==len(rows)

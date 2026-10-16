@@ -57,8 +57,35 @@ def image_path(stage,arm,identity):return OUT/stage/'images'/arm/(identity+'.png
 
 def split_path(stage):
     if stage=='round1':stage='pilot'
+    if stage=='dev32_combo':stage='dev32'
     active=OUT/'active_inputs.json'
     if active.exists() and stage in read(active)['splits']:return OUT/read(active)['splits'][stage]
     return OUT/'splits'/(stage+'.json')
 
 def protocol_path():return OUT/'config_r1.json'
+
+
+def family(arm):
+    return arm.split('_')[0]
+
+
+def result_stage(stage,updates=800,seed=42):
+    return stage+('_u'+str(updates) if updates!=800 else '')+('_s'+str(seed) if seed!=42 else '')
+
+
+def recipe_components(arm,updates=800):
+    if arm.startswith('C_'):
+        recipes=read(OUT/'selection/combinations.json')['recipes']
+        return recipes[arm]['components']
+    return [dict(arm=arm,updates=updates if family(arm) in TRAIN_ARMS else 0)]
+
+
+def require_input_review(stage):
+    if stage=='round1':stage='pilot'
+    if stage not in ['pilot','lock']:return
+    path=OUT/'audit/input_review'/(stage+'_approval.json')
+    assert path.exists(),'ASSISTANT_INPUT_REVIEW_REQUIRED'
+    review=read(path)
+    assert review['passed'] and review['reviewer']=='assistant'
+    assert review['split_sha256']==sha(split_path(stage)),'INPUT_REVIEW_SPLIT_MISMATCH'
+    assert set(review['actual_reviewed_ids'])=={r['id'] for r in read(split_path(stage))}

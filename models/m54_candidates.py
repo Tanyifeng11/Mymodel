@@ -96,6 +96,17 @@ class Candidate(nn.Module):
         return delta
 
 
+class CandidateCombination(nn.Module):
+    """两条独立训练、冻结的残差相加；不新增可学习参数或组合训练。"""
+    def __init__(self,components,scales):
+        super().__init__();self.components=nn.ModuleList(components);self.scales=scales;self.last={}
+
+    def forward(self,*args):
+        outputs=[component(*args)*scale for component,scale in zip(self.components,self.scales)]
+        self.last={str(i)+'_'+key:value for i,component in enumerate(self.components) for key,value in component.last.items()}
+        return outputs[0]+outputs[1]
+
+
 class M54Processor(ReferenceAttentionProcessor):
     """固定B1臂沿用原始参数；独立训练臂只更新candidate。"""
     def __call__(self,attn,hidden_states,encoder_hidden_states=None,attention_mask=None,temb=None,scale=1.,
