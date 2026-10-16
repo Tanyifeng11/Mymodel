@@ -84,6 +84,7 @@ def freeze_lock():
     assert read(OUT/'audit/human_mapping_review.json')['approved']
     # 不按pilot效果删除对照：固定矩阵早于任何pilot模型输出。
     rows=synthesize('lock',64);mapping_review(rows,'lock')
+    freeze(OUT/'splits/lock.json',rows)
     freeze(OUT/'configs/lock.json',dict(frozen=True,arms=LOCK_ARMS,sigma_uv=CONFIG['sigma_uv'],wrong_shift=CONFIG['wrong_shift'],thresholds=CONFIG['practical'],identity_ids=[x['id'] for x in rows],predeclared_matrix=True,commit=commit()))
     decision(pilot='COMPLETE',lock='FROZEN_NOT_RUN')
 

@@ -15,7 +15,8 @@ def project(image,uv,labels,size=128):
 
 def descriptor(rgb,support):
     gray=cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY);weight=support.astype('float32')
-    mean=cv2.GaussianBlur(gray*weight,(0,0),2)/np.maximum(cv2.GaussianBlur(weight,(0,0),2),1e-8)
+    # 受16×16网格采样带宽约束的纹样使用8格高通尺度；只由渲染真值校准。
+    mean=cv2.GaussianBlur(gray*weight,(0,0),8)/np.maximum(cv2.GaussianBlur(weight,(0,0),8),1e-8)
     hp=gray-mean;x=hp[support]
     readable=bool(len(x)>64 and np.std(gray[support])>=.015 and np.std(x)>=.008)
     x=x-x.mean();return x/max(float(np.linalg.norm(x)),1e-12),readable,float(np.std(x))
