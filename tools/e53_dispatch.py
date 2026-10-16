@@ -41,8 +41,8 @@ def advance():
         jobs,st=states()
         if any(st.get(j['id']) in ['FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL'] for j in jobs.values()):print('ENGINEERING_REPAIR_REQUIRED');return
         if not (OUT/'audit/energy_gate.json').exists() or not read(OUT/'audit/energy_gate.json')['passed']:return
-        approval=OUT/'audit/human_mapping_review_pilot.json'
-        if not approval.exists() or not read(approval)['approved']:print('HUMAN_MAPPING_REVIEW_REQUIRED');return
+        from tools.e53_review import review_approved
+        if not review_approved('pilot'):print('PILOT_MAPPING_REVIEW_REQUIRED');return
         active=sum(st.get(j['id'],'PENDING')!='COMPLETED' for j in jobs.values());slots=5-active
         def add(name,action,gpu,dependencies=(),extra=()):
             nonlocal slots
@@ -50,9 +50,8 @@ def advance():
             if slots<=0:return None
             identity=submit(name,action,gpu,dependencies,extra);jobs[name]=dict(id=identity,name=name);slots-=1;return identity
         for stage in ['pilot','lock']:
-            gate=OUT/'configs/lock.json' if stage=='lock' else approval
-            if not gate.exists():break
-            if stage=='lock' and not (OUT/'audit/human_mapping_review_lock.json').exists():print('HUMAN_LOCK_MAPPING_REVIEW_REQUIRED');break
+            if stage=='lock' and not (OUT/'configs/lock.json').exists():break
+            if stage=='lock' and not review_approved('lock'):print('LOCK_MAPPING_REVIEW_REQUIRED');break
             ids=[]
             for shard in range(4):
                 identity=add(stage.upper()+str(shard),'generate',True,extra=['--stage',stage,'--shard',str(shard),'--shards','4'])

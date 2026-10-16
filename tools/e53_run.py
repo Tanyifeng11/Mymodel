@@ -63,7 +63,8 @@ def energy_gate():
 def generate(stage,shard=0,shards=1):
     from tools.e53_runtime import runtime,case,clear,release
     assert read(OUT/'audit/exact_replay.json')['passed'] and read(OUT/'audit/energy_gate.json')['passed']
-    approval=read(OUT/'audit'/('human_mapping_review_'+stage+'.json'));assert approval['approved'] and approval['reviewer']=='user','MANUAL_MAPPING_REVIEW_REQUIRED'
+    from tools.e53_review import review_approved
+    assert review_approved(stage),'MAPPING_REVIEW_REQUIRED'
     if stage=='lock':assert read(OUT/'configs/lock.json')['frozen']
     rows=read(OUT/'splits'/(stage+'.json'));arms=PILOT_ARMS if stage=='pilot' else LOCK_ARMS;r=runtime(stage+'/runtime_%d'%shard)
     try:
@@ -82,7 +83,8 @@ def freeze_lock():
     from tools.e53_texture import calibrate
     assert read(OUT/'metrics/pilot/summary.json')['engineering_complete']
     assert read(OUT/'audit/texture_calibration.json')['passed']
-    assert read(OUT/'audit/human_mapping_review_pilot.json')['approved']
+    from tools.e53_review import review_approved
+    assert review_approved('pilot'),'PILOT_MAPPING_REVIEW_REQUIRED'
     # 不按pilot效果删除对照：固定矩阵早于任何pilot模型输出。
     rows=synthesize('lock',64);mapping_review(rows,'lock')
     texture=calibrate(rows);transport=transport_validation(rows)
@@ -91,12 +93,12 @@ def freeze_lock():
     freeze(OUT/'splits/lock.json',rows)
     freeze(OUT/'configs/lock.json',dict(frozen=True,arms=LOCK_ARMS,sigma_uv=CONFIG['sigma_uv'],wrong_shift=CONFIG['wrong_shift'],thresholds=CONFIG['practical'],identity_ids=[x['id'] for x in rows],predeclared_matrix=True,commit=commit()))
     from tools.e53_finish import mapping_package
-    mapping_package('lock');decision(pilot='COMPLETE',lock='FROZEN_WAITING_HUMAN_MAPPING_REVIEW')
+    mapping_package('lock');decision(pilot='COMPLETE',lock='FROZEN_WAITING_MAPPING_REVIEW')
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','data','audit','energy','generate','evaluate','freeze','finish','accept_mapping'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','data','audit','energy','generate','evaluate','freeze','finish','accept_mapping','accept_assistant_mapping'])
     p.add_argument('--stage',default='pilot',choices=['pilot','lock']);p.add_argument('--shard',type=int,default=0);p.add_argument('--shards',type=int,default=1)
-    p.add_argument('--review-note');a=p.parse_args();torch.set_num_threads(2)
+    p.add_argument('--review-note');p.add_argument('--user-delegation');p.add_argument('--reviewed-ids');a=p.parse_args();torch.set_num_threads(2)
     try:
         if a.action=='prepare':prepare()
         elif a.action=='data':
@@ -112,6 +114,9 @@ def main():
         elif a.action=='evaluate':
             from tools.e53_eval import evaluate
             evaluate(a.stage)
+        elif a.action=='accept_assistant_mapping':
+            from tools.e53_review import accept_assistant
+            accept_assistant(a.stage,a.user_delegation,a.review_note,(a.reviewed_ids or '').split(','))
         else:
             assert a.review_note,'必须提供已收到的真人核验说明，不能由模型冒充'
             write(OUT/'audit'/('human_mapping_review_'+a.stage+'.json'),dict(approved=True,reviewer='user',note=a.review_note,utc=datetime.now(timezone.utc).isoformat(),scope=a.stage+' actual mapping review images'))
