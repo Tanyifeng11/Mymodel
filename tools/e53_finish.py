@@ -20,8 +20,15 @@ def finish():
     for stage in ['pilot','lock']:
         source=read(OUT/'manifest'/('synthetic_'+stage+'_r2_sha256.json'));assert all(sha(p)==h for p,h in source.items()),'SYNTHETIC_INPUT_CHANGED';inputs.update(source)
     write(OUT/'audit/final_inputs.json',dict(unchanged=True,n=len(inputs),commit=commit()))
-    status();write(OUT/'complete.json',dict(computations_complete=True,local_delivery_complete=False,training_updates=0,pilot_identities=24,lock_identities=64,pilot_scientific_conditions=24*len(PILOT_ARMS),lock_scientific_conditions=64*len(LOCK_ARMS),budget_baselines=88,verdicts=read(OUT/'metrics/lock/summary.json')['verdicts'],raw_tensors='retained on server; portable package excludes .pt',final_accounting='FINAL job still running; fetch sacct after exit for actual resources',commit=commit()))
-    portable=[p for p in sorted(OUT.rglob('*')) if p.is_file() and p.suffix in ['.json','.csv','.psv','.png','.log','.err'] and p.name!='review_sha256.json']
+    from tools.e53_storage import verify_case,journal_records
+    raw_checks=[];raw_index=journal_records()
+    for stage in ['pilot','lock']:
+        for path in (OUT/'images'/stage).rglob('*_trace.json'):
+            value=read(path)
+            if value['arm']!='E5':raw_checks.append(verify_case(stage,value['arm'],value['id'],stage=='pilot' and value['arm']!='BUDGET_BASELINE',raw_index))
+    write(OUT/'audit/raw_storage_layout.json',dict(passed=True,conditions=raw_checks,format='lossless .pt.zst; deserialize with tools.e53_storage.load_raw; indexes preserve serialized-byte SHA256',commit=commit()))
+    status();write(OUT/'complete.json',dict(computations_complete=True,local_delivery_complete=False,training_updates=0,pilot_identities=24,lock_identities=64,pilot_scientific_conditions=24*len(PILOT_ARMS),lock_scientific_conditions=64*len(LOCK_ARMS),budget_baselines=88,verdicts=read(OUT/'metrics/lock/summary.json')['verdicts'],raw_tensors='retained losslessly on server as .pt.zst with original serialized-byte SHA256; portable package excludes tensor archives',final_accounting='FINAL job still running; fetch sacct after exit for actual resources',commit=commit()))
+    portable=[p for p in sorted(OUT.rglob('*')) if p.is_file() and p.suffix in ['.json','.jsonl','.csv','.psv','.png','.log','.err'] and p.name!='review_sha256.json']
     write(OUT/'manifest/review_sha256.json',{str(p.relative_to(OUT)):sha(p) for p in portable});portable.append(OUT/'manifest/review_sha256.json')
     archive=OUT/'e53_final_review.tar.gz'
     with tarfile.open(archive,'w:gz') as tar:

@@ -164,7 +164,8 @@ class OracleDiagnostic:
         result=self.old_step(*args,**kwargs)
         if self.pending_raw is not None:
             self.pending_raw['latent_after']=result[0].detach().cpu();self.raw_dir.mkdir(parents=True,exist_ok=True)
-            torch.save(self.pending_raw,self.raw_dir/('%02d.pt'%self.index));self.pending_raw=None
+            from tools.e53_storage import save_raw
+            save_raw(self.pending_raw,self.raw_dir/('%02d.pt'%self.index));self.pending_raw=None
         return result
 
     def install(self):

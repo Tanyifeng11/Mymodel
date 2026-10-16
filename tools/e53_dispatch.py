@@ -4,10 +4,11 @@ import subprocess
 from datetime import datetime,timezone
 from tools.e53_protocol import *
 
-def submit(name,action,gpu,dependencies=(),extra=(),logical_name=None,supersedes=None):
+def submit(name,action,gpu,dependencies=(),extra=(),logical_name=None,supersedes=None,slurm_options=()):
     path=OUT/'resources/jobs.json';jobs=read(path) if path.exists() else []
     if any(x['name']==name for x in jobs):return next(x['id'] for x in jobs if x['name']==name)
     cmd=['sbatch','--parsable','--job-name=E53_'+name]
+    cmd+=list(slurm_options)
     if dependencies:cmd+=['--dependency=afterok:'+':'.join(str(x) for x in dependencies)]
     cmd+=['submit/e53_'+('gpu' if gpu else 'cpu')+'.sh',action]+list(extra)
     result=subprocess.run(cmd,text=True,capture_output=True)
@@ -15,7 +16,7 @@ def submit(name,action,gpu,dependencies=(),extra=(),logical_name=None,supersedes
         p=OUT/'resources/submission_failures.json';failures=read(p) if p.exists() else []
         failures.append(dict(utc=datetime.now(timezone.utc).isoformat(),command=cmd,stdout=result.stdout,stderr=result.stderr,returncode=result.returncode));write(p,failures)
         raise RuntimeError(result.stderr)
-    identity=int(result.stdout.strip().split(';')[0]);record=dict(name=name,id=identity,gpu=gpu,action=action,dependencies=list(dependencies),extra=list(extra),commit=commit(),utc=datetime.now(timezone.utc).isoformat())
+    identity=int(result.stdout.strip().split(';')[0]);record=dict(name=name,id=identity,gpu=gpu,action=action,dependencies=list(dependencies),extra=list(extra),slurm_options=list(slurm_options),commit=commit(),utc=datetime.now(timezone.utc).isoformat())
     if logical_name:record.update(logical_name=logical_name,supersedes=supersedes)
     jobs.append(record);write(path,jobs)
     print('SUBMITTED',name,identity,flush=True);return identity
@@ -72,10 +73,13 @@ def advance():
         status()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','repair_energy']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','repair_energy','storage_repair']);args=p.parse_args();(OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='status':status();return
     if args.action=='advance':advance();return
     if args.action=='repair_energy':submit('ENERGY_REPAIR_R1','repair_energy',True);status();return
+    if args.action=='storage_repair':
+        storage=submit('STORAGE_COMPRESS_R1','compress_storage',False,slurm_options=['--cpus-per-task=8','--time=04:00:00'])
+        submit('STORAGE_RECHECK_R1','repair_storage',True,[storage]);status();return
     data=submit('DATA','data',False);audit=submit('REPLAY','audit',True,[data]);submit('ENERGY','energy',True,[audit]);status()
 
 if __name__=='__main__':main()
