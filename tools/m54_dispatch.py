@@ -5,11 +5,12 @@ from datetime import datetime,timezone
 from tools.m54_protocol import *
 
 
-def submit(name,action,gpu,dependencies=(),extra=()):
+def submit(name,action,gpu,dependencies=(),extra=(),slurm_options=()):
     path=OUT/'resources/jobs.json';jobs=read(path) if path.exists() else []
     existing=next((x for x in jobs if x['name']==name),None)
     if existing:return existing['id']
     cmd=['sbatch','--parsable','--job-name=M54_'+name]
+    cmd+=list(slurm_options)
     if dependencies:cmd+=['--dependency=afterok:'+':'.join(map(str,dependencies))]
     cmd+=['submit/m54_'+('gpu' if gpu else 'cpu')+'.sh',action]+list(extra)
     result=subprocess.run(cmd,text=True,capture_output=True)
@@ -18,7 +19,7 @@ def submit(name,action,gpu,dependencies=(),extra=()):
         failures.append(dict(command=cmd,stdout=result.stdout,stderr=result.stderr,utc=datetime.now(timezone.utc).isoformat()));write(p,failures)
         raise RuntimeError(result.stderr)
     identity=int(result.stdout.strip().split(';')[0]);jobs.append(dict(name=name,id=identity,action=action,gpu=gpu,
-        dependencies=list(dependencies),extra=list(extra),commit=commit(),utc=datetime.now(timezone.utc).isoformat()))
+        dependencies=list(dependencies),extra=list(extra),slurm_options=list(slurm_options),commit=commit(),utc=datetime.now(timezone.utc).isoformat()))
     write(path,jobs);print('M54 SUBMITTED',name,identity,flush=True);return identity
 
 
@@ -32,12 +33,14 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance']);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates']);args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
         prepare=submit('PREPARE','prepare',False)
         submit('ROUND0','audit',True,[prepare])
     elif args.action=='advance':advance()
+    elif args.action=='input_candidates':submit('INPUT_CANDIDATES_R1','input_candidates',False,
+        slurm_options=['--cpus-per-task=16','--mem=32G','--time=04:00:00'])
     status()
 
 

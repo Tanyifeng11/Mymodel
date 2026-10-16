@@ -182,16 +182,34 @@ def generate(arm,stage='pilot',updates=800,seed=42):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','audit','train','generate','evaluate','batch_generate'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','audit','train','generate','evaluate','batch_generate','input_candidates','review_input'])
     p.add_argument('--arm');p.add_argument('--stage',default='pilot');p.add_argument('--updates',type=int,default=800);p.add_argument('--seed',type=int,default=42)
     p.add_argument('--arms',nargs='+')
     p.add_argument('--diagnostic',action='store_true')
-    args=p.parse_args();torch.set_num_threads(2)
+    p.add_argument('--review-result',choices=['PASS','FAIL']);p.add_argument('--review-note');p.add_argument('--reviewed-ids',nargs='+')
+    args=p.parse_args()
+    import os
+    torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK','2')) if args.action=='input_candidates' else 2)
+    if os.environ.get('SLURM_JOB_ID'):
+        write(OUT/'resources/code_entries'/(os.environ['SLURM_JOB_ID']+'.json'),dict(commit=commit(),arguments=vars(args),
+            entry_utc=datetime.now(timezone.utc).isoformat(),source_files={str(p):sha(p) for pattern in ['tools/m54*.py','models/m54*.py','submit/m54*.sh'] for p in Path('.').glob(pattern)}))
     try:
         if args.action=='prepare':
             from tools.m54_prepare import prepare
             prepare()
         elif args.action=='audit':audit()
+        elif args.action=='input_candidates':
+            from tools.m54_input_candidates import build
+            build()
+        elif args.action=='review_input':
+            assert args.review_result and args.review_note and args.reviewed_ids
+            rows=read(OUT/'splits'/(args.stage+'.json'));ids={r['id'] for r in rows}
+            assert set(args.reviewed_ids)<=ids
+            passed=args.review_result=='PASS'
+            if passed:assert set(args.reviewed_ids)==ids
+            path=OUT/'audit/input_review'/(args.stage+'_approval.json' if passed else args.stage+'_review_r0.json')
+            freeze(path,dict(passed=passed,reviewer='assistant',independent_human_review='NOT_RUN',
+                actual_reviewed_ids=args.reviewed_ids,note=args.review_note,split_sha256=sha(OUT/'splits'/(args.stage+'.json')),commit=commit()))
         elif args.action=='train':train(args.arm,args.updates)
         elif args.action=='generate':generate(args.arm,args.stage,args.updates,args.seed)
         elif args.action=='batch_generate':
