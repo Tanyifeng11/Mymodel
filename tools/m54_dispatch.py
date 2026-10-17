@@ -37,7 +37,7 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','input_extend','activate_inputs','recheck_modules','repair_round0','accounting'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','input_extend','activate_inputs','freeze_pilot_policy','recheck_modules','repair_round0','accounting'])
     p.add_argument('--repair-note');args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
@@ -48,6 +48,9 @@ def main():
         slurm_options=['--cpus-per-task=16','--mem=32G','--time=04:00:00'])
     elif args.action=='input_extend':submit('INPUT_CANDIDATES_EXT1','input_extend',False)
     elif args.action=='activate_inputs':submit('ACTIVATE_INPUTS_R1','activate_inputs',False)
+    elif args.action=='freeze_pilot_policy':
+        from tools.m54_selection import freeze_pilot_policy
+        value=freeze_pilot_policy();print('PILOT_POLICY_FROZEN',value,flush=True)
     elif args.action=='recheck_modules':
         original=next(x for x in read(OUT/'resources/jobs.json') if x['name']=='ROUND0')
         protocol=submit('PROTOCOL_R1','prepare',False,[original['id']])

@@ -1,7 +1,29 @@
-"""只按冻结的身份配对结果推进；有歧义的Pilot例外留待明确解释，不事后发明门限。"""
+"""只按冻结的身份配对结果及用户确认的保守Pilot规则推进。"""
 import os
 import shutil
+from datetime import datetime,timezone
 from tools.m54_protocol import *
+
+
+PILOT_POLICY=dict(version=1,source_plan_sha256=CONFIG['source_plan_sha256'],
+    user_authorization='采用上述保守规则（推荐）',
+    rules=dict(mean_delta_lpips_lt=0.,mean_delta_f1_ge=-.05,tail_events_lt=3),
+    qualitative_exceptions=False,comparison='paired E5;24 identities',maximum_selected=4)
+
+
+def freeze_pilot_policy():
+    path=OUT/'selection/pilot_policy.json'
+    if path.exists():
+        value=read(path);assert value['policy']==PILOT_POLICY
+        assert value['pilot_split_sha256']==sha(split_path('pilot'))
+        return value
+    # 先登记用户答复，再运行候选Pilot；不得在看过筛选结果后重定门槛。
+    assert not list((OUT/'pilot').glob('*_complete.json')),'PILOT_OUTPUTS_ALREADY_EXIST'
+    assert not (OUT/'pilot/evaluation_complete.json').exists()
+    assert not (OUT/'selection/top4.json').exists()
+    return freeze(path,dict(policy=PILOT_POLICY,pilot_split_sha256=sha(split_path('pilot')),
+        before_pilot_outputs=True,before_pilot_evaluation=True,
+        utc=datetime.now(timezone.utc).isoformat(),commit=commit()))
 
 
 def ranking(arm,means,gates,records):
@@ -20,11 +42,11 @@ def select_pilot(means,gates,records):
         g=gates[arm];d=g['paired_E5']
         if not g['regional_metrics_complete']:
             raise AssertionError(('INCOMPLETE_PILOT_METRICS',arm))
-        lp,f1,iou=(d[k]['mean'] for k in ['lpips_gt','contour_f1','iou'])
-        if len(g['extreme_events'])>=3:rejected[arm]='tail >= 3/24'
-        elif lp>=0 and f1<=0 and iou<=0:rejected[arm]='nonpositive appearance and no mean F1/IoU improvement'
-        elif lp>=0:ambiguous[arm]='文档“明显结构改善”未量化，需明确后才可例外保留'
-        elif f1<-.05:ambiguous[arm]='文档“足够大的外观收益”未量化，需明确后才可例外保留'
+        lp,f1=(d[k]['mean'] for k in ['lpips_gt','contour_f1'])
+        rule=PILOT_POLICY['rules']
+        if len(g['extreme_events'])>=rule['tail_events_lt']:rejected[arm]='tail >= 3/24'
+        elif lp>=rule['mean_delta_lpips_lt']:rejected[arm]='mean deltaLPIPS >= 0; no qualitative exception'
+        elif f1<rule['mean_delta_f1_ge']:rejected[arm]='mean deltaF1 < -0.05; no qualitative exception'
         else:eligible.append(arm)
     ordered=sorted(eligible,key=lambda a:ranking(a,means,gates,records))
     # 每个机制只保留一个Pilot冻结版本，不把M5三scale或M7三位置挤成三个模块。
@@ -54,8 +76,12 @@ def share_results(source,target,arms):
 
 
 def freeze_top4():
+    path=OUT/'selection/pilot_policy.json';policy=read(path)
+    assert policy['policy']==PILOT_POLICY,'PILOT_POLICY_NOT_FROZEN'
+    assert policy['pilot_split_sha256']==sha(split_path('pilot'))
     assert read(OUT/'pilot/evaluation_complete.json')['complete']
     selected=select_pilot(read(OUT/'pilot/means.json'),read(OUT/'pilot/gates.json'),read(OUT/'pilot/per_image.json'))
+    selected['pilot_policy_sha256']=sha(path)
     write(OUT/'selection/pilot_decision.json',selected)
     if selected['ready']:
         selected['recipes']={a:dict(updates=2400 if family(a) in TRAIN_ARMS else 0) for a in selected['selected']}
