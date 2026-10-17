@@ -96,7 +96,8 @@ def verify_outputs():
         for checkpoint in sorted((folder/'checkpoints').glob('*.pt')):
             expected=read(checkpoint.with_suffix('.json'));actual=sha(checkpoint);assert actual==expected['sha256']
             lines.append(actual+'  '+checkpoint.name)
-        (folder/'checkpoint.sha256').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+        # 用户清理了淘汰权重时保留删除前的哈希清单，不写成空文件。
+        if lines:(folder/'checkpoint.sha256').write_text('\n'.join(lines)+'\n',encoding='utf-8')
         history=read(folder/'history.json')
         (folder/'training.log').write_text('\n'.join(json.dumps(r,ensure_ascii=False) for r in history)+'\n',encoding='utf-8')
     return len(entries)
