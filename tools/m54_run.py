@@ -222,6 +222,7 @@ def main():
     p.add_argument('--diagnostic',action='store_true')
     p.add_argument('--review-result',choices=['PASS','FAIL']);p.add_argument('--review-note');p.add_argument('--reviewed-ids',nargs='+')
     p.add_argument('--failed-job',type=int)
+    p.add_argument('--repair-note')
     args=p.parse_args()
     import os
     torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK','2')) if args.action=='input_candidates' else 2)
@@ -232,15 +233,16 @@ def main():
         if args.action in ['prepare','prepare_retry']:
             if args.action=='prepare_retry':
                 import subprocess
-                assert args.failed_job
+                assert args.failed_job and args.repair_note
                 state=subprocess.check_output(['sacct','-X','-n','-P','-j',str(args.failed_job),'--format=State'],text=True).strip()
-                assert state.split('|')[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL']
+                assert state.split('|')[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL','CANCELLED']
                 archive=OUT/'failures'/('round0_'+str(args.failed_job)+'_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S'))
                 for name in ['audit/replay','audit/modules']:
                     source=OUT/name
                     if source.exists():
                         target=archive/name;target.resolve().relative_to(OUT.resolve());target.parent.mkdir(parents=True,exist_ok=True);source.rename(target)
-                write(archive/'archive.json',dict(original_job=args.failed_job,reason='processor signature lost Sketch kwargs in Diffusers dispatch; preserve all failed tensors/images before replay repair',scientific_training_updates=0,commit=commit()))
+                write(archive/'archive.json',dict(original_job=args.failed_job,reason=args.repair_note,
+                    preservation='all failed replay/module files retained before full GPU recheck',scientific_training_updates=0,commit=commit()))
             from tools.m54_prepare import prepare
             prepare()
         elif args.action=='audit':audit(args.arm)

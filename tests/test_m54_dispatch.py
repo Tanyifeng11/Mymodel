@@ -9,6 +9,21 @@ from tools import m54_dispatch as dispatcher,m54_protocol as protocol,m54_select
 
 
 class DispatchTests(unittest.TestCase):
+    def test_second_repair_supersedes_failed_audit_without_resubmitting_active_attempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);path=root/'resources/jobs.json';jobs=[dict(name='ROUND0',id=1),dict(name='ROUND0_R1',id=2,logical_name='ROUND0')]
+            protocol.write(path,jobs);calls=[];states={1:'FAILED',2:'FAILED'}
+            def submit(name,action,gpu,dependencies=(),extra=(),**metadata):
+                identity=10+len(calls);job=dict(name=name,id=identity,action=action,gpu=gpu,dependencies=list(dependencies),extra=list(extra),**metadata)
+                calls.append(job);jobs.append(job);states[identity]='PENDING';protocol.write(path,jobs);return identity
+            with patch.object(dispatcher,'OUT',root),patch.object(dispatcher,'submit',submit),\
+                 patch.object(dispatcher.subprocess,'check_output',lambda args,**unused:states[int(args[args.index('-j')+1])]+'|'):
+                dispatcher.repair_round0('frozen B1 checkpoint variant renamed too early')
+                dispatcher.repair_round0('same diagnosis')
+            self.assertEqual([j['name'] for j in calls],['PREPARE_REPAIR_R2','ROUND0_R2'])
+            self.assertEqual(calls[1]['supersedes'],2);self.assertEqual(calls[1]['dependencies'],[calls[0]['id']])
+            self.assertEqual(protocol.read(path)[:2],[dict(name='ROUND0',id=1),dict(name='ROUND0_R1',id=2,logical_name='ROUND0')])
+
     def test_full_allowed_path_limits_parallelism_and_uses_gpu_evaluation(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'resources').mkdir();jobs=[dict(name='ROUND0',id=1),dict(name='ROUND0_R1',id=2,logical_name='ROUND0')]

@@ -1,6 +1,10 @@
 """科研有效性门禁：防止零初始化恒等失败或双零导致永久死梯度。"""
 import unittest
 import inspect
+import ast
+import tempfile
+import types
+from pathlib import Path
 import torch
 from torch import nn
 from models.m54_candidates import Candidate,CandidateCombination,M54Processor,high_frequency
@@ -18,6 +22,28 @@ class Attention(nn.Module):
 
 
 class M54Tests(unittest.TestCase):
+    def test_frozen_checkpoint_identity_is_checked_before_recipe_rename(self):
+        # 运行实际初始化方法，替换昂贵GPU/权重加载；复现118182的身份断言契约。
+        source=ast.parse(Path('tools/m54_runtime.py').read_text(encoding='utf-8'))
+        runtime=next(n for n in source.body if isinstance(n,ast.ClassDef) and n.name=='M54Runtime')
+        runtime.body=[n for n in runtime.body if isinstance(n,ast.FunctionDef) and n.name=='__init__']
+        tree=ast.fix_missing_locations(ast.Module(body=[runtime],type_ignores=[]));loads=[]
+        class FrozenRuntime:
+            def __init__(self,variant):
+                self.variant=variant;self.width=16;self.pipe=types.SimpleNamespace(device='cpu')
+                self.processor=None if variant=='B0' else M54Processor(Original(),'layer',16,16,'B1')
+            def load(self,path):
+                self_test.assertEqual(self.variant,'B1');loads.append(self.variant)
+        self_test=self
+        with tempfile.TemporaryDirectory() as directory:
+            context=dict(Runtime=FrozenRuntime,recipe_components=lambda arm:[],TRAIN_ARMS=['M1','M2','M3','M4','M5','M6','M9','M11'],
+                B1='frozen_step800.pt',M54Processor=M54Processor,torch=torch,Candidate=Candidate,OUT=Path(directory),SAFE_SCALE=.65)
+            exec(compile(tree,'actual_m54_runtime_init','exec'),context)
+            for arm in ['B1','M9','M7_A1','M8_T085','M10','HF_ONLY','ORACLE','SAFE','M1','E5']:
+                count=len(loads);instance=context['M54Runtime'](arm)
+                self.assertEqual(instance.variant,arm)
+                self.assertEqual(len(loads)-count,0 if arm in ['M1','E5'] else 1)
+
     def test_zero_output_and_live_gradient_paths(self):
         torch.manual_seed(42)
         x=torch.randn(1,16,16);ref=torch.randn(1,256,16);q=torch.randn_like(x);geo=torch.rand(1,3,4,4)

@@ -19,11 +19,13 @@ class M54Runtime(Runtime):
         if combination:arm=combination[0]['arm']
         arm='M5' if arm.startswith('M5_S') else arm
         super().__init__('B0' if arm=='E5' else 'B1')
-        self.arm=arm;self.recipe=recipe;self.variant=recipe;self.geometry_cache={};self.prior_cache={};self.audit_steps=[]
+        self.arm=arm;self.recipe=recipe;self.geometry_cache={};self.prior_cache={};self.audit_steps=[]
         self.effects_enabled=True;self.counter_latent=None;self.counter_id=None
-        if self.processor is None:return
+        if self.processor is None:self.variant=recipe;return
         p=self.processor
         if arm not in TRAIN_ARMS or arm=='M9':Runtime.load(self,B1)
+        # 原检查点身份是B1；加载并校验后才改成当前实验臂，不能用M9/M7等名称去加载B1。
+        self.variant=recipe
         p.requires_grad_(False);p.__class__=M54Processor;p.mode=arm
         p.geometry=None;p.timestep=torch.tensor([0],device=self.pipe.device);p.spatial_prior=None
         p.last_delta={};p.last_attention={}

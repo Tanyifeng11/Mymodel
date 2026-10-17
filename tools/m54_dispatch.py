@@ -5,7 +5,7 @@ from datetime import datetime,timezone
 from tools.m54_protocol import *
 
 
-def submit(name,action,gpu,dependencies=(),extra=(),slurm_options=(),logical_name=None):
+def submit(name,action,gpu,dependencies=(),extra=(),slurm_options=(),logical_name=None,supersedes=None):
     path=OUT/'resources/jobs.json';jobs=read(path) if path.exists() else []
     existing=next((x for x in jobs if x['name']==name),None)
     if existing:return existing['id']
@@ -22,6 +22,7 @@ def submit(name,action,gpu,dependencies=(),extra=(),slurm_options=(),logical_nam
     identity=int(result.stdout.strip().split(';')[0]);record=dict(name=name,id=identity,action=action,gpu=gpu,
         dependencies=list(dependencies),extra=list(extra),slurm_options=list(slurm_options),commit=commit(),utc=datetime.now(timezone.utc).isoformat())
     if logical_name:record['logical_name']=logical_name
+    if supersedes is not None:record['supersedes']=supersedes
     jobs.append(record)
     write(path,jobs);print('M54 SUBMITTED',name,identity,flush=True);return identity
 
@@ -36,7 +37,8 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','recheck_modules','repair_round0','accounting']);args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','recheck_modules','repair_round0','accounting'])
+    p.add_argument('--repair-note');args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
         prepare=submit('PREPARE','prepare',False)
@@ -50,14 +52,24 @@ def main():
         m11=submit('ROUND0_M11_R1','audit',True,[protocol],['--arm','M11'],logical_name='ROUND0')
         submit('ROUND0_M9_R1','audit',True,[m11],['--arm','M9'],logical_name='ROUND0')
     elif args.action=='repair_round0':
-        latest={j.get('logical_name',j['name']):j for j in read(OUT/'resources/jobs.json')}
-        failed=latest['ROUND0']['id']
-        protocol=submit('PREPARE_REPAIR_R1','prepare_retry',False,extra=['--failed-job',str(failed)])
-        submit('ROUND0_R1','audit',True,[protocol],logical_name='ROUND0')
+        repair_round0(args.repair_note)
     elif args.action=='accounting':
         from tools.m54_finalize import accounting
         accounting()
     status()
+
+
+def repair_round0(note):
+    jobs=read(OUT/'resources/jobs.json');attempts=[j for j in jobs if j.get('logical_name',j['name'])=='ROUND0']
+    failed=attempts[-1]['id']
+    state=subprocess.check_output(['sacct','-X','-n','-P','-j',str(failed),'--format=State'],text=True).strip().split('|')[0].split()[0]
+    if state not in ['FAILED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL','CANCELLED']:
+        print('ROUND0_LATEST_ALREADY_ACTIVE_OR_COMPLETE',failed,state);return
+    assert note,'REPAIR_DIAGNOSIS_REQUIRED'
+    revision='R'+str(len(attempts))
+    protocol=submit('PREPARE_REPAIR_'+revision,'prepare_retry',False,
+        extra=['--failed-job',str(failed),'--repair-note',note])
+    submit('ROUND0_'+revision,'audit',True,[protocol],logical_name='ROUND0',supersedes=failed)
 
 
 def advance():
