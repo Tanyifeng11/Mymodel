@@ -52,7 +52,7 @@ def plan():
     audit = read(TRACE_AUDIT)
     assert audit['passed'] and audit['conditions'] == 1032
     state = subprocess.check_output(['sacct', '-X', '-n', '-P', '-j', '118357', '--format=State,ExitCode'], text=True).strip()
-    assert state.startswith('COMPLETED|0:0|'), ('TRACE_AUDIT_NOT_COMPLETED', state)
+    assert state.split('|')[:2] == ['COMPLETED', '0:0'], ('TRACE_AUDIT_NOT_COMPLETED', state)
     root = Path.cwd().resolve()
     protected, referenced_steps = protections(root)
     selected = {}
