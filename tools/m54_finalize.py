@@ -53,6 +53,8 @@ def seed_aggregate(best):
 def verify_outputs():
     import torch
     from tools.e44_runtime import digest
+    from tools.m54_cleanup import retired_traces
+    retired=retired_traces()
     entries=[]
     # 每个完整条件逐身份验证真实50步epsilon与初末latent，失败/部分输出单独保留不算完成。
     for done in sorted(OUT.glob('*/'+'*_complete.json')):
@@ -64,16 +66,27 @@ def verify_outputs():
         if 'split_sha256' in value:assert value['split_sha256']==sha(split_path(source))
         for row in rows:
             image=image_path(stage,arm,row['id']);meta=read(image.with_suffix('.json'));trace=image.with_suffix('.pt')
-            assert sha(image)==meta['png_sha256'] and sha(trace)==meta['diagnostics_sha256']
+            assert sha(image)==meta['png_sha256']
             assert not meta['gt_used_in_inference'] and meta['seed']==value['seed']
-            raw=torch.load(trace,map_location='cpu',weights_only=False)
-            assert digest(raw['initial_latent'])==meta['initial_sha256'] and digest(raw['final_latent'])==meta['final_sha256']
-            assert raw['conditional_epsilon'].shape[0]==50 and raw['unconditional_epsilon'].shape[0]==50
-            assert all(torch.isfinite(raw[key]).all() for key in ['initial_latent','final_latent','conditional_epsilon','unconditional_epsilon'])
+            if trace.exists():
+                assert sha(trace)==meta['diagnostics_sha256']
+                raw=torch.load(trace,map_location='cpu',weights_only=False)
+                assert digest(raw['initial_latent'])==meta['initial_sha256'] and digest(raw['final_latent'])==meta['final_sha256']
+                assert raw['conditional_epsilon'].shape[0]==50 and raw['unconditional_epsilon'].shape[0]==50
+                assert all(torch.isfinite(raw[key]).all() for key in ['initial_latent','final_latent','conditional_epsilon','unconditional_epsilon'])
+                trace_status='PRESENT_REVERIFIED_FULL50'
+            else:
+                prior=retired[(stage,arm,row['id'])]
+                assert prior['trace_sha256']==meta['diagnostics_sha256'] and prior['png_sha256']==sha(image)
+                assert prior['frames']==50 and prior['seed']==value['seed']
+                trace_status='VERIFIED_FULL50_BEFORE_USER_AUTHORIZED_DELETION'
             effects=read(image.with_name(image.stem+'_effects.json'));assert len(effects)==50
             assert [r['step'] for r in effects]==list(range(50))
-            entries.append(dict(stage=stage,arm=arm,id=row['id'],trace_sha256=sha(trace),png_sha256=sha(image),frames=50,seed=value['seed']))
-    write(OUT/'audit/output_integrity.json',dict(passed=True,conditions=len(entries),entries=entries))
+            entries.append(dict(stage=stage,arm=arm,id=row['id'],trace_sha256=meta['diagnostics_sha256'],
+                trace_present=trace.exists(),trace_status=trace_status,png_sha256=sha(image),frames=50,seed=value['seed']))
+    write(OUT/'audit/output_integrity.json',dict(passed=True,conditions=len(entries),entries=entries,
+        raw_traces_present=sum(x['trace_present'] for x in entries),
+        raw_traces_verified_before_user_cleanup=sum(not x['trace_present'] for x in entries)))
     for manifest in [OUT/'manifests/model_file_hashes.json',OUT/'manifests/input_hashes.json',OUT/'manifests/input_hashes_r1.json']:
         if manifest.exists():assert all(sha(path)==expected for path,expected in read(manifest).items()),('FROZEN_SOURCE_CHANGED',str(manifest))
     for arm in TRAIN_ARMS:
