@@ -45,6 +45,11 @@ class SelectionTests(unittest.TestCase):
                        'M2':dict(lpips=0.,f1=.5),'M3':dict(f1=-.050001),'M4':dict(tail=3)})
         self.assertEqual(r['selected'],['M1']);self.assertEqual(set(r['rejected']),{'M2','M3','M4'})
 
+    def test_nonfinite_metrics_stop_selection_instead_of_promoting_or_rejecting_scientifically(self):
+        for values in [dict(lpips=float('nan')),dict(f1=float('nan')),dict(lpips=-float('inf'))]:
+            with self.subTest(values=values),self.assertRaisesRegex(AssertionError,'NONFINITE_PILOT_METRICS'):
+                self.choose({'M1':values})
+
     def test_policy_freezes_before_pilot_outputs_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);protocol.write(root/'splits/pilot.json',[dict(id='fixture')])

@@ -1,6 +1,7 @@
 """只按冻结的身份配对结果及用户确认的保守Pilot规则推进。"""
 import os
 import shutil
+from math import isfinite
 from datetime import datetime,timezone
 from tools.m54_protocol import *
 
@@ -43,6 +44,7 @@ def select_pilot(means,gates,records):
         if not g['regional_metrics_complete']:
             raise AssertionError(('INCOMPLETE_PILOT_METRICS',arm))
         lp,f1=(d[k]['mean'] for k in ['lpips_gt','contour_f1'])
+        assert isfinite(lp) and isfinite(f1),('NONFINITE_PILOT_METRICS',arm)
         rule=PILOT_POLICY['rules']
         if len(g['extreme_events'])>=rule['tail_events_lt']:rejected[arm]='tail >= 3/24'
         elif lp>=rule['mean_delta_lpips_lt']:rejected[arm]='mean deltaLPIPS >= 0; no qualitative exception'
