@@ -1,0 +1,2581 @@
+{
+  "reviewer": "assistant",
+  "actual_reference_crop_visual_review": true,
+  "independent_human_review": "NOT_RUN",
+  "generation_outputs_used": false,
+  "source_archive_sha256": "c0766f5033e344cdb6448871c8916adbaf795a4143a7a06c98295df456f1d5e5",
+  "reviewed_groups": [
+    "clothing_stripe",
+    "clothing_grid",
+    "clothing_symbol",
+    "clothing_non-periodic",
+    "pants_stripe",
+    "pants_grid",
+    "pants_symbol",
+    "pants_non-periodic"
+  ],
+  "reviewed_pages": [
+    "clothing_stripe/page000.png",
+    "clothing_stripe/page008.png",
+    "clothing_stripe/page016.png",
+    "clothing_stripe/page024.png",
+    "clothing_grid/page000.png",
+    "clothing_grid/page008.png",
+    "clothing_grid/page016.png",
+    "clothing_grid/page024.png",
+    "clothing_symbol/page000.png",
+    "clothing_symbol/page008.png",
+    "clothing_symbol/page016.png",
+    "clothing_symbol/page024.png",
+    "clothing_non-periodic/page000.png",
+    "clothing_non-periodic/page008.png",
+    "clothing_non-periodic/page016.png",
+    "clothing_non-periodic/page024.png",
+    "pants_stripe/page000.png",
+    "pants_stripe/page008.png",
+    "pants_stripe/page016.png",
+    "pants_stripe/page024.png",
+    "pants_grid/page000.png",
+    "pants_grid/page008.png",
+    "pants_grid/page016.png",
+    "pants_grid/page024.png",
+    "pants_symbol/page000.png",
+    "pants_symbol/page008.png",
+    "pants_symbol/page016.png",
+    "pants_symbol/page024.png",
+    "pants_non-periodic/page000.png",
+    "pants_non-periodic/page008.png",
+    "pants_non-periodic/page016.png",
+    "pants_non-periodic/page024.png",
+    "ext1/pants_symbol/page032.png",
+    "ext1/pants_symbol/page040.png",
+    "ext1/pants_symbol/page048.png",
+    "ext1/pants_symbol/page056.png",
+    "ext1/pants_symbol/page064.png",
+    "ext1/pants_symbol/page072.png",
+    "ext1/pants_symbol/page080.png",
+    "ext1/pants_symbol/page088.png",
+    "ext1/pants_symbol/page096.png",
+    "ext1/pants_symbol/page104.png",
+    "ext1/pants_symbol/page112.png",
+    "ext1/pants_symbol/page120.png"
+  ],
+  "reviewed_candidate_ids": [
+    "175830652",
+    "202289246",
+    "157087569",
+    "170220157",
+    "200786101",
+    "211428834",
+    "63515240",
+    "171572384",
+    "116124003",
+    "143158365",
+    "132372376",
+    "211538011",
+    "166245414",
+    "195702520",
+    "184074409",
+    "207720671",
+    "133219917",
+    "197312547",
+    "165670452",
+    "66392398",
+    "195568491",
+    "181987042",
+    "12753080",
+    "194694507",
+    "175360903",
+    "125542649",
+    "119707383",
+    "214254791",
+    "157063057",
+    "158358506",
+    "208093396",
+    "205570153",
+    "63030233",
+    "152268623",
+    "189651130",
+    "177602517",
+    "215452386",
+    "211383279",
+    "184095150",
+    "179593525",
+    "123244843",
+    "194497344",
+    "183758661",
+    "206069546",
+    "133605841",
+    "59323775",
+    "140681032",
+    "206235852",
+    "110422021",
+    "204839018",
+    "204644647",
+    "192565637",
+    "151893655",
+    "211995326",
+    "151020149",
+    "207117013",
+    "205412194",
+    "201392779",
+    "209022414",
+    "160776240",
+    "81195353",
+    "77032049",
+    "99061049",
+    "202084834",
+    "104260948",
+    "207097851",
+    "205269035",
+    "144391535",
+    "211160862",
+    "180351203",
+    "75346471",
+    "193160660",
+    "182075253",
+    "212427197",
+    "144329843",
+    "96804222",
+    "45292446",
+    "160487039",
+    "206744645",
+    "192786717",
+    "148600741",
+    "126668982",
+    "117908154",
+    "186471661",
+    "211141085",
+    "206499884",
+    "183002686",
+    "181461292",
+    "102766427",
+    "182910361",
+    "166294494",
+    "208462151",
+    "163013281",
+    "207557930",
+    "138263784",
+    "147868132",
+    "187616232",
+    "211861946",
+    "214366789",
+    "160105709",
+    "205160751",
+    "168821423",
+    "72428876",
+    "206186704",
+    "188802396",
+    "182987098",
+    "210379549",
+    "185378413",
+    "147593212",
+    "210972903",
+    "32643378",
+    "96616299",
+    "138191282",
+    "190990479",
+    "127216169",
+    "211695011",
+    "132762770",
+    "85320682",
+    "49745861",
+    "181068452",
+    "188220242",
+    "211737527",
+    "134933782",
+    "204612577",
+    "154028745",
+    "123078807",
+    "36583910",
+    "213910842",
+    "207952278",
+    "104118359",
+    "133141346",
+    "62191872",
+    "88603140",
+    "181797231",
+    "195946622",
+    "211979675",
+    "204728343",
+    "199700491",
+    "162266085",
+    "208857063",
+    "180100051",
+    "147341849",
+    "209470224",
+    "180135547",
+    "131277559",
+    "113019276",
+    "213197413",
+    "207023436",
+    "95768810",
+    "173449876",
+    "195484957",
+    "213454710",
+    "33082829",
+    "195732661",
+    "154108572",
+    "170197417",
+    "168957579",
+    "164588865",
+    "83001640",
+    "165226519",
+    "207512162",
+    "99294720",
+    "199546561",
+    "161098075",
+    "114634940",
+    "149775253",
+    "144423180",
+    "181080601",
+    "174101512",
+    "128235742",
+    "65265298",
+    "106158979",
+    "133209442",
+    "94131751",
+    "136378778",
+    "118625002",
+    "183315899",
+    "161297971",
+    "126813668",
+    "191691228",
+    "201909778",
+    "212741286",
+    "207031775",
+    "209532722",
+    "186149273",
+    "204408800",
+    "203912173",
+    "158571146",
+    "162234177",
+    "77598594",
+    "207037293",
+    "172909732",
+    "191613601",
+    "197557628",
+    "207438039",
+    "195560415",
+    "158781111",
+    "191007171",
+    "211618422",
+    "168354062",
+    "213429337",
+    "114987080",
+    "200977517",
+    "191201023",
+    "124560889",
+    "147668098",
+    "122150490",
+    "140637898",
+    "206833609",
+    "182555337",
+    "189636914",
+    "202413942",
+    "192764726",
+    "122991852",
+    "32089988",
+    "52476699",
+    "199476812",
+    "129810660",
+    "121914990",
+    "206515985",
+    "189876408",
+    "207023436",
+    "211812626",
+    "57038634",
+    "207939040",
+    "122005325",
+    "176538292",
+    "206999743",
+    "140465356",
+    "174853306",
+    "136029961",
+    "209842292",
+    "214509963",
+    "60463905",
+    "111226260",
+    "72374216",
+    "170875283",
+    "172237194",
+    "50013999",
+    "164683805",
+    "124308767",
+    "63855380",
+    "53940707",
+    "204451922",
+    "42306021",
+    "161220425",
+    "211808649",
+    "150966428",
+    "98686857",
+    "92341043",
+    "208809127",
+    "167940831",
+    "170595327",
+    "152141967",
+    "179664964",
+    "165034487",
+    "182744911",
+    "93404499",
+    "154928890",
+    "165551423",
+    "126052417",
+    "131666373",
+    "70612192",
+    "191243535",
+    "195902684",
+    "204451922",
+    "197791553",
+    "162690642",
+    "162234177",
+    "199096452",
+    "176828059",
+    "42306021",
+    "127694131",
+    "112069781",
+    "113744845",
+    "207037293",
+    "194048824",
+    "73012983",
+    "110841970",
+    "147766715",
+    "151412244",
+    "123710520",
+    "195856757",
+    "207655287",
+    "195057956",
+    "178551475",
+    "170217535",
+    "196247820",
+    "161098075",
+    "127586261",
+    "133209442",
+    "206114910",
+    "212741286",
+    "192392023",
+    "153260240",
+    "195484957",
+    "35313551",
+    "165034487",
+    "111227329",
+    "185734305",
+    "213708449",
+    "196747203",
+    "167940831",
+    "156031690",
+    "192405348",
+    "136491084",
+    "170595327",
+    "118181348",
+    "181738558",
+    "161573752",
+    "74202527",
+    "161866800",
+    "213388880",
+    "205645743",
+    "70991867",
+    "192324894",
+    "198624744",
+    "154888546",
+    "200657699",
+    "205827139",
+    "201518584",
+    "148253244",
+    "198143508",
+    "182055692",
+    "173449876",
+    "134089419",
+    "205730959",
+    "133230710",
+    "126813668",
+    "157703669",
+    "91322244",
+    "197245563",
+    "198647348",
+    "113543714",
+    "139397388",
+    "138053977",
+    "93730424",
+    "157113632",
+    "172578712",
+    "207669962",
+    "191695144",
+    "181985932",
+    "186281343",
+    "45493951",
+    "213892828",
+    "181335615",
+    "98686857",
+    "151091180",
+    "160869076",
+    "183407168",
+    "170873776",
+    "208846890"
+  ],
+  "labels": [
+    {
+      "id": "104118359",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly shows repeated parallel colored or light/dark pinstripes; actual trouser/short-leg silhouette verified."
+    },
+    {
+      "id": "110422021",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "116124003",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "117908154",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "119707383",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "122005325",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "123078807",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "123244843",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "124308767",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled grid: actual crop shows repeated diamond lattice/tiling."
+    },
+    {
+      "id": "125542649",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "127216169",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "12753080",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "132372376",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "132762770",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "133141346",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly shows repeated parallel colored or light/dark pinstripes; actual trouser/short-leg silhouette verified."
+    },
+    {
+      "id": "133219917",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "133605841",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "134089419",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference contains a distinct blue/purple dinosaur-like printed silhouette on white fabric; GT shows corresponding scattered dinosaur graphics on joggers."
+    },
+    {
+      "id": "134933782",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "136029961",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "138053977",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual black-fabric reference contains a visible gray five-point star; low contrast is recorded. GT shows repeated stars on black joggers."
+    },
+    {
+      "id": "138191282",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "138263784",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "140465356",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled grid: actual crop shows repeated diamond lattice/tiling."
+    },
+    {
+      "id": "140681032",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "143158365",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "144329843",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "144391535",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "147593212",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "147868132",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "150966428",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "151020149",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "151893655",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "152141967",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "152268623",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "154028745",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "157087569",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "158358506",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "160105709",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "160487039",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "160776240",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "161098075",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference shows crossing check bands or regularly tiled square sequins (161098075), and actual trouser/short-leg structure is present. Square-sequin grid is recorded explicitly, not mislabeled as printed plaid."
+    },
+    {
+      "id": "161573752",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop clearly shows a white Nike swoosh on black fabric; GT shows the same external swoosh on athletic shorts. No reliance on caption-only logo claim."
+    },
+    {
+      "id": "163013281",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "165670452",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "166245414",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "167940831",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "168354062",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled from CLIP symbol ranking: actual crop shows organic floral/leaf texture; for 195560415 this is waistband pattern, not a logo. Pants structural region exists."
+    },
+    {
+      "id": "168821423",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "170220157",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "170595327",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "170875283",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "171572384",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "172237194",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "174853306",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "175360903",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "175830652",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "176538292",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "177602517",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "179593525",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "179664964",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "180351203",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "181068452",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "181461292",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "181797231",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly shows repeated parallel colored or light/dark pinstripes; actual trouser/short-leg silhouette verified."
+    },
+    {
+      "id": "181987042",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "182075253",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "182910361",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "182987098",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "183002686",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "183758661",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "184074409",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "184095150",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "185378413",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "186471661",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "187616232",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "188220242",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "188802396",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "189651130",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "190990479",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "192565637",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "192786717",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "193160660",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "194497344",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "194694507",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "195560415",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled from CLIP symbol ranking: actual crop shows organic floral/leaf texture; for 195560415 this is waistband pattern, not a logo. Pants structural region exists."
+    },
+    {
+      "id": "195568491",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "195732661",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled from CLIP stripe ranking: actual reference crop contains orange graffiti/letter strokes, and GT is printed jeans."
+    },
+    {
+      "id": "197312547",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "197557628",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual crop contains an embroidered letter stroke, pink star, or partial white external waistband glyph (189636914). Full word recovery is not asserted; actual pants verified."
+    },
+    {
+      "id": "199546561",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference shows crossing check bands or regularly tiled square sequins (161098075), and actual trouser/short-leg structure is present. Square-sequin grid is recorded explicitly, not mislabeled as printed plaid."
+    },
+    {
+      "id": "200786101",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "201392779",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "202084834",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "202289246",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "202413942",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled from CLIP symbol ranking: actual crop shows organic floral/leaf texture; for 195560415 this is waistband pattern, not a logo. Pants structural region exists."
+    },
+    {
+      "id": "204644647",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "204728343",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly shows repeated parallel colored or light/dark pinstripes; actual trouser/short-leg silhouette verified."
+    },
+    {
+      "id": "204839018",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "205160751",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "205269035",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "205412194",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "205570153",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "206069546",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "206186704",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "206235852",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "206499884",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "206744645",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "206833609",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled from CLIP symbol ranking: actual white/dark parallel vertical pinstripes visible in reference and trousers."
+    },
+    {
+      "id": "206999743",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "207097851",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "207117013",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "207438039",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled from CLIP symbol ranking: actual crop shows organic floral/leaf texture; for 195560415 this is waistband pattern, not a logo. Pants structural region exists."
+    },
+    {
+      "id": "207512162",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference shows crossing check bands or regularly tiled square sequins (161098075), and actual trouser/short-leg structure is present. Square-sequin grid is recorded explicitly, not mislabeled as printed plaid."
+    },
+    {
+      "id": "207557930",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "207720671",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "207939040",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "207952278",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly shows repeated parallel colored or light/dark pinstripes; actual trouser/short-leg silhouette verified."
+    },
+    {
+      "id": "208093396",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "208462151",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "208809127",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "209022414",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "209842292",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "210379549",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "210972903",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "211141085",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "211160862",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "211383279",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "211428834",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "211538011",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "211695011",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "211737527",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "211808649",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "211861946",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "211995326",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "212427197",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "213429337",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual crop contains an embroidered letter stroke, pink star, or partial white external waistband glyph (189636914). Full word recovery is not asserted; actual pants verified."
+    },
+    {
+      "id": "213910842",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "214254791",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "214366789",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "214509963",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "215452386",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "32643378",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "36583910",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "45292446",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "49745861",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "50013999",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "53940707",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "59323775",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "62191872",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly shows repeated parallel colored or light/dark pinstripes; actual trouser/short-leg silhouette verified."
+    },
+    {
+      "id": "63030233",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "63515240",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "63855380",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "65265298",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference shows crossing check bands or regularly tiled square sequins (161098075), and actual trouser/short-leg structure is present. Square-sequin grid is recorded explicitly, not mislabeled as printed plaid."
+    },
+    {
+      "id": "66392398",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows repeated colored/dark-light bands; garment and applicable regions checked in sketch/GT. Sleeveless and mixed-pattern regions restricted individually."
+    },
+    {
+      "id": "72428876",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "77032049",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "77598594",
+      "reference_pattern": "stripe",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Relabeled from CLIP grid ranking: actual crop and trousers show repeated narrow vertical brown/dark stripes, not a verified crossing grid."
+    },
+    {
+      "id": "81195353",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "92341043",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "96616299",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows irregular botanical, lace, spotted/sequin, or abstract local texture. Non-periodic is an operational visual category, not a proof of mathematical aperiodicity; actual garment structural regions checked."
+    },
+    {
+      "id": "96804222",
+      "reference_pattern": "symbol",
+      "geometry_groups": [
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop contains visible letter strokes or a discrete printed graphic; structural garment regions checked in sketch/GT. Region presence does not assert that the graphic covers every region."
+    },
+    {
+      "id": "98686857",
+      "reference_pattern": "non-periodic",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop visibly contains organic floral/leaf/paisley, leopard, irregular dye, or scattered sequin texture; actual pants/shorts verified. Operational category is not mathematical aperiodicity."
+    },
+    {
+      "id": "99061049",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "sleeve",
+        "hem",
+        "collar/shoulder"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference crop shows crossing bands/checks; sketch/GT garment regions checked. 59323775 and 209022414 are restricted to patterned collar/yoke; sleeveless and plain-hood regions restricted."
+    },
+    {
+      "id": "99294720",
+      "reference_pattern": "grid",
+      "geometry_groups": [
+        "pant-leg"
+      ],
+      "actual_reference_pattern_visible": true,
+      "note": "Actual reference shows crossing check bands or regularly tiled square sequins (161098075), and actual trouser/short-leg structure is present. Square-sequin grid is recorded explicitly, not mislabeled as printed plaid."
+    }
+  ],
+  "rejected_or_ambiguous": {
+    "157063057": "reference is navy puffer/quilted fabric; clear printed stripe pattern not verified",
+    "195702520": "irregular blue-white dye bands; retain as ambiguous rather than force stripe",
+    "104260948": "Actual input is a clutch bag, not clothing; exclude all garment-region strata",
+    "75346471": "Reference appears to enlarge neck brand label/knit tag; external graphic motif not established",
+    "148600741": "Beaded/studded repeating diamond decoration, not a verified discrete symbol/logo; ambiguous category excluded",
+    "126668982": "Low-contrast enlarged crop does not clearly establish visible lettering; exclude ambiguous symbol",
+    "102766427": "Olive jacket reference is plain fabric/seam; no symbol visible",
+    "166294494": "Silver jacket reference is plain reflective/wrinkled material; no symbol visible",
+    "85320682": "Discrete elephant graphic with dense ornament; enlarged reference shows internal ornament, ambiguous symbol vs non-periodic; excluded",
+    "204612577": "Reference shows repeating geometric diamond/zigzag border, not verified non-periodic texture",
+    "88603140": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "195946622": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "211979675": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "199700491": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "162266085": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "208857063": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "180100051": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "147341849": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "209470224": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "180135547": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "131277559": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "113019276": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "213197413": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "207023436": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "95768810": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "173449876": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "195484957": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "213454710": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "33082829": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "154108572": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "170197417": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "168957579": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "164588865": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "83001640": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "165226519": "Stripe label not established: reference is denim fading/distress/seam/pleat or nonparallel chevron motif; do not equate textile folds with printed parallel stripes",
+    "114634940": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "149775253": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "144423180": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "181080601": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "174101512": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "128235742": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "106158979": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "133209442": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "94131751": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "136378778": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "118625002": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "183315899": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "161297971": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "126813668": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "191691228": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "201909778": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "212741286": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "207031775": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "209532722": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "186149273": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "204408800": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "203912173": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "158571146": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "162234177": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "207037293": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "172909732": "Actual reference does not establish a crossing/regular square grid; denim seams/fading/distress or complex herringbone/low-contrast embroidery are not forced into grid class",
+    "191613601": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "158781111": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "191007171": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "211618422": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "114987080": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "200977517": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "191201023": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "124560889": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "147668098": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "122150490": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "140637898": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "182555337": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "192764726": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "122991852": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "32089988": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "52476699": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "199476812": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "129810660": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "121914990": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "206515985": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "189876408": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "211812626": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "57038634": "No clearly verified external discrete symbol in actual crop; plain fabric, drawstrings, internal brand label, or motif present only in GT do not establish reference symbol",
+    "60463905": "Regularly spaced white polka dots; not a verified non-periodic category",
+    "111226260": "Repeated large geometric medallions; non-periodic vs lattice ambiguous",
+    "72374216": "Denim seam/drawstring/distress, no verified irregular motif in crop",
+    "164683805": "Low-contrast geometric quilted leather; no verified irregular motif",
+    "204451922": "Plain denim fading/seam, no verified irregular print in crop",
+    "42306021": "Waistband/seam/button of denim, no verified irregular print",
+    "161220425": "Plain denim weave and seam, no verified irregular motif",
+    "165034487": "White eyelet detail is too low-contrast in crop to establish class",
+    "189636914": "Final input-only adjudication: partial external waistband glyph is too ambiguous; excluded before any candidate generation/scientific training. Clear actual Nike/dinosaur/star candidates from fixed next ranks replace this uncertain label."
+  },
+  "geometry_stratum_scope": "Visible garment structural regions, not a claim that reference motif covers each region; plain sleeves may expose appearance leakage. Sleeveless garments never assigned sleeve; non-garments excluded.",
+  "reviewed_unique_ids": [
+    "102766427",
+    "104118359",
+    "104260948",
+    "106158979",
+    "110422021",
+    "110841970",
+    "111226260",
+    "111227329",
+    "112069781",
+    "113019276",
+    "113543714",
+    "113744845",
+    "114634940",
+    "114987080",
+    "116124003",
+    "117908154",
+    "118181348",
+    "118625002",
+    "119707383",
+    "121914990",
+    "122005325",
+    "122150490",
+    "122991852",
+    "123078807",
+    "123244843",
+    "123710520",
+    "124308767",
+    "124560889",
+    "125542649",
+    "126052417",
+    "126668982",
+    "126813668",
+    "127216169",
+    "12753080",
+    "127586261",
+    "127694131",
+    "128235742",
+    "129810660",
+    "131277559",
+    "131666373",
+    "132372376",
+    "132762770",
+    "133141346",
+    "133209442",
+    "133219917",
+    "133230710",
+    "133605841",
+    "134089419",
+    "134933782",
+    "136029961",
+    "136378778",
+    "136491084",
+    "138053977",
+    "138191282",
+    "138263784",
+    "139397388",
+    "140465356",
+    "140637898",
+    "140681032",
+    "143158365",
+    "144329843",
+    "144391535",
+    "144423180",
+    "147341849",
+    "147593212",
+    "147668098",
+    "147766715",
+    "147868132",
+    "148253244",
+    "148600741",
+    "149775253",
+    "150966428",
+    "151020149",
+    "151091180",
+    "151412244",
+    "151893655",
+    "152141967",
+    "152268623",
+    "153260240",
+    "154028745",
+    "154108572",
+    "154888546",
+    "154928890",
+    "156031690",
+    "157063057",
+    "157087569",
+    "157113632",
+    "157703669",
+    "158358506",
+    "158571146",
+    "158781111",
+    "160105709",
+    "160487039",
+    "160776240",
+    "160869076",
+    "161098075",
+    "161220425",
+    "161297971",
+    "161573752",
+    "161866800",
+    "162234177",
+    "162266085",
+    "162690642",
+    "163013281",
+    "164588865",
+    "164683805",
+    "165034487",
+    "165226519",
+    "165551423",
+    "165670452",
+    "166245414",
+    "166294494",
+    "167940831",
+    "168354062",
+    "168821423",
+    "168957579",
+    "170197417",
+    "170217535",
+    "170220157",
+    "170595327",
+    "170873776",
+    "170875283",
+    "171572384",
+    "172237194",
+    "172578712",
+    "172909732",
+    "173449876",
+    "174101512",
+    "174853306",
+    "175360903",
+    "175830652",
+    "176538292",
+    "176828059",
+    "177602517",
+    "178551475",
+    "179593525",
+    "179664964",
+    "180100051",
+    "180135547",
+    "180351203",
+    "181068452",
+    "181080601",
+    "181335615",
+    "181461292",
+    "181738558",
+    "181797231",
+    "181985932",
+    "181987042",
+    "182055692",
+    "182075253",
+    "182555337",
+    "182744911",
+    "182910361",
+    "182987098",
+    "183002686",
+    "183315899",
+    "183407168",
+    "183758661",
+    "184074409",
+    "184095150",
+    "185378413",
+    "185734305",
+    "186149273",
+    "186281343",
+    "186471661",
+    "187616232",
+    "188220242",
+    "188802396",
+    "189636914",
+    "189651130",
+    "189876408",
+    "190990479",
+    "191007171",
+    "191201023",
+    "191243535",
+    "191613601",
+    "191691228",
+    "191695144",
+    "192324894",
+    "192392023",
+    "192405348",
+    "192565637",
+    "192764726",
+    "192786717",
+    "193160660",
+    "194048824",
+    "194497344",
+    "194694507",
+    "195057956",
+    "195484957",
+    "195560415",
+    "195568491",
+    "195702520",
+    "195732661",
+    "195856757",
+    "195902684",
+    "195946622",
+    "196247820",
+    "196747203",
+    "197245563",
+    "197312547",
+    "197557628",
+    "197791553",
+    "198143508",
+    "198624744",
+    "198647348",
+    "199096452",
+    "199476812",
+    "199546561",
+    "199700491",
+    "200657699",
+    "200786101",
+    "200977517",
+    "201392779",
+    "201518584",
+    "201909778",
+    "202084834",
+    "202289246",
+    "202413942",
+    "203912173",
+    "204408800",
+    "204451922",
+    "204612577",
+    "204644647",
+    "204728343",
+    "204839018",
+    "205160751",
+    "205269035",
+    "205412194",
+    "205570153",
+    "205645743",
+    "205730959",
+    "205827139",
+    "206069546",
+    "206114910",
+    "206186704",
+    "206235852",
+    "206499884",
+    "206515985",
+    "206744645",
+    "206833609",
+    "206999743",
+    "207023436",
+    "207031775",
+    "207037293",
+    "207097851",
+    "207117013",
+    "207438039",
+    "207512162",
+    "207557930",
+    "207655287",
+    "207669962",
+    "207720671",
+    "207939040",
+    "207952278",
+    "208093396",
+    "208462151",
+    "208809127",
+    "208846890",
+    "208857063",
+    "209022414",
+    "209470224",
+    "209532722",
+    "209842292",
+    "210379549",
+    "210972903",
+    "211141085",
+    "211160862",
+    "211383279",
+    "211428834",
+    "211538011",
+    "211618422",
+    "211695011",
+    "211737527",
+    "211808649",
+    "211812626",
+    "211861946",
+    "211979675",
+    "211995326",
+    "212427197",
+    "212741286",
+    "213197413",
+    "213388880",
+    "213429337",
+    "213454710",
+    "213708449",
+    "213892828",
+    "213910842",
+    "214254791",
+    "214366789",
+    "214509963",
+    "215452386",
+    "32089988",
+    "32643378",
+    "33082829",
+    "35313551",
+    "36583910",
+    "42306021",
+    "45292446",
+    "45493951",
+    "49745861",
+    "50013999",
+    "52476699",
+    "53940707",
+    "57038634",
+    "59323775",
+    "60463905",
+    "62191872",
+    "63030233",
+    "63515240",
+    "63855380",
+    "65265298",
+    "66392398",
+    "70612192",
+    "70991867",
+    "72374216",
+    "72428876",
+    "73012983",
+    "74202527",
+    "75346471",
+    "77032049",
+    "77598594",
+    "81195353",
+    "83001640",
+    "85320682",
+    "88603140",
+    "91322244",
+    "92341043",
+    "93404499",
+    "93730424",
+    "94131751",
+    "95768810",
+    "96616299",
+    "96804222",
+    "98686857",
+    "99061049",
+    "99294720"
+  ],
+  "source_archives": {
+    "r1": "c0766f5033e344cdb6448871c8916adbaf795a4143a7a06c98295df456f1d5e5",
+    "ext1": "a358d63cff96d3eb64b7c657ae38834d45b4afb43510c88e015804b1fd7ad7e7"
+  },
+  "scientific_training_updates_at_annotation": 0,
+  "reviewed_page_sha256": {
+    "server_candidates_r1\\clothing_grid\\page000.png": "4ebb9b3e69269a8b98f14e5559f7ed89644483013bd3c3e16cd0a3725daa8513",
+    "server_candidates_r1\\clothing_grid\\page008.png": "0205a1087912c03528c75db97da18677f1a28e8addf1569790a64d7d0caa3983",
+    "server_candidates_r1\\clothing_grid\\page016.png": "89fbace3f0a41281cd0c1de69410c8d29c4bc473a7b90c54e1554c8a5abe64f5",
+    "server_candidates_r1\\clothing_grid\\page024.png": "11bfea83d355833ab8e59f530d4dade8788058c2240565d2f2ea00522b431919",
+    "server_candidates_r1\\clothing_non-periodic\\page000.png": "fb0b51c685001e8d0a1b13de7b822656237bcad0b1295239ce42ab7c5be7cbe1",
+    "server_candidates_r1\\clothing_non-periodic\\page008.png": "d35817ed9dee6c4fc88529da11a1a99ebca4154427203688167b30434c817c03",
+    "server_candidates_r1\\clothing_non-periodic\\page016.png": "4052d5f63decdadd2c6ce7ed872c0327350ab1d383fb06f602d2cae37c36b5a0",
+    "server_candidates_r1\\clothing_non-periodic\\page024.png": "46bbce1e7ae8a04a8651812f6231747f57a83e0f6326384ee45446ef58e3b8b7",
+    "server_candidates_r1\\clothing_stripe\\page000.png": "eb60d49cdaf561b78886a36ab1f60c145dd881c34fea26c1e4dc0b9a837c7994",
+    "server_candidates_r1\\clothing_stripe\\page008.png": "28341cc8c4dbed4c6fc3eaaaea63931680e860a8dc28c3a6a7ae8966355fe1f8",
+    "server_candidates_r1\\clothing_stripe\\page016.png": "bdeabb2987d1f3b14af1d7b851d0a127efd245b0605d50c96571e0a0225944bd",
+    "server_candidates_r1\\clothing_stripe\\page024.png": "c75bf8938173f5edddb93f2e11d30cf16207839f38ad4afdb420e06122c837a6",
+    "server_candidates_r1\\clothing_symbol\\page000.png": "a73b73d92453eced34a8fbb102f5135771c528f165d4f98f9c9f1668645cc708",
+    "server_candidates_r1\\clothing_symbol\\page008.png": "8de9509b090b1cfd89f1e83bbd8e1123b27f820aff0433b251590630b13aa967",
+    "server_candidates_r1\\clothing_symbol\\page016.png": "1a1d60b6c30a5fbeba5894d5f7d3b8efc10b05de011d77dc5a3b13856b853481",
+    "server_candidates_r1\\clothing_symbol\\page024.png": "778ecfdbee816501fc146bf273d3741d15930b700e560a38adbd468d1b22cf87",
+    "server_candidates_r1\\pants_grid\\page000.png": "3a06a5a73b54f13b9b17e3ec313ab18566324c9575e7e70a081c54c380269176",
+    "server_candidates_r1\\pants_grid\\page008.png": "f3881cd56697448079f442a4f01912cee25f2db0198269c1f2d959fd6a0c2b5e",
+    "server_candidates_r1\\pants_grid\\page016.png": "7158149a81bb28019ba5ccc5711f4129dabce6abff9397dd3cd2c4b327d8b622",
+    "server_candidates_r1\\pants_grid\\page024.png": "d1cd81f5753b042587454f31a7ee3c831cf3eb2902e06b1e8c7e890a87fc4bc4",
+    "server_candidates_r1\\pants_non-periodic\\page000.png": "b4fcf11c481c0cf793165c9aeef4dec83d4b19225d01fda3868b663579e7067f",
+    "server_candidates_r1\\pants_non-periodic\\page008.png": "846e1b3e43a5eac61e15fb51480d866379d9257fe7fb19f6bdc322c99ba2d141",
+    "server_candidates_r1\\pants_non-periodic\\page016.png": "8139c6617340303c8cea5715eb4e8dc29b90caa08e846987efb2e28dc66e8093",
+    "server_candidates_r1\\pants_non-periodic\\page024.png": "7584194af387f782ff9743fbf812936761fa4c29f04c26c44e2bbfaa584fe9ac",
+    "server_candidates_r1\\pants_stripe\\page000.png": "1543be2f453faa8d20a3624aa43c40837de2fc5c7e8a320b8c5a50241c8506fa",
+    "server_candidates_r1\\pants_stripe\\page008.png": "bd0b175da991450cd776055e77405a92bed0867f2e87e2c7c0df352ff178039d",
+    "server_candidates_r1\\pants_stripe\\page016.png": "1cce5c8b3e9046cca1f2ceb2fba028cd731476ccde511cd06a33add6772c6f43",
+    "server_candidates_r1\\pants_stripe\\page024.png": "8128c24efe352532954c51b47c33398de32f3614f7eb4119dcf6bfb948e1738b",
+    "server_candidates_r1\\pants_symbol\\page000.png": "653d1284195ecf72282b75d032555eba6e4afecca362ad809da887e045b22ad2",
+    "server_candidates_r1\\pants_symbol\\page008.png": "96d38a8cdb2e09dcc47f75d4b4425fd96669d18380f70c41c99d62544b5c4ff0",
+    "server_candidates_r1\\pants_symbol\\page016.png": "d36a59513661a511f63b7f4ff24773e1184a0232724cb766355d61f3eb5cda71",
+    "server_candidates_r1\\pants_symbol\\page024.png": "4ab7b8d76596b646eb15f3cd11ddacd522c3f894975078534d67ddd5b93065ac",
+    "server_candidates_ext1\\pants_symbol\\page032.png": "2d519c5639f6f34682fb762c379518918ca9245c3dd0189aa9c2dc0c601606fd",
+    "server_candidates_ext1\\pants_symbol\\page040.png": "2303b0609b0776cac92d21c3df3f028642634e186c692a29d3f7f914ec27394e",
+    "server_candidates_ext1\\pants_symbol\\page048.png": "42c91d3f2018ec5d6c6113448211fa12e75467052d4ee7c40d98f5119a0a9963",
+    "server_candidates_ext1\\pants_symbol\\page056.png": "b82a94b7f6252a33eb1e2f3706515e50e36f41bb7883c70d89bbd14ebd9b7f44",
+    "server_candidates_ext1\\pants_symbol\\page064.png": "b8018bf023c32363fb9301e3b5273bf7f17bbba0137381a964837f8703bb7f33",
+    "server_candidates_ext1\\pants_symbol\\page072.png": "ba0071a2499e17537b9bf51a8d7ed0b44bde2d233128d1e558a4bfedd87e4c72",
+    "server_candidates_ext1\\pants_symbol\\page080.png": "d0b927fd068273a3629eb589ad518b4da57ba66bf6cffeb2b87cc967e5a5908e",
+    "server_candidates_ext1\\pants_symbol\\page088.png": "893cb897eccd478b457370b54b354573d4d9b34f26d2c6e23bdeaf49dbc2a4a0",
+    "server_candidates_ext1\\pants_symbol\\page096.png": "343390b17b3bdb22c6feebe01d0dfd9bc5e71f143c21c5a4fd1698799138aa14",
+    "server_candidates_ext1\\pants_symbol\\page104.png": "fa2bc4df9c7918033bb188b52b0973d956a363e376b567181766a51b3228d4fa",
+    "server_candidates_ext1\\pants_symbol\\page112.png": "bf030c254a3d6a5ab011065e21b14815577e3b5027d5f4295baa4126d7b968ab",
+    "server_candidates_ext1\\pants_symbol\\page120.png": "c73a76d8f8063323e7c1b25ee7852dde8fc5a7740cd117bc424e8c470cabefd3"
+  }
+}

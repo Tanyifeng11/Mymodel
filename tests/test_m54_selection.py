@@ -12,6 +12,11 @@ def fixture(arm,f1=0.,iou=0.,lpips=-.04,tail=0):
 
 
 class SelectionTests(unittest.TestCase):
+    def test_clutch_is_not_a_top_because_caption_mentions_top_clasp(self):
+        from tools.m54_input_candidates import clothing
+        self.assertIsNone(clothing(dict(caption='A white rectangular clutch with a top clasp.')))
+        self.assertEqual(clothing(dict(caption='A striped sleeveless top with a round neckline.')),'clothing')
+
     def choose(self,definitions):
         means={};gates={};records=[]
         for arm,values in definitions.items():

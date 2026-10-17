@@ -19,7 +19,7 @@ PROMPTS=[
 
 def clothing(row):
     text=row['caption'].lower()
-    excluded=['bag','handbag','crossbody','tote','shoe','boot','sandal','sneaker','belt','scarf','hat','cap ']
+    excluded=['bag','handbag','crossbody','tote','clutch','shoe','boot','sandal','sneaker','belt','scarf','hat','cap ']
     # "belt"可能是衣服自带腰带，不作排除；包/鞋等非服装明确排除。
     if any(word in text for word in excluded if word!='belt'):return None
     if any(word in text for word in ['pants','trousers','jeans','shorts']):return 'pants'

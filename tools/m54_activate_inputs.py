@@ -34,7 +34,9 @@ def activate():
     for stage,n in [('pilot',24),('lock',64)]:
         rows=[allocation[(stage,k)] for k in range(n)];prepared[stage]=rows;used.update(r['id'] for r in rows)
         splits[stage]='splits/'+stage+'_r1.json'
-    natural=sorted([r for r in scores if r['id'] not in used],key=lambda r:order(r['id']))[:96]
+    from tools.m54_input_candidates import clothing
+    # 实际输入审阅发现104260948为clutch；在任何模型输出前修复“top clasp”误匹配。
+    natural=sorted([r for r in scores if r['id'] not in used and clothing(r)],key=lambda r:order(r['id']))[:96]
     assert len(natural)==96
     splits['natural']='splits/natural_r1.json';prepared['natural']=natural
     allrows=prepared['pilot']+prepared['lock']+natural
@@ -49,7 +51,10 @@ def activate():
         labels_from_actual_input_review=True,model_outputs_used=False,scientific_training_updates=0,commit=commit())
     freeze(OUT/'active_inputs.json',active)
     write(OUT/'audit/input_revision_r1.json',dict(**active,pilot=24,lock=64,natural=96,
-        independent_human_review='NOT_RUN',input_files=len(hashes)))
+        independent_human_review='NOT_RUN',input_files=len(hashes),
+        natural_filter='frozen SHA ordering after excluding actual input-detected clutch false positive; before any model outputs'))
+    from tools.m54_finalize import input_review_package
+    input_review_package('pilot')
     print('M54 INPUT REVISION R1 ACTIVATED',flush=True)
 
 
