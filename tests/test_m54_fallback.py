@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint
-from models.m54_fallback import CatBranch,WarpBranch,concat_inputs,warp
+from models.m54_fallback import CatBranch,WarpBranch,concat_inputs,warp,reference_add_noise
 
 
 class TinyAttention(nn.Module):
@@ -74,6 +74,14 @@ class FallbackTests(unittest.TestCase):
         candidate.eval();restored.eval()
         with torch.no_grad():self.assertTrue(torch.equal(candidate(*args),restored(*args)))
         restored.verify_frozen()
+
+    def test_reference_noise_does_not_modify_shared_alpha_table(self):
+        alpha=torch.linspace(.99,.01,1000,dtype=torch.float32);original=alpha.clone();pointer=alpha.data_ptr()
+        clean=torch.ones(1,4,8,6,dtype=torch.float16);noise=torch.zeros_like(clean)
+        result=reference_add_noise(clean,noise,torch.tensor([42]),alpha)
+        self.assertEqual(alpha.dtype,torch.float32);self.assertEqual(alpha.data_ptr(),pointer)
+        self.assertTrue(torch.equal(alpha,original));self.assertEqual(result.dtype,torch.float16)
+        self.assertTrue(torch.equal(result,torch.full_like(clean,alpha[42].half().sqrt())))
 
 
 if __name__=='__main__':unittest.main()

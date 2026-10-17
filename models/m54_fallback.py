@@ -7,6 +7,14 @@ from torch.nn import functional as F
 from torch.func import functional_call
 
 
+def reference_add_noise(reference,noise,timestep,alphas_cumprod):
+    # DDIMScheduler.add_noise会就地搬迁自身alpha表；不能让参考分支改变E5 scheduler.step的标量路径。
+    alpha=alphas_cumprod.to(device=reference.device,dtype=reference.dtype)[
+        torch.as_tensor(timestep,device=reference.device).long().reshape(-1)]
+    while alpha.ndim<reference.ndim:alpha=alpha.unsqueeze(-1)
+    return alpha.sqrt()*reference+(1-alpha).sqrt()*noise
+
+
 def frozen_hash(module, excluded=()):
     digest=hashlib.sha256()
     for name,value in module.state_dict().items():

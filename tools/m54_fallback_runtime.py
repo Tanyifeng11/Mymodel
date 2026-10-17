@@ -4,7 +4,7 @@ import torch
 from PIL import Image
 from torch.nn import functional as F
 from torchvision.transforms.functional import to_tensor
-from models.m54_fallback import CatBranch,WarpBranch
+from models.m54_fallback import CatBranch,WarpBranch,reference_add_noise
 from tools.e44_runtime import Runtime
 from tools.m54_runtime import M54Runtime
 from tools.m54_protocol import *
@@ -34,6 +34,7 @@ class FallbackRuntime(M54Runtime):
             torch.manual_seed(42);torch.cuda.manual_seed_all(42)
             self.candidate=CatBranch(clone_without_hooks(self.pipe.unet)) if arm=='M_L1' else WarpBranch().to(self.pipe.device)
         self.candidate.eval();self.original_forward=self.pipe.unet.forward
+        self.original_alpha=self.pipe.scheduler.alphas_cumprod.detach().clone()
         self.pipe.unet.forward=self.enhanced_forward
 
     def parameters(self):
@@ -74,8 +75,7 @@ class FallbackRuntime(M54Runtime):
             # 主参数保留FP32；推理入口不保证已有autocast，分支自行使用同一FP16计算路径。
             with torch.autocast('cuda',dtype=torch.float16):
                 if self.arm=='M_L1':
-                    noisy_ref=self.pipe.scheduler.add_noise(self.reference_latent,self.reference_noise,
-                        torch.as_tensor(t,device=noisy.device).reshape(-1))
+                    noisy_ref=reference_add_noise(self.reference_latent,self.reference_noise,t,self.pipe.scheduler.alphas_cumprod)
                     delta=self.candidate(noisy,noisy_ref,self.sketch_latent,self.reference_latent,mask,t,
                         kwargs['encoder_hidden_states'],kwargs.get('cross_attention_kwargs'))*mask
                 else:
@@ -119,6 +119,9 @@ class FallbackRuntime(M54Runtime):
 
     def close(self):
         self.pipe.unet.forward=self.original_forward
+        alpha=self.pipe.scheduler.alphas_cumprod
+        assert alpha.device==self.original_alpha.device and alpha.dtype==self.original_alpha.dtype
+        assert torch.equal(alpha,self.original_alpha),'FROZEN_E5_SCHEDULER_ALPHA_CHANGED'
         if self.arm=='M_L1':self.candidate.verify_frozen()
         super().close()
 
