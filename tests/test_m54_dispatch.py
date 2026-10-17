@@ -9,6 +9,27 @@ from tools import m54_dispatch as dispatcher,m54_protocol as protocol,m54_select
 
 
 class DispatchTests(unittest.TestCase):
+    def test_invalid_completed_evaluation_is_archived_and_gpu_retry_supersedes_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);job=dict(name='R1_EVAL',id=7,action='evaluate',extra=['--stage','round1'])
+            protocol.write(root/'resources/jobs.json',[job]);states={7:'COMPLETED'};calls=[]
+            for stage in ['round1','oracle_diagnostic']:
+                protocol.write(root/stage/'evaluation_complete.json',dict(complete=True,invalid_fixture=True))
+                image=root/stage/'images/B1/fixture.png';image.parent.mkdir(parents=True);image.write_bytes(b'unchanged inference bytes')
+            def submit(name,action,gpu,**metadata):
+                value=dict(name=name,id=8,action=action,gpu=gpu,**metadata);calls.append(value);states[8]='PENDING'
+                protocol.write(root/'resources/jobs.json',[job,value]);return 8
+            with patch.object(dispatcher,'OUT',root),patch.object(dispatcher,'submit',submit),patch.object(dispatcher,'commit',lambda:'fixture'),\
+                 patch.object(dispatcher.subprocess,'check_output',lambda args,**unused:states[int(args[args.index('-j')+1])]+'|'):
+                dispatcher.repair_evaluation('round1','inference gate incorrectly suppressed fixed evaluation region')
+                dispatcher.repair_evaluation('round1','same diagnosis')
+            self.assertEqual(len(calls),1);self.assertTrue(calls[0]['gpu'])
+            self.assertEqual(calls[0]['logical_name'],'R1_EVAL');self.assertEqual(calls[0]['supersedes'],7)
+            for stage in ['round1','oracle_diagnostic']:
+                self.assertFalse((root/stage/'evaluation_complete.json').exists())
+                self.assertTrue((root/'failures/evaluation_7_R1'/stage/'evaluation_complete.json').exists())
+                self.assertEqual((root/stage/'images/B1/fixture.png').read_bytes(),b'unchanged inference bytes')
+
     def test_second_repair_supersedes_failed_audit_without_resubmitting_active_attempt(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);path=root/'resources/jobs.json';jobs=[dict(name='ROUND0',id=1),dict(name='ROUND0_R1',id=2,logical_name='ROUND0')]

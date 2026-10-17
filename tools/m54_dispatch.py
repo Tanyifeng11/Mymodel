@@ -37,8 +37,8 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','input_extend','activate_inputs','freeze_pilot_policy','recheck_modules','repair_round0','accounting'])
-    p.add_argument('--repair-note');args=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','input_extend','activate_inputs','freeze_pilot_policy','recheck_modules','repair_round0','repair_evaluation','accounting'])
+    p.add_argument('--repair-note');p.add_argument('--stage',default='round1');args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
         prepare=submit('PREPARE','prepare',False)
@@ -58,6 +58,7 @@ def main():
         submit('ROUND0_M9_R1','audit',True,[m11],['--arm','M9'],logical_name='ROUND0')
     elif args.action=='repair_round0':
         repair_round0(args.repair_note)
+    elif args.action=='repair_evaluation':repair_evaluation(args.stage,args.repair_note)
     elif args.action=='accounting':
         from tools.m54_finalize import accounting
         accounting()
@@ -75,6 +76,30 @@ def repair_round0(note):
     protocol=submit('PREPARE_REPAIR_'+revision,'prepare_retry',False,
         extra=['--failed-job',str(failed),'--repair-note',note])
     submit('ROUND0_'+revision,'audit',True,[protocol],logical_name='ROUND0',supersedes=failed)
+
+
+def repair_evaluation(stage,note):
+    jobs=read(OUT/'resources/jobs.json')
+    attempts=[j for j in jobs if j.get('action')=='evaluate' and j.get('extra')==['--stage',stage]]
+    previous=attempts[-1];identity=previous['id']
+    state=subprocess.check_output(['sacct','-X','-n','-P','-j',str(identity),'--format=State'],text=True).strip().split('|')[0].split()[0]
+    if state in ['RUNNING','PENDING','COMPLETING']:print('EVALUATION_REPAIR_ALREADY_ACTIVE',identity);return
+    assert note,'REPAIR_DIAGNOSIS_REQUIRED'
+    archive=OUT/'failures'/('evaluation_'+str(identity)+'_R'+str(len(attempts)))
+    archive.resolve().relative_to(OUT.resolve())
+    names=['evaluation_complete.json','per_image.json','means.json','valid_counts.json','gates.json',
+        'paired_deltas.json','texture_metric_protocol.json','metrics.csv','per_image.csv']
+    moved=[]
+    for source_stage in ([stage,'oracle_diagnostic'] if stage=='round1' else [stage]):
+        for name in names:
+            source=OUT/source_stage/name
+            if source.exists():
+                target=archive/source_stage/name;target.parent.mkdir(parents=True,exist_ok=True)
+                moved.append(dict(path=str(source.relative_to(OUT)),sha256=sha(source)));source.rename(target)
+    write(archive/'archive.json',dict(source_job=identity,slurm_state=state,engineering_diagnosis=note,files=moved,
+        inference_outputs_unchanged=True,scientific_samples_masks_thresholds_unchanged=True,commit=commit()))
+    logical=previous.get('logical_name',previous['name'])
+    submit(logical+'_R'+str(len(attempts)),'evaluate',True,extra=['--stage',stage],logical_name=logical,supersedes=identity)
 
 
 def advance():

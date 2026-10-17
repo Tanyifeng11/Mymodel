@@ -1,6 +1,7 @@
 """最终RGB指标与身份配对Bootstrap；辅助纹样身份不替代六门禁。"""
 import csv
 import cv2
+from math import isfinite
 import numpy as np
 import torch
 from PIL import Image
@@ -41,8 +42,33 @@ def similarity(a,b):
     return [ncc(a[0],b[0]),ncc(a[1],b[1]),float(a[2]@b[2])]
 
 
+def regional_metrics(image,path,gt_path,bundle,inference_mask_valid):
+    from eval.eval_utils import estimate_foreground_mask,json_safe
+    from eval.metrics import compute_texture_leakage
+    garment=bundle['garment']
+    assert garment is not None and garment.any(),'FIXED_SKETCH_EVALUATION_MASK_MISSING'
+    fg=estimate_foreground_mask(image,SIZE)
+    if fg is None:fg=np.zeros((SIZE[1],SIZE[0]),bool)
+    # 推理增强的软mask门控不决定能否评分；所有身份用既定sketch_only评分区域。
+    rec=dict(inference_mask_valid=bool(inference_mask_valid),evaluation_mask_source=bundle['stats']['mask_source'],
+        evaluation_mask_pixels=int(garment.sum()),contour_f1=contour_f1(fg,garment),
+        iou=float((fg&garment).sum()/max((fg|garment).sum(),1)),
+        leak=json_safe(compute_texture_leakage(str(path),target_path=gt_path,mask_bundle=bundle)).get('leak_colored_frac'))
+    rec.update({k:v for k,v in boundary_geometry(fg,garment).items() if k in KEYS})
+    a,b=external_contour(fg),external_contour(garment)
+    if a.any() and b.any():
+        da=cv2.distanceTransform((~a).astype('uint8'),cv2.DIST_L2,5);db=cv2.distanceTransform((~b).astype('uint8'),cv2.DIST_L2,5)
+        rec['boundary_hausdorff']=float(max(da[b].max(),db[a].max()))
+        rec['boundary_displacement']=float(np.concatenate([da[b],db[a]]).mean())
+    return rec
+
+
 def assess(records,stage):
     arms=list(dict.fromkeys(r['variant'] for r in records));base={r['id']:r for r in records if r['variant']=='E5'}
+    for arm in arms:
+        group=[r for r in records if r['variant']==arm]
+        assert len(group)==len(base) and {r['id'] for r in group}==set(base),'INCOMPLETE_EVALUATION_IDENTITIES'
+        assert all(r.get(k) is not None and isfinite(r[k]) for r in group for k in ['lpips_gt','contour_f1','iou','leak']),('MISSING_OR_NONFINITE_CORE_METRIC',stage,arm)
     means={a:{k:float(np.mean([r[k] for r in records if r['variant']==a and r.get(k) is not None]))
         if any(r['variant']==a and r.get(k) is not None for r in records) else None for k in KEYS} for a in arms}
     counts={a:{k:sum(r['variant']==a and r.get(k) is not None for r in records) for k in KEYS} for a in arms}
@@ -73,8 +99,7 @@ def assess(records,stage):
 
 @torch.inference_mode()
 def evaluate(stage):
-    from eval.eval_utils import prepare_evaluation_masks,estimate_foreground_mask,json_safe
-    from eval.metrics import compute_texture_leakage
+    from eval.eval_utils import prepare_evaluation_masks
     from tools.e33tmoc_appearance_eval import frozen_lpips
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
     source=stage.split('_u')[0].split('_s')[0]
@@ -116,17 +141,7 @@ def evaluate(stage):
             effects=read(path.with_name(path.stem+'_effects.json'))
             for key in ['entropy','top1_mass','top5_mass','spatial_spread']:
                 values=[x[key] for x in effects if key in x];rec[key]=float(np.mean(values)) if values else None
-            fg=estimate_foreground_mask(image,SIZE)
-            if fg is None:fg=np.zeros((SIZE[1],SIZE[0]),bool)
-            if garment is not None and meta['mask']['valid']:
-                rec.update(contour_f1=contour_f1(fg,garment),iou=float((fg&garment).sum()/max((fg|garment).sum(),1)),
-                    leak=json_safe(compute_texture_leakage(str(path),target_path=row['gt'],mask_bundle=bundle)).get('leak_colored_frac'))
-                rec.update({k:v for k,v in boundary_geometry(fg,garment).items() if k in KEYS})
-                a,b=external_contour(fg),external_contour(garment)
-                if a.any() and b.any():
-                    da=cv2.distanceTransform((~a).astype('uint8'),cv2.DIST_L2,5);db=cv2.distanceTransform((~b).astype('uint8'),cv2.DIST_L2,5)
-                    rec['boundary_hausdorff']=float(max(da[b].max(),db[a].max()))
-                    rec['boundary_displacement']=float(np.concatenate([da[b],db[a]]).mean())
+            rec.update(regional_metrics(image,path,row['gt'],bundle,meta['mask']['valid']))
             desc=descriptor(crop(image,garment) if garment is not None else image,model,processor)
             good=similarity(desc,references[row['id']]);bad=similarity(desc,references[wrong[row['id']]])
             margins=np.array(good)-np.array(bad)
