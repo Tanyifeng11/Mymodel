@@ -27,9 +27,9 @@ def input_review_package(stage):
     package(OUT/('m54_'+stage+'_input_review.tar.gz'),files)
 
 
-def seed_aggregate(best):
+def seed_aggregate(best,prefix='natural'):
     from tools.m54_eval import assess,KEYS
-    stages=[result_stage('natural',2400,seed) for seed in [42,123,456]]
+    stages=[result_stage(prefix,2400,seed) for seed in [42,123,456]]
     sources=[read(OUT/stage/'per_image.json') for stage in stages]
     ids=[r['id'] for r in read(split_path('natural'))];records=[]
     for arm in ['E5','B1',best]:
@@ -89,7 +89,7 @@ def verify_outputs():
         raw_traces_verified_before_user_cleanup=sum(not x['trace_present'] for x in entries)))
     for manifest in [OUT/'manifests/model_file_hashes.json',OUT/'manifests/input_hashes.json',OUT/'manifests/input_hashes_r1.json']:
         if manifest.exists():assert all(sha(path)==expected for path,expected in read(manifest).items()),('FROZEN_SOURCE_CHANGED',str(manifest))
-    for arm in TRAIN_ARMS:
+    for arm in TRAIN_ARMS+['M_L1','M_L2']:
         folder=OUT/'training'/arm
         if not folder.exists():continue
         lines=[]
@@ -104,8 +104,18 @@ def verify_outputs():
 
 
 def finalize():
-    state=read(OUT/'decision.json');assert state['natural']=='COMPLETE_GO' and state['seeds']=='COMPLETE'
-    best=read(OUT/'selection/best1.json')['selected'][0];replication=seed_aggregate(best)
+    state=read(OUT/'decision.json');fallback=state.get('fallback_experiments_complete',False)
+    best=None;replication=None
+    if fallback:
+        assert read(OUT/'fallback/audit/round0_complete.json')['passed']
+        assert all(read(OUT/'fallback/audit'/(a+'_training800.json'))['passed'] for a in ['M_L1','M_L2'])
+        assert read(OUT/'fallback/audit/fb_pilot_evaluation.json')['passed']
+        if state['fallback']=='ALL_ALLOWED_EXPERIMENTS_COMPLETE':
+            assert state['fallback_seeds']=='COMPLETE';best=state['fallback_best1'];replication=seed_aggregate(best,'fb_natural')
+        else:assert state['fallback'] in ['COMPLETE_NO_PILOT_GO','COMPLETE_NO_DEV_GO','COMPLETE_NO_LOCK_GO','COMPLETE_NO_NATURAL_GO']
+    else:
+        assert state['natural']=='COMPLETE_GO' and state['seeds']=='COMPLETE'
+        best=read(OUT/'selection/best1.json')['selected'][0];replication=seed_aggregate(best)
     count=verify_outputs()
     records=[]
     for path in OUT.glob('*/per_image.json'):
@@ -117,20 +127,25 @@ def finalize():
             with (folder/name).open('w',encoding='utf-8',newline='') as stream:
                 writer=csv.DictWriter(stream,fieldnames=keys);writer.writeheader();writer.writerows(selected)
         if not (folder/'config.yaml').exists():
-            write(folder/'config.yaml',dict(arm=arm,components=recipe_components(arm,2400),protocol_sha256=sha(protocol_path())))
+            total=2400 if (OUT/'training'/family(arm)/'complete2400.json').exists() else 800
+            write(folder/'config.yaml',dict(arm=arm,components=recipe_components(arm,total),
+                protocol_sha256=sha(OUT/'fallback/protocol.json') if arm in ['M_L1','M_L2'] else sha(protocol_path())))
             (folder/'module_card.md').write_text('# '+arm+'\n\n冻结机制适配，未声称完整论文复现。实际参数、更新预算及逐身份指标见同目录文件。\n',encoding='utf-8')
     write(OUT/'audit/final_complete.json',dict(passed=True,verified_outputs=count,best1=best,
-        replication_all_three_seeds_pass=replication['all_three_seeds_pass'],
+        scientific_go=bool(replication and replication['aggregate_gates']['passed'] and replication['all_three_seeds_pass']),
+        replication_all_three_seeds_pass=replication['all_three_seeds_pass'] if replication else None,
+        fallback_outcome=state.get('fallback'),negative_result_is_complete=bool(fallback and best is None),
         semantic_oracle_proven=False,independent_human_review='NOT_RUN',independent_blind_review='NOT_RUN',
         final_job_accounting='requires sacct after this FINAL job COMPLETED; separate SHA256-verified resource package',
-        raw_tensors='retained on server; portable package excludes .pt',commit=commit()))
+        raw_tensors='surviving/new traces retained on server; user-deleted lightweight traces have verified pre-cleanup attestations; portable excludes .pt',commit=commit()))
     files={}
     for source in OUT.rglob('*'):
         if source.is_file() and source.suffix in ['.json','.yaml','.md','.csv','.jsonl','.png','.log','.err','.psv','.sha256']:
             if '.tar.gz' not in source.name:files[str(source.relative_to(OUT))]=source
     # 审阅者可实际看到所有已执行split的输入，不能仅凭caption判断reference纹样。
     for stage in ['pilot','dev32','lock','natural','oracle_diagnostic']:
-        if not any(name.startswith(stage+'/') or name.startswith(stage+'_u') or name.startswith(stage+'_combo') for name in files):continue
+        if not any(name.startswith(stage+'/') or name.startswith(stage+'_u') or name.startswith(stage+'_combo') or
+            name.startswith('fb_'+stage+'/') or name.startswith('fb_'+stage+'_u') for name in files):continue
         for row in read(split_path(stage)):
             for key in ['sketch','reference','gt']:
                 source=Path(row[key]);files['inputs/'+row['id']+'/'+key+source.suffix]=source

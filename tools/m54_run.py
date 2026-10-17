@@ -216,7 +216,7 @@ def generate(arm,stage='pilot',updates=800,seed=42):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','prepare_retry','audit','train','generate','evaluate','batch_generate','input_candidates','input_extend','review_input','activate_inputs','finalize'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','prepare_retry','audit','train','generate','evaluate','batch_generate','input_candidates','input_extend','review_input','activate_inputs','finalize','fallback_audit','fallback_train','fallback_generate'])
     p.add_argument('--arm');p.add_argument('--stage',default='pilot');p.add_argument('--updates',type=int,default=800);p.add_argument('--seed',type=int,default=42)
     p.add_argument('--arms',nargs='+')
     p.add_argument('--diagnostic',action='store_true')
@@ -230,7 +230,12 @@ def main():
         write(OUT/'resources/code_entries'/(os.environ['SLURM_JOB_ID']+'.json'),dict(commit=commit(),arguments=vars(args),
             entry_utc=datetime.now(timezone.utc).isoformat(),source_files={str(p):sha(p) for pattern in ['tools/m54*.py','models/m54*.py','submit/m54*.sh'] for p in Path('.').glob(pattern)}))
     try:
-        if args.action in ['prepare','prepare_retry']:
+        if args.action.startswith('fallback_'):
+            from tools import m54_fallback_run as fallback
+            if args.action=='fallback_audit':fallback.audit()
+            elif args.action=='fallback_train':fallback.train(args.arm,args.updates)
+            else:fallback.generate(args.arm,args.stage,args.updates,args.seed)
+        elif args.action in ['prepare','prepare_retry']:
             if args.action=='prepare_retry':
                 import subprocess
                 assert args.failed_job and args.repair_note

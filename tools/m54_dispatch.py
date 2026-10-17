@@ -37,13 +37,16 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','input_extend','activate_inputs','freeze_pilot_policy','recheck_modules','repair_round0','repair_evaluation','accounting'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','fallback_advance','input_candidates','input_extend','activate_inputs','freeze_pilot_policy','recheck_modules','repair_round0','repair_evaluation','accounting'])
     p.add_argument('--repair-note');p.add_argument('--stage',default='round1');args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
         prepare=submit('PREPARE','prepare',False)
         submit('ROUND0','audit',True,[prepare])
     elif args.action=='advance':advance()
+    elif args.action=='fallback_advance':
+        from tools.m54_fallback_dispatch import advance as fallback_advance
+        fallback_advance()
     elif args.action=='input_candidates':submit('INPUT_CANDIDATES_R1','input_candidates',False,
         slurm_options=['--cpus-per-task=16','--mem=32G','--time=04:00:00'])
     elif args.action=='input_extend':submit('INPUT_CANDIDATES_EXT1','input_extend',False)

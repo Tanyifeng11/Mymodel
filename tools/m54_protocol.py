@@ -56,6 +56,7 @@ def decision(**changes):
 def image_path(stage,arm,identity):return OUT/stage/'images'/arm/(identity+'.png')
 
 def split_path(stage):
+    if stage.startswith('fb_'):stage=stage[3:]
     if stage=='round1':stage='pilot'
     if stage=='dev32_combo':stage='dev32'
     active=OUT/'active_inputs.json'
@@ -66,6 +67,7 @@ def protocol_path():return OUT/'config_r1.json'
 
 
 def family(arm):
+    if arm in ['M_L1','M_L2']:return arm
     return arm.split('_')[0]
 
 
@@ -77,10 +79,11 @@ def recipe_components(arm,updates=800):
     if arm.startswith('C_'):
         recipes=read(OUT/'selection/combinations.json')['recipes']
         return recipes[arm]['components']
-    return [dict(arm=arm,updates=updates if family(arm) in TRAIN_ARMS else 0)]
+    return [dict(arm=arm,updates=updates if family(arm) in TRAIN_ARMS+['M_L1','M_L2'] else 0)]
 
 
 def require_input_review(stage):
+    if stage.startswith('fb_'):stage=stage[3:]
     if stage=='round1':stage='pilot'
     if stage not in ['pilot','lock']:return
     path=OUT/'audit/input_review'/(stage+'_approval.json')
