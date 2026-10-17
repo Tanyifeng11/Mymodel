@@ -37,7 +37,7 @@ def status():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','recheck_modules','repair_round0','accounting'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['gates','status','advance','input_candidates','input_extend','recheck_modules','repair_round0','accounting'])
     p.add_argument('--repair-note');args=p.parse_args()
     (OUT/'resources').mkdir(parents=True,exist_ok=True)
     if args.action=='gates':
@@ -46,6 +46,7 @@ def main():
     elif args.action=='advance':advance()
     elif args.action=='input_candidates':submit('INPUT_CANDIDATES_R1','input_candidates',False,
         slurm_options=['--cpus-per-task=16','--mem=32G','--time=04:00:00'])
+    elif args.action=='input_extend':submit('INPUT_CANDIDATES_EXT1','input_extend',False)
     elif args.action=='recheck_modules':
         original=next(x for x in read(OUT/'resources/jobs.json') if x['name']=='ROUND0')
         protocol=submit('PROTOCOL_R1','prepare',False,[original['id']])

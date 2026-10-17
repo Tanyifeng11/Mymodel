@@ -216,7 +216,7 @@ def generate(arm,stage='pilot',updates=800,seed=42):
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','prepare_retry','audit','train','generate','evaluate','batch_generate','input_candidates','review_input','activate_inputs','finalize'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','prepare_retry','audit','train','generate','evaluate','batch_generate','input_candidates','input_extend','review_input','activate_inputs','finalize'])
     p.add_argument('--arm');p.add_argument('--stage',default='pilot');p.add_argument('--updates',type=int,default=800);p.add_argument('--seed',type=int,default=42)
     p.add_argument('--arms',nargs='+')
     p.add_argument('--diagnostic',action='store_true')
@@ -249,6 +249,9 @@ def main():
         elif args.action=='input_candidates':
             from tools.m54_input_candidates import build
             build()
+        elif args.action=='input_extend':
+            from tools.m54_input_candidates import extend
+            extend()
         elif args.action=='activate_inputs':
             from tools.m54_activate_inputs import activate
             activate()

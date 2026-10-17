@@ -27,6 +27,47 @@ def clothing(row):
     return None
 
 
+def ranked(rows,garment,pattern_index):
+    group=[r for r in rows if r['clothing_group']==garment]
+    group.sort(key=lambda r:(-(r['reference_prompt_scores'][pattern_index]-max(
+        r['reference_prompt_scores'][j] for j in range(5) if j!=pattern_index)),order(r['id'])))
+    return group
+
+
+def panels(group,folder,garment,pattern,offset=0):
+    folder.mkdir(parents=True,exist_ok=True)
+    for start in range(0,len(group),8):
+        page=group[start:start+8];canvas=Image.new('RGB',(4*480,2*350),'white');draw=ImageDraw.Draw(canvas)
+        for k,row in enumerate(page):
+            x=(k%4)*480;y=(k//4)*350
+            draw.text((x+3,y+3),row['id']+' '+garment+' '+pattern,fill='black')
+            for j,key in enumerate(['sketch','reference','gt']):canvas.paste(Image.open(row[key]).convert('RGB').resize((160,213)),(x+j*160,y+24))
+            caption=row['caption'].encode('ascii','replace').decode()
+            for line in range(5):draw.text((x+3,y+242+line*17),caption[line*64:(line+1)*64],fill='black')
+        canvas.save(folder/('page%03d.png'%(offset+start)))
+
+
+def extend():
+    """只扩展已冻结排序的下一段输入；不是依据候选模型输出重新挑样。"""
+    assert not (OUT/'training').exists() and not (OUT/'round1/images').exists()
+    source=OUT/'audit/input_candidates_r1/scores.json';rows=read(source)
+    folder=OUT/'audit/input_candidates_ext1';folder.mkdir(parents=True,exist_ok=True)
+    if (folder/'complete.json').exists():return
+    group=ranked(rows,'pants',2)[32:128]
+    panels(group,folder/'pants_symbol','pants','symbol',32)
+    freeze(folder/'candidates.json',dict(pants_symbol=group))
+    freeze(folder/'complete.json',dict(completed=True,group='pants_symbol',rank_start_zero_based=32,rank_stop_exclusive=128,
+        n=len(group),frozen_scores_sha256=sha(source),ranking_unchanged=True,model_generation_used=False,
+        reason='actual visual review of initial32 candidates established only4 pants-symbol identities including relabeling; fixed quota needs5',
+        independent_human_review='NOT_RUN',scientific_training_updates=0,commit=commit()))
+    archive=OUT/'m54_input_candidates_ext1.tar.gz'
+    with tarfile.open(archive,'w:gz') as tar:
+        for path in folder.rglob('*'):
+            if path.is_file():tar.add(path,arcname=str(path.relative_to(folder)))
+    archive.with_name(archive.name+'.sha256').write_text(sha(archive)+'  '+archive.name+'\n',encoding='utf-8')
+    print('M54 INPUT EXTENSION READY',len(group),flush=True)
+
+
 @torch.inference_mode()
 def build():
     from transformers import CLIPConfig,CLIPModel,CLIPProcessor
@@ -66,19 +107,9 @@ def build():
     patterns=['stripe','grid','symbol','non-periodic']
     for garment in ['pants','clothing']:
         for i,pattern in enumerate(patterns):
-            group=[r for r in rows if r['clothing_group']==garment]
-            group.sort(key=lambda r:(-(r['reference_prompt_scores'][i]-max(r['reference_prompt_scores'][j] for j in range(5) if j!=i)),order(r['id'])))
+            group=ranked(rows,garment,i)
             candidates[garment+'_'+pattern]=group[:32]
-            pagefolder=folder/(garment+'_'+pattern);pagefolder.mkdir(exist_ok=True)
-            for start in range(0,min(32,len(group)),8):
-                page=group[start:start+8];canvas=Image.new('RGB',(4*480,2*350),'white');draw=ImageDraw.Draw(canvas)
-                for k,row in enumerate(page):
-                    x=(k%4)*480;y=(k//4)*350
-                    draw.text((x+3,y+3),row['id']+' '+garment+' '+pattern,fill='black')
-                    for j,key in enumerate(['sketch','reference','gt']):canvas.paste(Image.open(row[key]).convert('RGB').resize((160,213)),(x+j*160,y+24))
-                    caption=row['caption'].encode('ascii','replace').decode()
-                    for line in range(5):draw.text((x+3,y+242+line*17),caption[line*64:(line+1)*64],fill='black')
-                canvas.save(pagefolder/('page%03d.png'%start))
+            panels(group[:32],folder/(garment+'_'+pattern),garment,pattern)
     write(folder/'candidates.json',candidates)
     write(folder/'complete.json',dict(completed=True,n=len(rows),groups=dict(Counter(r['clothing_group'] for r in rows)),
         prompt_texts=PROMPTS,method='frozen CLIP ranking of actual reference crop; assistant must verify labels; no generation used',
