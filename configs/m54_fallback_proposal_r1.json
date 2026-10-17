@@ -1,0 +1,92 @@
+{
+  "experiment": "M54",
+  "status": "PROPOSAL_PENDING_USER_CONFIRMATION_NOT_EXECUTABLE",
+  "reason": "方案第4、36节已授权轻量路线失败后进入后备大改造，但没有规定大改造的新增训练预算和具体可训练参数；本文件明确待确认内容。",
+  "trigger": {
+    "dev_stage": "dev32_u2400",
+    "dev_evaluation_job": 118343,
+    "dev_evaluation_integrity": "audit/dev32_evaluation_integrity.json",
+    "formal_single_passers": [],
+    "eligible_combinations": [],
+    "lock_or_natural_outputs_used": false
+  },
+  "frozen_sources": ["E5原权重", "原B1 step800", "Writer", "VAE", "文本与图像编码器", "原BF/TCPM条件模块"],
+  "shared_protocol": {
+    "train_identities": 1024,
+    "width": 384,
+    "height": 512,
+    "microbatch": 1,
+    "gradient_accumulation": 8,
+    "optimizer": "AdamW",
+    "learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "gradient_clip_norm": 1.0,
+    "training_seed": 42,
+    "diffusion_loss": "epsilon MSE",
+    "outside_teacher": "冻结E5",
+    "outside_teacher_weight": 0.1,
+    "inference_steps": 50,
+    "inference_cfg": 7.0,
+    "reference_off": "精确返回原E5路径",
+    "inference_mask": "沿用现有Sketch-only软mask及valid门，不修改阈值或gate-off身份",
+    "scoring_mask": "沿用全身份固定Sketch-only评分区域",
+    "no_gt_in_inference": true,
+    "b1joint": "OFF",
+    "external_pretrained_weights": "不引入；机制适配不称原论文完整复现"
+  },
+  "arms": {
+    "M_L1": {
+      "mechanism": "CatVTON-style latent空间拼接，经过完整U-Net早期卷积和多尺度self-attention",
+      "sources": [
+        "https://arxiv.org/abs/2407.15886",
+        "https://github.com/Zheng-Chong/CatVTON/blob/main/model/pipeline.py"
+      ],
+      "input": "空间沿高度拼接target/ref两半；通道为noisy latent4+mask1+condition latent4，共9通道。target condition是Sketch VAE均值，ref condition是实际ref VAE均值；ref noisy半按同t和独立固定noise加噪。",
+      "weights": "复用冻结E5其余权重；建立独立可训练self-attention Q/K/V/out副本及9通道首层卷积。首层前4通道复制E5、额外5通道初始化0；其余self-attention复制E5。原E5参数不解冻。实际参数数目由初始化审计记录。",
+      "conditioning": "空间分支保留冻结文本/BF tokens；不拼接现有Sketch-attention cache，Sketch通过9通道输入提供。target/ref的mask分别使用原softmask/全零；原E5主路原条件完整保留。",
+      "prediction": "epsilon=epsilon_E5+softmask*crop_target(U_cat_theta-U_cat_initial_frozen)。两次cat前向使用相同输入、t、条件和确定性计算；不是训练新的全局gain。",
+      "initialization": "可训练副本与冻结初始副本相同，因此初始差分为0；必须真实GPU验证E5精确复现及活梯度后再训练。",
+      "implementation_target": "独立空间分支及其冻结初始对照；可共享其余冻结权重，不能共享可训练参数。",
+      "extra_loss": "无",
+      "distinction_from_original": "官方为独立9通道inpainting模型且跳过cross-attention；本方案保留本任务E5主路与冻结条件，并用cat差分保证零残差。不能称官方预训练效果或完整CatVTON复现。"
+    },
+    "M_L2": {
+      "mechanism": "DCI-VTON启发的显式多尺度appearance flow + grid_sample + 独立残差去噪网络",
+      "sources": [
+        "https://arxiv.org/abs/2308.06101",
+        "https://github.com/bcmi/DCI-VTON-Virtual-Try-On"
+      ],
+      "flow_inputs": "只用实际ref VAE均值与Sketch VAE均值/现有Sketch几何；不读取推理GT、解析真值、目标输出或Oracle映射。",
+      "flow_network": "两条卷积编码器channels32/64/128，在latent的1/4、1/2、1分辨率粗到细预测2通道反向采样flow；从identity grid开始，累加上采样flow和新预测增量。flow head权重/偏置初始化0，grid_sample bilinear/zeros/align_corners=false。",
+      "residual_network": "4级卷积U-Net channels32/64/128/256；输入x_t、Sketch latent、warped ref latent、原softmask和timestep embedding；4通道epsilon输出卷积零初始化。",
+      "prediction": "epsilon=epsilon_E5+softmask*epsilon_warp_residual；原B1joint OFF。",
+      "initialization": "输出卷积0保证初始E5精确复现；flow/编码器梯度可能在输出卷积第一次更新后才出现，检查连续窗口而不虚称全部参数第一步有梯度。",
+      "extra_loss": {"name": "flow一阶空间平滑L1", "weight": 0.01, "scope": "仅新flow；各尺度对水平/垂直差分分别取均值再等权平均，系数在任何后备输出前固定"},
+      "distinction_from_original": "不使用官方Paint-by-Example/PF-AFN权重，不冒充GP-VTON local-flow/global-parsing或完整DCI复现；这是同一E5基底上的显式形变子系统适配。"
+    }
+  },
+  "proposed_budget": {
+    "initial_effective_updates_each": 800,
+    "initial_total_effective_updates": 1600,
+    "pilot_identities": 24,
+    "pilot_policy": {"mean_delta_lpips_lt": 0, "mean_delta_f1_ge": -0.05, "tail_count_lt": 3},
+    "pilot_deduplication": "每路线仅1个固定recipe，无scale/检查点搜索",
+    "maximum_total_updates_each_if_pilot_eligible": 2400,
+    "maximum_new_effective_updates_all_routes": 4800,
+    "deepening": "800继续至累计2400，完整恢复optimizer/scaler/RNG/dataorder，不另起训练",
+    "checkpoints": [0, 100, 400, 800, 2400],
+    "selection": "固定终点；不得按dev/Lock/Natural挑检查点或加预算",
+    "confirmation": "两路线、各800及合格者累计2400、M_L1可训练副本和M_L2额外平滑项需一次确认后，单独冻结后备protocol及policy，不改轻量路线原记录"
+  },
+  "required_execution": [
+    "本地实现及CPU契约检查，经Git push/pull同步；GPU活跃不热pull",
+    "真实GPU Round0：原E5/B1复现、新臂初始化/冻结源hash/reference-off/完整尺寸/有效梯度/显存与profile；工程测试资源另记",
+    "两臂各800有效更新后统一Pilot24；完整性通过后依相同保守规则筛选",
+    "合格者各续至累计2400，再固定dev32六门禁；不创建后备组合或额外超参搜索",
+    "dev合格才真实审阅Lock64全部输入并测试，再最多Top2 Natural96及NaturalGO Best1三seed",
+    "若后备也失败如实报告全部已实现/已运行路线及失败证据，不能宣称未运行方案有效"
+  ],
+  "execution_so_far": {"implementation": "NOT_STARTED", "gpu_round0": "NOT_RUN", "effective_training_updates": 0, "model_outputs": 0},
+  "independent_human_review": "NOT_RUN",
+  "complete": false
+}
