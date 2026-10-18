@@ -24,6 +24,13 @@ def image(stage,arm,identity):return RUN/stage/'images'/arm/(identity+'.png')
 def bases(stage):return ['E5','B1','M10']+(['M10_MEAN'] if stage=='pilot' else [])
 
 
+def baseline_trace(arm,identity):
+    path=ORIGINAL/'pilot/images'/arm/(identity+'.pt')
+    if not path.exists():path=ORIGINAL/'m10_preflight_r1/audit/replay/images'/arm/(identity+'.pt')
+    assert path.exists(),('BASELINE_TRACE_MISSING',arm,identity)
+    return path
+
+
 def require_protocol():
     p=read(RUN/'protocol.json')
     assert p['arm']==ARM and p['maximum_additional_updates']==2400 and p['parameters']==1280
@@ -100,8 +107,7 @@ def audit():
                 target=image('audit/replay',arm,row['id']);r.generate(row,target)
                 original=ORIGINAL/'pilot/images'/arm/(row['id']+'.png')
                 assert sha(target)==sha(original),('BASELINE_REPLAY',arm,row['id'])
-                oldtrace=original.with_suffix('.pt')
-                if not oldtrace.exists():oldtrace=ORIGINAL/'m10_preflight_r1/audit/replay'/arm/(row['id']+'.pt')
+                oldtrace=baseline_trace(arm,row['id'])
                 check=exact_trace(target.with_suffix('.pt'),oldtrace);assert check['bit_exact']
                 replays.append(dict(arm=arm,id=row['id'],png_exact=True,trace=check))
         finally:release(r)
@@ -362,15 +368,37 @@ def finalize():
     print('M10_GAIN SERVER FINAL PASS',flush=True)
 
 
-def submit(name,action,gpu=True,stage=None,total=None):
+def submit(name,action,gpu=True,stage=None,total=None,logical_name=None,supersedes=None):
     jobs=read(RUN/'resources/jobs.json') if (RUN/'resources/jobs.json').exists() else []
-    if any(j['name']==name for j in jobs):return
+    logical_name=logical_name or name
+    if any(j.get('logical_name',j['name'])==logical_name for j in jobs) and supersedes is None:return
+    assert not any(j['name']==name for j in jobs)
     cmd=['sbatch','--parsable','--job-name=M10G_'+name,GPU_SH if gpu else CPU_SH,action]
     if stage:cmd+=['--stage',stage]
     if total:cmd+=['--updates',str(total)]
     out=subprocess.run(cmd,text=True,capture_output=True);assert out.returncode==0,out.stderr
-    j=dict(name=name,id=int(out.stdout.strip().split(';')[0]),gpu=gpu,action=action,stage=stage,updates=total,commit=commit(),utc=utc())
+    j=dict(name=name,logical_name=logical_name,supersedes=supersedes,id=int(out.stdout.strip().split(';')[0]),
+        gpu=gpu,action=action,stage=stage,updates=total,commit=commit(),utc=utc())
     jobs.append(j);write(RUN/'resources/jobs.json',jobs);print('M10_GAIN SUBMITTED',j,flush=True)
+
+
+def retry_round0(failed_job):
+    require_protocol();jobs=read(RUN/'resources/jobs.json')
+    old=next(j for j in jobs if j['id']==failed_job)
+    assert old.get('logical_name',old['name'])=='ROUND0'
+    assert not any(j.get('supersedes')==failed_job for j in jobs)
+    status=subprocess.check_output(['sacct','-X','-n','-P','-j',str(failed_job),'--format=State'],text=True).strip().split('|')[0].split()[0]
+    assert status in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL']
+    source=RUN/'audit';target=RUN/'failures'/('round0_'+str(failed_job))
+    assert source.exists() and not target.exists()
+    entries={str(p.relative_to(source)):dict(bytes=p.stat().st_size,sha256=sha(p)) for p in source.rglob('*') if p.is_file()}
+    target.parent.mkdir(parents=True,exist_ok=True);shutil.move(str(source),str(target))
+    assert not source.exists() and all(sha(target/n)==x['sha256'] for n,x in entries.items())
+    write(target/'archive.json',dict(failed_job=failed_job,preserved_files=entries,all_sha256_verified=True,
+        original_commit=old['commit'],repair_commit=commit(),scientific_updates=0,
+        error='baseline replay fallback path omitted images directory',protocol_sha256=sha(RUN/'protocol.json')))
+    submit('ROUND0_R'+str(sum(j.get('logical_name',j['name'])=='ROUND0' for j in jobs)),
+        'audit',logical_name='ROUND0',supersedes=failed_job)
 
 
 def accounting():
@@ -395,9 +423,10 @@ def advance():
         raw=subprocess.check_output(['sacct','-X','-n','-P','-j',','.join(str(j['id']) for j in jobs),'--format=JobIDRaw,State,ExitCode'],text=True)
         status={int(x.split('|')[0]):x.split('|')[1:] for x in raw.splitlines() if x.split('|')[0].isdigit()}
         print('M10_GAIN STATES',[(j['name'],j['id'],status.get(j['id'])) for j in jobs],flush=True)
-        if any(status.get(j['id'],['PENDING'])[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL'] for j in jobs):
+        latest={j.get('logical_name',j['name']):j for j in jobs}
+        if any(status.get(j['id'],['PENDING'])[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL'] for j in latest.values()):
             print('ENGINEERING_REPAIR_REQUIRED',flush=True);return
-        complete=lambda n:any(j['name']==n and status.get(j['id'],[''])[0]=='COMPLETED' and status[j['id']][1]=='0:0' for j in jobs)
+        complete=lambda n:n in latest and status.get(latest[n]['id'],[''])[0]=='COMPLETED' and status[latest[n]['id']][1]=='0:0'
         if not complete('ROUND0'):return
         assert read(RUN/'audit/round0_complete.json')['passed'];submit('TRAIN800','train',total=800)
         if not complete('TRAIN800'):return
@@ -419,7 +448,8 @@ def advance():
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','advance','audit','train','generate','evaluate','finalize','accounting'])
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['prepare','advance','audit','train','generate','evaluate','finalize','accounting','retry_round0'])
+    p.add_argument('--failed-job',type=int)
     p.add_argument('--stage',choices=['pilot','dev32'],default='pilot');p.add_argument('--updates',type=int,choices=[800,2400],default=800);args=p.parse_args()
     if os.environ.get('SLURM_JOB_ID'):
         import torch
@@ -427,7 +457,8 @@ def main():
         files=['models/m54_m10_gain.py','models/m54_candidates.py','tools/m54_m10_gain.py','tools/m54_m10_gain_runtime.py',
             'tools/m54_m10_preflight.py','tools/m54_runtime.py','tools/m54_run.py','tools/e44_train.py','tools/m54_eval.py',GPU_SH,CPU_SH]
         write(RUN/'resources/code_entries'/(os.environ['SLURM_JOB_ID']+'.json'),dict(commit=commit(),arguments=vars(args),source_files={f:sha(f) for f in files}))
-    if args.action=='train':train(args.updates)
+    if args.action=='retry_round0':retry_round0(args.failed_job)
+    elif args.action=='train':train(args.updates)
     elif args.action in ['generate','evaluate']:globals()[args.action](args.stage)
     else:globals()[args.action]()
 

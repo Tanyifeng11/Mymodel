@@ -5,6 +5,20 @@ from models.m54_m10_gain import M10Gain
 
 
 class GainContract(unittest.TestCase):
+    def test_retained_replay_is_valid_after_original_trace_cleanup(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from tools import m54_m10_gain as experiment
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            retained=root/'m10_preflight_r1/audit/replay/images/M10/id.pt'
+            retained.parent.mkdir(parents=True);retained.write_bytes(b'retained audit trace')
+            with patch.object(experiment,'ORIGINAL',root):
+                self.assertEqual(experiment.baseline_trace('M10','id'),retained)
+                live=root/'pilot/images/M10/id.pt';live.parent.mkdir(parents=True);live.write_bytes(b'live')
+                self.assertEqual(experiment.baseline_trace('M10','id'),live)
+
     def test_initial_exact_and_parameter_budget(self):
         g=M10Gain()
         self.assertEqual(sum(p.numel() for p in g.parameters()),1280)
