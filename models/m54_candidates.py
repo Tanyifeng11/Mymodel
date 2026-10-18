@@ -178,10 +178,11 @@ class M54Processor(ReferenceAttentionProcessor):
             if self.mode=='HF_ONLY':v=high_frequency(v)
             qh=split_heads(q,heads);ks=split_heads(attn.to_k(x),heads);vs=split_heads(attn.to_v(x),heads)
             kr,vr=split_heads(k,heads),split_heads(v,heads)
-            if self.mode=='M10':
+            if self.mode in ['M10','M10_GAIN']:
                 xf=x.float();vf=v.float();stat=(xf-xf.mean(1,keepdim=True))/xf.std(1,keepdim=True,unbiased=False).clamp_min(1e-6)
                 stat=stat*vf.std(1,keepdim=True,unbiased=False)+vf.mean(1,keepdim=True)
                 delta=self.gate*(stat-xf)
+                if self.mode=='M10_GAIN':delta=delta*self.m10_gain(self.timestep)
             elif self.mode in ['M10_MEAN','M10_STD','M10_MASK']:
                 delta=self.gate*m10_statistic_residual(x,v,self.mode,self.mask)
             else:
