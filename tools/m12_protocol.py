@@ -70,9 +70,11 @@ def prepare():
         return
     from tools.e48_holdout import exposure_sources
     from tools import m54_prepare
+    from tools.m54_input_candidates import clothing
     from tools.m54_finalize import package
     eligible_path = Path('output_eval/e48_b1_structure_20261014/holdout_audit/eligible.json')
     eligible = read(eligible_path)
+    garment_pool = [row for row in eligible if clothing(row)]
     exposed, registry = exposure_sources({row['id'] for row in eligible})
     registry = [entry for entry in registry if RUN.resolve() not in Path(entry['path']).resolve().parents]
     exposed = {identity for entry in registry for identity in entry['validation_ids']}
@@ -80,11 +82,11 @@ def prepare():
     old_out = m54_prepare.OUT
     m54_prepare.OUT = RUN
     try:
-        pilot = m54_prepare.balanced(eligible, 24, set(exposed) | held)
+        pilot = m54_prepare.balanced(garment_pool, 24, set(exposed) | held)
     finally:
         m54_prepare.OUT = old_out
     blocked = exposed | held | {row['id'] for row in pilot}
-    calibration = sorted([row for row in eligible if row['id'] not in blocked],
+    calibration = sorted([row for row in garment_pool if row['id'] not in blocked],
         key=lambda row: hashlib.sha256(('M12_CALIBRATION_12042_'+row['id']).encode()).hexdigest())[:8]
     assert len(calibration) == 8
     cohorts = dict(pilot=pilot, calibration=calibration, dev32=read(original_split('dev32')))
@@ -122,13 +124,14 @@ def prepare():
     write(RUN/'audit/exposure_registry.json', registry)
     write(RUN/'audit/input_cohorts.json', dict(new_pilot=True, pilot_ids=sorted(identities[0]),
         calibration_ids=sorted(identities[1]), dev32_ids=sorted(identities[2]),
-        historical_exposed_count=len(exposed), eligible_count=len(eligible),
+        historical_exposed_count=len(exposed), eligible_count=len(eligible), garment_pool_count=len(garment_pool),
         audit_source=str(eligible_path), audit_source_sha256=sha(eligible_path),
         historical_exact_pixel_phash_audit=True, refreshed_exposure_exclusion=True,
         writer_pretraining_overlap='UNKNOWN', independent_human_review='NOT_RUN',
         model_outputs_used_for_selection=False))
     value = dict(experiment='M12-P1', scientific_updates=0, authorization='开始实施',
         source_plan_sha256='9b53c0e0b7c9dfc59e8ea49d0a532347b6b8d894839d6d731907ef7a72af415a',
+        input_revision=1, input_filter='unchanged original M54 clothing eligibility; assistant actual input review before model outputs',
         coarse_grid=COARSE, arm_aliases=dict(C00='E5', C10='B1', C01='M10'), hook_b1=LAYER, hook_m10=LAYER,
         fusion='same unmodified E5 hidden; independent frozen projections; one add-back',
         branch_off='native valid mask and conditional-only CFG; all identities remain scored',

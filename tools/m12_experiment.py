@@ -525,9 +525,27 @@ def retry_failed(job_id):
     submit(original_name,failed['action'],failed['gpu'],failed.get('stage'),failed.get('arm'))
 
 
+def revise_inputs():
+    assert not (RUN/'audit/input_review_approval.json').exists()
+    assert not (RUN/'audit/native').exists() and not (RUN/'pilot/images').exists()
+    archive = RUN/'input_preflight_r0'
+    archive.mkdir(parents=True,exist_ok=False)
+    for name in ['splits','audit','protocol.json','checkpoint_manifest.json','input_manifest.json','seed_and_sampler.json',
+            'm12_input_review.tar.gz','m12_input_review.tar.gz.manifest.json','m12_input_review.tar.gz.sha256']:
+        path = RUN/name
+        if path.exists():
+            shutil.move(str(path),str(archive/name))
+    write(archive/'rejection.json',dict(rejected=True,reviewer='assistant',
+        reason='actual pre-output input review found accessories in clothing strata; restore existing M54 clothing eligibility',
+        pilot_accessory_ids=['200502363','202157886','169623907'],calibration_accessory_ids=['81958295','125097939'],
+        source_protocol_sha256=sha(archive/'protocol.json'),scientific_outputs_seen=False,
+        no_metric_mask_threshold_changes=True,utc=utc(),commit=commit()))
+    prepare()
+
+
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('action',choices=['prepare','approve_inputs','advance','audit','generate','evaluate','finalize','accounting','retry_failed'])
+    parser.add_argument('action',choices=['prepare','approve_inputs','advance','audit','generate','evaluate','finalize','accounting','retry_failed','revise_inputs'])
     parser.add_argument('--stage',choices=['pilot','refine','calibration','energy','dev32'],default='pilot')
     parser.add_argument('--arm')
     parser.add_argument('--failed-job',type=int)
