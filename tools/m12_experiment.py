@@ -291,6 +291,23 @@ def evaluate(stage):
                     assert np.isclose(record[key],previous[key],rtol=0,atol=1e-12), ('LEGACY_METRIC_MISMATCH',record['variant'],record['id'],key)
                 native_checks.append(dict(arm=record['variant'],id=record['id'],all_four_metrics_exact=True))
         write(RUN/'audit/dev32_legacy_metrics.json', native_checks)
+    if stage == 'energy':
+        candidate = read(RUN/'selection/candidate.json')['selected']
+        comparison = {}
+        for control in arms(stage):
+            comparison[control] = dict(paired_candidate_minus_control={key:paired(records,candidate,control,key) for key in CORE},
+                control_dominates_candidate=dominates(means[control],means[candidate]))
+        energy = {}
+        for arm in [candidate]+list(arms(stage)):
+            source = RUN/('refine' if arm==candidate else 'energy')/arm/'residual_rms_by_step.csv'
+            with source.open(encoding='utf-8') as stream:
+                energy[arm] = sum(float(record['fusion_energy']) for record in csv.DictReader(stream)
+                    if record['branch']=='conditional' and record['region']=='all')
+        for control in arms(stage):
+            comparison[control]['achieved_energy_ratio_to_combination'] = energy[control]/energy[candidate] if energy[candidate]>0 else None
+        write(RUN/stage/'energy_interpretation.json',dict(comparisons=comparison,total_actual_energies=energy,
+            content_complementarity_not_established_if_control_dominates=any(value['control_dominates_candidate'] for value in comparison.values()),
+            limitation='calibration-derived fixed constants can change their own trajectories; report achieved energy rather than claiming exact matching'))
     panels(stage,evaluated_arms)
     print('M12_EVALUATION_COMPLETE',stage,means,flush=True)
 

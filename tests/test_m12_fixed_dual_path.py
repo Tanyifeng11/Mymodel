@@ -73,6 +73,16 @@ class FixedFusion(unittest.TestCase):
         self.assertTrue(torch.equal(processor(self.attention, self.target, **self.options), expected))
         self.assertTrue(all(record['fusion_energy'] == 0 for record in processor.records))
 
+    def test_zero_coefficient_isolates_other_projection_and_cache(self):
+        for alpha_b, alpha_m, inactive in [(1, 0, 'm10'), (0, 1, 'b1')]:
+            processor = self.processor(alpha_b, alpha_m)
+            expected = processor(self.attention, self.target, **self.options)
+            reference = processor.features.clone()
+            getattr(processor, inactive).projection.weight.data.zero_()
+            actual = processor(self.attention, self.target, **self.options)
+            self.assertTrue(torch.equal(expected, actual))
+            self.assertTrue(torch.equal(reference, processor.features))
+
 
 if __name__ == '__main__':
     unittest.main()
