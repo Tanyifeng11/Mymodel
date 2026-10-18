@@ -74,6 +74,8 @@ def prepare():
     eligible_path = Path('output_eval/e48_b1_structure_20261014/holdout_audit/eligible.json')
     eligible = read(eligible_path)
     exposed, registry = exposure_sources({row['id'] for row in eligible})
+    registry = [entry for entry in registry if RUN.resolve() not in Path(entry['path']).resolve().parents]
+    exposed = {identity for entry in registry for identity in entry['validation_ids']}
     held = {row['id'] for name in ['train1024', 'dev32'] for row in read(original_split(name))}
     old_out = m54_prepare.OUT
     m54_prepare.OUT = RUN
@@ -98,9 +100,20 @@ def prepare():
                 if stage != 'dev32':
                     assert value == signatures[row[key]]['file_sha256']
                 hashes[row[key]] = value
-    checkpoint_manifest = {name: dict(path=str(path), sha256=sha(path),
-        origin='frozen B1 checkpoint plus frozen E5 output projection' if name == 'M10' else 'frozen source')
-        for name, path in SOURCE_CHECKPOINTS.items()}
+    checkpoint_manifest = {}
+    for name, path in SOURCE_CHECKPOINTS.items():
+        available = path.exists()
+        if available:
+            checkpoint_hash = sha(path)
+        else:
+            assert name == 'M9'
+            checkpoint_hash = read(path.with_suffix('.json'))['sha256']
+            cleanup = read(ORIGINAL/'audit/cleanup_20261017.json')
+            assert cleanup['complete'] and any(entry['path']==str(path) and entry.get('deleted')
+                and entry['sha256']==checkpoint_hash for entry in cleanup['entries'])
+        checkpoint_manifest[name] = dict(path=str(path),sha256=checkpoint_hash,available=available,
+            hash_evidence='recomputed current file' if available else 'verified pre-cleanup SHA256 and retained sidecar; historical outputs only',
+            origin='frozen B1 checkpoint plus frozen E5 output projection' if name=='M10' else 'frozen source')
     assert checkpoint_manifest['E5']['sha256'] == E5_SHA and checkpoint_manifest['B1']['sha256'] == B1_SHA
     model_manifest = read(ORIGINAL/'manifests/model_file_hashes.json')
     assert all(sha(path) == expected for path, expected in model_manifest.items())

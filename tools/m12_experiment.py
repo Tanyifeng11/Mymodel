@@ -444,7 +444,8 @@ def advance():
         raw=subprocess.check_output(['sacct','-X','-n','-P','-j',','.join(str(job['id']) for job in jobs),'--format=JobIDRaw,State,ExitCode'],text=True)
         states={int(line.split('|')[0]):line.split('|')[1:] for line in raw.splitlines() if line.split('|')[0].isdigit()}
         print('M12_STATES',[(job['name'],job['id'],states.get(job['id'])) for job in jobs],flush=True)
-        if any(states.get(job['id'],['PENDING'])[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL'] for job in jobs):
+        if any(states.get(job['id'],['PENDING'])[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL']
+                for job in jobs if not job.get('superseded')):
             print('M12_ENGINEERING_REPAIR_REQUIRED',flush=True)
             return
         def completed(name):
@@ -489,16 +490,54 @@ def advance():
             print('M12_SERVER_COMPLETE_LOCAL_REVIEW_PENDING',flush=True)
 
 
+def retry_failed(job_id):
+    jobs = read(RUN/'resources/jobs.json')
+    failed = next(job for job in jobs if job['id']==job_id)
+    assert not failed.get('superseded')
+    state = subprocess.check_output(['sacct','-X','-n','-P','-j',str(job_id),'--format=State,ExitCode'],text=True).strip().split('|')
+    assert state[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL']
+    archive = RUN/'failures'/str(job_id)
+    archive.mkdir(parents=True,exist_ok=False)
+    paths = []
+    if failed['action']=='audit':
+        paths = [path for path in (RUN/'audit').iterdir() if path.name in ['native','fusion','off','native_runtime','fusion_runtime','off_runtime','round0_complete.json']
+            or path.name.startswith('projection_sources_')]
+    elif failed['action']=='generate':
+        stage, arm = failed['stage'], failed['arm']
+        paths = [RUN/stage/'images'/arm,RUN/stage/'runtime'/arm,RUN/stage/arm,RUN/stage/(arm+'_complete.json')]
+    elif failed['action']=='evaluate':
+        paths = [path for path in (RUN/failed['stage']).iterdir() if path.is_file()
+            and path.suffix in ['.json','.csv'] and path.name!='stage_config.json'
+            and (not path.name.endswith('_complete.json') or path.name=='evaluation_complete.json')]
+    preserved = []
+    for path in paths:
+        if not path.exists():
+            continue
+        target = archive/'artifacts'/path.relative_to(RUN)
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.move(str(path),str(target))
+        preserved.append(str(target.relative_to(RUN)))
+    original_name = failed['name']
+    write(archive/'attempt.json',dict(original_job=failed,slurm_state=state,preserved_artifacts=preserved,
+        log_files_retained=True,repair_commit=commit(),scientific_updates=0,utc=utc()))
+    failed.update(name=original_name+'_FAILED_'+str(job_id),logical_name=original_name,superseded=True)
+    write(RUN/'resources/jobs.json',jobs)
+    submit(original_name,failed['action'],failed['gpu'],failed.get('stage'),failed.get('arm'))
+
+
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('action',choices=['prepare','approve_inputs','advance','audit','generate','evaluate','finalize','accounting'])
+    parser.add_argument('action',choices=['prepare','approve_inputs','advance','audit','generate','evaluate','finalize','accounting','retry_failed'])
     parser.add_argument('--stage',choices=['pilot','refine','calibration','energy','dev32'],default='pilot')
     parser.add_argument('--arm')
+    parser.add_argument('--failed-job',type=int)
     options=parser.parse_args()
     if os.environ.get('SLURM_JOB_ID'):
         write(RUN/'resources/code_entries'/(os.environ['SLURM_JOB_ID']+'.json'),dict(commit=commit(),arguments=vars(options),
             source_files={filename:sha(filename) for filename in SOURCE_FILES if Path(filename).exists()}))
-    if options.action=='generate':
+    if options.action=='retry_failed':
+        retry_failed(options.failed_job)
+    elif options.action=='generate':
         generate(options.stage,options.arm)
     elif options.action=='evaluate':
         evaluate(options.stage)
