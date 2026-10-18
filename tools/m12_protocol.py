@@ -74,7 +74,7 @@ def prepare():
     from tools.m54_finalize import package
     eligible_path = Path('output_eval/e48_b1_structure_20261014/holdout_audit/eligible.json')
     eligible = read(eligible_path)
-    garment_pool = [row for row in eligible if clothing(row)]
+    garment_pool = [row for row in eligible if clothing(row) and 'briefcase' not in row['caption'].lower()]
     exposed, registry = exposure_sources({row['id'] for row in eligible})
     registry = [entry for entry in registry if RUN.resolve() not in Path(entry['path']).resolve().parents]
     exposed = {identity for entry in registry for identity in entry['validation_ids']}
@@ -131,7 +131,7 @@ def prepare():
         model_outputs_used_for_selection=False))
     value = dict(experiment='M12-P1', scientific_updates=0, authorization='开始实施',
         source_plan_sha256='9b53c0e0b7c9dfc59e8ea49d0a532347b6b8d894839d6d731907ef7a72af415a',
-        input_revision=1, input_filter='unchanged original M54 clothing eligibility; assistant actual input review before model outputs',
+        input_revision=2, input_filter='original M54 clothing eligibility plus explicit briefcase exclusion after input-only review; no scoring changes',
         coarse_grid=COARSE, arm_aliases=dict(C00='E5', C10='B1', C01='M10'), hook_b1=LAYER, hook_m10=LAYER,
         fusion='same unmodified E5 hidden; independent frozen projections; one add-back',
         branch_off='native valid mask and conditional-only CFG; all identities remain scored',

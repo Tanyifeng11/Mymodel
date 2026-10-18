@@ -551,7 +551,9 @@ def retry_failed(job_id):
 def revise_inputs():
     assert not (RUN/'audit/input_review_approval.json').exists()
     assert not (RUN/'audit/native').exists() and not (RUN/'pilot/images').exists()
-    archive = RUN/'input_preflight_r0'
+    revision = protocol()['input_revision']
+    assert revision == 1
+    archive = RUN/('input_preflight_r'+str(revision))
     archive.mkdir(parents=True,exist_ok=False)
     for name in ['splits','audit','protocol.json','checkpoint_manifest.json','input_manifest.json','seed_and_sampler.json',
             'm12_input_review.tar.gz','m12_input_review.tar.gz.manifest.json','m12_input_review.tar.gz.sha256']:
@@ -559,8 +561,8 @@ def revise_inputs():
         if path.exists():
             shutil.move(str(path),str(archive/name))
     write(archive/'rejection.json',dict(rejected=True,reviewer='assistant',
-        reason='actual pre-output input review found accessories in clothing strata; restore existing M54 clothing eligibility',
-        pilot_accessory_ids=['200502363','202157886','169623907'],calibration_accessory_ids=['81958295','125097939'],
+        reason='actual pre-output R1 review found briefcase accepted by caption substring top handle; explicitly exclude briefcase',
+        pilot_accessory_ids=[],calibration_accessory_ids=['149505935'],
         source_protocol_sha256=sha(archive/'protocol.json'),scientific_outputs_seen=False,
         no_metric_mask_threshold_changes=True,utc=utc(),commit=commit()))
     prepare()
