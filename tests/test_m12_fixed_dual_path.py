@@ -1,10 +1,14 @@
 """验证原生端点、并行计算与独立冻结投影。"""
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 import torch
 from torch import nn
 from models.reference_attention_variants import ReferenceAttentionProcessor
 from models.m54_candidates import M54Processor
 from models.m12_fixed_dual_path import FixedDualPathProcessor
+from tools import m12_protocol
 
 
 class Attention(nn.Module):
@@ -82,6 +86,37 @@ class FixedFusion(unittest.TestCase):
             actual = processor(self.attention, self.target, **self.options)
             self.assertTrue(torch.equal(expected, actual))
             self.assertTrue(torch.equal(reference, processor.features))
+
+
+class FrozenSelection(unittest.TestCase):
+    def test_pareto_requires_all_four_metrics_and_one_strict_improvement(self):
+        baseline = dict(lpips_gt=.3, contour_f1=.6, iou=.8, leak=.04)
+        better_appearance = dict(baseline, lpips_gt=.29)
+        tradeoff = dict(better_appearance, contour_f1=.59)
+        self.assertFalse(m12_protocol.dominates(baseline, baseline))
+        self.assertTrue(m12_protocol.dominates(better_appearance, baseline))
+        self.assertFalse(m12_protocol.dominates(tradeoff, baseline))
+
+    def test_boundary_refinement_grid_is_frozen_inside_unit_interval(self):
+        means = {arm:dict(lpips_gt=.29, contour_f1=.61, iou=.81, leak=.039) for arm in m12_protocol.COARSE}
+        for baseline in ['B1','M10']:
+            means[baseline] = dict(lpips_gt=.3, contour_f1=.6, iou=.8, leak=.04)
+        gates = {arm:dict(paired_E5=dict(lpips_gt=dict(mean=-.01),
+            contour_f1=dict(mean=.01,ci95=[-.01,.03]),iou=dict(ci95=[-.005,.01])), extreme_events=[])
+            for arm in m12_protocol.COARSE if arm!='E5'}
+        means['C11']['lpips_gt'] = .28
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            m12_protocol.write(root/'pilot/means.json',means)
+            m12_protocol.write(root/'pilot/gates.json',gates)
+            m12_protocol.write(root/'protocol.json',dict(pilot=dict(ranking='fixed'),scientific_updates=0,
+                coarse_grid=m12_protocol.COARSE,splits_sha256={}))
+            with patch.object(m12_protocol,'RUN',root):
+                result = m12_protocol.select_candidates('pilot')
+                self.assertEqual(result['selected'],'C11')
+                self.assertEqual(len(result['refinement_grid']),9)
+                self.assertTrue(all(.5<=value<=1 for pair in result['refinement_grid'].values() for value in pair))
+                self.assertEqual(result,m12_protocol.select_candidates('pilot'))
 
 
 if __name__ == '__main__':
