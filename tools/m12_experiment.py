@@ -13,7 +13,8 @@ GPU_SH = 'submit/m12_gpu.sh'
 CPU_SH = 'submit/m12_cpu.sh'
 SOURCE_FILES = ['models/m12_fixed_dual_path.py', 'tools/m12_protocol.py', 'tools/m12_runtime.py',
     'tools/m12_experiment.py', 'tools/m54_runtime.py', 'models/m54_candidates.py',
-    'models/reference_attention_variants.py', 'tools/m54_eval.py', 'tools/e44_runtime.py', GPU_SH, CPU_SH]
+    'models/reference_attention_variants.py', 'tools/m54_eval.py', 'tools/e44_runtime.py',
+    'tools/m54_input_candidates.py', 'tools/m54_prepare.py', 'tools/e48_holdout.py', GPU_SH, CPU_SH]
 
 
 def native_generate(runtime, row, path):
@@ -127,6 +128,18 @@ def reuse_arm(source_stage, source_arm, target_stage, target_arm, source_root=RU
         split_sha256=sha(RUN/'splits'/('dev32.json' if target_stage == 'dev32' else 'pilot.json')),
         input_and_inference_checks='native replay audit; frozen source hashes; same identity and exact input hashes; initial latent/schedule verified during evaluation',
         files=copied, commit=commit()))
+    folder = RUN/target_stage/target_arm
+    folder.mkdir(parents=True,exist_ok=True)
+    original_config = source_root/source_stage/source_arm/'config.json'
+    if original_config.exists():
+        shutil.copy2(original_config,folder/'config.json')
+    else:
+        write(folder/'config.json',dict(arm=target_arm,reused=True,source_root=str(source_root),
+            source_stage=source_stage,source_arm=source_arm,source_checkpoint=read(RUN/'checkpoint_manifest.json').get(source_arm),
+            regional_native_branch_rms='historical M9/M10_GAIN comparator; unavailable, not used for dual-path energy conclusions',
+            protocol_sha256=sha(RUN/'protocol.json')))
+    for filename in ['checkpoint_manifest.json','input_manifest.json','seed_and_sampler.json']:
+        shutil.copy2(RUN/filename,folder/filename)
 
 
 def prepare_stage(stage):
@@ -391,6 +404,16 @@ def finalize():
 def accounting():
     from tools.m54_finalize import package
     jobs = read(RUN/'resources/jobs.json')
+    git_jobs = RUN/'resources/git_sync_job_ids.csv'
+    if git_jobs.exists():
+        known = {job['id'] for job in jobs}
+        for line in git_jobs.read_text().splitlines():
+            if line.strip().isdigit() and int(line.strip()) not in known:
+                identity = int(line.strip())
+                jobs.append(dict(name='GIT_SYNC_'+str(identity),id=identity,action='git_pull',
+                    auxiliary=True,gpu=False,stage=None,arm=None))
+                known.add(identity)
+        write(RUN/'resources/jobs.json',jobs)
     raw = subprocess.check_output(['sacct','-X','-P','-j',','.join(str(job['id']) for job in jobs),
         '--format=JobIDRaw,JobName,State,ExitCode,ElapsedRaw,AllocCPUS,AllocTRES,Start,End'],text=True)
     indexed = {int(record['JobIDRaw']):record for record in csv.DictReader(raw.splitlines(),delimiter='|') if record['JobIDRaw'].isdigit()}
@@ -445,7 +468,7 @@ def advance():
         states={int(line.split('|')[0]):line.split('|')[1:] for line in raw.splitlines() if line.split('|')[0].isdigit()}
         print('M12_STATES',[(job['name'],job['id'],states.get(job['id'])) for job in jobs],flush=True)
         if any(states.get(job['id'],['PENDING'])[0].split()[0] in ['FAILED','TIMEOUT','OUT_OF_MEMORY','CANCELLED','NODE_FAIL']
-                for job in jobs if not job.get('superseded')):
+                for job in jobs if not job.get('superseded') and not job.get('auxiliary')):
             print('M12_ENGINEERING_REPAIR_REQUIRED',flush=True)
             return
         def completed(name):
