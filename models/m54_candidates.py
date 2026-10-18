@@ -23,6 +23,26 @@ def attention_summary(attention):
         top1_mass=float(a.max(-1).values.mean()),top5_mass=float(a.topk(5,dim=-1).values.sum(-1).mean()),spatial_spread=float(spread))
 
 
+def m10_statistic_residual(target, reference, mode, mask=None):
+    """M10前置消融：不增加参数，均值/标准差沿原token维计算。"""
+    x, v = target.float(), reference.float()
+    centered = x - x.mean(1, keepdim=True)
+    mean_delta = v.mean(1, keepdim=True) - x.mean(1, keepdim=True)
+    std_delta = centered / x.std(1, keepdim=True, unbiased=False).clamp_min(1e-6)
+    std_delta = std_delta * v.std(1, keepdim=True, unbiased=False) - centered
+    if mode == 'M10_MEAN':
+        return mean_delta.expand_as(x)
+    if mode == 'M10_STD':
+        return std_delta
+    if mode == 'M10_MASK':
+        assert mask is not None
+        # 保持原M10运算顺序，仅在残差后乘既有softmask。
+        stat = centered / x.std(1, keepdim=True, unbiased=False).clamp_min(1e-6)
+        stat = stat * v.std(1, keepdim=True, unbiased=False) + v.mean(1, keepdim=True)
+        return (stat - x) * mask.to(x).flatten(2).transpose(1, 2)
+    raise ValueError(mode)
+
+
 class Candidate(nn.Module):
     def __init__(self,kind,width=640):
         super().__init__();self.kind=kind;self.width=width;self.tau=1.;self.last={};self.atv=None
@@ -162,6 +182,8 @@ class M54Processor(ReferenceAttentionProcessor):
                 xf=x.float();vf=v.float();stat=(xf-xf.mean(1,keepdim=True))/xf.std(1,keepdim=True,unbiased=False).clamp_min(1e-6)
                 stat=stat*vf.std(1,keepdim=True,unbiased=False)+vf.mean(1,keepdim=True)
                 delta=self.gate*(stat-xf)
+            elif self.mode in ['M10_MEAN','M10_STD','M10_MASK']:
+                delta=self.gate*m10_statistic_residual(x,v,self.mode,self.mask)
             else:
                 logits_s=qh.float()@ks.float().transpose(-1,-2)/math.sqrt(c//heads)
                 logits_r=qh.float()@kr.float().transpose(-1,-2)/math.sqrt(c//heads)
