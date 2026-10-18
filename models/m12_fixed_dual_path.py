@@ -73,6 +73,8 @@ class FixedDualPathProcessor(nn.Module):
                 region=name, enabled=bool(active), alpha_b=self.alpha_b, alpha_m=self.alpha_m,
                 elements=count, b1_energy=energy[0], m10_energy=energy[1], fusion_energy=energy[2],
                 b1_rms=rms[0], m10_rms=rms[1], fusion_rms=rms[2], inner_product=dot,
+                native_max_min_rms_ratio=max(rms[:2])/min(rms[:2]) if min(rms[:2])>0 else None,
+                fusion_over_largest_native=rms[2]/max(rms[:2]) if max(rms[:2])>0 else None,
                 cosine=dot / norm if norm else None, target_shape=list(shape),
                 reference_shape=list(self.features.shape) if self.features is not None and active else None))
         self.last_delta = dict(rms=self.records[-4]['fusion_rms'])
