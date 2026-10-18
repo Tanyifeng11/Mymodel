@@ -210,13 +210,23 @@ def train(total=800):
     finally:release(r)
 
 
+def verify_history(history,total):
+    assert history and all(math.isfinite(v) for x in history for v in x.values())
+    steps=[x['step'] for x in history]
+    assert steps==sorted(set(steps)) and all(0<x<=2400 for x in steps)
+    prefix=[x for x in history if x['step']<=total]
+    assert prefix and prefix[-1]['step']==total
+    return prefix
+
+
 def verify_training(total):
     import torch
     done=read(TRAIN/('complete%04d.json'%total));seq=read(TRAIN/('random_sequence%04d.json'%total))
     assert done['updates']==total and done['parameters']==1280 and len(seq)==8*total
     assert done['live_gradient_elements']=={'a':640,'b':640}
     assert sha(TRAIN/('random_sequence%04d.json'%total))==done['sequence_sha256']
-    history=read(TRAIN/'history.json');assert history[-1]['step']==total and all(math.isfinite(v) for x in history for v in x.values())
+    # 深化后同一history会追加到2400；复查800时验证固定800前缀，不能把正常续训判成失败。
+    history=verify_history(read(TRAIN/'history.json'),total)
     hashes={}
     for step in ([0,100,400,800] if total==800 else [800,2400]):
         path=TRAIN/'checkpoints'/('step%04d.pt'%step);assert sha(path)==read(path.with_suffix('.json'))['sha256']

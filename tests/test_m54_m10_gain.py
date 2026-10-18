@@ -5,6 +5,15 @@ from models.m54_m10_gain import M10Gain
 
 
 class GainContract(unittest.TestCase):
+    def test_fixed_history_endpoint_survives_legitimate_deepening(self):
+        from tools.m54_m10_gain import verify_history
+        history=[dict(step=s,loss=.1) for s in [1,25,800,825,2400]]
+        self.assertEqual([r['step'] for r in verify_history(history,800)],[1,25,800])
+        self.assertEqual(verify_history(history,2400),history)
+        with self.assertRaises(AssertionError):verify_history(history[:-1],2400)
+        with self.assertRaises(AssertionError):verify_history(history+[history[-1]],2400)
+        with self.assertRaises(AssertionError):verify_history([dict(step=800,loss=float('nan'))],800)
+
     def test_retained_replay_is_valid_after_original_trace_cleanup(self):
         import tempfile
         from pathlib import Path
