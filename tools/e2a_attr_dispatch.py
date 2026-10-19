@@ -43,6 +43,7 @@ def submit(key,action,args=(),gpus=0,minutes=None,dependency=None,retry=False):
          '--cpus-per-task='+str(4*gpus if gpus else 4),'--mem='+str(max(32,24*gpus) if gpus else 8)+'G',
          '--time='+('00:40:00' if action=='smoke' else '1-00:00:00' if action=='train' else '03:00:00'),
          '--job-name='+jobname,'--output='+str(log),'--export=ALL,E2A_GPUS='+str(max(1,gpus))]
+    if gpus: cmd+=['--gres=gpu:'+str(gpus)]
     if dependency: cmd+=['--dependency=afterany:'+':'.join(str(j['id']) for j in dependency)]
     cmd += [str(SOURCE/'scripts/e2a_attr.sbatch'),action,*args]
     identifier=subprocess.check_output(cmd,text=True).strip().split(';')[0]
