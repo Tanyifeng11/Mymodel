@@ -46,7 +46,48 @@ def git(*args):
 
 
 def write(name, value):
-    (ROOT / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    path = ROOT / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+def check_execution(protocol):
+    """原协议不覆盖；启动修复只能改包装器和 sbatch，不能改历史训练代码。"""
+    actual = git('rev-parse', 'HEAD')
+    if actual != protocol['execution_commit']:
+        repair = json.loads((ROOT / 'launch_repair_r1.json').read_text())
+        assert repair['original_execution_commit'] == protocol['execution_commit']
+        assert repair['execution_commit'] == actual
+        assert repair['protocol_sha256'] == sha(ROOT / 'protocol.json')
+        changed = set(git('diff', '--name-only', protocol['execution_commit'], actual).splitlines())
+        assert changed <= {'tools/e2b_color_safe_retrain.py',
+                           'scripts/e2b_color_safe_retrain_seed42.sbatch'}, changed
+    for path, digest in protocol['historical_file_sha256'].items():
+        assert sha(SOURCE / path) == digest
+    return actual
+
+
+def ddp_smoke():
+    """在相同四卡环境验证通信，不加载模型、不执行 optimizer 更新。"""
+    import torch
+    from accelerate import Accelerator
+    protocol = json.loads((ROOT / 'protocol.json').read_text())
+    commit = check_execution(protocol)
+    accelerator = Accelerator()
+    assert accelerator.num_processes == 4 and accelerator.device.type == 'cuda'
+    port = int(os.environ['MASTER_PORT'])
+    assert 0 < port < 65536
+    value = torch.tensor([accelerator.process_index + 1.0], device=accelerator.device)
+    torch.distributed.all_reduce(value)
+    assert value.item() == 10.0
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        write('audit/ddp_smoke_{}.json'.format(os.environ['SLURM_JOB_ID']), dict(
+            passed=True, processes=4, backend=torch.distributed.get_backend(),
+            master_port=port, all_reduce_sum=10.0, scientific_updates=0,
+            execution_commit=commit, protocol_sha256=sha(ROOT / 'protocol.json')))
+    print('四卡通信通过 rank={} port={} sum=10'.format(accelerator.process_index, port), flush=True)
+    torch.distributed.destroy_process_group()
 
 
 def prepare():
@@ -101,10 +142,11 @@ def train():
     from accelerate.utils import set_seed
     protocol = json.loads((ROOT / 'protocol.json').read_text())
     assert int(os.environ.get('WORLD_SIZE', '1')) == 4
-    assert git('rev-parse', 'HEAD') == protocol['execution_commit']
+    commit = check_execution(protocol)
+    smoke = json.loads((ROOT / 'audit/ddp_smoke_{}.json'.format(os.environ['SLURM_JOB_ID'])).read_text())
+    assert smoke['passed'] and smoke['execution_commit'] == commit
+    assert smoke['protocol_sha256'] == sha(ROOT / 'protocol.json')
     assert not list((ROOT / 'training').glob('checkpoint-*/joint_model.pt')), '禁止重复开始已有训练'
-    for p, digest in protocol['historical_file_sha256'].items():
-        assert sha(SOURCE / p) == digest
     set_seed(42)
     sys.path.insert(0, str(SOURCE))
     sys.argv = [str(SOURCE / 'train_GAM_texture_joint.py')] + protocol['effective_argv']
@@ -114,6 +156,7 @@ def train():
 def verify():
     import torch
     protocol = json.loads((ROOT / 'protocol.json').read_text())
+    check_execution(protocol)
     checkpoint = ROOT / 'training/checkpoint-final/joint_model.pt'
     assert checkpoint.resolve().parent.name == 'checkpoint-17019'
     data = torch.load(checkpoint, map_location='cpu', mmap=True, weights_only=False)
@@ -147,6 +190,6 @@ def verify():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['prepare', 'train', 'verify'])
+    parser.add_argument('action', choices=['prepare', 'ddp-smoke', 'train', 'verify'])
     action = parser.parse_args().action
-    {'prepare': prepare, 'train': train, 'verify': verify}[action]()
+    {'prepare': prepare, 'ddp-smoke': ddp_smoke, 'train': train, 'verify': verify}[action]()

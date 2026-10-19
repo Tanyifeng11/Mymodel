@@ -20,7 +20,20 @@ export HF_HUB_DISABLE_XET=1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=2
 
+pick_e2b_port() {
+  python -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+
+# 当前 Accelerate 会把显式端口0直接传给客户端，必须先取得真实非零端口。
+E2B_MASTER_PORT=$(pick_e2b_port)
+echo "[launch] 四卡通信预检 port=${E2B_MASTER_PORT} job=${SLURM_JOB_ID}"
 accelerate launch --multi_gpu --num_processes=4 --num_machines=1 \
-  --machine_rank=0 --main_process_port=0 --mixed_precision=fp16 \
+  --machine_rank=0 --main_process_ip=127.0.0.1 --main_process_port="${E2B_MASTER_PORT}" \
+  --mixed_precision=fp16 tools/e2b_color_safe_retrain.py ddp-smoke
+
+E2B_MASTER_PORT=$(pick_e2b_port)
+echo "[launch] 原配方训练 port=${E2B_MASTER_PORT} job=${SLURM_JOB_ID}"
+accelerate launch --multi_gpu --num_processes=4 --num_machines=1 \
+  --machine_rank=0 --main_process_ip=127.0.0.1 --main_process_port="${E2B_MASTER_PORT}" --mixed_precision=fp16 \
   tools/e2b_color_safe_retrain.py train
 python tools/e2b_color_safe_retrain.py verify
