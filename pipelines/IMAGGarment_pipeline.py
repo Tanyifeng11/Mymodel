@@ -785,6 +785,7 @@ class IMAGGarment(StableDiffusionPipeline):
             prompt_embeds.dtype,
             device,
             generator,
+            latents=kwargs.get("latents"),
         )
 
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)

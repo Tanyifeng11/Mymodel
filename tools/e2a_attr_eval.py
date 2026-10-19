@@ -40,7 +40,9 @@ def frozen_lpips():
 @torch.inference_mode()
 def generate(stage,arm):
     folder=OUT/'evaluation'/stage/arm
-    if (folder/'generation_complete.json').exists(): return
+    if (folder/'generation_complete.json').exists():
+        assert read(folder/'generation_complete.json').get('explicit_latent_verified')
+        return
     rows=input_rows(stage); path=model_path(arm)
     if arm!='E1': assert read(path.parent.parent/'checkpoint_verification.json')['passed']
     else: assert sha(E1)==read(OUT/'checkpoint_manifest.json')[str(E1)]['sha256']
@@ -52,6 +54,12 @@ def generate(stage,arm):
         width=384,height=512,texture_num_tokens=16,force_texture_num_tokens_override=False,
         texture_condition_mode='token',alpha1=2.,alpha2=2.,alpha3=1.5,alpha4=1.)
     pipe,_=module.prepare(args)
+    captured={}; original_prepare_latents=pipe.prepare_latents
+    def audited_prepare_latents(*args,**kwargs):
+        value=original_prepare_latents(*args,**kwargs)
+        captured['sha256']=hashlib.sha256(value.detach().cpu().numpy().tobytes()).hexdigest()
+        return value
+    pipe.prepare_latents=audited_prepare_latents
     for model in [pipe.unet,pipe.reference_unet,pipe.vae,pipe.text_encoder,pipe.image_encoder,pipe.bf_texture_conditioner]:
         model.eval().requires_grad_(False)
     pipe.set_layer_group_enabled(True); pipe._setup_layer_groups(); pipe.set_progress_bar_config(disable=True)
@@ -63,6 +71,7 @@ def generate(stage,arm):
     for row in rows:
         image_path=folder/'images'/(row['id']+'.png'); metadata_path=image_path.with_suffix('.json')
         if image_path.exists() and metadata_path.exists():
+            assert read(metadata_path).get('explicit_latent_verified')
             assert read(metadata_path)['output_sha256']==sha(image_path)
             continue
         seed=image_seed(row['id']); torch.manual_seed(seed)
@@ -78,12 +87,13 @@ def generate(stage,arm):
             latents=latent,num_inference_steps=50,texture_mode='patch_resampled',texture_num_tokens=16,
             texture_scale=1.,texture_condition_mode='token',fusion_type='minimal',texture_preprocess_mode='plain_resize',
             spatial_mask=None,debug_spatial=False,force_texture_num_tokens_override=False)[0]
+        assert captured['sha256']==latent_sha,'实际采样 latent 与预先记录的不一致'
         image_path.parent.mkdir(parents=True,exist_ok=True); image.save(image_path)
         write(metadata_path,dict(id=row['id'],arm=arm,seed=seed,initial_latent_sha256=latent_sha,
-            checkpoint=str(path),gt_used_in_inference=False,output_sha256=sha(image_path),
+            checkpoint=str(path),gt_used_in_inference=False,output_sha256=sha(image_path),explicit_latent_verified=True,
             inputs={k:sha(row[k]) for k in ['gt','sketch','reference']}))
         print('RGB',stage,arm,row['id'],flush=True)
-    write(folder/'generation_complete.json',dict(complete=True,n=len(rows),arm=arm,commit=commit()))
+    write(folder/'generation_complete.json',dict(complete=True,n=len(rows),arm=arm,commit=commit(),explicit_latent_verified=True))
     del pipe; gc.collect(); torch.cuda.empty_cache()
 
 
