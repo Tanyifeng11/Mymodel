@@ -21,7 +21,8 @@ from torchvision.models import VGG19_Weights, vgg19
 from torchvision.utils import make_grid, save_image
 
 from accelerate import Accelerator
-from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration
+from accelerate.utils import DistributedDataParallelKwargs, ProjectConfiguration, GradScalerKwargs, set_seed
+from tools.e2a_attr_runtime import AuditRuntime, EpochSampler
 from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel
 from diffusers.optimization import get_scheduler
 from transformers import (
@@ -84,6 +85,7 @@ def sketch_to_garment_mask(
     height: int,
     line_threshold: int = 245,
     dilate_size: int = 9,
+    return_info: bool = False,
 ) -> Image.Image:
     """
     Estimate a garment-region mask from a black-line sketch on white background.
@@ -126,11 +128,15 @@ def sketch_to_garment_mask(
 
     mask = ~outside
     area = float(mask.mean())
+    fallback = area < 0.02 or area > 0.95
+    fallback_reason = None
     if area < 0.02 or area > 0.95:
         ys, xs = np.where(line)
         if len(xs) == 0:
+            fallback_reason = "no_lines_full_image"
             mask = np.ones((h, w), dtype=bool)
         else:
+            fallback_reason = "line_bbox"
             pad_x = max(8, int(0.06 * w))
             pad_y = max(8, int(0.06 * h))
             x0 = max(0, int(xs.min()) - pad_x)
@@ -141,7 +147,10 @@ def sketch_to_garment_mask(
             mask[y0:y1, x0:x1] = True
 
     mask_img = Image.fromarray((mask.astype(np.uint8) * 255), mode="L")
-    return mask_img.filter(ImageFilter.MaxFilter(5))
+    mask_img = mask_img.filter(ImageFilter.MaxFilter(5))
+    if return_info:
+        return mask_img, dict(flood_area=area, fallback=fallback, fallback_reason=fallback_reason)
+    return mask_img
 
 
 class JointTextureDataset(Dataset):
@@ -153,6 +162,7 @@ class JointTextureDataset(Dataset):
         width=512,
         height=640,
         texture_preprocess_mode="crop_tile",
+        mask_cache=None,
     ):
         with open(json_path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
@@ -162,6 +172,7 @@ class JointTextureDataset(Dataset):
         self.width = width
         self.height = height
         self.texture_preprocess_mode = texture_preprocess_mode
+        self.mask_cache = mask_cache
 
         self.vae_tf = transforms.Compose(
             [
@@ -220,10 +231,16 @@ class JointTextureDataset(Dataset):
             mask = (mask > 0.5).float()
             has_mask = 1
         else:
-            mask = self.mask_tf(sketch_to_garment_mask(sketch, self.width, self.height))
+            if self.mask_cache:
+                mask_path = os.path.join(self.mask_cache, f"{i // 1000:03d}", f"{i:05d}_mask.png")
+                mask_image = Image.open(mask_path).convert("L")
+            else:
+                mask_image = sketch_to_garment_mask(sketch, self.width, self.height)
+            mask = self.mask_tf(mask_image)
             mask = (mask > 0.5).float()
 
         return {
+            "dataset_index": torch.tensor(i, dtype=torch.long),
             "vae_cloth": self.vae_tf(cloth),
             "vae_sketch": self.vae_tf(sketch),
             "clip_texture": self.clip_proc(
@@ -1031,7 +1048,12 @@ def main():
         help="Keep CLI width/height even when texture checkpoint metadata has another value.",
     )
 
+    ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--attr_audit", type=str, default=None)
+    ap.add_argument("--attr_mask_cache", type=str, default=None)
     args = ap.parse_args()
+    if args.seed is not None:
+        set_seed(args.seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = False
 
@@ -1060,7 +1082,7 @@ def main():
         mixed_precision=accelerator_mixed_precision,
         project_config=accelerator_project_config,
         log_with=log_with,
-        kwargs_handlers=[ddp_kwargs],
+        kwargs_handlers=[ddp_kwargs] + ([GradScalerKwargs(init_scale=128.0, growth_interval=1000000000)] if args.attr_audit else []),
     )
 
     # ---- texture ckpt meta ----
@@ -1300,11 +1322,15 @@ def main():
         width=args.width,
         height=args.height,
         texture_preprocess_mode=args.texture_preprocess_mode,
+        mask_cache=args.attr_mask_cache,
     )
+    order_sampler = EpochSampler(ds, args.seed) if args.attr_audit else None
     dl = DataLoader(
         ds,
         batch_size=args.train_batch_size,
-        shuffle=True,
+        shuffle=order_sampler is None,
+        sampler=order_sampler,
+        generator=torch.Generator().manual_seed(args.seed) if args.seed is not None else None,
         collate_fn=collate_fn,
         num_workers=args.dataloader_num_workers,
         pin_memory=torch.cuda.is_available(),
@@ -1354,7 +1380,6 @@ def main():
         spatial_injection,
         optimizer,
         dl,
-        lr_scheduler,
     ) = accelerator.prepare(
         unet,
         ref_unet,
@@ -1363,8 +1388,12 @@ def main():
         spatial_injection,
         optimizer,
         dl,
-        lr_scheduler,
     )
+    # 本轮以实际 optimizer 更新为单位推进 cosine/warmup，不随 GPU 数倍增。
+    if args.attr_audit:
+        accelerator.register_for_checkpointing(lr_scheduler)
+    else:
+        lr_scheduler = accelerator.prepare(lr_scheduler)
     spatial_injection_module = accelerator.unwrap_model(spatial_injection)
     spatial_injection_module.bind_unet(accelerator.unwrap_model(unet))
     spatial_injection_module.enable()
@@ -1434,6 +1463,11 @@ def main():
         )
 
     total_steps_done = 0
+    runtime = AuditRuntime(args, accelerator)
+    data_epoch, data_offset = 0, 0
+    if args.attr_audit:
+        set_seed(args.seed + accelerator.process_index)
+        global_step, data_epoch, data_offset = runtime.restore(global_step)
     null_input_ids = tokenizer(
         "",
         padding="max_length",
@@ -1443,7 +1477,11 @@ def main():
     ).input_ids[0]
 
     while global_step < target_global_step:
-        for batch in dl:
+        if order_sampler is not None:
+            order_sampler.set_epoch(data_epoch)
+        epoch_dl = accelerator.skip_first_batches(dl, data_offset) if data_offset else dl
+        for batch in epoch_dl:
+            data_offset += 1
             current_epoch = global_step // max(1, steps_per_epoch)
             with accelerator.accumulate(unet):
                 drop_token_branch = False
@@ -1563,6 +1601,7 @@ def main():
                     dtype=torch.long,
                 )
                 noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
+                runtime.record_rng(batch["dataset_index"], noise, timesteps)
 
                 # ---- ref_unet cache ----
                 ref_timesteps = torch.zeros_like(timesteps)
@@ -1742,6 +1781,8 @@ def main():
                         )
                     raise RuntimeError("non-finite loss detected")
 
+                runtime.record_losses(loss, loss_denoise, loss_style, loss_edge,
+                    loss_texture_color, loss_region_texture, loss_boundary, loss_leak)
                 accelerator.backward(loss)
 
                 if accelerator.sync_gradients:
@@ -1749,6 +1790,7 @@ def main():
                         trainable_params, args.max_grad_norm
                     )
                     optimizer.step()
+                    runtime.check_update(optimizer, global_step)
                     lr_scheduler.step()
                     optimizer.zero_grad()
                 else:
@@ -1757,6 +1799,8 @@ def main():
                 if accelerator.sync_gradients:
                     global_step += 1
                     total_steps_done += 1
+                    runtime.log_update(global_step, optimizer, grad_norm)
+                    runtime.save_state(global_step, data_epoch, data_offset)
 
                 if accelerator.sync_gradients and args.report_to != "none":
                     grad_norm_log = None
@@ -1928,6 +1972,8 @@ def main():
 
                 if accelerator.sync_gradients and global_step >= target_global_step:
                     break
+        data_epoch += 1
+        data_offset = 0
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
@@ -1949,6 +1995,7 @@ def main():
         )
         print(f"[info] final full checkpoint saved to {save_dir}")
 
+    runtime.finish(global_step)
     accelerator.end_training()
 
 
