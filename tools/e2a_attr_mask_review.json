@@ -1,0 +1,196 @@
+{
+  "passed": true,
+  "reviewed": 100,
+  "reviewer": "assistant visual inspection",
+  "independent_human_review": false,
+  "review_indices": [
+    13601,
+    19489,
+    43638,
+    38685,
+    27507,
+    44709,
+    31795,
+    4666,
+    34293,
+    40370,
+    16765,
+    1294,
+    14385,
+    17935,
+    2910,
+    30120,
+    5441,
+    33306,
+    26373,
+    10940,
+    28431,
+    17219,
+    874,
+    12964,
+    8646,
+    44004,
+    8362,
+    35172,
+    18857,
+    26808,
+    38721,
+    38154,
+    3660,
+    19372,
+    43213,
+    157,
+    25370,
+    23445,
+    38469,
+    14355,
+    6710,
+    10015,
+    28846,
+    31043,
+    43505,
+    10547,
+    3354,
+    39968,
+    215,
+    36675,
+    6555,
+    34331,
+    12837,
+    2585,
+    31330,
+    12806,
+    34634,
+    5530,
+    32443,
+    4169,
+    6002,
+    41230,
+    21596,
+    27259,
+    1147,
+    44390,
+    39320,
+    13995,
+    24113,
+    7890,
+    24372,
+    24223,
+    27420,
+    44982,
+    40627,
+    14441,
+    37268,
+    17569,
+    36350,
+    31590,
+    30725,
+    22760,
+    761,
+    18381,
+    36565,
+    454,
+    24512,
+    9784,
+    69,
+    20946,
+    9914,
+    911,
+    18053,
+    19630,
+    39932,
+    41003,
+    446,
+    41166,
+    16122,
+    27095
+  ],
+  "model_outputs_viewed_before_review": false,
+  "implementation_consistent": true,
+  "perfect_mask_quality": false,
+  "flagged_count": 17,
+  "flagged": [
+    {
+      "index": 19489,
+      "issue": "interior largely hollow"
+    },
+    {
+      "index": 44709,
+      "issue": "interior largely hollow"
+    },
+    {
+      "index": 4666,
+      "issue": "fragmented interior holes"
+    },
+    {
+      "index": 17935,
+      "issue": "interior largely hollow"
+    },
+    {
+      "index": 30120,
+      "issue": "pattern-correlated holes and fragments"
+    },
+    {
+      "index": 8646,
+      "issue": "interior largely hollow"
+    },
+    {
+      "index": 18857,
+      "issue": "upper torso partially missing"
+    },
+    {
+      "index": 38469,
+      "issue": "lower torso largely missing"
+    },
+    {
+      "index": 10547,
+      "issue": "torso mostly missing"
+    },
+    {
+      "index": 34331,
+      "issue": "fragmented dress interior"
+    },
+    {
+      "index": 32443,
+      "issue": "text fragments without a usable garment silhouette"
+    },
+    {
+      "index": 4169,
+      "issue": "interior largely hollow"
+    },
+    {
+      "index": 7890,
+      "issue": "skirt interior holes"
+    },
+    {
+      "index": 14441,
+      "issue": "coat interior largely hollow"
+    },
+    {
+      "index": 9784,
+      "issue": "interior largely hollow"
+    },
+    {
+      "index": 41166,
+      "issue": "lower skirt largely missing"
+    },
+    {
+      "index": 27095,
+      "issue": "very faint sketch; collar/line fragments only"
+    }
+  ],
+  "page_sha256": {
+    "page_000.png": "a116abcde1610cba67930a14335715dd53e831ced2d3a64610b6b055172a685d",
+    "page_020.png": "952f38db24839a3d2b25b80d85837eca4799ea0c7d85ccf3e7b8f2d6b1afe1f6",
+    "page_040.png": "1c420fcfdf9b3a2966b76ebd754d6a1d9790e3ee2e6751d91929c976c4fc3e1b",
+    "page_060.png": "5c14b6a34a6006ea11258fbaa524153f9e0725bc80fae5b478e36d96874f0980",
+    "page_080.png": "55058a17c4e5c429b1be844e44e64456cae1b270db859b7d1145aa38e307410c"
+  },
+  "archive_sha256": "7eeb201cce58102d4e8ecc45d07fd12b63eed8b27e1efed3adbf018d35da7853",
+  "common_observations": [
+    "historical dilation creates a narrow outer halo",
+    "small disconnected corner/edge specks retained",
+    "visual mask failures can occur without triggering area-based fallback"
+  ],
+  "decision": "Continue controlled attribution with exact historical masks, retain all training identities and report mask-quality limitations; no output-driven mask changes"
+}

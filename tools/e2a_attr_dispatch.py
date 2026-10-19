@@ -104,6 +104,13 @@ def portable():
 def advance(retry=False):
     from tools.e2a_attr_stats import rng_audit,stage_a,factorial,lock_plan,final_lock
     assert read(OUT/'audit/masks_complete.json')['passed']
+    review_path=SOURCE/'tools/e2a_attr_mask_review.json'
+    if not (OUT/'audit/mask_visual_review.json').exists() and review_path.exists():
+        review=read(review_path)
+        assert review['reviewed']==100 and review['review_indices']==read(OUT/'audit/masks_complete.json')['review_indices']
+        assert review['archive_sha256']==sha(OUT/'mask_review.tar.gz')
+        assert all(sha(OUT/'audit/mask_review'/name)==digest for name,digest in review['page_sha256'].items())
+        freeze(OUT/'audit/mask_visual_review.json',review)
     if not (OUT/'audit/mask_visual_review.json').exists():
         state(preparation='MASK_VISUAL_REVIEW_PENDING'); return
     if not (OUT/'audit/loss_switch_selfcheck.json').exists():
