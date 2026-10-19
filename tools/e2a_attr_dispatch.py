@@ -40,7 +40,7 @@ def submit(key,action,args=(),gpus=0,minutes=None,dependency=None,retry=False):
         if not retry: raise RuntimeError('FAILED_JOB_REQUIRES_REVIEW %s %s'%(key,status))
     jobname='E2A_'+key[-100:]; log=OUT/'logs'/(key+'_%j.log')
     cmd=['sbatch','--parsable','--partition='+('gpu' if gpus else 'cpu'),'--nodes=1','--ntasks=1',
-         '--cpus-per-task='+str(4*gpus if gpus else 4),'--mem='+str(max(24,24*gpus))+'G',
+         '--cpus-per-task='+str(4*gpus if gpus else 4),'--mem='+str(max(32,24*gpus) if gpus else 8)+'G',
          '--time='+('00:40:00' if action=='smoke' else '1-00:00:00' if action=='train' else '03:00:00'),
          '--job-name='+jobname,'--output='+str(log),'--export=ALL,E2A_GPUS='+str(max(1,gpus))]
     if dependency: cmd+=['--dependency=afterany:'+':'.join(str(j['id']) for j in dependency)]
