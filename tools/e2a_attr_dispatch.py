@@ -32,7 +32,8 @@ def layout():
 
 
 def submit(key,action,args=(),gpus=0,minutes=None,dependency=None,retry=False):
-    history=jobs(); previous=[j for j in history if j['key']==key]
+    history=jobs(); attempts=[j for j in history if j['key']==key]
+    previous=[j for j in attempts if not j.get('superseded_by')]
     if previous:
         current=previous[-1]; status=job_state(current)
         if status in ['PENDING','RUNNING','COMPLETING','CONFIGURING']: return current
@@ -54,7 +55,7 @@ def submit(key,action,args=(),gpus=0,minutes=None,dependency=None,retry=False):
     cmd += [str(SOURCE/'scripts/e2a_attr.sbatch'),action,*args]
     identifier=subprocess.check_output(cmd,text=True).strip().split(';')[0]
     value=dict(key=key,id=int(identifier),action=action,args=list(args),gpus=gpus,
-        command=cmd,execution_commit=commit(),attempt=len(previous)+1)
+        command=cmd,execution_commit=commit(),attempt=len(attempts)+1)
     history.append(value); write(OUT/'jobs.json',history)
     print('SUBMITTED',key,identifier,flush=True); return value
 
@@ -107,7 +108,61 @@ def portable():
                          'seed_and_rng_manifest.json','checkpoint_verification.json','training_log.csv']:
                 path=folder/name
                 if path.exists(): archive.add(path,arcname=str(path.relative_to(OUT)))
+        # 被用户资源变更替换的训练仍留在服务器；审查包收录其日志与元数据。
+        for path in (OUT/'superseded').rglob('*'):
+            if path.is_file() and not path.is_symlink() and path.suffix in ['.json','.csv','.txt']:
+                archive.add(path,arcname=str(path.relative_to(OUT)))
     (OUT/'review_results.tar.gz.sha256').write_text(sha(OUT/'review_results.tar.gz')+'  review_results.tar.gz\n')
+
+
+def switch_to_two_gpus():
+    """用户要求由单卡改为双卡：保留旧运行，两臂重新从 E1 初始化。"""
+    record_path=OUT/'audit/resource_change_two_gpu.json'
+    if record_path.exists():
+        assert layout()['world_size']==2
+        return read(record_path)
+    previous_layout=layout(); assert previous_layout['world_size']==1
+    assert not list((OUT/'training').glob('seed*/F*/checkpoint_verification.json')), '已有正式完成结果，需另行审查资源变更'
+    assert not (OUT/'statistics/P1/decision.json').exists(), '不得看过归因结果后重新配置'
+    history=jobs(); affected=[j for j in history if j['action'] in ['smoke','train','advance']]
+    states={str(j['id']):job_state(j) for j in affected}
+    active=['PENDING','RUNNING','COMPLETING','CONFIGURING','SUSPENDED']
+    assert not any(s in active for s in states.values()), ('先停止旧作业及其依赖',states)
+    destination=OUT/'superseded/layout_1gpu_20261019'
+    assert not destination.exists(), '旧运行已部分归档，请检查后再继续'
+    destination.mkdir(parents=True)
+    partial=[]
+    for folder in (OUT/'training').glob('seed*/F*'):
+        path=folder/'training_log.csv'
+        if path.exists():
+            import csv
+            with path.open(newline='') as handle: rows=list(csv.DictReader(handle))
+            partial.append(dict(run=str(folder.relative_to(OUT)),logged_successful_updates=int(rows[-1]['update']) if rows else 0,
+                                log_sha256=sha(path),retained_in_new_budget=False))
+    write(destination/'status_before.json',read(OUT/'status.json'))
+    write(destination/'jobs_before.json',history)
+    moved=[]
+    for name in ['training','smoke','training_layout.json','audit/smoke_rng_audit.json']:
+        source=OUT/name
+        if source.exists():
+            target=destination/name; target.parent.mkdir(parents=True,exist_ok=True)
+            source.rename(target); moved.append(name)
+    new_layout=dict(world_size=2,effective_batch=8,accumulation=4,
+        selection='user explicitly requested two GPUs per training job; all arms restart from the same E1 checkpoint',
+        previous_layout_archive=str(destination/'training_layout.json'))
+    freeze(OUT/'training_layout.json',new_layout)
+    for job in affected: job['superseded_by']=str(record_path)
+    write(OUT/'jobs.json',history)
+    record=dict(reason='user requested pause and two GPUs per training job',execution_commit=commit(),
+        previous_layout=previous_layout,new_layout=new_layout,old_job_states=states,
+        archive=str(destination),moved=moved,partial_training=partial,
+        initialization='same frozen E1; restart both arms at update zero',
+        targets_and_data_unchanged=True,updates_per_arm=CONFIG['updates'],
+        previous_results_used_for_selection=False)
+    freeze(record_path,record)
+    state(preparation='REVALIDATING_TWO_GPUS',A='NOT_RUN',B='NOT_RUN',confirmation='NOT_RUN',LOCK='NOT_RUN',
+          complete=False,resource_change=str(record_path),engineering_failure=None)
+    return record
 
 
 def advance(retry=False):
@@ -184,8 +239,10 @@ def advance(retry=False):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--retry-failed',action='store_true')
+    parser.add_argument('--switch-to-two-gpus',action='store_true')
     parser.add_argument('--package-only',action='store_true');args=parser.parse_args()
     try:
+        if args.switch_to_two_gpus: switch_to_two_gpus()
         if args.package_only: portable()
         else: advance(args.retry_failed); accounting()
     except Exception as error:

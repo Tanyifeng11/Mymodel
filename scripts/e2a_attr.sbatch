@@ -17,7 +17,7 @@ export E2A_JOB_START=$(date +%s)
 if [[ "$ACTION" == train ]]; then export E2A_JOB_SOFT_SECONDS=13500; fi
 if [[ "$ACTION" == train || "$ACTION" == smoke || "$ACTION" == eval ]]; then
   echo "[resources] job=${SLURM_JOB_ID:-local} GPUs=${SLURM_JOB_GPUS:-unset} visible=${CUDA_VISIBLE_DEVICES:-unset}"
-  python -c 'import torch; print("CUDA available:",torch.cuda.is_available(),"visible devices:",torch.cuda.device_count()); assert torch.cuda.is_available()'
+  python -c 'import os,torch; expected=int(os.environ.get("E2A_GPUS","1")); print("CUDA available:",torch.cuda.is_available(),"visible devices:",torch.cuda.device_count(),"expected:",expected); assert torch.cuda.is_available() and torch.cuda.device_count()==expected'
 fi
 if [[ "$ACTION" == prepare ]]; then
   python -m tools.e2a_attr_prepare all --workers "${SLURM_CPUS_PER_TASK:-8}"
