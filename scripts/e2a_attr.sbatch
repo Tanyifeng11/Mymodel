@@ -28,6 +28,8 @@ elif [[ "$ACTION" == eval ]]; then
   python -m tools.e2a_attr_eval "$@"
 elif [[ "$ACTION" == stats ]]; then
   python -m tools.e2a_attr_stats "$@"
+elif [[ "$ACTION" == advance ]]; then
+  python -m tools.e2a_attr_dispatch "$@"
 else
   echo "未知动作: $ACTION" >&2
   exit 2

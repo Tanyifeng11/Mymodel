@@ -1479,7 +1479,10 @@ def main():
     while global_step < target_global_step:
         if order_sampler is not None:
             order_sampler.set_epoch(data_epoch)
+            dl.set_epoch(data_epoch)
         epoch_dl = accelerator.skip_first_batches(dl, data_offset) if data_offset else dl
+        if order_sampler is not None:
+            epoch_dl.set_epoch(data_epoch)
         for batch in epoch_dl:
             data_offset += 1
             current_epoch = global_step // max(1, steps_per_epoch)
