@@ -41,6 +41,9 @@ def paired(stage,arm,control):
 
 
 def rng_audit(seed,factors,smoke=False):
+    configs=[read(train_folder(seed,f,smoke)/'config.json') for f in factors]
+    for key in ['seed','world_size','effective_batch','accumulation','updates','scheduler','amp','source_sha256']:
+        assert all(value[key]==configs[0][key] for value in configs[1:]),('PAIRED_CONFIG_MISMATCH',key)
     streams=[read(train_folder(seed,f,smoke)/'seed_and_rng_manifest.json') for f in factors]
     assert all(value==streams[0] for value in streams[1:]),'PAIRED_TRAINING_RNG_MISMATCH'
     counts=[read(train_folder(seed,f,smoke)/'optimizer_update_count.json') for f in factors]

@@ -24,7 +24,12 @@ def train(seed, factor, smoke=False):
     config=dict(seed=seed,factor=factor,smoke=smoke,world_size=world,effective_batch=8,
         accumulation=8//world,updates=updates,execution_commit=commit(),argv=argv,
         scheduler=CONFIG['scheduler'],amp=CONFIG['amp'],plan_sha256=PLAN_SHA)
+    physics=['train_GAM_texture_joint.py','adapter/attention_processor.py','models/bf_texture_module.py',
+             'texture_preprocess.py','tools/e2a_attr_runtime.py','tools/e2a_attr_train.py']
+    config['source_sha256']={p:sha(SOURCE/p) for p in physics}
     if int(os.environ.get('RANK','0'))==0:
+        for source,record in read(OUT/'checkpoint_manifest.json').items():
+            assert sha(source)==record['sha256'],('INITIALIZATION_OR_MANIFEST_CHANGED',source)
         freeze(folder/'config.json',config)
         freeze(folder/'loss_factor_manifest.json',dict(body_rgb=dict(weight=.1*int(factor[0]),target='reference_texture'),
             boundary=dict(weight=.05*int(factor[1]),target='GT'),outside=dict(weight=.1*int(factor[2]),target='GT')))
@@ -36,6 +41,7 @@ def train(seed, factor, smoke=False):
     sys.argv=[str(SOURCE/'train_GAM_texture_joint.py')]+argv
     runpy.run_path(sys.argv[0],run_name='__main__')
     if int(os.environ.get('RANK','0'))==0:
+        assert all(sha(SOURCE/p)==h for p,h in config['source_sha256'].items()),'训练过程中关键源文件变化'
         path=folder/'checkpoint-final/joint_model.pt'
         assert path.resolve().parent.name=='checkpoint-%d'%updates
         record=read(folder/'optimizer_update_count.json')
