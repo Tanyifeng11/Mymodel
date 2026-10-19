@@ -70,8 +70,11 @@ def watch(batch):
 
 def accounting():
     history=jobs()
-    if not history: return
-    ids=','.join(str(j['id']) for j in history)
+    identifiers={j['id'] for j in history}
+    identifiers.update(int(match.group(1)) for path in (OUT/'logs').glob('*.log')
+                       for match in [re.search(r'_(\d+)\.log$',path.name)] if match)
+    if not identifiers: return
+    ids=','.join(map(str,sorted(identifiers)))
     fields=['JobIDRaw','JobName','State','ExitCode','ElapsedRaw','AllocTRES','TotalCPU','MaxRSS','Start','End']
     output=subprocess.check_output(['sacct','-n','-X','-j',ids,'--parsable2','--format='+','.join(fields)],text=True)
     rows=[]
@@ -109,6 +112,7 @@ def portable():
 
 def advance(retry=False):
     from tools.e2a_attr_stats import rng_audit,stage_a,factorial,lock_plan,final_lock
+    assert read(OUT/'config.json')==CONFIG,'冻结协议发生变化'
     assert read(OUT/'audit/masks_complete.json')['passed']
     review_path=SOURCE/'tools/e2a_attr_mask_review.json'
     if not (OUT/'audit/mask_visual_review.json').exists() and review_path.exists():
