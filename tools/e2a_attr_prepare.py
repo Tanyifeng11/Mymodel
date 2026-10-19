@@ -157,7 +157,7 @@ def masks(workers):
             if len(records)%1000==0: print('TRAIN MASK',len(records),len(dataset),flush=True)
     csv_write(OUT/'mask_audit.csv',records)
     indices=sorted(range(len(dataset)),key=stable)[:100]
-    original=subprocess.check_output(['git','-C',str(SOURCE),'show',BASE+':train_GAM_texture_joint.py'],text=True)
+    original=subprocess.check_output(['git','-C',str(SOURCE),'show',BASE+':train_GAM_texture_joint.py'],text=True,encoding='utf-8')
     old_mask=mask_function(original); root=PROJECT.parent/'datasets/BF/training'
     for index in indices:
         row=dataset[index]

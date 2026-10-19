@@ -142,6 +142,10 @@ def advance(retry=False):
                for a in b_arms if not (OUT/'evaluation/P2'/a/'evaluation_complete.json').exists()]
         watch(batch); state(B='EVALUATING'); return
     selection=read(OUT/'selection/confirmation.json') if (OUT/'selection/confirmation.json').exists() else factorial()
+    if not selection['any_favourable_direction']:
+        state(confirmation='STOPPED_NO_FAVOURABLE_FACTOR',LOCK='NOT_OPENED',complete=True,
+              conclusion='All factorial candidates lack favourable directions; preserve exploratory factorial evidence')
+        portable(); return
     missing=[(s,f) for s in [42,43,44] for f in selection['arms'] if not (checkpoint(s,f).parent.parent/'checkpoint_verification.json').exists()]
     if missing:
         batch=[submit('train_s%d_F%s'%(s,f),'train',['--seed',str(s),'--factor',f],world,retry=retry) for s,f in missing]

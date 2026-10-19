@@ -126,7 +126,7 @@ def factorial():
     selection=dict(arms=selected,best_single=best_single,supported_interaction_pairs=supported_pairs,
         provisional_candidate=candidate,seeds=[42,43,44],rng_audit=rng,
         score='mean oriented delta / prespecified meaningful gain, all six metrics',
-        meaningful_support=bool(candidates),single_seed_exploratory=True)
+        any_favourable_direction=bool(candidates),single_seed_exploratory=True)
     write(OUT/'statistics/P2/factorial_effects.json',result); write(OUT/'statistics/P2/paired_bootstrap.json',comparisons)
     freeze(OUT/'selection/confirmation.json',selection)
     for arm in arms:
@@ -183,10 +183,13 @@ def final_lock():
     key=protocol['primary_metric']; value=aggregate[key]
     oriented_ci=sorted(DIRECTION[key]*v for v in value['ci95'])
     safety={k:min(DIRECTION[k]*v for v in aggregate[k]['ci95'])>=-CONFIG['noninferiority'][k] for k in PRIMARY}
-    confirmed=oriented_ci[0]>0 and value['p_holm']<.05 and all(safety.values())
+    replicated=all(min(DIRECTION[key]*v for v in deltas[str(seed)][key]['ci95'])>0 for seed in [42,43,44])
+    confirmed=oriented_ci[0]>0 and value['p_holm']<.05 and all(safety.values()) and replicated
     result=dict(complete=True,candidate=candidate,primary_metric=key,paired_by_training_seed=deltas,
         identity_averaged_effects=aggregate,structural_noninferiority=safety,improvement_confirmed=confirmed,
-        training_seeds=3,independent_identities=protocol['actual_n'],power_limited=protocol['power_limited'],
+        training_seeds=3,primary_replicated_in_all_three_seeds=replicated,
+        meaningful_gain_ci_supported=oriented_ci[0]>=protocol['meaningful_gain'],
+        independent_identities=protocol['actual_n'],power_limited=protocol['power_limited'],
         motif_identity_proven=False,pretrained_exposure_unknown=True)
     write(OUT/'statistics/LOCK/paired_bootstrap.json',result); write(OUT/'final_result.json',result)
     for arm in protocol['arms']:
