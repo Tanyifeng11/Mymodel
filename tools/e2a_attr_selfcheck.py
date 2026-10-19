@@ -51,9 +51,35 @@ def selfcheck():
     loader.set_epoch(1); partial=accelerator.skip_first_batches(loader,13); partial.set_epoch(1)
     remaining=[int(batch[0][0]) for batch in partial]
     assert full[13:]==remaining,'恢复后的 epoch 采样顺序错误'
+    # 用实际 Accelerate 保存/恢复模型、AdamW、调度器和 RNG；重放后须逐位相等。
+    from types import SimpleNamespace
+    from tools.e2a_attr_runtime import AuditRuntime
+    torch.manual_seed(731)
+    model=torch.nn.Linear(1,1)
+    optimizer=torch.optim.AdamW(model.parameters(),lr=.01)
+    scheduler=torch.optim.lr_scheduler.LambdaLR(optimizer,lambda n:1/(n+1))
+    model,optimizer=accelerator.prepare(model,optimizer)
+    accelerator.register_for_checkpointing(scheduler)
+    runtime=AuditRuntime(SimpleNamespace(attr_audit=str(OUT/'audit/resume_toy'),seed=731,max_train_steps=4),accelerator)
+    def update(step):
+        noise=torch.randn(1,1); index=torch.tensor([step])
+        loss=(model(noise+step/10)-.3).square().mean()
+        runtime.record_rng(index,noise,index)
+        runtime.record_losses(*([loss]*8))
+        accelerator.backward(loss); optimizer.step(); scheduler.step(); optimizer.zero_grad()
+        runtime.log_update(step,optimizer,torch.tensor(1.))
+    for step in range(1,5):
+        update(step)
+        if step==2: runtime.save_state(step,0,step,force=True)
+    expected={k:v.detach().clone() for k,v in model.state_dict().items()}; chain=runtime.rng_chain
+    restored,epoch,offset=runtime.restore(0); assert (restored,epoch,offset)==(2,0,2)
+    for step in range(3,5): update(step)
+    assert all(torch.equal(v,model.state_dict()[k]) for k,v in expected.items())
+    assert runtime.rng_chain==chain
     write(OUT/'audit/loss_switch_selfcheck.json',dict(passed=True,historical_loss_AST_unchanged=True,
         body_target='reference_texture',all_factor_switches=results,exact_cached_region_checks=len(indices),
-        device='CPU',scientific_training_updates=0,resume_epoch_order_checked=True))
+        device='CPU',scientific_training_updates=0,resume_epoch_order_checked=True,
+        complete_optimizer_scheduler_rng_resume_bitwise_checked=True))
 
 
 if __name__=='__main__': selfcheck()

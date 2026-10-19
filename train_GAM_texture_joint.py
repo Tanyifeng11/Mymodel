@@ -1803,7 +1803,9 @@ def main():
                     global_step += 1
                     total_steps_done += 1
                     runtime.log_update(global_step, optimizer, grad_norm)
-                    runtime.save_state(global_step, data_epoch, data_offset)
+                    runtime.save_state(global_step, data_epoch, data_offset, force=getattr(runtime,'paused',False))
+                    if getattr(runtime,'paused',False):
+                        break
 
                 if accelerator.sync_gradients and args.report_to != "none":
                     grad_norm_log = None
@@ -1975,10 +1977,16 @@ def main():
 
                 if accelerator.sync_gradients and global_step >= target_global_step:
                     break
+        if getattr(runtime,'paused',False):
+            break
         data_epoch += 1
         data_offset = 0
 
     accelerator.wait_for_everyone()
+    if getattr(runtime,'paused',False) and global_step < target_global_step:
+        runtime.finish_pause(global_step)
+        accelerator.end_training()
+        return
     if accelerator.is_main_process:
         save_dir = save_training_checkpoint(
             accelerator,

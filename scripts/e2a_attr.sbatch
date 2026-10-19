@@ -13,6 +13,8 @@ export WANDB_MODE=disabled
 export OMP_NUM_THREADS=1
 ACTION=$1
 shift
+export E2A_JOB_START=$(date +%s)
+if [[ "$ACTION" == train ]]; then export E2A_JOB_SOFT_SECONDS=13500; fi
 if [[ "$ACTION" == train || "$ACTION" == smoke || "$ACTION" == eval ]]; then
   echo "[resources] job=${SLURM_JOB_ID:-local} GPUs=${SLURM_JOB_GPUS:-unset} visible=${CUDA_VISIBLE_DEVICES:-unset}"
   python -c 'import torch; print("CUDA available:",torch.cuda.is_available(),"visible devices:",torch.cuda.device_count()); assert torch.cuda.is_available()'

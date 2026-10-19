@@ -36,12 +36,18 @@ def submit(key,action,args=(),gpus=0,minutes=None,dependency=None,retry=False):
     if previous:
         current=previous[-1]; status=job_state(current)
         if status in ['PENDING','RUNNING','COMPLETING','CONFIGURING']: return current
-        if status=='COMPLETED': raise RuntimeError('COMPLETED_WITHOUT_EXPECTED_ARTIFACT '+key)
-        if not retry: raise RuntimeError('FAILED_JOB_REQUIRES_REVIEW %s %s'%(key,status))
+        resumable=False
+        if action=='train':
+            seed=int(args[args.index('--seed')+1]); factor=args[args.index('--factor')+1]
+            folder=train_folder(seed,factor)
+            resumable=(status=='COMPLETED' and (folder/'pauses'/('job_%s.json'%current['id'])).exists()
+                       and (folder/'state-latest/progress.json').exists())
+        if status=='COMPLETED' and not resumable: raise RuntimeError('COMPLETED_WITHOUT_EXPECTED_ARTIFACT '+key)
+        if not (retry or resumable): raise RuntimeError('FAILED_JOB_REQUIRES_REVIEW %s %s'%(key,status))
     jobname='E2A_'+key[-100:]; log=OUT/'logs'/(key+'_%j.log')
     cmd=['sbatch','--parsable','--partition='+('gpu' if gpus else 'cpu'),'--nodes=1','--ntasks=1',
          '--cpus-per-task='+str(4*gpus if gpus else 4),'--mem='+str(max(32,24*gpus) if gpus else 8)+'G',
-         '--time='+('00:40:00' if action=='smoke' else '1-00:00:00' if action=='train' else '03:00:00'),
+         '--time='+('00:40:00' if action=='smoke' else '04:00:00' if action=='train' else '03:00:00'),
          '--job-name='+jobname,'--output='+str(log),'--export=ALL,E2A_GPUS='+str(max(1,gpus))]
     if gpus: cmd+=['--gres=gpu:'+str(gpus)]
     if dependency: cmd+=['--dependency=afterany:'+':'.join(str(j['id']) for j in dependency)]

@@ -27,6 +27,10 @@ def train(seed, factor, smoke=False):
     physics=['train_GAM_texture_joint.py','adapter/attention_processor.py','models/bf_texture_module.py',
              'texture_preprocess.py','tools/e2a_attr_runtime.py','tools/e2a_attr_train.py']
     config['source_sha256']={p:sha(SOURCE/p) for p in physics}
+    if (folder/'config.json').exists():
+        original=read(folder/'config.json')
+        assert original['source_sha256']==config['source_sha256']
+        config['execution_commit']=original['execution_commit']
     if int(os.environ.get('RANK','0'))==0:
         for source,record in read(OUT/'checkpoint_manifest.json').items():
             assert sha(source)==record['sha256'],('INITIALIZATION_OR_MANIFEST_CHANGED',source)
@@ -40,6 +44,8 @@ def train(seed, factor, smoke=False):
         assert not (folder/'training_complete.json').exists(),'禁止重复训练已完成科学运行'
     sys.argv=[str(SOURCE/'train_GAM_texture_joint.py')]+argv
     runpy.run_path(sys.argv[0],run_name='__main__')
+    pause=folder/'pauses'/('job_%s.json'%os.environ.get('SLURM_JOB_ID','local'))
+    if pause.exists(): return
     if int(os.environ.get('RANK','0'))==0:
         assert all(sha(SOURCE/p)==h for p,h in config['source_sha256'].items()),'训练过程中关键源文件变化'
         path=folder/'checkpoint-final/joint_model.pt'

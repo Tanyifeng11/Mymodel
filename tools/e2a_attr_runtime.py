@@ -31,6 +31,9 @@ class AuditRuntime:
         self.rng_chain = '0'*64
         self.microbatches = 0
         self.started = time.time()
+        self.paused = False
+        soft_seconds=int(os.environ.get('E2A_JOB_SOFT_SECONDS','0'))
+        self.soft_end=int(os.environ.get('E2A_JOB_START',self.started))+soft_seconds if soft_seconds else None
 
     def restore(self, initial):
         path = self.folder/'state-latest/progress.json'
@@ -78,7 +81,10 @@ class AuditRuntime:
 
     def log_update(self, step, optimizer, grad_norm):
         if not self.enabled: return
-        values = self.accelerator.reduce(torch.stack(self.losses).mean(0), reduction='mean').cpu().tolist()
+        pause_flag=float(self.soft_end is not None and time.time()>=self.soft_end and step<self.args.max_train_steps)
+        vector=torch.cat([torch.stack(self.losses).mean(0),torch.tensor([pause_flag],device=self.accelerator.device)])
+        values = self.accelerator.reduce(vector, reduction='mean').cpu().tolist()
+        self.paused = values.pop()>0
         self.losses.clear()
         if self.accelerator.is_main_process:
             names = ['total','denoise','gram','edge','rgb_global','body_rgb','boundary','outside']
@@ -95,8 +101,8 @@ class AuditRuntime:
                     skipped_updates=0, attempted_updates=step, target_updates=self.args.max_train_steps,
                     elapsed_seconds=time.time()-self.started, world_size=self.accelerator.num_processes))
 
-    def save_state(self, step, epoch, offset):
-        if not self.enabled or step%1000 or step==self.args.max_train_steps: return
+    def save_state(self, step, epoch, offset, force=False):
+        if not self.enabled or (step%1000 and not force) or step==self.args.max_train_steps: return
         folder=self.folder/'state-latest'
         self.accelerator.save_state(str(folder), safe_serialization=False)
         write(folder/('stream_rank%d.json'%self.rank), dict(rng_chain=self.rng_chain))
@@ -104,6 +110,13 @@ class AuditRuntime:
         if self.accelerator.is_main_process:
             write(folder/'progress.json', dict(updates=step, epoch=epoch, offset=offset,
                 seed=self.args.seed, world_size=self.accelerator.num_processes, microbatches=self.microbatches))
+        self.accelerator.wait_for_everyone()
+
+    def finish_pause(self, step):
+        if self.accelerator.is_main_process:
+            write(self.folder/'pauses'/('job_%s.json'%os.environ.get('SLURM_JOB_ID','local')),
+                dict(clean_pause=True,retained_successful_updates=step,resume_state=str(self.folder/'state-latest'),
+                     replayed_or_discarded_updates=0,reason='yield before Slurm walltime; resume complete optimizer/scheduler/RNG state'))
         self.accelerator.wait_for_everyone()
 
     def finish(self, step):
