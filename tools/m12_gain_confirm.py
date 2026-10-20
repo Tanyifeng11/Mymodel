@@ -11,7 +11,7 @@ from datetime import datetime,timezone
 from tools.m12_gain_confirm_protocol import *
 from tools.m12_protocol import write_csv
 
-SOURCES=['tools/m12_gain_confirm.py','tools/m12_gain_confirm_protocol.py','tools/m12_gain_confirm_audit.py',
+SOURCES=['tools/m12_gain_confirm.py','tools/m12_gain_confirm_protocol.py','tools/m12_gain_confirm_audit.py','tools/m12_gain_confirm_dispatch.py',
     'tools/m12_gain_confirm_eval.py','tools/m12_gain_runtime.py','tools/m12_runtime.py','tools/m54_runtime.py',
     'tools/m54_m10_gain_runtime.py','tools/e44_runtime.py','tools/e47_runtime.py','tools/m54_eval.py',
     'tools/e44_metrics.py','tools/e35_freeu_protocol.py','tools/e33tmoc_appearance_eval.py',
