@@ -55,6 +55,17 @@ def prepare():
     models=read(M54/'manifests/model_file_hashes.json')
     assert all(sha(path)==expected for path,expected in models.items())
     write(RUN/'protocol/checkpoint_manifest.json',checkpoints);write(RUN/'protocol/model_file_hashes.json',models)
+    historical_costs={}
+    for name,base in [('M54',M54),('M10_GAIN',M54/'m10_gain_r1'),('M12',M12),('M12_GAIN_DEV32',OLD)]:
+        path=base/'resources/jobs.json'
+        if path.exists():
+            jobs=read(path)
+            raw=subprocess.check_output(['sacct','-X','-P','-j',','.join(str(j['id']) for j in jobs),
+                '--format=JobIDRaw,JobName,State,ExitCode,ElapsedRaw,AllocCPUS,AllocTRES,Start,End'],text=True)
+            historical_costs[name]=dict(jobs=jobs,jobs_sha256=sha(path),actual_allocations=list(csv.DictReader(raw.splitlines(),delimiter='|')))
+    write(RUN/'protocol/historical_cost_snapshot.json',dict(experiments=historical_costs,
+        learned_gain_training_updates=2400,new_training_updates=0,
+        limitations='historical allocations include audits, generation, training and failures; allocation hours are not training-only or utilization hours; full E5/B1 pretraining cost not recovered here'))
     old_records=read(OLD/'metrics/per_image.json');index={(r['variant'],r['id']):r for r in old_records}
     ids=[r['id'] for r in old_records if r['variant']=='E5'];power=[]
     from scipy.stats import norm
