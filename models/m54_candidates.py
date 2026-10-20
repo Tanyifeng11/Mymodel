@@ -201,6 +201,7 @@ class M54Processor(ReferenceAttentionProcessor):
         delta=(delta*getattr(self,'effect_scale',1.)).to(base.dtype)/attn.rescale_output_factor
         if len(shape)==4:delta=delta.transpose(1,2).reshape(shape)
         result=base+delta
-        self.last_delta=dict(rms=float((result-base).detach().float().square().mean().sqrt()),**getattr(self,'last_attention',{}))
-        if hasattr(self,'candidate'):self.last_delta.update(self.candidate.last)
+        if getattr(self,'record_enabled',True):
+            self.last_delta=dict(rms=float((result-base).detach().float().square().mean().sqrt()),**getattr(self,'last_attention',{}))
+            if hasattr(self,'candidate'):self.last_delta.update(self.candidate.last)
         return result
