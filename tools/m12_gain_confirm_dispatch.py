@@ -7,6 +7,8 @@ from tools.m12_gain_confirm import RUN,ARMS,read,write,sha,require,submit_job,ac
 
 def advance():
     require()
+    if (RUN/'resources/server_ready.json').exists():
+        print('SERVER_COMPLETE_LOCAL_REVIEW_PENDING');return
     approval=RUN/'audit/input_review_approval.json'
     if not approval.exists():
         print('WAIT_INPUT_REVIEW');return
@@ -17,7 +19,9 @@ def advance():
         '--format=JobIDRaw,State,ExitCode'],text=True)
     states={int(r['JobIDRaw']):r['State'].split()[0] for r in csv.DictReader(raw.splitlines(),delimiter='|') if r['JobIDRaw'].isdigit()}
     by_action={j['action']:j for j in jobs}
-    failed=[dict(job=j,state=states.get(j['id'])) for j in jobs if states.get(j['id']) in ['FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL','PREEMPTED']]
+    recovery_file=RUN/'resources/recovered_job_failures.json'
+    recovered={r['failed_job_id'] for r in read(recovery_file)} if recovery_file.exists() else set()
+    failed=[dict(job=j,state=states.get(j['id'])) for j in jobs if j['id'] not in recovered and states.get(j['id']) in ['FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL','PREEMPTED']]
     if failed:
         write(RUN/'resources/dispatch_attention.json',dict(failed=failed,utc=utc()))
         print('ENGINEERING_ATTENTION_REQUIRED',failed);return
