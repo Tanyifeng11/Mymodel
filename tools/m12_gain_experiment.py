@@ -381,9 +381,15 @@ def accounting():
     print('M12_GAIN_ACCOUNTING',[(r['job_id'],r['State']) for r in ledger],flush=True)
 
 
+def run():
+    smoke()
+    generate(0, 1)
+    evaluate()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('action',choices=['prepare','smoke','generate','evaluate','finalize','accounting'])
+    parser.add_argument('action',choices=['prepare','smoke','generate','evaluate','finalize','accounting','run'])
     parser.add_argument('--shard',type=int,default=0)
     parser.add_argument('--shards',type=int,default=1)
     args = parser.parse_args()
