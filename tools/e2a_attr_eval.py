@@ -12,6 +12,8 @@ from tools.e2a_attr_common import *
 
 def model_path(arm):
     if arm=='E1': return E1
+    if arm=='historical_E2a':
+        return Path(read(OUT/'audit/historical_reuse_scope.json')['historical_checkpoint']['path'])
     seed,factor=arm.split('_F')
     return checkpoint(int(seed[1:]),factor)
 
@@ -44,8 +46,10 @@ def generate(stage,arm):
         assert read(folder/'generation_complete.json').get('explicit_latent_verified')
         return
     rows=input_rows(stage); path=model_path(arm)
-    if arm!='E1': assert read(path.parent.parent/'checkpoint_verification.json')['passed']
-    else: assert sha(E1)==read(OUT/'checkpoint_manifest.json')[str(E1)]['sha256']
+    if arm=='E1': assert sha(E1)==read(OUT/'checkpoint_manifest.json')[str(E1)]['sha256']
+    elif arm=='historical_E2a':
+        assert sha(path)==read(OUT/'audit/historical_reuse_scope.json')['historical_checkpoint']['sha256']
+    else: assert read(path.parent.parent/'checkpoint_verification.json')['passed']
     spec=importlib.util.spec_from_file_location('e2a_historical_inference',SOURCE/'inference_IMAGGarment-1.py')
     module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     sd=PROJECT/'models/stable-diffusion-v1-5'

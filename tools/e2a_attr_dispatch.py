@@ -103,11 +103,15 @@ def portable():
             if folder.is_dir():
                 for path in folder.iterdir():
                     if path.is_file(): archive.add(path,arcname=str(path.relative_to(OUT)))
+                for path in (folder/'images').glob('*.json'):
+                    archive.add(path,arcname=str(path.relative_to(OUT)))
         for folder in (OUT/'training').glob('seed*/F*'):
             for name in ['config.json','loss_factor_manifest.json','optimizer_update_count.json',
                          'seed_and_rng_manifest.json','checkpoint_verification.json','training_log.csv']:
                 path=folder/name
                 if path.exists(): archive.add(path,arcname=str(path.relative_to(OUT)))
+            for pattern in ['pauses/*.json','recovery_discarded_*.json','state-latest/*.json']:
+                for path in folder.glob(pattern): archive.add(path,arcname=str(path.relative_to(OUT)))
         # 被用户资源变更替换的训练仍留在服务器；审查包收录其日志与元数据。
         for path in (OUT/'superseded').rglob('*'):
             if path.is_file() and not path.is_symlink() and path.suffix in ['.json','.csv','.txt']:
@@ -166,6 +170,10 @@ def switch_to_two_gpus():
 
 
 def advance(retry=False):
+    # 用户修订范围后，所有旧 afterany 入口也必须遵守只训练 B 的新范围。
+    if (OUT/'audit/historical_reuse_scope.json').exists():
+        from tools.e2a_attr_reuse import advance_reuse
+        return advance_reuse(retry)
     from tools.e2a_attr_stats import rng_audit,stage_a,factorial,lock_plan,final_lock
     assert read(OUT/'config.json')==CONFIG,'冻结协议发生变化'
     assert read(OUT/'audit/masks_complete.json')['passed']
@@ -240,9 +248,13 @@ def advance(retry=False):
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--retry-failed',action='store_true')
     parser.add_argument('--switch-to-two-gpus',action='store_true')
+    parser.add_argument('--reuse-historical-e2a',action='store_true')
     parser.add_argument('--package-only',action='store_true');args=parser.parse_args()
     try:
         if args.switch_to_two_gpus: switch_to_two_gpus()
+        if args.reuse_historical_e2a:
+            from tools.e2a_attr_reuse import activate
+            activate()
         if args.package_only: portable()
         else: advance(args.retry_failed); accounting()
     except Exception as error:
