@@ -45,6 +45,18 @@ class FixedDualPathProcessor(nn.Module):
         self.records = []
         self.steps = {}
 
+    def statistics_delta(self, attn, target, query, base, shape, native_arguments):
+        # 原 M10 运算顺序不变；新组合只替换此调用点。
+        _, value_m = self.m10.reference(self.features, query)
+        target_float, reference_float = target.float(), value_m.float()
+        statistic = (target_float - target_float.mean(1, keepdim=True)) / target_float.std(1, keepdim=True, unbiased=False).clamp_min(1e-6)
+        statistic = statistic * reference_float.std(1, keepdim=True, unbiased=False) + reference_float.mean(1, keepdim=True)
+        delta_m = self.m10.project(self.m10.gain * (statistic - target_float), query)
+        delta_m = (delta_m * 1.).to(base.dtype) / attn.rescale_output_factor
+        if len(shape) == 4:
+            delta_m = delta_m.transpose(1, 2).reshape(shape)
+        return delta_m
+
     def observe(self, delta_b, delta_m, combined, active):
         branch = self.branch
         step = self.steps.get(branch, 0)
@@ -117,14 +129,12 @@ class FixedDualPathProcessor(nn.Module):
             delta_b = delta_b.transpose(1, 2).reshape(shape)
         delta_b = delta_b / attn.rescale_output_factor
 
-        _, value_m = self.m10.reference(self.features, query)
-        target_float, reference_float = target.float(), value_m.float()
-        statistic = (target_float - target_float.mean(1, keepdim=True)) / target_float.std(1, keepdim=True, unbiased=False).clamp_min(1e-6)
-        statistic = statistic * reference_float.std(1, keepdim=True, unbiased=False) + reference_float.mean(1, keepdim=True)
-        delta_m = self.m10.project(self.m10.gain * (statistic - target_float), query)
-        delta_m = (delta_m * 1.).to(base.dtype) / attn.rescale_output_factor
-        if len(shape) == 4:
-            delta_m = delta_m.transpose(1, 2).reshape(shape)
+        native_arguments = dict(encoder_hidden_states=encoder_hidden_states,
+            attention_mask=attention_mask, temb=temb, scale=scale, cond_hidden_states=cond_hidden_states,
+            sa_hidden_states=sa_hidden_states, balanced_gate_timestep=balanced_gate_timestep,
+            tcpm_garment_mask=tcpm_garment_mask, local_detail_tokens=local_detail_tokens,
+            local_detail_mask=local_detail_mask, local_detail_spatial_shape=local_detail_spatial_shape)
+        delta_m = self.statistics_delta(attn, target, query, base, shape, (hidden_states, native_arguments))
         if self.alpha_b == 0 and self.alpha_m == 0:
             combined = torch.zeros_like(base)
             result = base
