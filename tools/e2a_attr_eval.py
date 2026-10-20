@@ -23,6 +23,7 @@ def image_seed(identity): return CONFIG['inference_seed']+int(hashlib.sha256(ide
 
 def input_rows(stage):
     if stage=='LOCK': return read(OUT/'selection/LOCK_protocol.json')['rows']
+    if stage=='P1_controlled': stage='P1'  # 同一冻结身份，独立输出目录以真正重测 B/C。
     return read(OUT/'splits'/(stage+'.json'))
 
 
@@ -166,7 +167,7 @@ def measure(stage,arm):
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(); parser.add_argument('--stage',choices=['P1','P2','LOCK'],required=True)
+    parser=argparse.ArgumentParser(); parser.add_argument('--stage',choices=['P1','P1_controlled','P2','LOCK'],required=True)
     parser.add_argument('--arm',required=True); args=parser.parse_args()
     torch.set_num_threads(2)
     generate(args.stage,args.arm); measure(args.stage,args.arm)

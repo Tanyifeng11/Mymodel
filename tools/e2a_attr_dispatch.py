@@ -96,7 +96,7 @@ def portable():
     accounting()
     with tarfile.open(OUT/'review_results.tar.gz','w:gz') as archive:
         for name in ['config.json','checkpoint_manifest.json','training_layout.json','jobs.json','status.json',
-                     'runtime_resource_ledger.csv','final_result.json','evaluation/metric_protocol.json',
+                     'runtime_resource_ledger.csv','final_result.json','controlled_result.json','evaluation/metric_protocol.json',
                      'audit','statistics','selection','splits']:
             path=OUT/name
             if path.exists(): archive.add(path,arcname=name)
@@ -171,6 +171,10 @@ def switch_to_two_gpus():
 
 
 def advance(retry=False):
+    # 最新用户范围优先；完成 B/C 后等待决定，不能落入自动八组分支。
+    if (OUT/'audit/controlled_resume_scope.json').exists():
+        from tools.e2a_attr_controlled import advance_controlled
+        return advance_controlled(retry)
     # 用户修订范围后，所有旧 afterany 入口也必须遵守只训练 B 的新范围。
     if (OUT/'audit/historical_reuse_scope.json').exists():
         from tools.e2a_attr_reuse import advance_reuse
@@ -250,11 +254,15 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--retry-failed',action='store_true')
     parser.add_argument('--switch-to-two-gpus',action='store_true')
     parser.add_argument('--reuse-historical-e2a',action='store_true')
+    parser.add_argument('--resume-controlled-c',action='store_true')
     parser.add_argument('--package-only',action='store_true');args=parser.parse_args()
     try:
         if args.switch_to_two_gpus: switch_to_two_gpus()
         if args.reuse_historical_e2a:
             from tools.e2a_attr_reuse import activate
+            activate()
+        if args.resume_controlled_c:
+            from tools.e2a_attr_controlled import activate
             activate()
         if args.package_only: portable()
         else: advance(args.retry_failed); accounting()
