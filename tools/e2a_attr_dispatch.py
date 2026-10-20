@@ -96,7 +96,8 @@ def portable():
     accounting()
     with tarfile.open(OUT/'review_results.tar.gz','w:gz') as archive:
         for name in ['config.json','checkpoint_manifest.json','training_layout.json','jobs.json','status.json',
-                     'runtime_resource_ledger.csv','final_result.json','audit','statistics','selection','splits']:
+                     'runtime_resource_ledger.csv','final_result.json','evaluation/metric_protocol.json',
+                     'audit','statistics','selection','splits']:
             path=OUT/name
             if path.exists(): archive.add(path,arcname=name)
         for folder in (OUT/'evaluation').glob('*/*'):
