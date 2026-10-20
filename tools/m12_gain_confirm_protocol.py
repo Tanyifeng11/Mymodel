@@ -40,6 +40,11 @@ def identity_order(identity):
     return hashlib.sha256(('M12_GAIN_CONFIRM_20261020_96042_'+identity).encode()).hexdigest()
 
 
+def non_clothing_caption(caption):
+    # 旧关键词“top”会误收 rolltop/drawstring top 背包；服装资格不变。
+    return any(word in caption.lower() for word in ['briefcase','backpack'])
+
+
 def rows():
     return read(RUN/'protocol/identities.json')
 

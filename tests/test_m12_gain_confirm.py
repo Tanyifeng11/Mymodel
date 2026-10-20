@@ -1,6 +1,6 @@
 """检验伪重复、缺 Seed、NA 与单 Seed 极端事件的统计风险。"""
 import unittest
-from tools.m12_gain_confirm_protocol import ARMS,SEEDS,CORE,aggregate,statistics
+from tools.m12_gain_confirm_protocol import ARMS,SEEDS,CORE,aggregate,statistics,non_clothing_caption
 
 
 def fixture():
@@ -9,6 +9,11 @@ def fixture():
 
 
 class ConfirmStatistics(unittest.TestCase):
+    def test_rolltop_and_drawstring_backpacks_are_not_clothing(self):
+        self.assertTrue(non_clothing_caption('A denim backpack with rolled top, front zipper pocket.'))
+        self.assertTrue(non_clothing_caption('A beige woven backpack with a drawstring top.'))
+        self.assertFalse(non_clothing_caption('A white striped tank top with thin straps.'))
+
     def test_one_identity_three_seeds(self):
         records=fixture();records[0]['contour_f1']=.1
         rows=aggregate(records,['a','b','c'])

@@ -80,7 +80,7 @@ def run_audit():
     for index,row in enumerate(sorted(prior,key=lambda r:identity_order(r['id']))):
         reasons=[];near=[]
         if row['id'] in exposed:reasons.append('known_training_development_or_candidate_exposure')
-        if not clothing(row) or 'briefcase' in row['caption'].lower():reasons.append('original_clothing_ineligible')
+        if not clothing(row) or non_clothing_caption(row['caption']):reasons.append('original_clothing_ineligible')
         if not reasons:
             for kind in ['gt','sketch','reference']:
                 signature=cache[row[kind]]
