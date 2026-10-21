@@ -117,6 +117,10 @@ def advance():
         if not (ROOT/'evaluation/P2b'/arm/'evaluation_complete.json').exists():
             jobs.append(submit('P2b_'+arm,'eval',['--arm',arm,'--stage','P2b'],gpus=1))
     if jobs:watch(jobs);return
+    for arm in ['B','C']+ARMS:
+        if not (ROOT/'evaluation/reference_swap'/arm/'evaluation_complete.json').exists():
+            jobs.append(submit('reference_swap_'+arm,'eval',['--arm',arm,'--stage','reference_swap'],gpus=1))
+    if jobs:watch(jobs);return
     from tools.e2a_sup_stats import summarize
     summarize()
     print('Five-arm statistics complete; swap, blind/tail review and local report remain',flush=True)
