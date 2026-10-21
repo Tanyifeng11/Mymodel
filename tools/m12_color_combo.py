@@ -22,7 +22,9 @@ SETTINGS = dict(identities=32, seed=42, arms=ARMS, new_diffusion_outputs=0,
     calibration=parent.SETTINGS['LAB_AB'], evaluation=parent.SETTINGS['evaluation'],
     comparisons='CFG5_LAB minus CFG5, paired identity bootstrap10000 seed32042',
     sample='all old dev32 in original order; exploratory development only',
-    parameters_changed=False, mask_changed=False, reference_changed=False)
+    parameters_changed=False, mask_changed=False, reference_changed=False,
+    lpips_device='cpu', lpips_cpu_threads=4,
+    device_scope='both paired arms on same CPU path; historical GPU values preserved separately')
 
 
 def image(arm, identity):
@@ -155,8 +157,9 @@ def evaluate():
     records = parent.color_records(ARMS,image)
     index = {(r['arm'],r['id']): r for r in records}
     metric,info = frozen_lpips()
-    metric = metric.cuda()
-    tensor = lambda im: torch.from_numpy(np.asarray(im,np.float32).transpose(2,0,1)/127.5-1)[None].cuda()
+    torch.set_num_threads(SETTINGS['lpips_cpu_threads'])
+    metric = metric.to(SETTINGS['lpips_device'])
+    tensor = lambda im: torch.from_numpy(np.asarray(im,np.float32).transpose(2,0,1)/127.5-1)[None].to(SETTINGS['lpips_device'])
     def hp(im):
         a = cv2.cvtColor(np.asarray(crop(im)),cv2.COLOR_RGB2GRAY).astype(np.float32)
         return a-cv2.GaussianBlur(a,(0,0),2.)
@@ -185,9 +188,9 @@ def evaluate():
     write(RUN/'metrics/guardrails.json',guardrails(records,stats))
     write(RUN/'metrics/baseline_replay.json',dict(max_error=replay,
         strict_passed=all(v <= (1e-6 if k == 'lpips_gt' else 1e-12) for k,v in replay.items()),
-        original_parent_values_preserved=True))
+        original_parent_values_preserved=True,lpips_device='CPU versus historical GPU; strict failures retained'))
     write(RUN/'metrics/complete.json',dict(images=64,new_postprocessed_outputs=32,lpips=info,
-        environment=dict(torch=torch.__version__,numpy=np.__version__,python=platform.python_version(),pillow=__import__('PIL').__version__),
+        environment=dict(torch=torch.__version__,numpy=np.__version__,python=platform.python_version(),pillow=__import__('PIL').__version__,device=SETTINGS['lpips_device']),
         wrong_reference=wrong,no_blind_review=True,no_pattern_ground_truth=True))
 
 
@@ -209,17 +212,22 @@ def accounting():
         '--format=JobIDRaw,JobName,State,ExitCode,ElapsedRaw,AllocCPUS,AllocTRES,Start,End'],text=True)
     (RUN/'resources/accounting.psv').write_text(raw,encoding='utf-8')
     ledger = list(csv.DictReader(raw.splitlines(),delimiter='|'))
-    assert len(ledger) == len(jobs) and all(j['State'] in ['COMPLETED','FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL'] for j in ledger)
+    assert len(ledger) == len(jobs) and all(j['State'].split()[0] in ['COMPLETED','FAILED','CANCELLED','TIMEOUT','OUT_OF_MEMORY','NODE_FAIL'] for j in ledger)
     write(RUN/'resources/accounting.json',ledger)
     pack(RUN/'m12_color_combo_ledger.tar.gz',{str(p.relative_to(RUN)):p for p in (RUN/'resources').glob('*') if p.is_file()})
     print('COMBO_ACCOUNTED',[(j['JobIDRaw'],j['State']) for j in ledger],flush=True)
 
 
 def submit():
-    path = RUN/'resources/jobs.json'; assert not path.exists()
+    path = RUN/'resources/jobs.json'; jobs = read(path) if path.exists() else []
+    if jobs:
+        states = subprocess.check_output(['sacct','-X','-n','-P','-j',','.join(str(j['id']) for j in jobs),'--format=State'],text=True)
+        assert states.strip() and all(s.split('|')[0].strip().startswith('CANCELLED') for s in states.splitlines() if s.strip())
+        assert not (RUN/'protocol/frozen.json').exists()
     command = ['sbatch','--parsable','--job-name=color_combo','submit/m12_color_combo.sh']
     job = int(subprocess.check_output(command,text=True).strip().split(';')[0])
-    write(path,[dict(id=job,action='run',command=command)])
+    jobs.append(dict(id=job,action='run',device=SETTINGS['lpips_device'],command=command))
+    write(path,jobs)
     print('COMBO_SUBMITTED',job,flush=True)
 
 
