@@ -3,6 +3,7 @@ import argparse
 import csv
 import fcntl
 import re
+import shutil
 import subprocess
 from tools.e2a_sup_common import *
 
@@ -24,6 +25,11 @@ def submit(key,action,args=(),gpus=0,dependency=None):
         if action=='train':
             run=folder(args[1],args[3])
             resume=state=='COMPLETED' and (run/'pauses'/('job_%d.json'%latest['id'])).exists()
+        release=ROOT/'audit'/('retry_release_%d.json'%latest['id'])
+        if not resume and release.exists():
+            review=read(release)
+            resume=(review['passed'] and review['failed_job']==latest['id'] and
+                review['key']==key and review['source_commit']==commit())
         if not resume:raise RuntimeError('REVIEW_REQUIRED %s %s'%(key,state))
     command=['sbatch','--parsable','--partition='+('gpu' if gpus else 'cpu'),'--nodes=1','--ntasks=1',
         '--cpus-per-task='+str(4*gpus if gpus else 8),'--mem='+str(48 if gpus==2 else 32 if gpus else 16)+'G',
@@ -35,11 +41,41 @@ def submit(key,action,args=(),gpus=0,dependency=None):
     identifier=int(subprocess.check_output(command,text=True).strip().split(';')[0])
     value=dict(id=identifier,key=key,action=action,args=list(args),gpus=gpus,command=command,
         commit=commit(),attempt=len(prior)+1)
+    if prior and (ROOT/'audit'/('retry_release_%d.json'%prior[-1]['id'])).exists():
+        value['retry_of']=prior[-1]['id']
+        prior[-1]['superseded_by']=identifier
     jobs.append(value);write(ROOT/'jobs.json',jobs);print('SUBMITTED',key,identifier,flush=True);return value
 
 
 def watch(jobs):
     submit('advance_'+'_'.join(str(j['id']) for j in jobs),'advance',dependency=jobs)
+
+
+def review_calibration_retry(identifier,reason):
+    """仅放行已审查、尚无科学产物的失败校准；归档整次尝试后重新固定 512 样本。"""
+    assert reason.strip()
+    with (ROOT/'dispatch.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        jobs=history(); job=next(j for j in jobs if j['id']==identifier)
+        assert job['id']==[j for j in jobs if j['key']==job['key']][-1]['id']
+        assert job['action']=='train' and job['args'][2:]==['--phase','calibrate']
+        assert job_state(job) in ['FAILED','OUT_OF_MEMORY','TIMEOUT','CANCELLED']
+        assert not any(job_state(j) in ['RUNNING','PENDING','CONFIGURING','COMPLETING'] for j in jobs)
+        arm=job['args'][1]; run=folder(arm,'calibrate')
+        assert not (run/'calibration_complete.json').exists()
+        assert arm not in (read(ROOT/'loss_registry.json') if (ROOT/'loss_registry.json').exists() else {})
+        archive=ROOT/'superseded/engineering_failures'/('%s_job_%d'%(job['key'],identifier))
+        assert not archive.exists()
+        log=ROOT/'logs'/('%s_%d.log'%(job['key'],identifier))
+        evidence=dict(passed=True,failed_job=identifier,key=job['key'],state=job_state(job),reason=reason,
+            source_commit=commit(),failed_log_sha256=sha(log),archive=str(archive),
+            preserved_files={str(p.relative_to(run)):sha(p) for p in run.rglob('*') if p.is_file()},
+            calibration_restarts_from_E1=True,optimizer_updates_authorized=0,
+            target_samples=512,effective_batches=64,scientific_budget_changed=False)
+        archive.parent.mkdir(parents=True,exist_ok=True)
+        shutil.move(str(run),str(archive))
+        freeze(ROOT/'audit'/('retry_release_%d.json'%identifier),evidence)
+        accounting()
 
 
 def accounting():
@@ -127,6 +163,12 @@ def advance():
 
 
 if __name__=='__main__':
-    try:advance()
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--retry-job',type=int)
+    parser.add_argument('--reason')
+    options=parser.parse_args()
+    try:
+        if options.retry_job:review_calibration_retry(options.retry_job,options.reason or '')
+        advance()
     except Exception as error:
         status(engineering_failure=repr(error));raise

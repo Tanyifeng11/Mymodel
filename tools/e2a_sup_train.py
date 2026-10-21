@@ -41,7 +41,7 @@ class Hook:
             arm=self.arm,phase=self.phase,main_rng_seed=42+self.rank))
         # 记录实际 trainable tensors，后续 aux 单项梯度验收不会只检查一个游离 RGB 张量。
         params=env['trainable_params']; self.probes=[params[i] for i in sorted({0,len(params)//2,len(params)-1})]
-        self.probe_before=[p.detach().clone() for p in self.probes] if self.phase=='calibrate' else []
+        self.probe_before=[p.detach().cpu().clone() for p in self.probes] if self.phase=='calibrate' else []
         original=self.runtime.log_update
         def log_update(step,optimizer,grad_norm):
             original(step,optimizer,grad_norm)
@@ -110,6 +110,10 @@ class Hook:
                 x0_out_of_range=float(((env['x0_hat'].detach()<-1)|(env['x0_hat'].detach()>1)).float().mean()),
                 auxiliary_seconds=time.time()-started,peak_gpu_bytes=torch.cuda.max_memory_allocated())
             self.rows.append(row)
+            # 上面的梯度测量需 retain_graph；测完后走完 base 的反传以释放共享模型激活。
+            # 不调用 step/scheduler/scaler update，随即清空梯度，参数和主 RNG 仍须审计相等。
+            base.backward()
+            self.optimizer.optimizer.zero_grad(set_to_none=True)
             if len(self.rows)==256: self.finish_calibration()
             return base
         aux=weighted(raw,self.coefficients)
@@ -153,7 +157,7 @@ class Hook:
     def finish_calibration(self):
         assert self.parameter_probe
         assert not self.optimizer.state,'Calibration performed optimizer updates'
-        assert all(torch.equal(p,b) for p,b in zip(self.probes,self.probe_before))
+        assert all(torch.equal(p.detach().cpu(),b) for p,b in zip(self.probes,self.probe_before))
         csv_write(self.run/('calibration_rank%d.csv'%self.rank),self.rows)
         write(self.run/('gradient_probe_rank%d.json'%self.rank),self.parameter_probe)
         self.acc.wait_for_everyone()

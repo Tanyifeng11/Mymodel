@@ -9,7 +9,9 @@ from tools.e2a_sup_common import CONFIG, ROOT, read, sha
 
 class Supervision:
     def __init__(self, arm, helpers):
-        self.arm,self.h=arm,helpers
+        # 只保存静态算子；helpers 含当前训练 locals，保留它会锁住首批完整计算图。
+        self.arm=arm
+        self.h={name:helpers[name] for name in ['build_region_masks','texture_color_stat_loss','masked_l1_loss']}
         self.network=None
         if arm not in ['T1','T2']: return
         assets=ROOT/'assets'; registry=read(assets/'registry.json')[arm]
