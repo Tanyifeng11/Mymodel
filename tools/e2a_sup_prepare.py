@@ -110,6 +110,33 @@ def prepare(workers=8):
     split=defaultdict(list)
     for row,(name,_) in zip(chosen,slots): split[name].append(row)
     for name in ['P2a','P2b','LOCK']: freeze(ROOT/'splits'/(name+'.json'),split[name])
+    swaps=[]
+    for row in sorted(split['P2b'],key=lambda r:stable('swap/'+r['id'])):
+        alternatives=[r for r in split['P2b'] if r['id']!=row['id'] and
+            r['stratum']['category']==row['stratum']['category']]
+        first=np.asarray(Image.open(row['reference']).convert('RGB').resize((32,32)),float)/255
+        alternatives.sort(key=lambda r:stable('ref/'+row['id']+'/'+r['id']))
+        for alternative in alternatives:
+            second=np.asarray(Image.open(alternative['reference']).convert('RGB').resize((32,32)),float)/255
+            difference=float(np.abs(first-second).mean())
+            if difference<.05:continue
+            swaps.append(dict(row,reference_alternative=alternative['reference'],alternative_id=alternative['id'],
+                reference_category=alternative['stratum']['category'],input_rgb_difference=difference,
+                references=[row['reference'],alternative['reference']],
+                counterpart_GT_available=False,selection_used_generated_images=False))
+            break
+        if len(swaps)==32:break
+    assert len(swaps)==32,'SAME_CATEGORY_REFERENCE_SWAP_POOL_SHORTAGE'
+    freeze(ROOT/'splits/reference_swap.json',swaps)
+    from PIL import ImageDraw
+    panels=ROOT/'audit/swap_reference_review';panels.mkdir(parents=True,exist_ok=True)
+    for start in range(0,32,8):
+        canvas=Image.new('RGB',(3*128,8*195),'white');draw=ImageDraw.Draw(canvas)
+        for j,row in enumerate(swaps[start:start+8]):
+            for k,key in enumerate(['sketch','reference','reference_alternative']):
+                canvas.paste(Image.open(row[key]).convert('RGB').resize((128,171)),(k*128,j*195+24))
+            draw.text((2,j*195+3),row['id']+' '+row['stratum']['category'],fill='black')
+        canvas.save(panels/('page_%02d.png'%start))
     freeze(ROOT/'audit/exposure_registry.json',exposure)
     write(ROOT/'audit/excluded_candidates.json',excluded)
     freeze(ROOT/'audit/train_manifest_registry.json',{p:dict(sha256=sha(p),n=len(rows)) for p,rows in records.items()})
@@ -123,6 +150,8 @@ def prepare(workers=8):
     freeze(ROOT/'audit/reused_mask_audit.json',dict(masks_root=str(OLD/'masks/train'),
         mask_audit_sha256=sha(OLD/'mask_audit.csv'),visual=read(OLD/'audit/mask_visual_review.json'),
         known_defects_retained=17,mask_algorithm_changed=False))
+    from tools.e2a_sup_check import check
+    freeze(ROOT/'audit/operator_selfcheck.json',check())
     freeze(ROOT/'audit/preparation_complete.json',dict(passed=True,commit=commit(),training_files_verified=len(paths),
         train_manifest_identity_sets_equal=len({frozenset(Path(r['cloth']).stem for r in rows) for rows in records.values()})==1,
         splits={k:len(v) for k,v in split.items()},independent_from_declared_training=True,
