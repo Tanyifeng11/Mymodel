@@ -1,5 +1,6 @@
 """附加监督；历史 base、x0 解码、训练冻结与更新逻辑由原训练脚本提供。"""
 import importlib.util
+import sys
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -22,7 +23,21 @@ class Supervision:
             with torch.no_grad():
                 self.network.alpha.copy_(weights['alpha']);self.network.beta.copy_(weights['beta'])
         else:
-            self.network=torch.hub.load(str(assets/'dino'),'dino_vits16',source='local',pretrained=False)
+            # 官方 vision_transformer 从顶级 utils 导入，必须隔离仓库同名 utils。
+            repo=assets/'dino'
+            modules={}
+            for name in ['utils','vision_transformer']:
+                spec=importlib.util.spec_from_file_location('sup_official_dino_'+name,repo/(name+'.py'))
+                module=importlib.util.module_from_spec(spec)
+                previous=sys.modules.get('utils')
+                try:
+                    if name=='vision_transformer':sys.modules['utils']=modules['utils']
+                    spec.loader.exec_module(module)
+                finally:
+                    if previous is None:sys.modules.pop('utils',None)
+                    else:sys.modules['utils']=previous
+                modules[name]=module
+            self.network=modules['vision_transformer'].vit_small(patch_size=16,num_classes=0)
             weights=torch.load(registry['weights'],map_location='cpu',weights_only=False)
             self.network.load_state_dict(weights,strict=True)
         self.network.to(helpers['accelerator'].device,dtype=torch.float32).eval().requires_grad_(False)

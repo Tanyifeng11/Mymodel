@@ -92,15 +92,20 @@ class Hook:
             row=dict(microbatch=len(self.rows)+1,index=int(env['batch']['dataset_index'][0]),
                 timestep=int(env['timesteps'][0]),base_rms=base_rms,rng_chain=self.runtime.rng_chain)
             for name,value in raw.items():
-                grad=torch.autograd.grad(value,epsilon,retain_graph=True)[0]
+                grad,x0grad=torch.autograd.grad(value,[epsilon,env['x0_hat']],retain_graph=True)
                 assert torch.isfinite(grad).all().item()
+                assert torch.isfinite(x0grad).all().item()
                 row[name+'_rms']=rms(grad); row[name+'_ratio']=rms(grad)/base_rms
+                row[name+'_x0_rms']=rms(x0grad)
+                if row[name+'_rms']>0:assert row[name+'_x0_rms']>0
                 if row[name+'_rms']>0 and name not in self.parameter_probe:
                     params=torch.autograd.grad(value,self.probes,allow_unused=True,retain_graph=True)
                     values=[rms(p) for p in params if p is not None]
                     assert values and max(values)>0 and all(np.isfinite(values))
                     self.parameter_probe[name]=dict(gradient_rms=values,actual_trainable_tensor_count=len(values))
-            row.update(body_fraction=float(env['mask_loss'].mean()),
+            body,boundary,outside=self.impl.h['build_region_masks'](env['mask_loss'],9)
+            row.update(body_fraction=float(body.mean()),boundary_fraction=float(boundary.mean()),outside_fraction=float(outside.mean()),
+                texture_condition_active=float(env['texture_condition_weight'][0]>0),
                 decoded_out_of_range=float(((pred.detach()<-1)|(pred.detach()>1)).float().mean()),
                 x0_out_of_range=float(((env['x0_hat'].detach()<-1)|(env['x0_hat'].detach()>1)).float().mean()),
                 auxiliary_seconds=time.time()-started,peak_gpu_bytes=torch.cuda.max_memory_allocated())
