@@ -13,6 +13,8 @@ if [[ "$ACTION" == prepare ]]; then
   python -m tools.e2a_sup_prepare
 elif [[ "$ACTION" == advance ]]; then
   python -m tools.e2a_sup_dispatch "$@"
+elif [[ "$ACTION" == assets ]]; then
+  python -m tools.e2a_sup_assets "$@"
 elif [[ "$ACTION" == train ]]; then
   export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 E2A_JOB_SOFT_SECONDS=13500
   python -c 'import torch; print("CUDA",torch.cuda.is_available(),"VISIBLE",torch.cuda.device_count(),"EXPECTED",2,flush=True); assert torch.cuda.is_available() and torch.cuda.device_count()==2'
