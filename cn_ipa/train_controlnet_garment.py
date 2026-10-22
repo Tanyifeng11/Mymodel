@@ -760,7 +760,7 @@ def main(args):
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
-        dataloader_config=DataLoaderConfiguration(use_seedable_sampler=True, data_seed=args.seed),
+        dataloader_config=DataLoaderConfiguration(use_seedable_sampler=True),
     )
 
     # Disable AMP for MPS.
