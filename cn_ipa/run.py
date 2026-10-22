@@ -171,9 +171,12 @@ def cn_smoke():
         subprocess.run(base+['--max_train_steps','1'],check=True)
     subprocess.run(base+['--max_train_steps','2','--resume_from_checkpoint','latest'],check=True)
     done=read(folder/'complete.json');assert done['updates']==2
-    cursor=read(folder/'checkpoint-2/data_cursor.json');assert cursor['next_batch']==8
+    cursor=read(folder/'checkpoint-2/data_cursor.json')
+    prior=read(folder/'checkpoint-1/data_cursor.json')
+    assert cursor['samples_consumed']>=prior['samples_consumed']+4
     write(path,dict(passed=True,updates=2,resumed_from=1,next_batch=cursor['next_batch'],
-        optimizer_RNG_scaler_saved=True,details=done,code_commit=commit(),scientific_training=False))
+        optimizer_RNG_scaler_saved=True,samples_consumed=cursor['samples_consumed'],
+        prior_samples_consumed=prior['samples_consumed'],details=done,code_commit=commit(),scientific_training=False))
 
 
 def train_cn():

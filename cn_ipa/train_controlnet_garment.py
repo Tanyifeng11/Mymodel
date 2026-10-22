@@ -34,7 +34,7 @@ import transformers
 from accelerate import Accelerator
 from accelerate import DataLoaderConfiguration
 from accelerate.logging import get_logger
-from accelerate.utils import ProjectConfiguration, set_seed
+from accelerate.utils import ProjectConfiguration, set_seed, GradientAccumulationPlugin
 from datasets import load_dataset, Image as DatasetImage
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
@@ -756,7 +756,8 @@ def main(args):
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
 
     accelerator = Accelerator(
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        gradient_accumulation_plugin=GradientAccumulationPlugin(
+            num_steps=args.gradient_accumulation_steps, sync_with_dataloader=False),
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
@@ -1055,13 +1056,15 @@ def main(args):
         resume_cursor = audit_read(Path(args.output_dir)/path/'data_cursor.json')
         first_epoch = resume_cursor['epoch']
     # DataLoader的独立generator避免恢复时构造迭代器消费扩散噪声的全局RNG。
-    skipped_updates = 0
-    samples_consumed = global_step * total_batch_size
+    skipped_updates = resume_cursor.get('skipped_updates',0) if resume_cursor else 0
+    samples_consumed = resume_cursor.get('samples_consumed',0) if resume_cursor else 0
+    previous_seconds = resume_cursor.get('seconds',0.) if resume_cursor else 0.
     for epoch in range(first_epoch, args.num_train_epochs + 1):
         train_dataloader.set_epoch(epoch)
         skip = resume_cursor['next_batch'] if resume_cursor is not None and epoch == first_epoch else 0
         active_loader = accelerator.skip_first_batches(train_dataloader, skip) if skip else train_dataloader
         for step, batch in enumerate(active_loader, start=skip):
+            samples_consumed += len(batch['pixel_values']) * accelerator.num_processes
             with accelerator.accumulate(controlnet):
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
@@ -1126,7 +1129,6 @@ def main(args):
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
-                samples_consumed += total_batch_size
                 if accelerator.optimizer_step_was_skipped:
                     skipped_updates += 1
                     continue
@@ -1157,7 +1159,9 @@ def main(args):
 
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         accelerator.save_state(save_path)
-                        audit_write(Path(save_path)/'data_cursor.json',dict(epoch=epoch,next_batch=step+1))
+                        audit_write(Path(save_path)/'data_cursor.json',dict(epoch=epoch,next_batch=step+1,
+                            samples_consumed=samples_consumed,skipped_updates=skipped_updates,
+                            seconds=previous_seconds+time.perf_counter()-started_training))
                         logger.info(f"Saved state to {save_path}")
 
                     if args.validation_prompt is not None and global_step % args.validation_steps == 0:
@@ -1179,7 +1183,7 @@ def main(args):
             if accelerator.sync_gradients and accelerator.is_main_process and (global_step <= 5 or global_step % 25 == 0):
                 with (Path(args.output_dir)/'history.jsonl').open('a',encoding='utf-8') as history:
                     history.write(json.dumps(dict(step=global_step,loss=float(loss.detach()),
-                        seconds=time.perf_counter()-started_training,skipped_updates=skipped_updates,
+                        seconds=previous_seconds+time.perf_counter()-started_training,skipped_updates=skipped_updates,
                         peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30))+'\n')
 
             if global_step >= args.max_train_steps:
@@ -1199,7 +1203,7 @@ def main(args):
         assert global_step == args.max_train_steps
         audit_write(Path(args.output_dir)/'complete.json',dict(updates=global_step,frozen_before=frozen_before,
             frozen_after=frozen_after,controlnet_before=cn_before,controlnet_after=state_hash(controlnet),
-            seconds=time.perf_counter()-started_training,samples_consumed=samples_consumed,
+            seconds=previous_seconds+time.perf_counter()-started_training,samples_consumed=samples_consumed,
             skipped_updates=skipped_updates,effective_batch=total_batch_size,gpu=torch.cuda.get_device_name(),
             peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,
             peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,code_commit=commit()))

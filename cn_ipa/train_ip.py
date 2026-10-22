@@ -219,6 +219,7 @@ def train(steps=3000,checkpoint_every=500,output=None):
         changed_parameters=changed,frozen_before=frozen_before,frozen_after=frozen_after,
         peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,
         gpu=torch.cuda.get_device_name(),code_commit=commit(),training_CN_scale=1.,training_IP_scale=1.,
+        initial_precision='官方IPA按FP16推理图严格加载后升为FP32主参数；冻结骨干FP16；优化器FP32',
         dropout=dict(image=.05,text=.05,both=.05)))
     rt.release(pipe)
 
