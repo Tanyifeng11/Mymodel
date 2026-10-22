@@ -308,6 +308,11 @@ def finalize():
         histories[name]=dict(complete=read(folder/'complete.json'),
             history=[json.loads(line) for line in (folder/'history.jsonl').read_text().splitlines() if line])
     write(ROOT/'audit/training_runs.json',histories)
+    budget={name:len(list((ROOT/name).rglob('*.png'))) for name in ['outputs','dev','smoke','profiles','qualitative']}
+    budget.update(historical_test_images_reused=1728,
+        dev_breakdown={p.name:len(list(p.rglob('*.png'))) for p in (ROOT/'dev').iterdir() if p.is_dir()},
+        qualitative_is_panel_count=True)
+    write(ROOT/'audit/image_budget.json',budget)
     historical=CONFIRM/'protocol/historical_cost_snapshot.json'
     if historical.exists():write(ROOT/'audit/historical_training_costs.json',read(historical))
     write(ROOT/'audit/finalized.json',dict(complete=True,code_commit=commit(),new_test_images=864,
