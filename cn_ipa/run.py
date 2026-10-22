@@ -17,6 +17,7 @@ def stage(name,**info):
 
 
 def validate_assets():
+    import inspect
     assets=read(ROOT/'pretrained/assets.json')
     for path,info in assets['files'].items():
         assert sha(ROOT/'pretrained'/path)==info['sha256'],path
@@ -26,6 +27,11 @@ def validate_assets():
     versions={name:__import__(name).__version__ for name in ['torch','diffusers','transformers','accelerate','datasets','numpy','PIL','lpips'] if name!='lpips'}
     versions.update(python=platform.python_version(),cuda=torch.version.cuda,
         gpu=torch.cuda.get_device_name() if torch.cuda.is_available() else None)
+    versions['cudnn']=torch.backends.cudnn.version()
+    from diffusers import UNet2DConditionModel
+    from diffusers.models.attention_processor import IPAdapterAttnProcessor2_0
+    versions['source_files']={inspect.getfile(cls):sha(inspect.getfile(cls)) for cls in
+        [rt.ControlNetModel,rt.StableDiffusionControlNetPipeline,UNet2DConditionModel,IPAdapterAttnProcessor2_0]}
     write(ROOT/'audit/versions.json',versions)
     paths=[p for p in SD.rglob('*') if p.is_file() and '.git' not in p.parts
         and p.suffix in ['.json','.bin','.safetensors','.txt'] and '.part' not in p.name]
@@ -422,6 +428,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('mode');parser.add_argument('--arm',default='C0')
     args=parser.parse_args();require_audit()
     if args.mode=='assets':validate_assets()
+    elif args.mode=='validate':validate_assets();smoke('C0');metric_smoke();cn_smoke()
     elif args.mode=='smoke':smoke(args.arm)
     elif args.mode=='grid':grid(args.arm)
     elif args.mode=='cn_select':cn_select()

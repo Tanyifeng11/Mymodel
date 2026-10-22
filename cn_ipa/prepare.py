@@ -35,6 +35,7 @@ def prepare():
     # 冻结 TEST-A，不以新模型结果改变任何身份。先核验历史文件哈希。
     old={r['id']:r for r in read(CONFIRM/'protocol/input_manifest.json')}
     for row in test:
+        assert hashlib.sha256(row['caption'].encode()).hexdigest()==old[row['id']]['caption_sha256']
         for key in ['gt','sketch','reference']:
             assert signatures[row[key]]['file_sha256']==old[row['id']][key+'_sha256']
     lookup=np.array([bin(i).count('1') for i in range(256)],np.uint8)

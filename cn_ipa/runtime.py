@@ -120,6 +120,9 @@ def generate(pipe,row,path,seed=42,cn_scale=1.,ip_scale=.65,reference=None,sketc
     path.parent.mkdir(parents=True,exist_ok=True);rgb.save(path)
     meta=dict(id=row['id'],seed=seed,cn_scale=cn_scale,ip_scale=ip_scale,png_sha256=sha(path),
         initial_sha256=initial,gt_used_in_inference=False,prompt=prompt if prompt is not None else row['caption'],
+        prompt_sha256=hashlib.sha256((prompt if prompt is not None else row['caption']).encode()).hexdigest(),
+        sketch_preprocessed_rgb_sha256=hashlib.sha256(sketch.tobytes()).hexdigest(),
+        reference_rgb_sha256=hashlib.sha256(reference.tobytes()).hexdigest(),
         negative_prompt=NEGATIVE,seconds=seconds,peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,
         peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,gpu=torch.cuda.get_device_name(),
         scheduler=dict(pipe.scheduler.config),code_commit=commit(),
