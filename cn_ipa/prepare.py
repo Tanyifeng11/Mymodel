@@ -81,6 +81,8 @@ def prepare():
         with path.with_suffix('.jsonl').open('w',encoding='utf-8') as f:
             for row in rows:f.write(json.dumps(row,ensure_ascii=False)+'\n')
     write(ROOT/'manifests/excluded_train.json',excluded)
+    write(ROOT/'manifests/qualitative_ids.json',[r['id'] for r in sorted(test,
+        key=lambda r:hashlib.sha256(('CNIPA_QUAL_20261022_'+r['id']).encode()).hexdigest())[:12]])
     write(ROOT/'manifests/split_audit.json',dict(passed=True,original_train=1024,train=len(accepted),dev=32,test_A=96,
         excluded_train=len(excluded),manifest_sha256=manifests,reference_groups=dict(Counter(r['fabric_id'] for r in accepted)),
         identity_cross_split=0,exact_cross_split=0,GT_reference_phash_cross_split_distance_min=7,

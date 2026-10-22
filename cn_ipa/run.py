@@ -28,7 +28,17 @@ def validate_assets():
     write(ROOT/'audit/versions.json',versions)
     paths=[p for p in SD.rglob('*') if p.is_file() and '.git' not in p.parts
         and p.suffix in ['.json','.bin','.safetensors','.txt'] and '.part' not in p.name]
-    write(ROOT/'audit/base_model_file_sha256.json',{str(p):sha(p) for p in paths})
+    base_hashes={str(p):sha(p) for p in paths}
+    write(ROOT/'audit/base_model_file_sha256.json',base_hashes)
+    source=read('cn_ipa/sd15_official_files.json');checked={}
+    for component,options in dict(unet=['diffusion_pytorch_model.safetensors','diffusion_pytorch_model.bin'],
+            vae=['diffusion_pytorch_model.safetensors','diffusion_pytorch_model.bin'],
+            text_encoder=['model.safetensors','pytorch_model.bin']).items():
+        relative=next(f'{component}/{name}' for name in options if (SD/component/name).exists())
+        checked[relative]=dict(actual=base_hashes[str(SD/relative)],official=source['files'][relative])
+    write(ROOT/'audit/sd15_official_validation.json',dict(source=source,files=checked,
+        passed=all(v['actual']==v['official'] for v in checked.values())))
+    assert all(v['actual']==v['official'] for v in checked.values()),('SD15_WEIGHT_PROVENANCE_MISMATCH',checked)
     write(ROOT/'audit/official_weight_validation.json',dict(passed=True,official_lfs_sha256=official,assets=assets))
 
 
@@ -177,12 +187,104 @@ def train_cn():
 
 def all_stages():
     from cn_ipa import train_ip
-    if not (ROOT/'audit/official_weight_validation.json').exists():validate_assets()
+    if not (ROOT/'audit/sd15_official_validation.json').exists():validate_assets()
     smoke('C0');cn_smoke();grid('C0')
     train_cn();cn_select();smoke('C1');parity_and_gradients()
     stage('train_ip');train_ip.train();stage('select_ip_checkpoint');train_ip.select()
     smoke('C2');grid('C1');grid('C2')
     freeze();test();evaluate()
+    for arm in ['C0','C1','C2','M12','M12_GAIN']:
+        subprocess.run([sys.executable,'-m','cn_ipa.run','profile','--arm',arm],check=True)
+    finalize()
+
+
+def profile(arm):
+    result=ROOT/'profiles'/f'{arm}.json'
+    if result.exists():return
+    stage('profile_'+arm);examples=read(CONFIRM/'protocol/smoke_identities.json')
+    torch.backends.cuda.matmul.allow_tf32=False;torch.backends.cudnn.allow_tf32=False
+    torch.backends.cudnn.benchmark=False
+    if arm in ['C0','C1','C2']:
+        choice=read(ROOT/'selection/frozen_final_choice.json')['models'][arm]
+        pipe=rt.load(choice['cn_path'],choice['ip_path']);records=[]
+        rt.generate(pipe,examples[0],ROOT/'profiles'/arm/'warmup.png',42,choice['cn_scale'],choice['ip_scale'])
+        for row in examples:
+            records.append(rt.generate(pipe,row,ROOT/'profiles'/arm/(row['id']+'.png'),42,choice['cn_scale'],choice['ip_scale']))
+        write(result,dict(arm=arm,n=4,records=records,parameters=read(ROOT/'audit'/f'smoke_{arm}.json')['parameters'],
+            scope='native pipeline call, synchronized CUDA, excludes input loading/reference image setup/initial noise/PNG; includes native image encoder',
+            gpu=torch.cuda.get_device_name(),dtype='float16',warmup=1,fresh_process=True))
+        rt.release(pipe)
+    else:
+        # 历史模块从当前已锁定源码读取旧权重，所有运行输出重定向到本次ROOT。
+        for name,target in [('output',HISTORY/'output'),('output_eval',HISTORY/'output_eval'),('data',HISTORY/'data'),('weight',HISTORY/'weight'),
+                ('models/stable-diffusion-v1-5',SD),('models/clip',HISTORY/'models/clip')]:
+            link=Path(name)
+            if not link.exists():link.parent.mkdir(parents=True,exist_ok=True);link.symlink_to(target,target_is_directory=True)
+        from tools import m12_gain_confirm as legacy
+        legacy.RUN=ROOT/'profiles/legacy'
+        write(legacy.RUN/'protocol/smoke_identities.json',examples)
+        runtime=legacy.runtime(arm,'runtime/'+arm)
+        modules=list(runtime.modules.values())+([runtime.writer.unet] if runtime.writer else [])
+        parameters={id(p):p for module in modules for p in module.parameters()}
+        total=sum(p.numel() for p in parameters.values())
+        try:legacy.profile(runtime,arm)
+        finally:legacy.dispose(runtime)
+        original=read(legacy.RUN/'production_profile'/f'{arm}_profile.json')
+        original.update(gpu=torch.cuda.get_device_name(),dtype='float16',fresh_process=True,
+            total_loaded_parameters=total,historical_training='E5/B1/Writer等历史成本另列，不能把新增gain1280参数当总成本')
+        write(result,original)
+
+
+def finalize():
+    import csv
+    import re
+    import tarfile
+    stage('finalize')
+    records=read(ROOT/'metrics/per_image.json');ids=read(ROOT/'manifests/qualitative_ids.json')
+    selected={r['id']:r for r in read(ROOT/'manifests/test_A.json')}
+    groups=[('fixed',identity,42) for identity in ids]
+    for arm in ['C0','C1','C2']:
+        averaged=[r for r in read(ROOT/'metrics/per_identity.json') if r['variant']==arm and r['contour_f1'] is not None]
+        worst=sorted(averaged,key=lambda r:(r['contour_f1'],r['id']))[:10]
+        write(ROOT/'metrics'/f'worst10_{arm}.json',worst)
+        for row in worst:
+            seed=min((r for r in records if r['variant']==arm and r['id']==row['id'] and r.get('contour_f1') is not None),
+                key=lambda r:r['contour_f1'])['seed']
+            groups.append(('worst_'+arm,row['id'],int(seed)))
+    for kind,identity,seed in groups:
+        row=selected[identity];canvas=Image.new('RGB',(8*192,324),'white');draw=ImageDraw.Draw(canvas)
+        pictures=[('Sketch',row['sketch']),('Reference',row['reference']),('GT',row['gt'])]
+        pictures += [(arm,(ROOT if arm.startswith('C') else CONFIRM)/'outputs'/arm/identity/f'seed{seed}.png')
+            for arm in ['C0','C1','C2','M12','M12_GAIN']]
+        for index,(label,path) in enumerate(pictures):
+            draw.text((index*192+4,3),label,fill='black')
+            canvas.paste(Image.open(path).convert('RGB').resize((192,256)),(index*192,22))
+        draw.text((4,282),f'{identity} seed {seed}: '+row['caption'],fill='black')
+        path=ROOT/'qualitative'/kind/f'{identity}_seed{seed}.png';path.parent.mkdir(parents=True,exist_ok=True);canvas.save(path)
+    jobs=sorted({int(m[1]) for p in (ROOT/'resources').glob('*') if (m:=re.search(r'_(\d+)\.(?:log|err)$',p.name))})
+    if jobs:
+        raw=subprocess.check_output(['sacct','-X','-P','-j',','.join(map(str,jobs)),
+            '--format=JobIDRaw,JobName,State,ExitCode,ElapsedRaw,AllocCPUS,AllocTRES,Start,End'],text=True)
+        (ROOT/'resources/accounting.psv').write_text(raw,encoding='utf-8')
+        csv_write(ROOT/'resources/accounting.csv',list(csv.DictReader(raw.splitlines(),delimiter='|')))
+    histories={}
+    for name in ['cn_fashion','ip_fashion']:
+        folder=ROOT/'checkpoints'/name
+        histories[name]=dict(complete=read(folder/'complete.json'),
+            history=[json.loads(line) for line in (folder/'history.jsonl').read_text().splitlines() if line])
+    write(ROOT/'audit/training_runs.json',histories)
+    historical=CONFIRM/'protocol/historical_cost_snapshot.json'
+    if historical.exists():write(ROOT/'audit/historical_training_costs.json',read(historical))
+    write(ROOT/'audit/finalized.json',dict(complete=True,code_commit=commit(),new_test_images=864,
+        all_scored_images=2592,blind_human_review='NOT_RUN',new_test_B='NOT_RUN',
+        training_diagnostics='CN断点恢复2次更新；IPA梯度烟测1次；均与正式预算分开'))
+    archive=ROOT/'cnipa_results.tar.gz'
+    with tarfile.open(archive,'w:gz',compresslevel=1) as tar:
+        for folder in ['audit','manifests','selection','metrics','outputs','smoke','profiles','qualitative','resources']:
+            for path in (ROOT/folder).rglob('*'):
+                if path.is_file() and path.suffix not in ['.bin','.pt','.safetensors']:
+                    tar.add(path,arcname=path.relative_to(ROOT).as_posix())
+    stage('complete',archive=str(archive),sha256=sha(archive))
 
 
 def freeze():
@@ -261,6 +363,8 @@ def main():
     elif args.mode=='ip_smoke':parity_and_gradients()
     elif args.mode=='cn_smoke':cn_smoke()
     elif args.mode=='train_cn':train_cn()
+    elif args.mode=='profile':profile(args.arm)
+    elif args.mode=='finalize':finalize()
     elif args.mode=='all':all_stages()
     elif args.mode=='freeze':freeze()
     elif args.mode=='test':test()
