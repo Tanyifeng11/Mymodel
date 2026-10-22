@@ -20,11 +20,12 @@ def load(cn_path=CN, ip_path=None, device='cuda'):
     torch.backends.cuda.matmul.allow_tf32=False
     torch.backends.cudnn.allow_tf32=False
     torch.backends.cudnn.benchmark=False
-    control=ControlNetModel.from_pretrained(str(cn_path),torch_dtype=torch.float16,local_files_only=True)
-    encoder=CLIPVisionModelWithProjection.from_pretrained(str(ENCODER),torch_dtype=torch.float16,local_files_only=True)
+    dtype=torch.float16 if device=='cuda' else torch.float32
+    control=ControlNetModel.from_pretrained(str(cn_path),torch_dtype=dtype,local_files_only=True)
+    encoder=CLIPVisionModelWithProjection.from_pretrained(str(ENCODER),torch_dtype=dtype,local_files_only=True)
     assert encoder.config.projection_dim==1024 and encoder.config.hidden_size==1280
     pipe=StableDiffusionControlNetPipeline.from_pretrained(str(SD),controlnet=control,
-        image_encoder=encoder,feature_extractor=CLIPImageProcessor(),torch_dtype=torch.float16,
+        image_encoder=encoder,feature_extractor=CLIPImageProcessor(),torch_dtype=dtype,
         safety_checker=None,requires_safety_checker=False,local_files_only=True)
     path=Path(ip_path) if ip_path else IPA/'ip-adapter_sd15.bin'
     pipe.load_ip_adapter(str(path.parent),weight_name=path.name,image_encoder_folder=None,local_files_only=True)

@@ -24,7 +24,8 @@ def validate_assets():
         'ip_adapter/ip-adapter_sd15.bin':'68e1df30d760f280e578c302f1e73b37ea08654eff16a31153588047affe0058'}
     for path,value in official.items():assert assets['files'][path]['sha256']==value
     versions={name:__import__(name).__version__ for name in ['torch','diffusers','transformers','accelerate','datasets','numpy','PIL','lpips'] if name!='lpips'}
-    versions.update(python=platform.python_version(),cuda=torch.version.cuda,gpu=torch.cuda.get_device_name())
+    versions.update(python=platform.python_version(),cuda=torch.version.cuda,
+        gpu=torch.cuda.get_device_name() if torch.cuda.is_available() else None)
     write(ROOT/'audit/versions.json',versions)
     paths=[p for p in SD.rglob('*') if p.is_file() and '.git' not in p.parts
         and p.suffix in ['.json','.bin','.safetensors','.txt'] and '.part' not in p.name]
@@ -44,6 +45,37 @@ def validate_assets():
 
 def selected_cn():
     return Path(read(ROOT/'selection/cn_checkpoint.json')['path'])
+
+
+def cpu_preflight():
+    stage('cpu_functional_preflight');torch.set_num_threads(4)
+    pipe=rt.load(device='cpu');rows=read(ROOT/'manifests/dev.json')[:2]
+    sketch,ref=rt.inputs(rows[0]);other_sketch,other_ref=rt.inputs(rows[1])
+    pipe.set_ip_adapter_scale(.65)
+    with torch.inference_mode():
+        result=pipe(prompt=rows[0]['caption'],negative_prompt=rt.NEGATIVE,image=sketch,ip_adapter_image=ref,
+            width=384,height=512,num_inference_steps=2,guidance_scale=7.,controlnet_conditioning_scale=1.,
+            generator=torch.Generator(device='cpu').manual_seed(42)).images[0]
+        assert result.size==SIZE
+        folder=ROOT/'smoke/cpu_preflight';folder.mkdir(parents=True,exist_ok=True);result.save(folder/'two_step_path_check.png')
+        text=pipe.text_encoder(pipe.tokenizer(rows[0]['caption'],padding='max_length',max_length=77,truncation=True,
+            return_tensors='pt').input_ids)[0]
+        encode=lambda image:pipe.image_encoder(pipe.feature_extractor(images=image,return_tensors='pt').pixel_values).image_embeds[:,None]
+        condition=lambda image:pipe.control_image_processor.preprocess(image,height=512,width=384)
+        a,b=encode(ref),encode(other_ref);s,u=condition(sketch),condition(other_sketch)
+        z=torch.randn((1,4,64,48),generator=torch.Generator().manual_seed(42));t=torch.tensor([500])
+        base=rt.forward(pipe,z,t,text,a,s)
+        changed_ref=rt.forward(pipe,z,t,text,b,s);changed_sketch=rt.forward(pipe,z,t,text,a,u)
+        off_a=rt.forward(pipe,z,t,text,a,s,0.);off_b=rt.forward(pipe,z,t,text,a,u,0.)
+        pipe.set_ip_adapter_scale(0.)
+        ip0a=rt.forward(pipe,z,t,text,a,s);ip0b=rt.forward(pipe,z,t,text,b,s)
+    checks=dict(finite=bool(torch.isfinite(base).all()),reference_responds=not torch.equal(base,changed_ref),
+        sketch_responds=not torch.equal(base,changed_sketch),cn_off=torch.equal(off_a,off_b),ip_off=torch.equal(ip0a,ip0b))
+    write(ROOT/'audit/cpu_preflight.json',dict(passed=all(checks.values()),checks=checks,code_commit=commit(),
+        size=list(SIZE),pipeline_steps=2,dtype='float32',device='CPU',
+        scientific_result=False,scope='仅验证加载、尺寸和分支接口；正式GPU的DDIM50 P0仍为必需'))
+    assert all(checks.values()),checks
+    print('CNIPA_CPU_PREFLIGHT_PASSED',checks,flush=True)
 
 
 def selected_ip():
@@ -365,6 +397,7 @@ def main():
     elif args.mode=='cn_select':cn_select()
     elif args.mode=='ip_smoke':parity_and_gradients()
     elif args.mode=='cn_smoke':cn_smoke()
+    elif args.mode=='cpu_preflight':cpu_preflight()
     elif args.mode=='train_cn':train_cn()
     elif args.mode=='profile':profile(args.arm)
     elif args.mode=='finalize':finalize()
