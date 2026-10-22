@@ -89,17 +89,22 @@ def prepare():
         original_reference_acquisition='数据集提供的单独texture文件；不声称已证明与GT在采集源上独立',
         geometry=CONFIG['train_geometry'],historical_test_input_hashes_verified=True))
     folder=ROOT/'cn_imagefolder/train';folder.mkdir(parents=True,exist_ok=True)
+    # datasets3.0.1仅识别file_name为主图；线稿放在ImageFolder扫描范围外，显式cast为第二图像列。
+    sketch_folder=ROOT/'preprocessed_sketch'
+    if (folder/'sketch').exists() and not sketch_folder.exists():(folder/'sketch').rename(sketch_folder)
+    sketch_folder.mkdir(exist_ok=True)
     metadata=[]
     for row in accepted:
         for key,sub in [('gt','gt'),('sketch','sketch')]:
-            path=folder/sub/(row['id']+'.png');path.parent.mkdir(exist_ok=True)
+            path=(folder/'gt' if key=='gt' else sketch_folder)/(row['id']+'.png');path.parent.mkdir(exist_ok=True)
             Image.open(row[key]).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR).save(path)
-        metadata.append(dict(image_file_name=f"gt/{row['id']}.png",
-            conditioning_image_file_name=f"sketch/{row['id']}.png",text=row['caption']))
+        metadata.append(dict(file_name=f"gt/{row['id']}.png",
+            conditioning_image=str(sketch_folder/(row['id']+'.png')),text=row['caption']))
     with (folder/'metadata.jsonl').open('w',encoding='utf-8') as f:
         for row in metadata:f.write(json.dumps(row)+'\n')
-    from datasets import load_dataset
+    from datasets import load_dataset, Image as DatasetImage
     dataset=load_dataset('imagefolder',data_dir=str(ROOT/'cn_imagefolder'),split='train')
+    dataset=dataset.cast_column('conditioning_image',DatasetImage())
     sample=dataset[0]
     assert isinstance(sample['image'],Image.Image) and isinstance(sample['conditioning_image'],Image.Image)
     assert sample['image'].size==sample['conditioning_image'].size==SIZE

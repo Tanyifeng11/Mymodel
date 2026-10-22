@@ -35,7 +35,7 @@ from accelerate import Accelerator
 from accelerate import DataLoaderConfiguration
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
-from datasets import load_dataset
+from datasets import load_dataset, Image as DatasetImage
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
 from PIL import Image
@@ -665,6 +665,9 @@ def make_train_dataset(args, tokenizer, accelerator):
             raise ValueError(
                 f"`--conditioning_image_column` value '{args.conditioning_image_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
             )
+
+    # 固定datasets3.0.1：metadata中的绝对线稿路径需要显式解码成PIL。
+    dataset = dataset.cast_column(conditioning_image_column, DatasetImage())
 
     def tokenize_captions(examples, is_train=True):
         captions = []
