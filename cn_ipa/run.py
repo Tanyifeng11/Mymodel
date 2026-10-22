@@ -199,7 +199,7 @@ def cn_smoke():
     stage('cn_resume_smoke')
     folder=ROOT/'smoke/CN_training'
     base=['bash','cn_ipa/job.sh','train_cn','--output_dir',str(folder),'--checkpointing_steps','1']
-    if not (folder/'checkpoint-1').exists():
+    if not (folder/'checkpoint-1/data_cursor.json').exists():
         subprocess.run(base+['--max_train_steps','1'],check=True)
     subprocess.run(base+['--max_train_steps','2','--resume_from_checkpoint','latest'],check=True)
     done=read(folder/'complete.json');assert done['updates']==2
@@ -221,11 +221,13 @@ def train_cn():
 
 
 def all_stages():
+    if (ROOT/'status.json').exists() and read(ROOT/'status.json')['stage']=='complete':
+        print('CNIPA_ALREADY_COMPLETE',flush=True);return
     from cn_ipa import train_ip
     if not (ROOT/'audit/sd15_official_validation.json').exists():validate_assets()
     versions=read(ROOT/'audit/versions.json');versions['gpu']=torch.cuda.get_device_name()
     write(ROOT/'audit/versions.json',versions)
-    smoke('C0');cn_smoke();grid('C0')
+    smoke('C0');metric_smoke();cn_smoke();grid('C0')
     train_cn();cn_select();smoke('C1');parity_and_gradients()
     stage('train_ip');train_ip.train();stage('select_ip_checkpoint');train_ip.select()
     smoke('C2');grid('C1');grid('C2')
@@ -233,6 +235,22 @@ def all_stages():
     for arm in ['C0','C1','C2','M12','M12_GAIN']:
         subprocess.run([sys.executable,'-m','cn_ipa.run','profile','--arm',arm],check=True)
     finalize()
+
+
+def metric_smoke():
+    path=ROOT/'audit/metric_replay_smoke.json'
+    if path.exists():assert read(path)['passed'];return
+    stage('metric_replay_smoke');scorer=Scorer();old=CONFIRM.parent/'m12_gain_dev32_20261020'
+    previous=read(old/'metrics/per_image.json');checks=[]
+    for row in read(ROOT/'manifests/dev.json')[:4]:
+        for arm in ['E5','M12_GAIN']:
+            measured=scorer.score(row,old/'outputs'/arm/row['id']/'seed42.png',arm)
+            expected=next(r for r in previous if r['id']==row['id'] and r['variant']==arm)
+            delta={k:abs(measured[k]-expected[k]) if measured.get(k) is not None and expected.get(k) is not None else None for k in KEYS}
+            checks.append(dict(id=row['id'],arm=arm,delta=delta))
+    passed=all(v is None or v<1e-6 for row in checks for v in row['delta'].values())
+    write(path,dict(passed=passed,checks=checks,lpips=scorer.info,source='历史DEV输出；仅验证评分等价，不用于模型调参'))
+    assert passed,checks
 
 
 def profile(arm):
@@ -307,7 +325,12 @@ def finalize():
     histories={}
     for name in ['cn_fashion','ip_fashion']:
         folder=ROOT/'checkpoints'/name
-        histories[name]=dict(complete=read(folder/'complete.json'),
+        usage=[json.loads(line) for line in (folder/'usage.jsonl').read_text().splitlines() if line]
+        committed=read(folder/'complete.json')
+        histories[name]=dict(complete=committed,
+            usage=dict(actual_loop_samples=sum(r['n'] for r in usage if r['event']=='micro'),
+                actual_optimizer_updates=sum(r['event']=='optimizer' for r in usage),
+                committed_updates=committed['updates'],segments=[r for r in usage if r['event']=='start']),
             history=[json.loads(line) for line in (folder/'history.jsonl').read_text().splitlines() if line])
     write(ROOT/'audit/training_runs.json',histories)
     budget={name:len(list((ROOT/name).rglob('*.png'))) for name in ['outputs','dev','smoke','profiles','qualitative']}
@@ -404,6 +427,7 @@ def main():
     elif args.mode=='cn_select':cn_select()
     elif args.mode=='ip_smoke':parity_and_gradients()
     elif args.mode=='cn_smoke':cn_smoke()
+    elif args.mode=='metric_smoke':metric_smoke()
     elif args.mode=='cpu_preflight':cpu_preflight()
     elif args.mode=='train_cn':train_cn()
     elif args.mode=='profile':profile(args.arm)

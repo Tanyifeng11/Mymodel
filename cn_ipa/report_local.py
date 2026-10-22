@@ -23,7 +23,7 @@ def main():
     assert read(root/'audit/sd15_official_validation.json')['passed']
     assert read(root/'audit/historical_reuse.json')['passed']
     assets=docs/'cn_ipa_repro_20261022';assets.mkdir(parents=True,exist_ok=True)
-    for folder in ['metrics','selection','audit','qualitative']:
+    for folder in ['metrics','selection','audit','qualitative','resources']:
         destination=assets/folder;destination.mkdir(exist_ok=True)
         for source in (root/folder).rglob('*'):
             if source.is_file() and source.suffix in ['.json','.csv','.png']:
@@ -72,7 +72,8 @@ def main():
         extreme=sum(r['variant']==arm for r in failures)
         lines.append('| '+arm+' | '+' | '.join(interval(means[arm][k]) for k in keys)+f' | {extreme}/96 |')
     lines += ['', '![均值和区间](cn_ipa_repro_20261022/metrics_ci.png)','',
-        '四项评分沿用历史 LPIPS-Alex、Sketch-only 前景/轮廓与 Leak 实现。历史1728张图逐张核验 PNG 哈希并复算，数值差异限制为1e-6。缺任一Seed的指标则该身份该指标为NA；未把288张图当作288个独立身份。','',
+        '四项评分沿用历史 LPIPS-Alex、Sketch-only 前景/轮廓与 Leak 实现。LPIPS使用历史FP32/CuDNN TF32口径，先在旧DEV输出回放验证；它与生成的FP16设置分开。历史1728张图逐张核验 PNG 哈希并复算，数值差异限制为1e-6。缺任一Seed的指标则该身份该指标为NA；未把288张图当作288个独立身份。', '',
+        '本轮主表使用统一服务器GPU评分，没有声称完成新增输出的完整本地CPU LPIPS重算。历史确认实验原有CPU/GPU 1e-6严格容差失败（最大差约0.00012144）仍保留，不能把本轮同GPU回放通过解释为已经修复历史跨设备精度差异。','',
         '## 配对比较','',
         '| 候选−基线 | ΔLPIPS↓ | ΔF1↑ | ΔIoU↑ | ΔLeak↓ |', '| --- | --- | --- | --- | --- |']
     for a,b in [('C0','M12'),('C1','M12'),('C2','M12'),('C0','M12_GAIN'),('C1','M12_GAIN'),('C2','M12_GAIN'),('C1','C0'),('C2','C1')]:
@@ -89,12 +90,13 @@ def main():
     lines += ['', 'CN候选1000/2000/3000/4000/5000更新；IPA候选500/1000/1500/2000/2500/3000更新。每臂开发集控制强度为3×3网格，另有CN-only基线及检查点开发评测；这些图均不计入864张正式测试。结构/外溢边界和无合格组合的回退排序均在生成前固定，完整候选表与最终冻结哈希保留。', '',
         f"实际保存：DEV图 {budget['dev']} 张，烟测/预检图 {budget['smoke']} 张，耗时测试图 {budget['profiles']} 张，正式新测试图 {budget['outputs']} 张。另有定性对照拼图 {budget['qualitative']} 张；拼图不算新增独立生成结果。完整开发分项见 image_budget.json。",'',
         '## 训练与推理成本','',
-        '| 阶段 | 有效更新 | 实际样本消费 | 可训练参数 | 优化循环秒 | 峰值allocated GiB |','| --- | --- | --- | --- | --- | --- |']
+        '| 阶段 | 最终更新/实际执行 | 实际取入样本 | 可训练参数 | 优化循环秒 | 峰值allocated GiB |','| --- | --- | --- | --- | --- | --- |']
     for name,label in [('cn_fashion','ControlNet'),('ip_fashion','IP-Adapter')]:
         done=training[name]['complete'];parameters=done.get('trainable_parameters')
         if parameters is None:parameters=read(root/'audit/smoke_C1.json')['parameters']['controlnet']
-        lines.append(f"| {label} | {done['updates']} | {done['samples_consumed']} | {parameters:,} | {done.get('optimizer_loop_seconds',done['seconds']):.1f} | {done['peak_allocated_gib']:.3f} |")
-    lines += ['', '正式新增训练为一次CN5000更新和一次IPA3000更新，C1/C2共享同一份CN训练。全局有效batch=4。CN lr1e-5，IPA lr5e-5，AdamW；IPA image/text/both dropout各0.05。正式更新不包含CN断点烟测2次和IPA梯度烟测1次；溢出跳过及真实样本消费单独记录。IPA官方权重先按FP16推理图加载，再升为FP32主参数，冻结骨干为FP16。', '',
+        usage=training[name]['usage']
+        lines.append(f"| {label} | {done['updates']}/{usage['actual_optimizer_updates']} | {usage['actual_loop_samples']} | {parameters:,} | {done.get('optimizer_loop_seconds',done['seconds']):.1f} | {done['peak_allocated_gib']:.3f} |")
+    lines += ['', '正式最终训练路径为CN5000更新和IPA3000更新，C1/C2共享同一份CN训练。实际执行另计中断后的重放和被丢弃计算，不把重放当作最终模型额外有效更新。全局有效batch=4。CN lr1e-5，IPA lr5e-5，AdamW；IPA image/text/both dropout各0.05。表内正式训练不含CN断点烟测2次和IPA梯度烟测1次；溢出跳过及真实样本消费单独记录。IPA官方权重先按FP16推理图加载，再升为FP32主参数，冻结骨干为FP16。', '',
         f"环境：Python {versions['python']}，PyTorch {versions['torch']}，Diffusers {versions['diffusers']}，Transformers {versions['transformers']}，Accelerate {versions['accelerate']}。训练阶段加载、缓存准备、最终哈希/写盘和失败/重试分配与优化循环计时范围有区别；完整 Slurm 账本和阶段记录可查。",'',
         '| 方法 | 实际总加载参数 | 单图延迟中位数秒 | 峰值allocated GiB | GPU |','| --- | --- | --- | --- | --- |']
     for arm in ['C0','C1','C2','M12','M12_GAIN']:

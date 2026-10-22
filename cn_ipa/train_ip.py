@@ -141,7 +141,8 @@ def cache_inputs(pipe):
             text,ref,_=tensors(pipe,row)
             cache['items'].append(dict(mean=posterior.mean.cpu(),std=posterior.std.cpu(),text=text.cpu(),ref=ref.cpu()))
         if i%100==0:print('CNIPA_CACHE',i,flush=True)
-    path.parent.mkdir(parents=True,exist_ok=True);torch.save(cache,path)
+    path.parent.mkdir(parents=True,exist_ok=True)
+    temporary=path.with_suffix('.tmp');torch.save(cache,temporary);temporary.replace(path)
     return cache
 
 
@@ -161,7 +162,7 @@ def train(steps=3000,checkpoint_every=500,output=None):
     empty=pipe.tokenizer('',padding='max_length',max_length=pipe.tokenizer.model_max_length,return_tensors='pt').input_ids.to('cuda')
     with torch.no_grad():null=pipe.text_encoder(empty)[0]
     checkpoints=sorted(folder.glob('checkpoint-*/training_state.pt'),key=lambda p:int(p.parent.name.split('-')[-1]))
-    step=0;skipped=0;previous_seconds=0.
+    step=0;skipped=0;previous_seconds=0.;previous_peak=0.;previous_reserved=0.
     if checkpoints:
         saved=torch.load(checkpoints[-1],map_location='cpu',weights_only=False)
         assert saved['manifest_sha256']==cache['manifest_sha256'] and saved['cn_sha256']==sha(selected_cn()/'diffusion_pytorch_model.safetensors')
@@ -169,7 +170,10 @@ def train(steps=3000,checkpoint_every=500,output=None):
         optimizer.load_state_dict(saved['optimizer']);scaler.load_state_dict(saved['scaler']);stream.load_state_dict(saved['stream'])
         random.setstate(saved['python_rng']);np.random.set_state(saved['numpy_rng']);torch.set_rng_state(saved['torch_rng'])
         torch.cuda.set_rng_state_all(saved['cuda_rng']);step=saved['step'];skipped=saved['skipped'];previous_seconds=saved['seconds']
-    started=time.perf_counter();sequence=[]
+        previous_peak=saved.get('peak_allocated_gib',0.);previous_reserved=saved.get('peak_reserved_gib',0.)
+    started=time.perf_counter();sequence=[];seconds=previous_seconds
+    usage=(folder/'usage.jsonl').open('a',encoding='utf-8',buffering=1)
+    usage.write(json.dumps(dict(event='start',step=step,job_id=os.environ.get('SLURM_JOB_ID'),code_commit=commit()))+'\n')
     while step<steps:
         optimizer.zero_grad(set_to_none=True);losses=[]
         for micro in range(4):
@@ -188,12 +192,14 @@ def train(steps=3000,checkpoint_every=500,output=None):
             assert torch.isfinite(loss)
             scaler.scale(loss/4).backward();losses.append(float(loss.detach()))
             sequence.append(dict(sample=stream.samples,id=row['id'],drop=drop,t=int(t),noise_sha256=rt.digest(noise)))
+            usage.write(json.dumps(dict(event='micro',n=1,**sequence[-1]))+'\n')
         scaler.unscale_(optimizer)
         grad_norm=float(torch.nn.utils.clip_grad_norm_(list(params.values()),1.))
         before_scale=scaler.get_scale();scaler.step(optimizer);scaler.update()
         if scaler.get_scale()<before_scale:skipped+=1;continue
         assert np.isfinite(grad_norm)
         step+=1;seconds=previous_seconds+time.perf_counter()-started
+        usage.write(json.dumps(dict(event='optimizer',step=step))+'\n')
         if step<=5 or step%25==0:
             record=dict(step=step,loss=float(np.mean(losses)),grad_norm=grad_norm,seconds=seconds,
                 skipped_updates=skipped,samples_consumed=stream.samples,peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30)
@@ -207,10 +213,13 @@ def train(steps=3000,checkpoint_every=500,output=None):
                 python_rng=random.getstate(),numpy_rng=np.random.get_state(),torch_rng=torch.get_rng_state(),
                 cuda_rng=torch.cuda.get_rng_state_all(),manifest_sha256=cache['manifest_sha256'],
                 cn_sha256=sha(selected_cn()/'diffusion_pytorch_model.safetensors'),seconds=seconds,
-                skipped=skipped,code_commit=commit()),checkpoint/'training_state.pt')
+                skipped=skipped,code_commit=commit(),peak_allocated_gib=max(previous_peak,torch.cuda.max_memory_allocated()/2**30),
+                peak_reserved_gib=max(previous_reserved,torch.cuda.max_memory_reserved()/2**30)),checkpoint/'training_state.tmp')
+            (checkpoint/'training_state.tmp').replace(checkpoint/'training_state.pt')
             with (folder/'sample_sequence.jsonl').open('a',encoding='utf-8') as f:
                 for record in sequence:f.write(json.dumps(record)+'\n')
             sequence=[]
+    usage.close()
     frozen_after=rt.frozen_hashes(pipe);assert frozen_before==frozen_after
     assert all(p.grad is None for n,p in pipe.unet.named_parameters() if n not in params)
     changed=[name for name,p in params.items() if rt.digest(p)!=initial[name]]
@@ -220,7 +229,8 @@ def train(steps=3000,checkpoint_every=500,output=None):
         optimizer_loop_seconds=seconds,stage_segment_wall_seconds=time.perf_counter()-stage_started,
         timing_scope='optimizer_loop包含数据读取/优化/检查点写盘；stage_segment另外包含本次加载、缓存准备和冻结哈希；中断损耗见Slurm账本',
         changed_parameters=changed,frozen_before=frozen_before,frozen_after=frozen_after,
-        peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,
+        peak_allocated_gib=max(previous_peak,torch.cuda.max_memory_allocated()/2**30),
+        peak_reserved_gib=max(previous_reserved,torch.cuda.max_memory_reserved()/2**30),
         gpu=torch.cuda.get_device_name(),code_commit=commit(),training_CN_scale=1.,training_IP_scale=1.,
         initial_precision='官方IPA按FP16推理图严格加载后升为FP32主参数；冻结骨干FP16；优化器FP32',
         dropout=dict(image=.05,text=.05,both=.05)))

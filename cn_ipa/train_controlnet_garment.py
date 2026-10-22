@@ -1022,7 +1022,8 @@ def main(args):
         else:
             # Get the most recent checkpoint
             dirs = os.listdir(args.output_dir)
-            dirs = [d for d in dirs if d.startswith("checkpoint")]
+            dirs = [d for d in dirs if d.startswith("checkpoint") and
+                (Path(args.output_dir)/d/'data_cursor.json').exists()]
             dirs = sorted(dirs, key=lambda x: int(x.split("-")[1]))
             path = dirs[-1] if len(dirs) > 0 else None
 
@@ -1060,13 +1061,20 @@ def main(args):
     samples_consumed = resume_cursor.get('samples_consumed',0) if resume_cursor else 0
     previous_seconds = resume_cursor.get('seconds',0.) if resume_cursor else 0.
     previous_loop_seconds = resume_cursor.get('optimizer_loop_seconds',0.) if resume_cursor else 0.
+    previous_peak = resume_cursor.get('peak_allocated_gib',0.) if resume_cursor else 0.
+    previous_reserved = resume_cursor.get('peak_reserved_gib',0.) if resume_cursor else 0.
     loop_started = time.perf_counter()
-    for epoch in range(first_epoch, args.num_train_epochs + 1):
+    usage=(Path(args.output_dir)/'usage.jsonl').open('a',encoding='utf-8',buffering=1)
+    usage.write(json.dumps(dict(event='start',step=global_step,job_id=os.environ.get('SLURM_JOB_ID'),code_commit=commit()))+'\n')
+    epochs=range(first_epoch,args.num_train_epochs+1) if global_step<args.max_train_steps else []
+    for epoch in epochs:
         train_dataloader.set_epoch(epoch)
         skip = resume_cursor['next_batch'] if resume_cursor is not None and epoch == first_epoch else 0
         active_loader = accelerator.skip_first_batches(train_dataloader, skip) if skip else train_dataloader
         for step, batch in enumerate(active_loader, start=skip):
             samples_consumed += len(batch['pixel_values']) * accelerator.num_processes
+            usage.write(json.dumps(dict(event='micro',n=len(batch['pixel_values'])*accelerator.num_processes,
+                samples_cursor=samples_consumed,step=global_step))+'\n')
             with accelerator.accumulate(controlnet):
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
@@ -1136,6 +1144,7 @@ def main(args):
                     continue
                 progress_bar.update(1)
                 global_step += 1
+                usage.write(json.dumps(dict(event='optimizer',step=global_step))+'\n')
 
                 if accelerator.is_main_process:
                     if global_step % args.checkpointing_steps == 0:
@@ -1164,6 +1173,8 @@ def main(args):
                         audit_write(Path(save_path)/'data_cursor.json',dict(epoch=epoch,next_batch=step+1,
                             samples_consumed=samples_consumed,skipped_updates=skipped_updates,
                             optimizer_loop_seconds=previous_loop_seconds+time.perf_counter()-loop_started,
+                            peak_allocated_gib=max(previous_peak,torch.cuda.max_memory_allocated()/2**30),
+                            peak_reserved_gib=max(previous_reserved,torch.cuda.max_memory_reserved()/2**30),
                             seconds=previous_seconds+time.perf_counter()-started_training))
                         logger.info(f"Saved state to {save_path}")
 
@@ -1193,6 +1204,8 @@ def main(args):
                 break
         if global_step >= args.max_train_steps:
             break
+    usage.close()
+    optimization_elapsed=previous_loop_seconds+time.perf_counter()-loop_started
 
     # Create the pipeline using using the trained modules and save it.
     accelerator.wait_for_everyone()
@@ -1207,10 +1220,10 @@ def main(args):
         audit_write(Path(args.output_dir)/'complete.json',dict(updates=global_step,frozen_before=frozen_before,
             frozen_after=frozen_after,controlnet_before=cn_before,controlnet_after=state_hash(controlnet),
             seconds=previous_seconds+time.perf_counter()-started_training,samples_consumed=samples_consumed,
-            optimizer_loop_seconds=previous_loop_seconds+time.perf_counter()-loop_started,
+            optimizer_loop_seconds=optimization_elapsed,
             skipped_updates=skipped_updates,effective_batch=total_batch_size,gpu=torch.cuda.get_device_name(),
-            peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,
-            peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,code_commit=commit()))
+            peak_allocated_gib=max(previous_peak,torch.cuda.max_memory_allocated()/2**30),
+            peak_reserved_gib=max(previous_reserved,torch.cuda.max_memory_reserved()/2**30),code_commit=commit()))
 
         # Run a final round of validation.
         image_logs = None

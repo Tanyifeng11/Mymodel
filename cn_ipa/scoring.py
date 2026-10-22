@@ -17,6 +17,8 @@ class Scorer:
     def __init__(self):
         from tools.e33tmoc_appearance_eval import frozen_lpips
         self.lpips,self.info=frozen_lpips();self.lpips=self.lpips.cuda()
+        self.info.update(cudnn_allow_tf32=True,matmul_allow_tf32=False,
+            numeric_protocol='沿用历史Torch2.4.1的FP32 LPIPS/CuDNN默认TF32；与生成的FP16开关分开')
 
     @torch.inference_mode()
     def score(self,row,path,arm,seed=42):
@@ -26,7 +28,8 @@ class Scorer:
         gt=Image.open(row['gt']).convert('RGB').resize(SIZE,Image.Resampling.BILINEAR)
         tensor=lambda im:torch.from_numpy(np.asarray(im,np.float32).transpose(2,0,1)/127.5-1)[None].cuda()
         result=dict(id=row['id'],variant=arm,seed=seed,**{k:None for k in KEYS})
-        result['lpips_gt']=float(self.lpips(tensor(image),tensor(gt)).mean())
+        with torch.backends.cudnn.flags(enabled=True,benchmark=False,deterministic=False,allow_tf32=True):
+            result['lpips_gt']=float(self.lpips(tensor(image),tensor(gt)).mean())
         bundle=prepare_evaluation_masks(SIZE,sketch_path=row['sketch'],mask_policy='sketch_only')
         garment=bundle['garment']
         if garment is not None and garment.any():
