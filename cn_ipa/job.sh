@@ -9,6 +9,8 @@ export CNIPA_ROOT="$ROOT" PYTHONPATH="$PWD:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
+mkdir -p "$ROOT/cache/datasets" "$ROOT/cache/cuda"
+export HF_DATASETS_CACHE="$ROOT/cache/datasets" CUDA_CACHE_PATH="$ROOT/cache/cuda"
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 case "$1" in
   prepare) exec python -m cn_ipa.prepare ;;
@@ -19,6 +21,7 @@ case "$1" in
       --pretrained_model_name_or_path /share/home/u2515283058/Mymodel/models/stable-diffusion-v1-5 \
       --controlnet_model_name_or_path "$ROOT/pretrained/controlnet" \
       --train_data_dir "$ROOT/cn_imagefolder" --image_column image \
+      --cache_dir "$ROOT/cache/datasets" \
       --conditioning_image_column conditioning_image --caption_column text \
       --output_dir "$ROOT/checkpoints/cn_fashion" --height 512 --width 384 --resolution 512 \
       --train_batch_size 1 --gradient_accumulation_steps "${CNIPA_ACCUM:-4}" \

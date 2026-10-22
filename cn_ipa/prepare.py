@@ -105,7 +105,7 @@ def prepare():
     with (folder/'metadata.jsonl').open('w',encoding='utf-8') as f:
         for row in metadata:f.write(json.dumps(row)+'\n')
     from datasets import load_dataset, Image as DatasetImage
-    dataset=load_dataset('imagefolder',data_dir=str(ROOT/'cn_imagefolder'),split='train')
+    dataset=load_dataset('imagefolder',data_dir=str(ROOT/'cn_imagefolder'),split='train',cache_dir=str(ROOT/'cache/datasets'))
     dataset=dataset.cast_column('conditioning_image',DatasetImage())
     sample=dataset[0]
     assert isinstance(sample['image'],Image.Image) and isinstance(sample['conditioning_image'],Image.Image)

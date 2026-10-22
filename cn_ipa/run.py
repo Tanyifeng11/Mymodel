@@ -223,6 +223,8 @@ def train_cn():
 def all_stages():
     from cn_ipa import train_ip
     if not (ROOT/'audit/sd15_official_validation.json').exists():validate_assets()
+    versions=read(ROOT/'audit/versions.json');versions['gpu']=torch.cuda.get_device_name()
+    write(ROOT/'audit/versions.json',versions)
     smoke('C0');cn_smoke();grid('C0')
     train_cn();cn_select();smoke('C1');parity_and_gradients()
     stage('train_ip');train_ip.train();stage('select_ip_checkpoint');train_ip.select()
