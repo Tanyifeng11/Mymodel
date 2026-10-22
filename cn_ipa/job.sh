@@ -1,8 +1,9 @@
 #!/bin/bash
-set -euo pipefail
+set -eo pipefail
 ROOT=/share/home/u2515283058/cn_ipa_repro_20261022
 source /share/apps/anaconda3/etc/profile.d/conda.sh
 conda activate Mymodel
+set -u
 cd "$ROOT/repo"
 export CNIPA_ROOT="$ROOT" PYTHONPATH="$PWD:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
