@@ -1,6 +1,8 @@
 .idea/
 __pycache__/
 *.pyc
+pretrained_upload/
+cnipa_results/
 output/
 output_eval/
 output_sd_base/

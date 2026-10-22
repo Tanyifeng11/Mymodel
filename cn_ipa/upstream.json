@@ -1,0 +1,17 @@
+{
+  "diffusers": {
+    "version": "0.31.0",
+    "commit": "89e4d6219805975bd7d253a267e1951badc9f1c0",
+    "source": "examples/controlnet/train_controlnet.py",
+    "adaptations": ["height512 width384 synchronized Resize", "frozen module hashes and budget records", "exact dataloader resume"]
+  },
+  "ip_adapter": {
+    "commit": "62e4af9d0c1ac7d5f8dd386a0ccf2211346af1a2",
+    "training_reference": "tutorial_train.py",
+    "implementation": "Diffusers0.31 native standard IPA processors, same pipeline forward, independent texture input plus frozen CN residuals"
+  },
+  "models": {
+    "controlnet": "lllyasviel/control_v11p_sd15_lineart@8a158f547e031c5b8fbca19ead09a74767ff4db0",
+    "ip_adapter": "h94/IP-Adapter@018e402774aeeddd60609b4ecdb7e298259dc729"
+  }
+}
