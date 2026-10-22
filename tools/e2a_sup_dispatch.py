@@ -78,6 +78,59 @@ def review_calibration_retry(identifier,reason):
         accounting()
 
 
+def review_environment_resume(identifier,reason):
+    """仅恢复在环境检查处失败、未开始 load_state 的训练，不重置已有科学更新。"""
+    assert reason.strip()
+    with (ROOT/'dispatch.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        jobs=history();job=next(j for j in jobs if j['id']==identifier)
+        assert job['id']==[j for j in jobs if j['key']==job['key']][-1]['id']
+        assert job['action']=='train' and job['args'][2:]==['--phase','formal']
+        assert job_state(job)=='FAILED'
+        assert not any(job_state(j) in ['RUNNING','PENDING','CONFIGURING','COMPLETING'] for j in jobs)
+        run=folder(job['args'][1],'formal');state=run/'state-latest'
+        assert not (run/'training_complete.json').exists() and not (run/'overflow_failure.json').exists()
+        assert not (run/('recovery_discarded_%d.json'%identifier)).exists()
+        log=ROOT/'logs'/('%s_%d.log'%(job['key'],identifier));text=log.read_text()
+        assert 'FROZEN_CHANGED' in text and 'environment_rank' in text
+        config=read(run/'config.json')
+        assert all(sha(SOURCE/name)==digest for name,digest in config['additions'].items())
+        assert sha(SOURCE/'train_GAM_texture_joint.py')==config['base_source_sha256']
+        # 使用同一原始参数重建 CPU scheduler，只允许默认名称列表排列不同。
+        from diffusers import DDIMScheduler
+        scheduler=dict(DDIMScheduler(beta_start=.00085,beta_end=.012,beta_schedule='scaled_linear',
+            num_train_timesteps=1000,prediction_type='epsilon').config)
+        for rank in range(2):
+            saved=read(run/('environment_rank%d.json'%rank));current=dict(saved,scheduler=scheduler)
+            assert canonical_environment(saved)==canonical_environment(current)
+        progress=read(state/'progress.json');n=progress['updates']
+        with (run/'training_log.csv').open() as f:rows=list(csv.DictReader(f))
+        with (OLD/'training/seed42/F000/training_log.csv').open() as f:baseline=list(csv.DictReader(f))[:n]
+        assert [int(r['update']) for r in rows]==list(range(1,n+1))
+        assert all(a[k]==b[k] for a,b in zip(rows,baseline)
+            for k in ['update','lr','microbatches_per_rank','rng_rank0'])
+        assert progress['world_size']==2 and progress['seed']==42
+        assert read(state/'stream_rank0.json')['rng_chain']==rows[-1]['rng_rank0']
+        names=['pytorch_model.bin']+['pytorch_model_%d.bin'%i for i in range(1,5)]+[
+            'optimizer.bin','custom_checkpoint_0.pkl','scaler.pt','random_states_0.pkl','random_states_1.pkl',
+            'stream_rank0.json','stream_rank1.json','progress.json']
+        assert all((state/name).is_file() and (state/name).stat().st_size>0 for name in names)
+        archive=ROOT/'audit/engineering_failures'/('job_%d'%identifier)
+        assert not archive.exists();archive.mkdir(parents=True)
+        files=[log,run/'config.json',run/'training_log.csv',run/'auxiliary_log.csv',
+            run/'environment_rank0.json',run/'environment_rank1.json',state/'progress.json',
+            state/'stream_rank0.json',state/'stream_rank1.json']
+        evidence={}
+        for path in files:
+            target=archive/path.name;shutil.copy2(str(path),str(target));evidence[path.name]=sha(target)
+        review=dict(passed=True,failed_job=identifier,key=job['key'],reason=reason,source_commit=commit(),
+            resume_update=n,checkpoint_unchanged=True,scientific_budget_changed=False,
+            preserved_files=evidence,state_file_sizes={name:(state/name).stat().st_size for name in names},
+            normalization_only='scheduler._use_default_values order; all actual parameters remain strict')
+        freeze(ROOT/'audit'/('retry_release_%d.json'%identifier),review)
+        accounting()
+
+
 def accounting():
     jobs=history()
     if not jobs:return
@@ -165,10 +218,12 @@ def advance():
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--retry-job',type=int)
+    parser.add_argument('--resume-reviewed-job',type=int)
     parser.add_argument('--reason')
     options=parser.parse_args()
     try:
         if options.retry_job:review_calibration_retry(options.retry_job,options.reason or '')
+        if options.resume_reviewed_job:review_environment_resume(options.resume_reviewed_job,options.reason or '')
         advance()
     except Exception as error:
         status(engineering_failure=repr(error));raise

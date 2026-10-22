@@ -1,7 +1,10 @@
 """E2A-SUP-COMP-01 独立根；旧 B/C 与原冻结源码只读复用。"""
 import os
+import copy
+import hashlib
+import json
 from pathlib import Path
-from tools.e2a_attr_common import read, write, freeze, sha, csv_write, commit, PROJECT, SOURCE
+from tools.e2a_attr_common import read, write, freeze as strict_freeze, sha, csv_write, commit, PROJECT, SOURCE
 
 OLD = PROJECT / 'output_eval/e2a_attr_01_20261019'
 ROOT = PROJECT / 'output_eval/e2a_sup_comp_01_20261021'
@@ -23,6 +26,32 @@ CONFIG = dict(protocol='E2A-SUP-COMP-01', plan_sha256=PLAN_SHA, seed=42, updates
     primary_family='C minus each T1/T2/T3 IoU; 3 two-sided tests; Holm',
     reference_swap_n=32, references_per_swap_identity=2,
     additional_seeds_authorized=False, automatic_factorial_authorized=False)
+
+
+def canonical_environment(value):
+    """Diffusers 的默认字段名称来自 set；只规范该元数据列表，不忽略任何实际参数。"""
+    value=copy.deepcopy(value)
+    defaults=value['scheduler'].get('_use_default_values')
+    if defaults is not None:
+        assert isinstance(defaults,list) and all(isinstance(k,str) for k in defaults)
+        value['scheduler']['_use_default_values']=sorted(defaults)
+    return value
+
+
+def freeze(path,value):
+    path=Path(path)
+    environments=[folder(arm,phase)/('environment_rank%d.json'%rank)
+        for arm in ARMS for phase in ['calibrate','pilot','formal'] for rank in range(2)]
+    if path not in environments or not path.exists():return strict_freeze(path,value)
+    saved=read(path)
+    assert canonical_environment(saved)==canonical_environment(value),('FROZEN_CHANGED',str(path))
+    # 原始冻结文件保持字节不变，每次进程比较另存证据。
+    digest=hashlib.sha256(json.dumps(canonical_environment(value),sort_keys=True).encode()).hexdigest()
+    strict_freeze(path.parent/('environment_check_job_%s_%s'%(os.environ.get('SLURM_JOB_ID','local'),path.name)),
+        dict(passed=True,original_sha256=sha(path),canonical_sha256=digest,
+            raw_equal=saved==value,only_unordered_field='scheduler._use_default_values',
+            actual_parameters_equal=True,source_commit=commit()))
+    return value
 
 
 def folder(arm, phase='formal'):

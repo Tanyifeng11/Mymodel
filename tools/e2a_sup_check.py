@@ -2,13 +2,41 @@
 import ast
 import json
 import weakref
+import copy
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 import torch
 import torch.nn.functional as F
-from tools.e2a_sup_common import SOURCE
+from tools.e2a_sup_common import SOURCE,canonical_environment
 from tools.e2a_sup_losses import Supervision
+from tools import e2a_sup_common as common
 
 
 def check():
+    saved=dict(scheduler=dict(prediction_type='epsilon',_use_default_values=['clip_sample','thresholding']))
+    current=copy.deepcopy(saved);current['scheduler']['_use_default_values'].reverse()
+    assert canonical_environment(saved)==canonical_environment(current)
+    assert saved['scheduler']['_use_default_values']==['clip_sample','thresholding']
+    current['scheduler']['prediction_type']='v_prediction'
+    assert canonical_environment(saved)!=canonical_environment(current)
+    current=copy.deepcopy(saved);current['scheduler']['_use_default_values'].append('beta_start')
+    assert canonical_environment(saved)!=canonical_environment(current)
+    with tempfile.TemporaryDirectory() as temp,patch.object(common,'ROOT',Path(temp)):
+        path=common.folder('T3')/'environment_rank0.json'
+        common.freeze(path,saved);original=path.read_bytes()
+        reordered=copy.deepcopy(saved);reordered['scheduler']['_use_default_values'].reverse()
+        common.freeze(path,reordered)
+        assert path.read_bytes()==original
+        changed=copy.deepcopy(reordered);changed['scheduler']['prediction_type']='v_prediction'
+        try:common.freeze(path,changed)
+        except AssertionError:pass
+        else:raise AssertionError('Actual environment change was accepted')
+        strict_path=common.folder('T3')/'config.json'
+        common.freeze(strict_path,saved)
+        try:common.freeze(strict_path,reordered)
+        except AssertionError:pass
+        else:raise AssertionError('Normalization escaped environment-only scope')
     names=['_weighted_mean_per_sample','_masked_channel_mean_std','texture_color_stat_loss','build_region_masks','masked_l1_loss']
     tree=ast.parse((SOURCE/'train_GAM_texture_joint.py').read_text(encoding='utf-8'))
     ns=dict(torch=torch,F=F)
@@ -57,6 +85,7 @@ def check():
     return dict(passed=True,historical_T3_body_exact=True,merged_rest_normalization_correct=True,
         reference_swap_targets_correct=True,empty_masks_and_dropped_texture_finite=True,
         batch_graph_not_retained=True,calibration_graph_release_no_update_or_rng_change=True,
+        environment_default_order_only_normalized=True,actual_scheduler_changes_rejected=True,
         true_training_graph_checked_here=False,torch=torch.__version__)
 
 
