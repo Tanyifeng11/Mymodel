@@ -28,7 +28,7 @@ def load(cn_path=CN, ip_path=None, device='cuda'):
         image_encoder=encoder,feature_extractor=CLIPImageProcessor(),torch_dtype=dtype,
         safety_checker=None,requires_safety_checker=False,local_files_only=True)
     path=Path(ip_path) if ip_path else IPA/'ip-adapter_sd15.bin'
-    pipe.load_ip_adapter(str(path.parent),weight_name=path.name,image_encoder_folder=None,local_files_only=True)
+    pipe.load_ip_adapter(str(path.parent),subfolder='',weight_name=path.name,image_encoder_folder=None,local_files_only=True)
     pipe.scheduler=DDIMScheduler(num_train_timesteps=1000,beta_start=.00085,beta_end=.012,
         beta_schedule='scaled_linear',clip_sample=False,set_alpha_to_one=False,steps_offset=1,
         prediction_type='epsilon',timestep_spacing='leading')
