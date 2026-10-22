@@ -201,6 +201,8 @@ def advance():
     # 大规模比较之前，reference-swap 的合法同类参考必须先人工核对，避免按生成选参考。
     if not (ROOT/'audit/reference_swap_release.json').exists():
         status(stage='REFERENCE_SWAP_REVIEW_REQUIRED');return
+    from tools.e2a_sup_reference import approved_reference_manifest
+    approved_reference_manifest()
     jobs=[]
     for arm in ['B','C','T1','T2','T3']:
         if not (ROOT/'evaluation/P2b'/arm/'evaluation_complete.json').exists():

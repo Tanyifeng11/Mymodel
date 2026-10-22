@@ -33,8 +33,8 @@ def evaluate(arm,stage,phase='formal'):
 def reference_swap(arm):
     from eval.eval_utils import prepare_evaluation_masks,json_safe
     from eval.metrics import compute_structure_preservation,compute_texture_color_fidelity
-    assert read(ROOT/'audit/reference_swap_release.json')['passed']
-    rows=read(ROOT/'splits/reference_swap.json');assert len(rows)==32
+    from tools.e2a_sup_reference import approved_reference_manifest
+    reference_manifest,rows=approved_reference_manifest()
     path=model_path(arm)
     if arm in EXPECTED:assert sha(path)==EXPECTED[arm]
     else:assert sha(path)==read(path.parent.parent/'checkpoint_verification.json')['sha256']
@@ -74,7 +74,7 @@ def reference_swap(arm):
         page.save(out/('swap_grid_%02d.png'%start))
     write(out/'evaluation_complete.json',dict(complete=True,n=32,arm=arm,
         matched_reference_condition_count=2,old_GT_LPIPS_not_computed=True,
-        reference_manifest_sha256=sha(ROOT/'splits/reference_swap.json'),
+        reference_manifest_sha256=sha(reference_manifest),
         orientation_scale_correspondence='REQUIRES_BLIND_REVIEW',human_blind_review='PENDING'))
 
 
