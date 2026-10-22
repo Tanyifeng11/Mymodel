@@ -1059,6 +1059,8 @@ def main(args):
     skipped_updates = resume_cursor.get('skipped_updates',0) if resume_cursor else 0
     samples_consumed = resume_cursor.get('samples_consumed',0) if resume_cursor else 0
     previous_seconds = resume_cursor.get('seconds',0.) if resume_cursor else 0.
+    previous_loop_seconds = resume_cursor.get('optimizer_loop_seconds',0.) if resume_cursor else 0.
+    loop_started = time.perf_counter()
     for epoch in range(first_epoch, args.num_train_epochs + 1):
         train_dataloader.set_epoch(epoch)
         skip = resume_cursor['next_batch'] if resume_cursor is not None and epoch == first_epoch else 0
@@ -1161,6 +1163,7 @@ def main(args):
                         accelerator.save_state(save_path)
                         audit_write(Path(save_path)/'data_cursor.json',dict(epoch=epoch,next_batch=step+1,
                             samples_consumed=samples_consumed,skipped_updates=skipped_updates,
+                            optimizer_loop_seconds=previous_loop_seconds+time.perf_counter()-loop_started,
                             seconds=previous_seconds+time.perf_counter()-started_training))
                         logger.info(f"Saved state to {save_path}")
 
@@ -1204,6 +1207,7 @@ def main(args):
         audit_write(Path(args.output_dir)/'complete.json',dict(updates=global_step,frozen_before=frozen_before,
             frozen_after=frozen_after,controlnet_before=cn_before,controlnet_after=state_hash(controlnet),
             seconds=previous_seconds+time.perf_counter()-started_training,samples_consumed=samples_consumed,
+            optimizer_loop_seconds=previous_loop_seconds+time.perf_counter()-loop_started,
             skipped_updates=skipped_updates,effective_batch=total_batch_size,gpu=torch.cuda.get_device_name(),
             peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,
             peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,code_commit=commit()))

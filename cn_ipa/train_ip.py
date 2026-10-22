@@ -147,6 +147,7 @@ def cache_inputs(pipe):
 
 def train(steps=3000,checkpoint_every=500,output=None):
     require_audit();assert read(ROOT/'audit/ip_training_smoke.json')['passed']
+    stage_started=time.perf_counter();torch.cuda.empty_cache();torch.cuda.reset_peak_memory_stats()
     random.seed(42);np.random.seed(42);torch.manual_seed(42);torch.cuda.manual_seed_all(42)
     folder=Path(output) if output else ROOT/'checkpoints/ip_fashion';folder.mkdir(parents=True,exist_ok=True)
     if (folder/'complete.json').exists():assert read(folder/'complete.json')['updates']==steps;return
@@ -216,6 +217,8 @@ def train(steps=3000,checkpoint_every=500,output=None):
     assert len(changed)==len(params)
     write(folder/'complete.json',dict(updates=step,samples_consumed=stream.samples,skipped_updates=skipped,
         effective_batch=4,seconds=seconds,trainable_parameters=sum(p.numel() for p in params.values()),
+        optimizer_loop_seconds=seconds,stage_segment_wall_seconds=time.perf_counter()-stage_started,
+        timing_scope='optimizer_loop包含数据读取/优化/检查点写盘；stage_segment另外包含本次加载、缓存准备和冻结哈希；中断损耗见Slurm账本',
         changed_parameters=changed,frozen_before=frozen_before,frozen_after=frozen_after,
         peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,
         gpu=torch.cuda.get_device_name(),code_commit=commit(),training_CN_scale=1.,training_IP_scale=1.,
