@@ -32,6 +32,7 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 import transformers
 from accelerate import Accelerator
+from accelerate import DataLoaderConfiguration
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
 from datasets import load_dataset
@@ -56,6 +57,7 @@ from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_card
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
+from cn_ipa.common import ROOT, require_audit, read as audit_read, write as audit_write, state_hash, commit
 
 
 if is_wandb_available():
@@ -737,6 +739,9 @@ def collate_fn(examples):
 
 
 def main(args):
+    require_audit()
+    assert audit_read(ROOT/'audit/smoke_C0.json')['passed'], 'C0_SMOKE_REQUIRED'
+    started_training = time.perf_counter()
     if args.report_to == "wandb" and args.hub_token is not None:
         raise ValueError(
             "You cannot use both --report_to=wandb and --hub_token due to a security risk of exposing your token."
@@ -752,6 +757,7 @@ def main(args):
         mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
+        dataloader_config=DataLoaderConfiguration(use_seedable_sampler=True, data_seed=args.seed),
     )
 
     # Disable AMP for MPS.
@@ -930,6 +936,7 @@ def main(args):
         collate_fn=collate_fn,
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
+        generator=torch.Generator().manual_seed(args.seed),
     )
 
     # Scheduler and math around the number of training steps.
@@ -965,6 +972,12 @@ def main(args):
     vae.to(accelerator.device, dtype=weight_dtype)
     unet.to(accelerator.device, dtype=weight_dtype)
     text_encoder.to(accelerator.device, dtype=weight_dtype)
+    frozen_modules = {'unet':unet, 'vae':vae, 'text_encoder':text_encoder}
+    frozen_before = {k:state_hash(v) for k,v in frozen_modules.items()}
+    cn_before = state_hash(unwrap_model(controlnet))
+    if accelerator.is_main_process:
+        audit_write(Path(args.output_dir)/'freeze_before.json', dict(frozen=frozen_before, controlnet=cn_before,
+            trainable_parameters=sum(p.numel() for p in controlnet.parameters() if p.requires_grad), code_commit=commit()))
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -1034,8 +1047,18 @@ def main(args):
     )
 
     image_logs = None
-    for epoch in range(first_epoch, args.num_train_epochs):
-        for step, batch in enumerate(train_dataloader):
+    resume_cursor = None
+    if args.resume_from_checkpoint:
+        resume_cursor = audit_read(Path(args.output_dir)/path/'data_cursor.json')
+        first_epoch = resume_cursor['epoch']
+    # DataLoader的独立generator避免恢复时构造迭代器消费扩散噪声的全局RNG。
+    skipped_updates = 0
+    samples_consumed = global_step * total_batch_size
+    for epoch in range(first_epoch, args.num_train_epochs + 1):
+        train_dataloader.set_epoch(epoch)
+        skip = resume_cursor['next_batch'] if resume_cursor is not None and epoch == first_epoch else 0
+        active_loader = accelerator.skip_first_batches(train_dataloader, skip) if skip else train_dataloader
+        for step, batch in enumerate(active_loader, start=skip):
             with accelerator.accumulate(controlnet):
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
@@ -1087,6 +1110,8 @@ def main(args):
                 else:
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+                assert tuple(latents.shape[-2:]) == (64,48)
+                assert torch.isfinite(loss), 'NONFINITE_CN_LOSS'
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
@@ -1098,6 +1123,10 @@ def main(args):
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
+                samples_consumed += total_batch_size
+                if accelerator.optimizer_step_was_skipped:
+                    skipped_updates += 1
+                    continue
                 progress_bar.update(1)
                 global_step += 1
 
@@ -1125,6 +1154,7 @@ def main(args):
 
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         accelerator.save_state(save_path)
+                        audit_write(Path(save_path)/'data_cursor.json',dict(epoch=epoch,next_batch=step+1))
                         logger.info(f"Saved state to {save_path}")
 
                     if args.validation_prompt is not None and global_step % args.validation_steps == 0:
@@ -1143,15 +1173,33 @@ def main(args):
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
+            if accelerator.sync_gradients and accelerator.is_main_process and (global_step <= 5 or global_step % 25 == 0):
+                with (Path(args.output_dir)/'history.jsonl').open('a',encoding='utf-8') as history:
+                    history.write(json.dumps(dict(step=global_step,loss=float(loss.detach()),
+                        seconds=time.perf_counter()-started_training,skipped_updates=skipped_updates,
+                        peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30))+'\n')
 
             if global_step >= args.max_train_steps:
                 break
+        if global_step >= args.max_train_steps:
+            break
 
     # Create the pipeline using using the trained modules and save it.
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         controlnet = unwrap_model(controlnet)
         controlnet.save_pretrained(args.output_dir)
+        frozen_after = {k:state_hash(v) for k,v in frozen_modules.items()}
+        assert frozen_before == frozen_after, 'FROZEN_BASE_CHANGED'
+        assert all(p.grad is None for module in frozen_modules.values() for p in module.parameters())
+        assert state_hash(controlnet) != cn_before, 'CN_DID_NOT_UPDATE'
+        assert global_step == args.max_train_steps
+        audit_write(Path(args.output_dir)/'complete.json',dict(updates=global_step,frozen_before=frozen_before,
+            frozen_after=frozen_after,controlnet_before=cn_before,controlnet_after=state_hash(controlnet),
+            seconds=time.perf_counter()-started_training,samples_consumed=samples_consumed,
+            skipped_updates=skipped_updates,effective_batch=total_batch_size,gpu=torch.cuda.get_device_name(),
+            peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,
+            peak_reserved_gib=torch.cuda.max_memory_reserved()/2**30,code_commit=commit()))
 
         # Run a final round of validation.
         image_logs = None
