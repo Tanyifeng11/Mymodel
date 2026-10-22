@@ -151,6 +151,40 @@ def parity_and_gradients():
     smoke_training()
 
 
+def cn_smoke():
+    path=ROOT/'audit/cn_resume_smoke.json'
+    if path.exists():assert read(path)['passed'];return
+    stage('cn_resume_smoke')
+    folder=ROOT/'smoke/CN_training'
+    base=['bash','cn_ipa/job.sh','train_cn','--output_dir',str(folder),'--checkpointing_steps','1']
+    if not (folder/'checkpoint-1').exists():
+        subprocess.run(base+['--max_train_steps','1'],check=True)
+    subprocess.run(base+['--max_train_steps','2','--resume_from_checkpoint','latest'],check=True)
+    done=read(folder/'complete.json');assert done['updates']==2
+    cursor=read(folder/'checkpoint-2/data_cursor.json');assert cursor['next_batch']==8
+    write(path,dict(passed=True,updates=2,resumed_from=1,next_batch=cursor['next_batch'],
+        optimizer_RNG_scaler_saved=True,details=done,code_commit=commit(),scientific_training=False))
+
+
+def train_cn():
+    if (ROOT/'checkpoints/cn_fashion/complete.json').exists():return
+    assert read(ROOT/'audit/cn_resume_smoke.json')['passed']
+    stage('train_cn')
+    command=['bash','cn_ipa/job.sh','train_cn']
+    if list((ROOT/'checkpoints/cn_fashion').glob('checkpoint-*')):command+=['--resume_from_checkpoint','latest']
+    subprocess.run(command,check=True)
+
+
+def all_stages():
+    from cn_ipa import train_ip
+    if not (ROOT/'audit/official_weight_validation.json').exists():validate_assets()
+    smoke('C0');cn_smoke();grid('C0')
+    train_cn();cn_select();smoke('C1');parity_and_gradients()
+    stage('train_ip');train_ip.train();stage('select_ip_checkpoint');train_ip.select()
+    smoke('C2');grid('C1');grid('C2')
+    freeze();test();evaluate()
+
+
 def freeze():
     path=ROOT/'selection/frozen_final_choice.json'
     if path.exists():return read(path)
@@ -225,6 +259,9 @@ def main():
     elif args.mode=='grid':grid(args.arm)
     elif args.mode=='cn_select':cn_select()
     elif args.mode=='ip_smoke':parity_and_gradients()
+    elif args.mode=='cn_smoke':cn_smoke()
+    elif args.mode=='train_cn':train_cn()
+    elif args.mode=='all':all_stages()
     elif args.mode=='freeze':freeze()
     elif args.mode=='test':test()
     elif args.mode=='evaluate':evaluate()
