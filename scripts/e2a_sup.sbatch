@@ -16,7 +16,8 @@ elif [[ "$ACTION" == advance ]]; then
 elif [[ "$ACTION" == assets ]]; then
   python -m tools.e2a_sup_assets "$@"
 elif [[ "$ACTION" == train ]]; then
-  export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 E2A_JOB_SOFT_SECONDS=13500
+  # 用户要求单次完成；保留周期断点，但不按墙钟时间主动拆分训练。
+  export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 E2A_JOB_SOFT_SECONDS=0
   python -c 'import torch; print("CUDA",torch.cuda.is_available(),"VISIBLE",torch.cuda.device_count(),"EXPECTED",2,flush=True); assert torch.cuda.is_available() and torch.cuda.device_count()==2'
   PORT=$(python -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
   accelerate launch --multi_gpu --num_processes=2 --num_machines=1 --machine_rank=0 \

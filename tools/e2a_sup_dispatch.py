@@ -5,6 +5,7 @@ import fcntl
 import re
 import shutil
 import subprocess
+import time
 from tools.e2a_sup_common import *
 
 
@@ -25,15 +26,17 @@ def submit(key,action,args=(),gpus=0,dependency=None):
         if action=='train':
             run=folder(args[1],args[3])
             resume=state=='COMPLETED' and (run/'pauses'/('job_%d.json'%latest['id'])).exists()
-        release=ROOT/'audit'/('retry_release_%d.json'%latest['id'])
+        release=ROOT/'audit'/('retry_release_%d.json'%latest['id']);identifier_field='failed_job'
+        scheduling=ROOT/'audit'/('resubmit_release_%d.json'%latest['id'])
+        if scheduling.exists():release=scheduling;identifier_field='replaced_job'
         if not resume and release.exists():
             review=read(release)
-            resume=(review['passed'] and review['failed_job']==latest['id'] and
+            resume=(review['passed'] and review[identifier_field]==latest['id'] and
                 review['key']==key and review['source_commit']==commit())
         if not resume:raise RuntimeError('REVIEW_REQUIRED %s %s'%(key,state))
     command=['sbatch','--parsable','--partition='+('gpu' if gpus else 'cpu'),'--nodes=1','--ntasks=1',
         '--cpus-per-task='+str(4*gpus if gpus else 8),'--mem='+str(48 if gpus==2 else 32 if gpus else 16)+'G',
-        '--time='+('04:00:00' if action=='train' else '03:00:00'),
+        '--time='+('7-00:00:00' if action=='train' else '03:00:00'),
         '--job-name=E2AS_'+key,'--output='+str(ROOT/'logs'/(key+'_%j.log'))]
     if gpus:command+=['--gres=gpu:'+str(gpus)]
     if dependency:command+=['--dependency=afterany:'+':'.join(str(j['id']) for j in dependency)]
@@ -44,11 +47,52 @@ def submit(key,action,args=(),gpus=0,dependency=None):
     if prior and (ROOT/'audit'/('retry_release_%d.json'%prior[-1]['id'])).exists():
         value['retry_of']=prior[-1]['id']
         prior[-1]['superseded_by']=identifier
+    if prior and (ROOT/'audit'/('resubmit_release_%d.json'%prior[-1]['id'])).exists():
+        value['resubmitted_from']=prior[-1]['id']
+        prior[-1]['superseded_by']=identifier
     jobs.append(value);write(ROOT/'jobs.json',jobs);print('SUBMITTED',key,identifier,flush=True);return value
 
 
 def watch(jobs):
     submit('advance_'+'_'.join(str(j['id']) for j in jobs),'advance',dependency=jobs)
+
+
+def resubmit_pending_training(identifier,reason):
+    """用户要求更换调度窗口；只替换尚未启动且没有训练产物的排队作业。"""
+    assert reason.strip()
+    with (ROOT/'dispatch.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        jobs=history();job=next(j for j in jobs if j['id']==identifier)
+        assert job==[j for j in jobs if j['key']==job['key']][-1]
+        assert job['action']=='train' and job_state(job)=='PENDING'
+        assert not folder(job['args'][1],job['args'][3]).exists(),'TRAINING_ALREADY_STARTED'
+        watchers=[j for j in jobs if j['action']=='advance' and any(
+            flag.startswith('--dependency=afterany:') and str(identifier) in flag.split(':')[1:]
+            for flag in j['command'])]
+        assert all(job_state(j)=='PENDING' for j in watchers)
+        archive=ROOT/'audit/scheduling_changes'/('job_%d'%identifier)
+        assert not archive.exists();archive.mkdir(parents=True)
+        paths=[ROOT/'jobs.json',ROOT/'status.json']
+        paths += [ROOT/'logs'/('%s_%d.log'%(j['key'],j['id'])) for j in [job]+watchers]
+        preserved={}
+        for path in paths:
+            if path.exists():
+                target=archive/path.name;shutil.copy2(str(path),str(target))
+                assert sha(target)==sha(path);preserved[path.name]=sha(target)
+        cancelled=[j['id'] for j in watchers]+[identifier]
+        # 先取消依赖推进，避免取消训练时触发旧 afterany 链。
+        for target in cancelled:subprocess.check_call(['scancel',str(target)])
+        for _ in range(30):
+            if all(job_state(j).startswith('CANCELLED') for j in [job]+watchers):break
+            time.sleep(1)
+        assert all(job_state(j).startswith('CANCELLED') for j in [job]+watchers)
+        assert not folder(job['args'][1],job['args'][3]).exists(),'TRAINING_STARTED_DURING_CANCELLATION'
+        freeze(ROOT/'audit'/('resubmit_release_%d.json'%identifier),dict(passed=True,
+            replaced_job=identifier,key=job['key'],reason=reason,source_commit=commit(),
+            cancelled_jobs=cancelled,preserved_files=preserved,unstarted_training=True,
+            training_walltime='7-00:00:00',soft_pause_seconds=0,scientific_budget_changed=False))
+        for j in [job]+watchers:j['cancellation_reason']=reason
+        write(ROOT/'jobs.json',jobs);accounting()
 
 
 def review_calibration_retry(identifier,reason):
@@ -267,12 +311,14 @@ if __name__=='__main__':
     parser.add_argument('--retry-job',type=int)
     parser.add_argument('--resume-reviewed-job',type=int)
     parser.add_argument('--retry-assets-job',type=int)
+    parser.add_argument('--resubmit-pending-job',type=int)
     parser.add_argument('--reason')
     options=parser.parse_args()
     try:
         if options.retry_job:review_calibration_retry(options.retry_job,options.reason or '')
         if options.resume_reviewed_job:review_environment_resume(options.resume_reviewed_job,options.reason or '')
         if options.retry_assets_job:review_assets_retry(options.retry_assets_job,options.reason or '')
+        if options.resubmit_pending_job:resubmit_pending_training(options.resubmit_pending_job,options.reason or '')
         advance()
     except Exception as error:
         status(engineering_failure=repr(error));raise
