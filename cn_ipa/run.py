@@ -246,14 +246,23 @@ def all_stages():
 def metric_smoke():
     path=ROOT/'audit/metric_replay_smoke.json'
     if path.exists():assert read(path)['passed'];return
-    stage('metric_replay_smoke');scorer=Scorer();old=CONFIRM.parent/'m12_gain_dev32_20261020'
+    stage('metric_replay_smoke');old=CONFIRM.parent/'m12_gain_dev32_20261020'
     previous=read(old/'metrics/per_image.json');checks=[]
+    reused={(r['arm'],r['id']):r for r in read(old/'protocol/source_output_manifest.json')}
+    inputs=[]
     for row in read(ROOT/'manifests/dev.json')[:4]:
         for arm in ['E5','M12_GAIN']:
-            measured=scorer.score(row,old/'outputs'/arm/row['id']/'seed42.png',arm)
-            expected=next(r for r in previous if r['id']==row['id'] and r['variant']==arm)
-            delta={k:abs(measured[k]-expected[k]) if measured.get(k) is not None and expected.get(k) is not None else None for k in KEYS}
-            checks.append(dict(id=row['id'],arm=arm,delta=delta))
+            # E5等旧臂由历史实验复用，原始路径及SHA以冻结清单为准。
+            png=Path(reused[arm,row['id']]['png']) if arm=='E5' else old/'outputs'/arm/row['id']/'seed42.png'
+            expected_sha=reused[arm,row['id']]['png_sha256'] if arm=='E5' else read(png.with_suffix('.json'))['png_sha256']
+            assert sha(png)==expected_sha,str(png)
+            inputs.append((row,arm,png,expected_sha))
+    scorer=Scorer()
+    for row,arm,png,expected_sha in inputs:
+        measured=scorer.score(row,png,arm)
+        expected=next(r for r in previous if r['id']==row['id'] and r['variant']==arm)
+        delta={k:abs(measured[k]-expected[k]) if measured.get(k) is not None and expected.get(k) is not None else None for k in KEYS}
+        checks.append(dict(id=row['id'],arm=arm,path=str(png),png_sha256=expected_sha,delta=delta))
     passed=all(v is None or v<1e-6 for row in checks for v in row['delta'].values())
     write(path,dict(passed=passed,checks=checks,lpips=scorer.info,source='历史DEV输出；仅验证评分等价，不用于模型调参'))
     assert passed,checks
