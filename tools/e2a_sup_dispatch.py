@@ -131,8 +131,8 @@ def review_environment_resume(identifier,reason):
         accounting()
 
 
-def review_empty_assets_retry(identifier,reason):
-    """仅放行未产生注册依赖或训练产物的空仓库失败；先保留原日志与 Git 元数据。"""
+def review_assets_retry(identifier,reason):
+    """仅放行已审查的空仓库/权重直连失败，先保留原件；不得重置已注册依赖或训练。"""
     assert reason.strip()
     with (ROOT/'dispatch.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -147,9 +147,17 @@ def review_empty_assets_retry(identifier,reason):
         name,url=('DISTS','https://github.com/dingkeyan93/DISTS.git') if arm=='T1' else ('dino','https://github.com/facebookresearch/dino.git')
         repo=ROOT/'assets'/name
         assert subprocess.check_output(['git','-C',str(repo),'remote','get-url','origin'],text=True).strip()==url
-        assert subprocess.run(['git','-C',str(repo),'rev-parse','--verify','HEAD'],capture_output=True).returncode!=0
         log=ROOT/'logs'/('%s_%d.log'%(job['key'],identifier));text=log.read_text()
-        assert "ambiguous argument 'HEAD'" in text and "'rev-parse', 'HEAD'" in text
+        head=subprocess.run(['git','-C',str(repo),'rev-parse','--verify','HEAD'],capture_output=True,text=True)
+        if head.returncode:
+            assert "ambiguous argument 'HEAD'" in text and "'rev-parse', 'HEAD'" in text
+            failure_kind='empty_git_HEAD'
+        else:
+            assert arm=='T1' and '[Errno 101] Network is unreachable' in text
+            assert 'https://download.pytorch.org/models/vgg16-397923af.pth' in text
+            assert 'vgg16(weights=VGG16_Weights.IMAGENET1K_V1)' in text
+            assert 'HEAD is now at '+head.stdout.strip()[:7] in text
+            failure_kind='official_VGG_direct_network_unreachable'
         archive=ROOT/'audit/engineering_failures'/('job_%d'%identifier)
         assert not archive.exists();archive.mkdir(parents=True)
         for path in [log,ROOT/'jobs.json',ROOT/'status.json']:
@@ -159,6 +167,8 @@ def review_empty_assets_retry(identifier,reason):
         assert sha(archive/log.name)==sha(log)
         freeze(ROOT/'audit'/('retry_release_%d.json'%identifier),dict(passed=True,failed_job=identifier,
             key=job['key'],reason=reason,source_commit=commit(),preserved_files=saved,
+            failed_source_commit=job['commit'],failure_kind=failure_kind,
+            dependency_commit=head.stdout.strip() if not head.returncode else None,
             official_origin=url,registry_not_created=True,training_not_started=True,
             scientific_budget_changed=False))
         accounting()
@@ -262,7 +272,7 @@ if __name__=='__main__':
     try:
         if options.retry_job:review_calibration_retry(options.retry_job,options.reason or '')
         if options.resume_reviewed_job:review_environment_resume(options.resume_reviewed_job,options.reason or '')
-        if options.retry_assets_job:review_empty_assets_retry(options.retry_assets_job,options.reason or '')
+        if options.retry_assets_job:review_assets_retry(options.retry_assets_job,options.reason or '')
         advance()
     except Exception as error:
         status(engineering_failure=repr(error));raise
