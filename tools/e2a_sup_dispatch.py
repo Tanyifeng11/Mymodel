@@ -131,6 +131,39 @@ def review_environment_resume(identifier,reason):
         accounting()
 
 
+def review_empty_assets_retry(identifier,reason):
+    """仅放行未产生注册依赖或训练产物的空仓库失败；先保留原日志与 Git 元数据。"""
+    assert reason.strip()
+    with (ROOT/'dispatch.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        jobs=history();job=next(j for j in jobs if j['id']==identifier)
+        assert job['id']==[j for j in jobs if j['key']==job['key']][-1]['id']
+        assert job['action']=='assets' and job_state(job)=='FAILED'
+        assert not any(job_state(j) in ['RUNNING','PENDING','CONFIGURING','COMPLETING'] for j in jobs)
+        arm=job['args'][0];assert arm in ['T1','T2']
+        registry=ROOT/'assets/registry.json'
+        assert arm not in (read(registry) if registry.exists() else {})
+        assert not any(folder(arm,phase).exists() for phase in ['calibrate','pilot','formal'])
+        name,url=('DISTS','https://github.com/dingkeyan93/DISTS.git') if arm=='T1' else ('dino','https://github.com/facebookresearch/dino.git')
+        repo=ROOT/'assets'/name
+        assert subprocess.check_output(['git','-C',str(repo),'remote','get-url','origin'],text=True).strip()==url
+        assert subprocess.run(['git','-C',str(repo),'rev-parse','--verify','HEAD'],capture_output=True).returncode!=0
+        log=ROOT/'logs'/('%s_%d.log'%(job['key'],identifier));text=log.read_text()
+        assert "ambiguous argument 'HEAD'" in text and "'rev-parse', 'HEAD'" in text
+        archive=ROOT/'audit/engineering_failures'/('job_%d'%identifier)
+        assert not archive.exists();archive.mkdir(parents=True)
+        for path in [log,ROOT/'jobs.json',ROOT/'status.json']:
+            shutil.copy2(str(path),str(archive/path.name))
+        shutil.copytree(str(repo/'.git'),str(archive/(name+'_git')))
+        saved={str(path.relative_to(archive)):sha(path) for path in archive.rglob('*') if path.is_file()}
+        assert sha(archive/log.name)==sha(log)
+        freeze(ROOT/'audit'/('retry_release_%d.json'%identifier),dict(passed=True,failed_job=identifier,
+            key=job['key'],reason=reason,source_commit=commit(),preserved_files=saved,
+            official_origin=url,registry_not_created=True,training_not_started=True,
+            scientific_budget_changed=False))
+        accounting()
+
+
 def accounting():
     jobs=history()
     if not jobs:return
@@ -176,9 +209,9 @@ def advance():
     assert (ROOT/'calibration_choice.json').exists(),'CALIBRATION_TARGET_NOT_FROZEN'
     for arm in ARMS:
         if arm in ['T1','T2'] and not (ROOT/'assets/registry.json').exists():
-            job=submit('assets_'+arm,'assets',[arm]);watch([job]);return
+            job=submit('assets_'+arm,'assets',[arm]);status(stage='PREPARING_ASSETS_'+arm,engineering_failure=None);watch([job]);return
         if arm in ['T1','T2'] and arm not in read(ROOT/'assets/registry.json'):
-            job=submit('assets_'+arm,'assets',[arm]);watch([job]);return
+            job=submit('assets_'+arm,'assets',[arm]);status(stage='PREPARING_ASSETS_'+arm,engineering_failure=None);watch([job]);return
         run=folder(arm,'calibrate')
         if not (run/'calibration_complete.json').exists():
             job=submit('calibrate_'+arm,'train',['--arm',arm,'--phase','calibrate'],gpus=2)
@@ -223,11 +256,13 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--retry-job',type=int)
     parser.add_argument('--resume-reviewed-job',type=int)
+    parser.add_argument('--retry-assets-job',type=int)
     parser.add_argument('--reason')
     options=parser.parse_args()
     try:
         if options.retry_job:review_calibration_retry(options.retry_job,options.reason or '')
         if options.resume_reviewed_job:review_environment_resume(options.resume_reviewed_job,options.reason or '')
+        if options.retry_assets_job:review_empty_assets_retry(options.retry_assets_job,options.reason or '')
         advance()
     except Exception as error:
         status(engineering_failure=repr(error));raise

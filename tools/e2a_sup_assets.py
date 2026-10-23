@@ -5,6 +5,19 @@ import torch
 from tools.e2a_sup_common import *
 
 
+def official_checkout(repo,url):
+    """空 clone 可能成功退出；仅从同一官方 origin 恢复 HEAD，保留原目录。"""
+    if not (repo/'.git').exists():
+        subprocess.run(['git','clone','--depth','1',url,str(repo)],check=True,timeout=180)
+    origin=subprocess.check_output(['git','-C',str(repo),'remote','get-url','origin'],text=True).strip()
+    assert origin==url,('OFFICIAL_ORIGIN_CHANGED',origin)
+    head=subprocess.run(['git','-C',str(repo),'rev-parse','--verify','HEAD'],capture_output=True,text=True)
+    if head.returncode:
+        subprocess.run(['git','-C',str(repo),'fetch','--depth','1','origin','HEAD'],check=True,timeout=180)
+        subprocess.run(['git','-C',str(repo),'checkout','--detach','FETCH_HEAD'],check=True,timeout=30)
+    return subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
+
+
 def assets(arm):
     root=ROOT/'assets';root.mkdir(parents=True,exist_ok=True)
     registry=read(root/'registry.json') if (root/'registry.json').exists() else {}
@@ -13,8 +26,7 @@ def assets(arm):
         return
     name,url=('DISTS','https://github.com/dingkeyan93/DISTS.git') if arm=='T1' else ('dino','https://github.com/facebookresearch/dino.git')
     repo=root/name
-    if not (repo/'.git').exists(): subprocess.run(['git','clone','--depth','1',url,str(repo)],check=True,timeout=180)
-    code_commit=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
+    code_commit=official_checkout(repo,url)
     record=dict(source=url,commit=code_commit,license=str(repo/'LICENSE'),pretraining_data_exposure_unknown=True)
     files=list(repo.glob('*.py'))+list(repo.glob('LICENSE*'))
     if arm=='T1':
