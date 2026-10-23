@@ -214,6 +214,8 @@ def advance():
     if jobs:watch(jobs);return
     from tools.e2a_sup_stats import summarize
     summarize()
+    from tools.e2a_sup_bundle import build
+    build()
     print('Five-arm statistics complete; swap, blind/tail review and local report remain',flush=True)
 
 
