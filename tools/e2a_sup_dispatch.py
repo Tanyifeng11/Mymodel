@@ -290,15 +290,15 @@ def advance():
         status(stage='REFERENCE_SWAP_REVIEW_REQUIRED');return
     from tools.e2a_sup_reference import approved_reference_manifest
     approved_reference_manifest()
-    jobs=[]
+    # 每次只提交一个评价及其依赖推进，避免批量提交耗尽用户 QOS 配额。
     for arm in ['B','C','T1','T2','T3']:
         if not (ROOT/'evaluation/P2b'/arm/'evaluation_complete.json').exists():
-            jobs.append(submit('P2b_'+arm,'eval',['--arm',arm,'--stage','P2b'],gpus=1))
-    if jobs:watch(jobs);return
+            job=submit('P2b_'+arm,'eval',['--arm',arm,'--stage','P2b'],gpus=1)
+            watch([job]);status(stage='P2B_'+arm,engineering_failure=None);return
     for arm in ['B','C']+ARMS:
         if not (ROOT/'evaluation/reference_swap'/arm/'evaluation_complete.json').exists():
-            jobs.append(submit('reference_swap_'+arm,'eval',['--arm',arm,'--stage','reference_swap'],gpus=1))
-    if jobs:watch(jobs);return
+            job=submit('reference_swap_'+arm,'eval',['--arm',arm,'--stage','reference_swap'],gpus=1)
+            watch([job]);status(stage='REFERENCE_SWAP_'+arm,engineering_failure=None);return
     from tools.e2a_sup_stats import summarize
     summarize()
     from tools.e2a_sup_bundle import build
