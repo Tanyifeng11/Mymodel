@@ -27,7 +27,10 @@ def submit(key,action,args=(),gpus=0,dependency=None):
         if review['source_commit']!=commit():
             # 用户调度变更跨提交；科学训练文件必须仍逐字等于准备冻结版本。
             request=read(ROOT/'audit/single_gpu_test_request.json')
-            assert field=='replaced_job' and request['source_commit']==commit()
+            assert field=='replaced_job'
+            if request['source_commit']!=commit():
+                tested=read(ROOT/'audit/single_gpu_test_complete.json')
+                assert tested['passed'] and tested['source_commit']==commit()
             assert request['replaced_calibration_job']==latest['id']
             assert request['scheduling_release_sha256']==sha(release)
             assert all(sha(SOURCE/p)==h for p,h in read(ROOT/'audit/preparation_complete.json')['source_sha256'].items())

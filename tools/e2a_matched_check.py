@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 import torch
 import torch.nn.functional as F
-from tools.e2a_matched_common import SOURCE,helper_sources,model_path
+from tools.e2a_matched_common import SOURCE,helper_sources,model_path,sha
 from tools.e2a_matched_train import MatchedSupervision,select_gamma
 
 
@@ -130,6 +130,23 @@ def check():
                 assert submit.call_count==1
                 if complete:assert submit.call_args.args[:2]==('calibrate_T3M','train')
                 else:assert submit.call_args.args[:2]==('single_gpu_graph_test','smoke') and submit.call_args.kwargs['gpus']==1
+    with tempfile.TemporaryDirectory() as temporary:
+        root=Path(temporary);(root/'logs').mkdir()
+        write(root/'jobs.json',[dict(id=123,key='calibrate_T3M')])
+        release=root/'audit/resubmit_release_123.json'
+        write(release,dict(passed=True,replaced_job=123,key='calibrate_T3M',source_commit='old'))
+        write(root/'audit/single_gpu_test_request.json',dict(source_commit='old',replaced_calibration_job=123,
+            scheduling_release_sha256=sha(release)))
+        write(root/'audit/preparation_complete.json',dict(source_sha256={
+            'tools/e2a_matched_train.py':sha(SOURCE/'tools/e2a_matched_train.py')}))
+        with patch.object(dispatch,'ROOT',root),patch.object(dispatch.reused,'ROOT',root),patch.object(dispatch,'commit',return_value='fixed'),patch.object(dispatch,'job_state',return_value='CANCELLED'),patch.object(dispatch.subprocess,'check_output',return_value='456'):
+            for accepted in [False,True]:
+                write(root/'audit/single_gpu_test_complete.json',dict(passed=True,source_commit='fixed' if accepted else 'stale'))
+                if accepted:assert dispatch.submit('calibrate_T3M','train',[],2)['id']==456
+                else:
+                    try:dispatch.submit('calibrate_T3M','train',[],2)
+                    except AssertionError:pass
+                    else:raise AssertionError('Stale single-GPU result released calibration')
     for path in list(SOURCE.glob('tools/e2a_matched*.py')):
         ast.parse(path.read_text(encoding='utf-8'),feature_version=(3,8))
     return dict(passed=True,CPU_synthetic_only=True,body_exact_C=True,rest_union_exact=True,
@@ -139,6 +156,7 @@ def check():
         sequential_dispatch_scenarios=len(expected),pilot_visual_review_gate_preserved=True,
         optional_single_GPU_test_before_paired_calibration=True,single_GPU_test_limit_minutes=30,
         single_process_cuda_index_None_regression=True,
+        current_source_single_GPU_pass_required_after_repair=True,
         python38_syntax=True,actual_GPU_calibration_pending=True)
 
 
