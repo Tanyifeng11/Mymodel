@@ -15,6 +15,10 @@ class SingleGPUHook(engine.Hook):
         self.models=[env[k] for k in ['unet','ref_unet','bf','spatial_texture_encoder','spatial_injection']]
         self.optimizer=env['optimizer'];self.scheduler=env['lr_scheduler']
         assert self.acc.num_processes==1 and engine.torch.cuda.device_count()==1
+        # 单进程 Accelerate 可返回 cuda（index=None）；继承的 fork_rng 需要显式编号。
+        assert self.acc.device.type=='cuda'
+        self.acc.state.device=engine.torch.device('cuda',engine.torch.cuda.current_device())
+        assert self.acc.device.index is not None
         assert env['args'].gam_init_ckpt==str(model_path('E1')) and env['args'].start_global_step==0
         assert not env['args'].resume_from_checkpoint
         assert env['noise_scheduler'].config.prediction_type=='epsilon'
@@ -25,6 +29,7 @@ class SingleGPUHook(engine.Hook):
         self.scheduler_before=copy.deepcopy(self.scheduler.state_dict())
         self.scaler_before=copy.deepcopy(self.acc.scaler.state_dict())
         freeze(self.run/'single_gpu_environment.json',dict(world_size=1,visible_GPUs=1,
+            resolved_cuda_index=self.acc.device.index,
             torch=engine.torch.__version__,seed=env['args'].seed,batch_size=env['args'].train_batch_size,
             gradient_accumulation=env['args'].gradient_accumulation_steps,
             optimizer=type(self.optimizer.optimizer).__name__,no_optimizer_updates=True,
@@ -62,7 +67,13 @@ class SingleGPUHook(engine.Hook):
 
 def run():
     request=read(ROOT/'audit/single_gpu_test_request.json')
-    assert request['passed'] and request['source_commit']==commit()
+    assert request['passed']
+    if request['source_commit']!=commit():
+        job=next(j for j in read(ROOT/'jobs.json') if str(j['id'])==os.environ['SLURM_JOB_ID'])
+        review=read(ROOT/'audit'/('retry_release_%d.json'%job['retry_of']))
+        assert review['passed'] and review['source_commit']==commit()
+        assert review['key']=='single_gpu_graph_test' and review['failed_job']==job['retry_of']
+        assert review['request_sha256']==sha(ROOT/'audit/single_gpu_test_request.json')
     prep=read(ROOT/'audit/preparation_complete.json');assert prep['passed']
     assert all(sha(SOURCE/p)==h for p,h in prep['source_sha256'].items())
     assert not (ROOT/'audit/single_gpu_test_complete.json').exists()

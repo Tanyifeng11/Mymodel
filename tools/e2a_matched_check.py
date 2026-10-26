@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 import torch
 import torch.nn.functional as F
-from tools.e2a_matched_common import SOURCE,helper_sources
+from tools.e2a_matched_common import SOURCE,helper_sources,model_path
 from tools.e2a_matched_train import MatchedSupervision,select_gamma
 
 
@@ -53,6 +53,29 @@ def check():
         output.square().mean().backward();optimizer.zero_grad(set_to_none=True)
     assert not optimizer.state and all(torch.equal(v,b) for v,b in zip(layer.parameters(),before))
     assert torch.equal(rng,torch.get_rng_state())
+    # 复现单进程的 cuda:None 元数据；仅模拟设备索引，不生成虚构 GPU 通过证据。
+    from types import SimpleNamespace
+    from tools.e2a_matched_smoke import SingleGPUHook
+    class FakeAccelerator:
+        process_index=0;num_processes=1
+        def __init__(self):
+            self.state=SimpleNamespace(device=torch.device('cuda'))
+            self.scaler=SimpleNamespace(state_dict=lambda:{'scale':128})
+        @property
+        def device(self):return self.state.device
+    with tempfile.TemporaryDirectory() as temporary:
+        run=Path(temporary);acc=FakeAccelerator();model=torch.nn.Linear(2,2)
+        opt=torch.optim.AdamW(model.parameters())
+        env=dict(accelerator=acc,runtime=object(),optimizer=SimpleNamespace(optimizer=opt),
+            lr_scheduler=torch.optim.lr_scheduler.LambdaLR(opt,lambda _:1),
+            args=SimpleNamespace(gam_init_ckpt=str(model_path('E1')),
+                start_global_step=0,resume_from_checkpoint='',seed=42,train_batch_size=1,gradient_accumulation_steps=4),
+            noise_scheduler=SimpleNamespace(config=SimpleNamespace(prediction_type='epsilon')),
+            vae=torch.nn.Linear(2,2).requires_grad_(False),trainable_params=list(model.parameters()))
+        env.update({k:model for k in ['unet','ref_unet','bf','spatial_texture_encoder','spatial_injection']})
+        with patch('torch.cuda.device_count',return_value=1),patch('torch.cuda.current_device',return_value=0):
+            SingleGPUHook('T3M','calibrate',run).setup(env)
+        assert acc.device==torch.device('cuda',0)
     # Windows 没有 fcntl，调度测试只替换此平台互斥接口，不模拟 GPU 结果。
     import sys,types
     if sys.platform=='win32':sys.modules.setdefault('fcntl',types.SimpleNamespace(flock=lambda *a:None,LOCK_EX=1,LOCK_NB=2))
@@ -115,6 +138,7 @@ def check():
         single_7day_2GPU_allocation=True,active_job_reused=True,failed_job_review_required=True,
         sequential_dispatch_scenarios=len(expected),pilot_visual_review_gate_preserved=True,
         optional_single_GPU_test_before_paired_calibration=True,single_GPU_test_limit_minutes=30,
+        single_process_cuda_index_None_regression=True,
         python38_syntax=True,actual_GPU_calibration_pending=True)
 
 
