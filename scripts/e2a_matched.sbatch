@@ -12,6 +12,10 @@ if [[ "$ACTION" == prepare ]]; then
   python -m tools.e2a_matched_common
 elif [[ "$ACTION" == advance ]]; then
   python -m tools.e2a_matched_dispatch "$@"
+elif [[ "$ACTION" == smoke ]]; then
+  export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 E2A_JOB_SOFT_SECONDS=0
+  python -c 'import torch; print("CUDA",torch.cuda.is_available(),"VISIBLE",torch.cuda.device_count(),"EXPECTED",1,flush=True); assert torch.cuda.is_available() and torch.cuda.device_count()==1'
+  python -m tools.e2a_matched_smoke
 elif [[ "$ACTION" == train ]]; then
   export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 E2A_JOB_SOFT_SECONDS=0
   python -c 'import torch; print("CUDA",torch.cuda.is_available(),"VISIBLE",torch.cuda.device_count(),"EXPECTED",2,flush=True); assert torch.cuda.is_available() and torch.cuda.device_count()==2'

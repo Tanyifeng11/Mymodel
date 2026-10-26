@@ -70,6 +70,9 @@ def check():
                 try:dispatch.submit('formal_T3M','train',[],2)
                 except AssertionError:pass
                 else:raise AssertionError('Unreviewed failed run was resubmitted')
+            smoke=dispatch.submit('single_gpu_graph_test','smoke',gpus=1)
+            assert '--gres=gpu:1' in smoke['command'] and '--cpus-per-task=4' in smoke['command']
+            assert '--time=00:30:00' in smoke['command']
     # 校准→pilot→真实图审→正式→评价的逐阶段保护，不能跳过工程图审。
     from tools.e2a_matched_common import write
     expected=[('prepare','prepare'),('calibrate_T3M','train'),('pilot_T3M','train'),
@@ -93,6 +96,17 @@ def check():
                 if key is None:
                     submit.assert_not_called();assert state.call_args.kwargs['stage']=='PILOT_REVIEW_REQUIRED_T3M'
                 else:assert submit.call_count==1 and submit.call_args.args[:2]==(key,action)
+    for complete in [False,True]:
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            write(root/'audit/preparation_complete.json',dict(passed=True))
+            write(root/'audit/single_gpu_test_request.json',dict(passed=True))
+            if complete:write(root/'audit/single_gpu_test_complete.json',dict(passed=True,optimizer_updates=0))
+            with patch.object(dispatch,'ROOT',root),patch.object(dispatch,'folder',side_effect=lambda arm,phase:root/'training'/phase/arm),patch.object(dispatch,'accounting'),patch.object(dispatch,'watch'),patch.object(dispatch,'status'),patch.object(dispatch,'submit',return_value={'id':1}) as submit:
+                dispatch.advance()
+                assert submit.call_count==1
+                if complete:assert submit.call_args.args[:2]==('calibrate_T3M','train')
+                else:assert submit.call_args.args[:2]==('single_gpu_graph_test','smoke') and submit.call_args.kwargs['gpus']==1
     for path in list(SOURCE.glob('tools/e2a_matched*.py')):
         ast.parse(path.read_text(encoding='utf-8'),feature_version=(3,8))
     return dict(passed=True,CPU_synthetic_only=True,body_exact_C=True,rest_union_exact=True,
@@ -100,6 +114,7 @@ def check():
         no_C_region_double_count=True,no_parameter_update_or_main_RNG_change=True,
         single_7day_2GPU_allocation=True,active_job_reused=True,failed_job_review_required=True,
         sequential_dispatch_scenarios=len(expected),pilot_visual_review_gate_preserved=True,
+        optional_single_GPU_test_before_paired_calibration=True,single_GPU_test_limit_minutes=30,
         python38_syntax=True,actual_GPU_calibration_pending=True)
 
 

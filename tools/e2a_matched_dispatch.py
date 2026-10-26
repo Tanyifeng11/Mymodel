@@ -18,14 +18,23 @@ def submit(key,action,args=(),gpus=0,dependency=None):
         latest=prior[-1];state=job_state(latest)
         if state in ACTIVE:return latest
         release=ROOT/'audit'/('retry_release_%d.json'%latest['id'])
+        scheduling=ROOT/'audit'/('resubmit_release_%d.json'%latest['id'])
+        field='failed_job'
+        if not release.exists() and scheduling.exists():release=scheduling;field='replaced_job'
         assert release.exists(),('REVIEW_REQUIRED',key,state)
         review=read(release)
-        assert review['passed'] and review['failed_job']==latest['id'] and review['key']==key
-        assert review['source_commit']==commit()
+        assert review['passed'] and review[field]==latest['id'] and review['key']==key
+        if review['source_commit']!=commit():
+            # 用户调度变更跨提交；科学训练文件必须仍逐字等于准备冻结版本。
+            request=read(ROOT/'audit/single_gpu_test_request.json')
+            assert field=='replaced_job' and request['source_commit']==commit()
+            assert request['replaced_calibration_job']==latest['id']
+            assert request['scheduling_release_sha256']==sha(release)
+            assert all(sha(SOURCE/p)==h for p,h in read(ROOT/'audit/preparation_complete.json')['source_sha256'].items())
     command=['sbatch','--parsable','--partition='+('gpu' if gpus else 'cpu'),
         '--nodes=1','--ntasks=1','--cpus-per-task='+str(4*gpus if gpus else 8),
         '--mem='+str(48 if gpus==2 else 32 if gpus else 16)+'G',
-        '--time='+('7-00:00:00' if action=='train' else '03:00:00'),
+        '--time='+('7-00:00:00' if action=='train' else '00:30:00' if action=='smoke' else '03:00:00'),
         '--job-name=E2AM_'+key,'--output='+str(ROOT/'logs'/(key+'_%j.log'))]
     if gpus:command+=['--gres=gpu:'+str(gpus)]
     if dependency:command+=['--dependency=afterany:'+':'.join(str(j['id']) for j in dependency)]
@@ -81,6 +90,12 @@ def advance():
         accounting()
         if not (ROOT/'audit/preparation_complete.json').exists():
             job=submit('prepare','prepare');watch(job);return
+        if (ROOT/'audit/single_gpu_test_request.json').exists():
+            tested=ROOT/'audit/single_gpu_test_complete.json'
+            if not tested.exists():
+                job=submit('single_gpu_graph_test','smoke',gpus=1)
+                status(stage='SINGLE_GPU_ENGINEERING_TEST',engineering_failure=None);watch(job);return
+            assert read(tested)['passed'] and read(tested)['optimizer_updates']==0
         if not (folder('T3M','calibrate')/'calibration_complete.json').exists():
             job=submit('calibrate_T3M','train',['--arm','T3M','--phase','calibrate'],2)
             status(stage='CALIBRATING_T3M',engineering_failure=None);watch(job);return
