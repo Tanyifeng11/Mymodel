@@ -373,7 +373,7 @@ def dispatch():
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('action',choices=['audit','prepare','generate','metric','dispatch','analyse','package'])
+    parser.add_argument('action',choices=['audit','prepare','generate','metric','dispatch','analyse','package','probe'])
     parser.add_argument('--arm',choices=list(MODELS));args=parser.parse_args()
     for name in ['logs','audit','protocol','splits','metrics','statistics']:(ROOT/name).mkdir(parents=True,exist_ok=True)
     import torch
@@ -385,6 +385,9 @@ def main():
              job=os.environ.get('SLURM_JOB_ID'),commit=commit(),threads=torch.get_num_threads(),
              utc=datetime.datetime.now(datetime.timezone.utc).isoformat()))
     if args.action=='audit':audit()
+    elif args.action=='probe':
+        from tools.t3_response_probe import probe
+        probe()
     elif args.action=='prepare':
         audit();prepare();dispatch()
     elif args.action=='generate':
