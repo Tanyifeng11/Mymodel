@@ -62,7 +62,7 @@ def make_config():
             angular_halfwidth_degrees=10,peak_to_annulus_median_min=5,orthogonal_axis_tolerance_degrees=20,
             second_axis_fraction_min=.20,fundamental_min_relative_peak=.25,
             plaid_harmonic_interpretation='compare raw FFT normals with (q1+q2)/2 and (q1-q2)/2 checker lattice normals; select using independent spatial gradient normal support, before target metrics',
-            plaid_gradient_support_ratio=1.2,plaid_raw_frequency_separation_min_degrees=20,
+            plaid_gradient_support_ratio=1.2,plaid_gradient_presmoothing_sigma_pixels=1.0,plaid_raw_frequency_separation_min_degrees=20,
             period_min_pixels=3.2,period_max_pixels=32,autocorrelation='IFFT2 of same Hann-windowed 2D power',
             acf_first_peak_min_height=.10,acf_first_peak_prominence=.025,acf_fft_relative_tolerance=.30,
             reference_patch_min_detected=4,generated_patch_min_detected='max(2,ceil(n/2))',
@@ -167,7 +167,8 @@ def spectral(patch,axes,config,plaid=False):
         for vector in [(q[0]+q[1])/2,(q[0]-q[1])/2]:
             normal=float(np.rad2deg(np.arctan2(vector[1],vector[0]))%180)
             alternate.append(dict(normal=normal,angle=(normal+90)%180,period=float(1/np.linalg.norm(vector)),fraction=0.))
-        gy,gx=np.gradient(gray);ga=np.rad2deg(np.arctan2(gy,gx))%180;mag=np.hypot(gx,gy)
+        gy,gx=np.gradient(ndimage.gaussian_filter(gray,c['plaid_gradient_presmoothing_sigma_pixels']))
+        ga=np.rad2deg(np.arctan2(gy,gx))%180;mag=np.hypot(gx,gy)
         def support(hypothesis):return sum(float(mag[angle_difference(ga,r['normal'])<=10].sum()) for r in hypothesis)/(float(mag.sum())+1e-20)
         raw_score,alt_score=support(chosen),support(alternate)
         alt_orthogonal=abs(float(angle_difference(alternate[0]['normal'],alternate[1]['normal']))-90)<=c['orthogonal_axis_tolerance_degrees']
