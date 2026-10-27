@@ -101,6 +101,19 @@ def analyse():
     csv_write(ROOT/'statistics/structural_safety.csv',structure)
     failures=[dict(arm=a,**r) for a in MODELS for r in read(ROOT/f'metrics/{a}/per_identity.json') if r['failure']]
     write(ROOT/'statistics/failures.json',failures)
+    write(ROOT/'audit/external_baseline_feasibility.json',dict(
+        reviewed_utc='2026-10-27',method='BF-Fashion',
+        official_repository='https://github.com/zibingo/BF-Fashion',
+        official_commit='2bba4f2c7b7ea5af75b651540df9d981db11745d',
+        inference_source='https://github.com/zibingo/BF-Fashion/blob/2bba4f2c7b7ea5af75b651540df9d981db11745d/m_class_batch_sample.py',
+        inspected_in='Codex built-in browser',supports_sketch=True,supports_reference_texture=True,
+        accepts_per_identity_text=False,public_checkpoint_link_in_official_readme=True,
+        license_for_new_reproduction='not verified',native_output=[256,256],native_steps=200,
+        T3_output=[384,512],T3_steps=50,
+        fair_same_input_same_budget_comparison=False,
+        recommendation='potential supplemental native-setting application comparison after checkpoint training-data/license audit; cannot claim strict same-condition ranking',
+        generated_in_this_confirmation=False,
+        reason='main independent C/T3 confirmation and frozen continuation gate take priority; no adapted external-model training on LOCK'))
     # 固定24例在生成前已选定；额外尾例明确标为结果导向，不替代固定样本。
     fixed=read(ROOT/'splits/qualitative_fixed24.json')
     ranked=sorted([r for r in paired if r['valid_pair']],key=lambda r:(r['T3_minus_C'],r['identity']))
