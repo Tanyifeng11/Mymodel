@@ -23,6 +23,11 @@ def array(path):
 
 def load_dists(device='cpu'):
     import torch
+    if device=='cuda':
+        torch.backends.cuda.matmul.allow_tf32=False
+        torch.backends.cudnn.allow_tf32=False
+        torch.backends.cudnn.benchmark=False
+        torch.backends.cudnn.deterministic=True
     source=SUP/'assets/DISTS/DISTS_pytorch/DISTS_pt.py'
     assert sha(source)==CONFIG['dists']['source_sha256']
     backbone=Path(torch.hub.get_dir())/'checkpoints/vgg16-397923af.pth'
@@ -71,11 +76,14 @@ def distances(model,fx,fy):
 
 def patch_distance(model,first,second):
     matrix=distances(model,first,second)
-    return float(.5*(matrix.min(1).values.mean()+matrix.min(0).values.mean()))
+    return .5*(float(matrix.min(1).values.mean())+float(matrix.min(0).values.mean()))
 
 
 def reference_features(model,path):
-    img=np.asarray(Image.open(path).convert('RGB').resize((384,512),Image.Resampling.LANCZOS))
+    import cv2
+    # 先恢复旧评价的规范 RGB 像素，避免不同 Pillow/libjpeg 构建的 JPEG 解码差异。
+    rgb=cv2.cvtColor(cv2.imread(str(path),cv2.IMREAD_COLOR),cv2.COLOR_BGR2RGB)
+    img=np.asarray(Image.fromarray(rgb).resize((384,512),Image.Resampling.LANCZOS))
     coords=[(int(x),int(y)) for y in np.linspace(0,448,4).round() for x in np.linspace(0,320,4).round()]
     return features(model,img,coords)
 
@@ -118,6 +126,9 @@ def audit():
     if complete.exists():
         assert read(complete)['passed'];return
     model=load_dists();checks=sanity(model)
+    equivalence=read(ROOT/'audit/input_equivalence_probe.json')
+    assert all(equivalence[k]==0 for k in ['opencv_raw_mismatch','opencv_canvas_mismatch','opencv_patch_mismatch',
+        'generated_file_mismatch','coordinate_mismatch','generated_patch_pixel_mismatch'])
     original=read(MATCHED/'splits/P2b.json')
     swap=read(MATCHED/'splits/reference_swap.json')
     refcache={}
@@ -148,6 +159,19 @@ def audit():
             print('REPLAY',stage,len(out),flush=True)
     csv_write(ROOT/'audit/development_replay.csv',out)
     write(ROOT/'audit/development_replay.json',out)
+    expected={(r['stage'],r['arm'],r['identity']):r for r in read(SOURCE/'tools/t3_response_replay_fixture.json')['outputs']}
+    numeric=[]
+    for r in out:
+        old=expected[r['stage'],r['arm'],r['identity']]
+        for key in ['dists','dists_old','margin']:
+            assert (r[key] is None)==(old[key] is None)
+            if r[key] is not None:
+                delta=r[key]-old[key]
+                numeric.append(dict(stage=r['stage'],arm=r['arm'],identity=r['identity'],metric=key,old=old[key],new=r[key],difference=delta))
+                assert abs(delta)<2e-6,('PER_IDENTITY_REPLAY_CHANGED',numeric[-1])
+    write(ROOT/'audit/replay_numeric_equivalence.json',dict(passed=True,tolerance=2e-6,
+       n=len(numeric),max_absolute_difference=max(abs(r['difference']) for r in numeric),values=numeric,
+       reason_for_initial_failure='86/96 reference JPEGs decoded differently by server Pillow; canonical OpenCV pixels exactly match frozen old local evaluation; generated PNGs and coordinates unchanged'))
     contrasts=[]
     lookup={(r['stage'],r['arm'],r['identity']):r for r in out}
     for arm in ['T3M','T3']:
@@ -291,6 +315,24 @@ def sha_pixels(path):
     return hashlib.sha256(np.asarray(Image.open(path).convert('RGB')).tobytes()).hexdigest()
 
 
+def historical_device_check(model):
+    """在当前评价设备核对纯色控制及两个旧解码差异较大的历史病例。"""
+    import torch
+    fixture=read(SOURCE/'tools/t3_response_replay_fixture.json')['outputs']
+    rows={r['id']:r for r in read(MATCHED/'splits/P2b.json')}
+    results=[]
+    with torch.inference_mode():
+        for identity in ['153804021','63030233','208689807']:
+            old=next(r for r in fixture if r['stage']=='P2b' and r['arm']=='C' and r['identity']==identity)
+            image=legacy('P2b','C')/'images'/(identity+'.png')
+            assert sha(image)==old['output_sha256']
+            value=patch_distance(model,features(model,array(image),old['coords']),reference_features(model,rows[identity]['reference']))
+            result=dict(identity=identity,old=old['dists'],current=value,difference=value-old['dists'])
+            assert abs(result['difference'])<2e-6,('EVALUATION_BACKEND_CHANGED',result)
+            results.append(result)
+    return dict(passed=True,device=str(model.alpha.device),cases=results,tolerance=2e-6)
+
+
 def generate(arm):
     import torch
     from tools import e2a_attr_eval as evaluator
@@ -316,7 +358,8 @@ def metric(arm):
     done=ROOT/'metrics'/arm/'complete.json'
     if done.exists():return
     model=load_dists('cuda' if torch.cuda.is_available() else 'cpu')
-    checks=sanity(model);rows=read(ROOT/'splits/confirmation.json');out=[]
+    checks=sanity(model);checks['historical_device_check']=historical_device_check(model)
+    rows=read(ROOT/'splits/confirmation.json');out=[]
     @lru_cache(maxsize=24)
     def ref(path):return reference_features(model,path)
     with torch.inference_mode():

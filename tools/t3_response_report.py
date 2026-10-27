@@ -3,6 +3,7 @@ import csv
 import hashlib
 import json
 import math
+import re
 import shutil
 import subprocess
 import tarfile
@@ -185,12 +186,14 @@ def blind_material(rows,lookup):
 def package():
     result=read(ROOT/'statistics/decision.json')
     jobs=read(ROOT/'jobs.json')
-    job_ids=[str(j['id']) for j in jobs]
+    job_ids=sorted({str(j['id']) for j in jobs}|{m.group(1) for p in (ROOT/'logs').glob('*.log')
+                   for m in [re.search(r'_(\d+)\.log$',p.name)] if m})
     accounting=subprocess.check_output(['sacct','-X','-n','-P','-j',','.join(job_ids),
         '--format=JobID,JobName,State,ExitCode,ElapsedRaw,AllocTRES,NodeList'],text=True)
     (ROOT/'audit/sacct.txt').write_text(accounting,encoding='utf-8')
     code=ROOT/'code';code.mkdir(exist_ok=True)
     for rel in ['tools/t3_response_common.py','tools/t3_response_run.py','tools/t3_response_report.py',
+                'tools/t3_response_probe.py','tools/t3_response_replay_fixture.json',
                 'tools/e2a_attr_eval.py','inference_IMAGGarment-1.py','eval/metrics.py','eval/eval_utils.py',
                 'garment_mask_utils.py','scripts/t3_response.sbatch']:
         target=code/rel;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(SOURCE/rel,target)
