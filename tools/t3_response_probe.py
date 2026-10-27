@@ -13,6 +13,11 @@ def digest(value):return hashlib.sha256(value).hexdigest()
 
 def probe():
     fixture=read(SOURCE/'tools/t3_response_replay_fixture.json')
+    previous=ROOT/'audit/input_equivalence_probe.json'
+    if previous.exists():
+        old_result=read(previous)
+        snapshot=ROOT/'audit/probes'/(old_result['commit']+'.json')
+        if not snapshot.exists():write(snapshot,old_result)
     preserved=ROOT/'audit/initial_120716';preserved.mkdir(parents=True,exist_ok=True)
     for name in ['development_replay.csv','development_replay.json']:
         target=preserved/name
