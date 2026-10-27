@@ -9,7 +9,7 @@ from tools.e2a_sup_bundle import csv_rows, identities, image_metadata
 
 ARMS = ['B', 'C', 'T3', 'T3M']
 KEYS = ['edge_f1', 'leak', 'iou', 'edge_l1', 'lpips', 'tcf_lab']
-TEXT = {'.json', '.csv', '.log', '.txt', '.png'}
+TEXT = {'.json', '.csv', '.log', '.txt', '.png', '.py', '.sh', '.sbatch'}
 TERMINAL = {'COMPLETED', 'FAILED', 'OUT_OF_MEMORY', 'TIMEOUT', 'CANCELLED', 'NODE_FAIL'}
 
 
