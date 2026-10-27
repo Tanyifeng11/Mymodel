@@ -1,6 +1,7 @@
 """确认前定位历史跨环境差异；逐项验证输入，绝不放宽确认终点。"""
 import hashlib
 import shutil
+import cv2
 import numpy as np
 from PIL import Image
 from tools.t3_response_common import *
@@ -30,6 +31,11 @@ def probe():
                  patch_concat_sha256=digest(b''.join(canvas[y:y+64,x:x+64].tobytes() for x,y in rc)))
         for field in ['raw_rgb_sha256','canvas_rgb_sha256','patch_concat_sha256']:
             new[field+'_matches_local']=new[field]==old[field]
+        cv_rgb=cv2.cvtColor(cv2.imread(path,cv2.IMREAD_COLOR),cv2.COLOR_BGR2RGB)
+        cv_canvas=np.asarray(Image.fromarray(cv_rgb).resize((384,512),Image.Resampling.LANCZOS))
+        new['opencv_raw_matches_local']=digest(cv_rgb.tobytes())==old['raw_rgb_sha256']
+        new['opencv_canvas_matches_local']=digest(cv_canvas.tobytes())==old['canvas_rgb_sha256']
+        new['opencv_patches_match_local']=digest(b''.join(cv_canvas[y:y+64,x:x+64].tobytes() for x,y in rc))==old['patch_concat_sha256']
         references[key]=new
     for old in fixture['outputs']:
         identity=old['identity'];path=legacy(old['stage'],old['arm'])/'images'/(identity+'.png')
@@ -45,6 +51,9 @@ def probe():
         raw_reference_mismatch=sum(not r['raw_rgb_sha256_matches_local'] for r in references.values()),
         resized_reference_mismatch=sum(not r['canvas_rgb_sha256_matches_local'] for r in references.values()),
         reference_patch_mismatch=sum(not r['patch_concat_sha256_matches_local'] for r in references.values()),
+        opencv_raw_mismatch=sum(not r['opencv_raw_matches_local'] for r in references.values()),
+        opencv_canvas_mismatch=sum(not r['opencv_canvas_matches_local'] for r in references.values()),
+        opencv_patch_mismatch=sum(not r['opencv_patches_match_local'] for r in references.values()),
         generated_file_mismatch=sum(not r['output_file_matches'] for r in outputs),
         coordinate_mismatch=sum(not r['coords_match'] for r in outputs),
         generated_patch_pixel_mismatch=sum(not r['generated_patch_pixels_match'] for r in outputs),
