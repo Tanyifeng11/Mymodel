@@ -61,6 +61,8 @@ def make_config():
             min_cycles=2,max_cycles=20,min_luminance_sd=.015,min_angular_power_fraction=.35,
             angular_halfwidth_degrees=10,peak_to_annulus_median_min=5,orthogonal_axis_tolerance_degrees=20,
             second_axis_fraction_min=.20,fundamental_min_relative_peak=.25,
+            plaid_harmonic_interpretation='compare raw FFT normals with (q1+q2)/2 and (q1-q2)/2 checker lattice normals; select using independent spatial gradient normal support, before target metrics',
+            plaid_gradient_support_ratio=1.2,plaid_raw_frequency_separation_min_degrees=20,
             period_min_pixels=3.2,period_max_pixels=32,autocorrelation='IFFT2 of same Hann-windowed 2D power',
             acf_first_peak_min_height=.10,acf_first_peak_prominence=.025,acf_fft_relative_tolerance=.30,
             reference_patch_min_detected=4,generated_patch_min_detected='max(2,ceil(n/2))',
@@ -123,12 +125,13 @@ def procedural(kind,angle=0,period=12,size=128,phase=0):
     u=x*np.cos(t)+y*np.sin(t)+phase;v=-x*np.sin(t)+y*np.cos(t)+phase
     if kind=='stripe':a=np.sin(2*np.pi*u/period)>0
     elif kind=='plaid':a=(np.sin(2*np.pi*u/period)>0) ^ (np.sin(2*np.pi*v/period)>0)
+    elif kind=='grid':a=(np.cos(2*np.pi*u/period)>.7)|(np.cos(2*np.pi*v/period)>.7)
     elif kind=='dot':a=(np.cos(2*np.pi*u/period)+np.cos(2*np.pi*v/period))>1
     elif kind=='noise':a=np.random.default_rng(221042).random((size,size))>.5
     else:raise ValueError(kind)
     return np.repeat(np.where(a,.85,.15)[:,:,None],3,axis=2)
 
-def spectral(patch,axes,config):
+def spectral(patch,axes,config,plaid=False):
     c=config['fft'];rgb=patch.astype(np.float64)/255;gray=rgb@np.array(c['luminance'])
     empty=dict(orientation_detected=False,period_detected=False,angles=[],periods=[],acf_periods=[],reason='low_contrast')
     if gray.std()<c['min_luminance_sd']:return empty
@@ -144,13 +147,34 @@ def spectral(patch,axes,config):
         if power[ij]/median<c['peak_to_annulus_median_min']:continue
         minimum=c['min_angular_power_fraction'] if not chosen else c['second_axis_fraction_min']
         if fraction<minimum:continue
-        if chosen and abs(float(angle_difference(theta,chosen[0]['normal']))-90)>c['orthogonal_axis_tolerance_degrees']:continue
+        if chosen:
+            separation=float(angle_difference(theta,chosen[0]['normal']))
+            if plaid:
+                if separation<c['plaid_raw_frequency_separation_min_degrees']:continue
+            elif abs(separation-90)>c['orthogonal_axis_tolerance_degrees']:continue
         # 选择同轴局部峰中达到主峰25%的最低频，保留明确的谐波规则。
         candidates=[k for k in coords if angle_difference(ang[k],theta)<=6 and power[k]>=power[ij]*c['fundamental_min_relative_peak']]
         fundamental=min(candidates,key=lambda k:rad[k]);frequency=float(rad[fundamental])
         chosen.append(dict(normal=theta,angle=(theta+90)%180,period=64/frequency,fraction=fraction))
         if len(chosen)==axes:break
     if len(chosen)<axes:return dict(empty,reason='missing_reliable_axes',detected_axes=len(chosen))
+    interpretation='direct_frequency_normal'
+    if plaid:
+        # 棋盘格是两个一维信号的乘积，FFT 主峰为和/差频；格线不沿对角主峰。
+        # 独立校验同时包含乘积棋盘格和加性网格，禁止一律旋转45度。
+        q=[np.array([np.cos(np.deg2rad(r['normal'])),np.sin(np.deg2rad(r['normal']))])/r['period'] for r in chosen]
+        alternate=[]
+        for vector in [(q[0]+q[1])/2,(q[0]-q[1])/2]:
+            normal=float(np.rad2deg(np.arctan2(vector[1],vector[0]))%180)
+            alternate.append(dict(normal=normal,angle=(normal+90)%180,period=float(1/np.linalg.norm(vector)),fraction=0.))
+        gy,gx=np.gradient(gray);ga=np.rad2deg(np.arctan2(gy,gx))%180;mag=np.hypot(gx,gy)
+        def support(hypothesis):return sum(float(mag[angle_difference(ga,r['normal'])<=10].sum()) for r in hypothesis)/(float(mag.sum())+1e-20)
+        raw_score,alt_score=support(chosen),support(alternate)
+        alt_orthogonal=abs(float(angle_difference(alternate[0]['normal'],alternate[1]['normal']))-90)<=c['orthogonal_axis_tolerance_degrees']
+        if alt_orthogonal and alt_score>raw_score*c['plaid_gradient_support_ratio']:
+            chosen=alternate;interpretation='checker_sum_difference_frequencies'
+        if abs(float(angle_difference(chosen[0]['normal'],chosen[1]['normal']))-90)>c['orthogonal_axis_tolerance_degrees']:
+            return dict(empty,reason='no_orthogonal_spatial_axes_after_harmonic_check')
     acf=np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(power)).real);acf/=acf[32,32]+1e-20
     acfs=[];ok=True
     lags=np.arange(0,32.01,.25)
@@ -161,7 +185,7 @@ def spectral(patch,axes,config):
         first=float(lags[pk[0]]) if pk else None
         acfs.append(first)
         if first is None or abs(first-item['period'])/item['period']>c['acf_fft_relative_tolerance']:ok=False
-    return dict(orientation_detected=True,period_detected=ok,angles=[r['angle'] for r in chosen],periods=[r['period']/64 for r in chosen],acf_periods=[None if x is None else x/64 for x in acfs],angular_power_fractions=[r['fraction'] for r in chosen],reason='ok' if ok else 'fft_acf_disagree_or_no_acf_peak')
+    return dict(orientation_detected=True,period_detected=ok,angles=[r['angle'] for r in chosen],periods=[r['period']/64 for r in chosen],acf_periods=[None if x is None else x/64 for x in acfs],angular_power_fractions=[r['fraction'] for r in chosen],harmonic_interpretation=interpretation,reason='ok' if ok else 'fft_acf_disagree_or_no_acf_peak')
 
 def axes_for(label):
     return 2 if label['category'] in ['plaid/check','dot'] or int(label['reference_index'])==95 else 1
@@ -184,10 +208,10 @@ def calibration(config):
     assert formula_error<config['dists']['sanity_formula_tolerance'],'矩阵公式与官方实现不符，停止计算'
     write(ROOT/'dists_sanity_check/results.json',dict(procedural_sanity_passed=bool(passed),motif_identity_validated_by_humans=False,formula_max_abs_error=formula_error,rows=drows))
     fftrows=[]
-    for kind in ['stripe','plaid']:
+    for kind in ['stripe','plaid','grid']:
         for normal in [0,15,30,45,75,90,120]:
             for p in [8,12,16,24]:
-                patch=(procedural(kind,normal,p,size=64,phase=3)*255).astype('uint8');out=spectral(patch,2 if kind=='plaid' else 1,config)
+                patch=(procedural(kind,normal,p,size=64,phase=3)*255).astype('uint8');out=spectral(patch,1 if kind=='stripe' else 2,config,plaid=kind!='stripe')
                 truth=[(normal+90)%180] if kind=='stripe' else [(normal+90)%180,normal%180]
                 if out['orientation_detected']:
                     perm=assignment(out['angles'],truth);err=float(np.mean(angle_difference(np.array(out['angles'])[list(perm)],truth)))
@@ -235,7 +259,7 @@ def run(config):
     patch_rows=[];spectra_rows=[];ref_specs={}
     for key,label in labels.items():
         img=Image.open(label['reference_path']).convert('RGB').resize((384,512),Image.Resampling.LANCZOS)
-        arrs=patch_arrays(img,ref_coords);estimates=[spectral(a,axes_for(label),config) for a in arrs]
+        arrs=patch_arrays(img,ref_coords);estimates=[spectral(a,axes_for(label),config,plaid=label['category']=='plaid/check') for a in arrs]
         ref_specs[key]=estimates
         for i,(p,c,e) in enumerate(zip(arrs,ref_coords,estimates)):
             patch_rows.append(dict(kind='reference',identity=label['reference_identity'],arm='',stage='reference',reference_sha256=key,output_sha256='',mask_sha256='',patch_index=i,x=c[0],y=c[1],mask_occupancy=1.,pixel_sha256=hashlib.sha256(p.tobytes()).hexdigest(),valid=True,reason='fixed_reference_grid',metric_version=config['source_commit']))
@@ -270,10 +294,11 @@ def run(config):
             cs=coords[r['identity']];label=labels[r['reference_sha256']];armspec=axes_for(label)
             arrs=patch_arrays(Image.open(r['output_path']).convert('RGB'),cs)
             estimate_cache={}
-            def estim(axes):
-                if axes not in estimate_cache:estimate_cache[axes]=[spectral(a,axes,config) for a in arrs]
-                return estimate_cache[axes]
-            estimates=estim(armspec)
+            def estim(axes,plaid=False):
+                key=(axes,plaid)
+                if key not in estimate_cache:estimate_cache[key]=[spectral(a,axes,config,plaid=plaid) for a in arrs]
+                return estimate_cache[key]
+            estimates=estim(armspec,label['category']=='plaid/check')
             base=dict(stage=r['stage'],arm=r['arm'],identity=r['identity'],reference_sha256=r['reference_sha256'],category=label['category'],mask_low_confidence=yes(masks[r['identity']]['mask_low_confidence']),patch_n=len(arrs),insufficient_interior_patches=len(arrs)<4,pattern_evaluable=yes(label['pattern_evaluable']),orientation_applicable=yes(label['has_stable_orientation']),period_applicable=yes(label['has_repeat_period']))
             if r['stage']=='original':base['tcf_lab_reused']=color_original[r['arm']][r['identity']]['tcf_lab']
             else:
@@ -301,7 +326,7 @@ def run(config):
                         app=yes(old['has_repeat_period' if period else 'has_stable_orientation']) and base[name+'_applicable']
                         base[name+'_response_applicable']=app
                         if app:
-                            rp=representative(ref_specs[oldkey],4,period);err,_,status=errors(estim(axes_for(old)),rp,need,period)
+                            rp=representative(ref_specs[oldkey],4,period);err,_,status=errors(estim(axes_for(old),old['category']=='plaid/check'),rp,need,period)
                             base[name+'_old_error']=err;base[name+'_old_status']=status
                             base[name+'_response_margin']=err-base[name+'_error'] if err is not None and base[name+'_error'] is not None else None
             else:base.update(dists=None,gen_to_ref=None,ref_to_gen=None,dists_status='insufficient_interior_patches')
