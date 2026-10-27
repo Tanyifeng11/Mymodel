@@ -183,7 +183,7 @@ def prepare():
     # 先冻结协议，再打开清单；确认集输出不能参与任何参数或样本量选择。
     freeze(ROOT/'protocol/config.json',CONFIG)
     freeze(ROOT/'protocol/code_before_LOCK.json',dict(commit=commit(),files={p:sha(SOURCE/p) for p in
-        ['tools/t3_response_common.py','tools/t3_response_run.py','eval/metrics.py','eval/eval_utils.py','garment_mask_utils.py']}))
+        ['tools/t3_response_common.py','tools/t3_response_run.py','tools/t3_response_report.py','eval/metrics.py','eval/eval_utils.py','garment_mask_utils.py']}))
     assert mask_backend_info()['mask_backend']=='opencv'
     previous=read(SUP/'audit/preparation_complete.json')
     assert previous['LOCK_generated_or_evaluated'] is False
