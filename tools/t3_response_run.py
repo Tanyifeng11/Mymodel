@@ -386,8 +386,16 @@ def main():
              utc=datetime.datetime.now(datetime.timezone.utc).isoformat()))
     if args.action=='audit':audit()
     elif args.action=='prepare':
-        audit();prepare()
-    elif args.action=='generate':generate(args.arm)
+        audit();prepare();dispatch()
+    elif args.action=='generate':
+        generate(args.arm)
+        if all((ROOT/f'metrics/{arm}/complete.json').exists() for arm in MODELS):
+            import fcntl
+            with (ROOT/'statistics/finalize.lock').open('a') as lock:
+                fcntl.flock(lock,fcntl.LOCK_EX)
+                if not (ROOT/'statistics/decision.json').exists():
+                    from tools.t3_response_report import analyse
+                    analyse()
     elif args.action=='metric':metric(args.arm)
     elif args.action=='dispatch':dispatch()
     elif args.action=='analyse':
