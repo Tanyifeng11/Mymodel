@@ -5,6 +5,7 @@ import datetime
 import importlib.util
 import math
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -377,6 +378,12 @@ def main():
     for name in ['logs','audit','protocol','splits','metrics','statistics']:(ROOT/name).mkdir(parents=True,exist_ok=True)
     import torch
     torch.set_num_threads(min(4,int(os.environ.get('SLURM_CPUS_PER_TASK','2'))))
+    import cv2,scipy,PIL,torchvision
+    write(ROOT/f'audit/environment_{args.action}_{args.arm or "all"}_{os.environ.get("SLURM_JOB_ID","login")}.json',
+        dict(python=platform.python_version(),torch=torch.__version__,torchvision=torchvision.__version__,
+             numpy=np.__version__,scipy=scipy.__version__,opencv=cv2.__version__,Pillow=PIL.__version__,
+             job=os.environ.get('SLURM_JOB_ID'),commit=commit(),threads=torch.get_num_threads(),
+             utc=datetime.datetime.now(datetime.timezone.utc).isoformat()))
     if args.action=='audit':audit()
     elif args.action=='prepare':
         audit();prepare()
