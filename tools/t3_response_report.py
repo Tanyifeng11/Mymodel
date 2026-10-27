@@ -97,10 +97,16 @@ def analyse():
            'Leak is fixed exterior background proxy using old GT, not pure geometric spill',
            'single training seed; pretrained exposure unknown',
            'bootstrap inference is conditional on the fixed reference assignment'],commit=commit())
-    write(ROOT/'statistics/decision.json',result)
+    decision=ROOT/'statistics/decision.json'
+    if decision.exists():
+        previous=read(decision)
+        # 仅修复收尾导出时，原始判定逐项保持一致，并保留首次判定提交。
+        assert {k:v for k,v in previous.items() if k!='commit'}=={k:v for k,v in result.items() if k!='commit'}
+        result=previous
+    else:write(decision,result)
     write(ROOT/'statistics/model_summary.json',summary)
     csv_write(ROOT/'statistics/structural_safety.csv',structure)
-    failures=[dict(arm=a,**r) for a in MODELS for r in read(ROOT/f'metrics/{a}/per_identity.json') if r['failure']]
+    failures=[dict(r,arm=a) for a in MODELS for r in read(ROOT/f'metrics/{a}/per_identity.json') if r['failure']]
     write(ROOT/'statistics/failures.json',failures)
     write(ROOT/'audit/external_baseline_feasibility.json',dict(
         reviewed_utc='2026-10-27',method='BF-Fashion',
@@ -123,6 +129,10 @@ def analyse():
     for name,selected in sets.items():
         for identity in selected:panel(next(r for r in rows if r['id']==identity),lookup,ROOT/f'figures/{name}/{identity}.jpg')
     blind_material(rows,lookup)
+    write(ROOT/'statistics/analysis_complete.json',dict(passed=True,commit=commit(),
+       decision_sha256=sha(decision),decision_commit=result['commit'],
+       qualitative_panels=sum(len(x) for x in sets.values()),human_material_cases=48,
+       human_reviewers=0,human_blind_scores=None))
     print('CONFIRMATION_DECISION',json.dumps(result,ensure_ascii=False),flush=True)
 
 
@@ -184,6 +194,7 @@ def blind_material(rows,lookup):
 
 
 def package():
+    assert read(ROOT/'statistics/analysis_complete.json')['passed']
     result=read(ROOT/'statistics/decision.json')
     jobs=read(ROOT/'jobs.json')
     job_ids=sorted({str(j['id']) for j in jobs}|{m.group(1) for p in (ROOT/'logs').glob('*.log')

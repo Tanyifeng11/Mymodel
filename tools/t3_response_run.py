@@ -439,7 +439,7 @@ def main():
             import fcntl
             with (ROOT/'statistics/finalize.lock').open('a') as lock:
                 fcntl.flock(lock,fcntl.LOCK_EX)
-                if not (ROOT/'statistics/decision.json').exists():
+                if not (ROOT/'statistics/analysis_complete.json').exists():
                     from tools.t3_response_report import analyse
                     analyse()
     elif args.action=='metric':metric(args.arm)
