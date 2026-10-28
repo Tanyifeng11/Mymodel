@@ -7,4 +7,8 @@ export PYTHONPATH="$PWD:$PWD/tools"
 export PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false WANDB_MODE=disabled
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
-python -m tools.t3_p0p1 "$@"
+case "$1" in
+  generate) shift; python -m tools.t3_p0p1_generate "$@" ;;
+  evaluate) shift; python -m tools.t3_p0p1_evaluate "$@" ;;
+  *) python -m tools.t3_p0p1 "$@" ;;
+esac
