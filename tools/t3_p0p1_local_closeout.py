@@ -20,6 +20,31 @@ def closeout(project):
     for folder in ['tables','code']:
         shutil.copytree(server/folder,root/folder,dirs_exist_ok=True)
     shutil.copy2(__file__,root/'code/tools'/Path(__file__).name)
+    with (root/'model_registry.csv').open(encoding='utf-8-sig',newline='') as stream:registry=list(csv.DictReader(stream))
+    inventory=read(server/'audit/server_inventory.json')
+    for row in registry:
+        arm=row['model_id']
+        if arm in ['E0','E1']:
+            row.update(checkpoint=inventory['models'][arm]['path'],
+                training_seed='not fixed/recorded; historical report None; inference seed is separate',
+                inference_config='DDIM50 CFG7 384x512 sketch0.6 texture1; layer_group_enabled='+str(arm=='E1'),
+                result_source=str(server/'metrics'/arm/'per_image.csv'))
+    with (root/'external_model_registry.csv').open(encoding='utf-8-sig',newline='') as stream:external=list(csv.DictReader(stream))
+    for item in external:
+        registry.append(dict(model_id=item['model_id'],role='external_reference_conditioned',
+            model_definition='existing trained BF model' if item['model_id']=='BF-Fashion' else 'historical frozen fine-tuned ControlNet+IP-Adapter C2',
+            input_modalities=item['input_modalities'],checkpoint_sha256=item['checkpoint_sha256'],
+            training_seed=item['training_seed'],training_steps=item['training_steps'],initialization_checkpoint='pretrained upstream assets; see provenance',
+            dataset_split=item['dataset_split'],inference_config=item['inference_config'],
+            metric_protocol_version='uniform CUDA float32; TF32 disabled',result_source=str(server/'metrics'/item['model_id']/'per_image.csv'),
+            status=item['status'],comparability_notes=item['limitations']))
+    registry.append(dict(model_id='LOTS',role='candidate_not_reproduced',model_definition='official localized text/sketch fashion outlook pipeline',
+        input_modalities='text+sketch; no independent reference texture',checkpoint_sha256='unavailable: official weights download failed',
+        training_seed='upstream unknown',training_steps='no training this round',initialization_checkpoint='official SDXL+LOTS+DINOv2 assets required',
+        dataset_split='planned4 fixed cases; actual outputs0',inference_config='planned official512,30steps,scale0.8; not executed',
+        metric_protocol_version='not evaluated',result_source='F:/fuxian/LOTS/output/t3_p0_p1_20261028/candidate_status.json',
+        status='official assets inaccessible; no smoke images; not ranked',comparability_notes='no output-task compatibility conclusion; excluded from reference Margin'))
+    csv_write(root/'model_registry.csv',registry)
     # 外部统一表的LPIPS与旧P0有微小数值差异，配对统计也明确使用同一次重算。
     data={a:{p.stem:read(p) for p in (server/'metrics'/a/'original').glob('*.json')}
           for a in ['B','T1','T2','C','T3']}
