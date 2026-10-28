@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageOps
 from tools.t3_p0p1 import read, write, sha, csv_write
-from tools.t3_p0p1_review import sources, METRICS, paired_stats, holm
+from tools.t3_p0p1_review import sources, METRICS, paired_stats, holm, plot
 
 
 def closeout(project):
@@ -58,7 +58,9 @@ def closeout(project):
                 protocol='uniform CUDA float32; TF32 disabled; retrospective development',
                 **paired_stats(values,baseline+'/'+metric)))
     for family in [[r for r in contrasts if r['baseline']!='C'],[r for r in contrasts if r['baseline']=='C']]:holm(family)
+    for row in contrasts:row['oriented_delta']=row['delta']*row['favorable_direction']
     csv_write(root/'tables/internal_uniform_paired_statistics.csv',contrasts)
+    plot(root,contrasts)
     # 从经过哈希验证的真实输入/输出重绘，不合成、不修饰模型图像。
     lookup={row['sha256']:server/row['path'] for row in read(server/'bundle_manifest.json')
             if Path(row['path']).suffix.lower() in ['.png','.jpg','.jpeg']}

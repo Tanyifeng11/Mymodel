@@ -54,7 +54,7 @@ B为基础训练，T1为感知/高频监督，T2为DINO特征监督，T3为完�
 T3的六项均值在B/T1/T2/T3中均更有利，但配对统计不支持“全面显著领先”。身份bootstrap与sign-flip各10000次，95%区间为未校正描述区间；主要3对照×6指标共18项Holm校正，只有下列4项通过0.05。对B/T1的校正后最小p分别为0.099390、0.127387；C六项另成族，均未通过。
 
 {significant}
-统计为已查看开发集上的回顾性分析，主要内部只有一个训练seed。{link('统一逐身份配对统计',root/'tables/internal_uniform_paired_statistics.csv')}保留所有24项效果量、CI、原始/校正p和有效分母。旧P0统计与均值另存，未覆盖。此次五个内部模型LPIPS逐图重算与旧值最大差7.1734×10⁻⁵，未通过2×10⁻⁶严格回放；其余五项逐图一致。因此本文表与配对统计均用此次统一值，不把旧LPIPS混入。差异见{link('旧新评价审计',root/'audit/legacy_six_metric_replay.csv')}，DISTS三病例回放则在各评价作业中均通过2×10⁻⁶。
+统计为已查看开发集上的回顾性分析，主要内部只有一个训练seed。{link('统一逐身份配对统计',root/'tables/internal_uniform_paired_statistics.csv')}保留所有24项效果量、CI、原始/校正p和有效分母，另有{link('主要内部效果图',root/'figures/internal_paired_effects.png')}。旧P0统计与均值另存，未覆盖。此次五个内部模型LPIPS逐图重算与旧值最大差7.1734×10⁻⁵，未通过2×10⁻⁶严格回放；其余五项逐图一致。因此本文表与配对统计均用此次统一值，不把旧LPIPS混入。差异见{link('旧新评价审计',root/'audit/legacy_six_metric_replay.csv')}，DISTS三病例回放则在各评价作业中均通过2×10⁻⁶。
 
 BF的Edge F1、Leak、Edge L1、LPIPS均值更有利；T3的IoU和TCF-LAB更有利。这些外部六指标是描述性均值，未据此宣称显著。CN+IPA的背景/分割代理明显较差，定性图也出现有色背景与结构变化。
 
@@ -74,7 +74,7 @@ DISTS Margin是固定草图内部patch集的响应代理，不是纹样身份、
 
 原独立确认128身份、DISTS有效107：T3−C=+0.00324244，95%CI[+0.00079938,+0.00593172]，单主比较p=0.01069893；未达到事前0.005最小有意义幅度，旧/新参考Leak非劣保护均未通过。原`continue_new_training=false`保持不变，后续探索消融不能改写这一结论。
 
-探索消融同为单seed42、有效107/128：full−no-body=+0.00662814，CI[+0.00473093,+0.00862243]，原计划五比较Holm p=0.00049995；支持本次body_rgb的响应增量。full−no-rest=−0.00250447，CI[−0.00527906,+0.00005283]，Holm p=0.21087891；不支持rest提高DISTS响应，也不能证明两者等效。full相对no-rest新参考IoU高0.017333、Leak低0.038302，只能作为探索性的结构代理证据。原结果与来源哈希见{link('历史证据归档',server/'historical_evidence')}。
+探索消融同为单seed42、有效107/128：full−no-body=+0.00662814，CI[+0.00473093,+0.00862243]，原计划五比较Holm p=0.00049995；支持本次body_rgb的响应增量。full−no-rest=−0.00250447，CI[−0.00527906,+0.00005283]，Holm p=0.21087891；不支持rest提高DISTS响应，也不能证明两者等效。full相对no-rest新参考IoU高0.017333、Leak低0.038302，只能作为探索性的结构代理证据。原结果与来源哈希见{link('历史证据归档',server/'historical_evidence')}；{link('消融效果图',server/'figures/ablation_effects.png')}与{link('本次参考响应描述图',server/'figures/reference_response_models.png')}分别保留不同证据范围。
 
 ## 5. 图像、外部审计与LOTS
 
