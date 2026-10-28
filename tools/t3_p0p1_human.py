@@ -82,7 +82,7 @@ def build(project):
         source_split='previously viewed development32, no untouched-test claim',selection_ids=[r['id'] for r in selected],
         selection='2 lowest across-method IoU hard cases plus8 input hashes; not an estimate of population preference prevalence',
         baseline_comparisons=['B','T1','T2','C'],primary_question='reference-response rationality',secondary_questions=['structure','design utility'],
-        randomization_seed_base=281042,randomization='participant-specific balanced side randomization and independent question order',
+        randomization_seed_base=281042,randomization='participant-specific balanced side randomization and independent trial order; three endpoint questions fixed',
         formal_freeze='must be finalized after real pilot; do not treat this draft as completed formal study',
         missing='cannot judge excluded for that endpoint; ties retained as zero signed preference; retain missing and all raw files',
         exclusions='no automatic speed-based exclusion; flag median dwell<3sec for declared review; duplicate reviewer/trial requires resolution before formal analysis',

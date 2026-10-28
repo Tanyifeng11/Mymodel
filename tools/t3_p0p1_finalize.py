@@ -126,6 +126,7 @@ def history_audit():
 def registry(root,generation):
     inventory=read(root/'audit/server_inventory.json')
     with (root/'model_registry.csv').open(encoding='utf-8-sig',newline='') as stream:internal=list(csv.DictReader(stream))
+    internal=[row for row in internal if row['model_id'] not in ['T3-no-body','T3-no-rest']]
     for row in internal:
         if row['model_id'] in ['E0','E1']:
             row.update(training_seed='None (historical W&B configuration)',dataset_split='same P2b96 as B/T1/T2/T3',
