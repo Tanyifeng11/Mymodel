@@ -31,10 +31,13 @@ def report(project):
         [a]+[f'{lookup[a,m]:.6f}' for m in ['dists_margin','color_margin','iou','leak']]
         for a in ['B','T1','T2','C','T3','BF-Fashion','ControlNet+IP-Adapter']])
     resource=read(root/'audit/resource_summary_local.json')
+    lots=read(root/'lots/followup_summary.json')
+    lots_means=table(['补充方法 / 输入','Edge F1↑','Leak↓','Sketch IoU↑','Edge L1↓','LPIPS↓','TCF-LAB'],
+        [['LOTS / 文本+草图']+[f"{lots['metric_means'][m]:.6f}" for m in metrics[:-1]]+['N/A']])
     commit=subprocess.check_output(['git','-C',str(Path(__file__).resolve().parents[1]),'rev-parse','HEAD'],text=True).strip()
-    content=f'''# T3 P0/P1 实验结果与交付状态（2026-10-28）
+    content=f'''# T3 P0/P1 实验结果与交付状态（2026-10-28，LOTS补充至10-29）
 
-P0复核、E0/E1同协议补推理、BF-Fashion和ControlNet+IP-Adapter完整外部评价已完成。本轮新增训练0，新增图像448张。真人评价只完成材料和分析程序，真实答卷0；LOTS因官方权重访问失败，尚未复现，不能称为冒烟通过或任务不兼容。
+P0复核、E0/E1同协议补推理、BF-Fashion和ControlNet+IP-Adapter完整外部评价已完成。LOTS官方预训练推理已完成同批96身份及五项适用指标，作为文本+草图补充基线。本轮新增训练0，新增独立图像544张；LOTS四例冒烟复用在96中，不重复计数。真人评价只完成材料和分析程序，真实答卷0。
 
 服务器本次结果根：`/share/home/u2515283058/Mymodel/output_eval/t3_p0_p1_20261028`。本地保留{link('完整校验后的服务器原包',server)}和{link('可读导出及协议',root)}；本文只存本地docs。
 
@@ -57,6 +60,11 @@ T3的六项均值在B/T1/T2/T3中均更有利，但配对统计不支持“全�
 统计为已查看开发集上的回顾性分析，主要内部只有一个训练seed。{link('统一逐身份配对统计',root/'tables/internal_uniform_paired_statistics.csv')}保留所有24项效果量、CI、原始/校正p和有效分母，另有{link('主要内部效果图',root/'figures/internal_paired_effects.png')}。旧P0统计与均值另存，未覆盖。此次五个内部模型LPIPS逐图重算与旧值最大差7.1734×10⁻⁵，未通过2×10⁻⁶严格回放；其余五项逐图一致。因此本文表与配对统计均用此次统一值，不把旧LPIPS混入。差异见{link('旧新评价审计',root/'audit/legacy_six_metric_replay.csv')}，DISTS三病例回放则在各评价作业中均通过2×10⁻⁶。
 
 BF的Edge F1、Leak、Edge L1、LPIPS均值更有利；T3的IoU和TCF-LAB更有利。这些外部六指标是描述性均值，未据此宣称显著。CN+IPA的背景/分割代理明显较差，定性图也出现有色背景与结构变化。
+
+文本+草图补充组单列如下。LOTS使用官方预训练权重，未在当前数据集微调；与已微调的BF/CN及含参考纹理的内部方法输入条件不同。全部五项有效n=96。原生512²、Euler30、CFG5、scale0.8、fp16，直接双线性转384×512评价；没有为改善本批结果再调参。
+
+{lots_means}
+LOTS的Leak接近1，与图审所见的有色摄影背景一致。它是固定旧评价的衣外背景代理，不能解释成“99.1%纹理泄漏”；原生背景、人物入镜、输入线条对比度及任务差异也会影响结构代理。LPIPS使用原GT作图像距离，但LOTS没有独立参考纹理条件，距离差不能单独证明方法更差。TCF-LAB、DISTS Margin和颜色Margin均不适用，未设为0、未进入参考响应排名。该组不与主表合成同条件优劣结论。{link('LOTS逐身份指标',root/'lots/metrics/per_image.csv')}保留全部96条原始记录。
 
 ## 3. 参考替换：已查看的32身份
 
@@ -84,7 +92,11 @@ DISTS Margin是固定草图内部patch集的响应代理，不是纹样身份、
 
 BF已有权重epoch26、global-step49166；CN+IPA复用历史冻结C2（CN/IPA均选checkpoint3000，尺度1.25/0.9），未用本轮P2b再调参。二者当前训练身份与P2b交集为0；历史完整数据指纹、预训练曝光及BF许可仍有未确证项，不宣称完全无污染或可任意分发。完整生成参数、代码与checkpoint版本见{link('外部协议',root/'external_protocol.md')}及{link('外部台账',root/'external_model_registry.csv')}。
 
-LOTS按用户要求独立放在{link('本地LOTS项目',project.parent/'LOTS')}，服务器为`/share/home/u2515283058/LOTS`，和Mymodel同级。[官方源码固定提交](https://github.com/intelligolabs/lots/tree/49e3955c8eece69ee484f1b52bd27335bd11b019)，[官方权重固定版本](https://huggingface.co/federicogirella/lots/tree/1172dbc1aceefd121e84ea547ef39aa62ad994e1)。隔离依赖安装完成，但直接连接、集群已有代理、固定SDK和固定文件地址重试均未取得权重；最终作业121095在5次文件访问尝试后失败。实际推理图像0，未运行四例冒烟，更未扩展正式批次；这属于资产访问阻塞，不说明LOTS质量或任务不兼容。原始代码、下载程序和日志均已保留；{link('LOTS状态',project.parent/'LOTS/output/t3_p0_p1_20261028/candidate_status.json')}。LOTS无独立参考纹理输入，不列入参考Margin排名。
+LOTS按用户要求独立放在{link('本地LOTS项目',project.parent/'LOTS')}，服务器为`/share/home/u2515283058/LOTS`，和Mymodel同级。[官方源码固定提交](https://github.com/intelligolabs/lots/tree/49e3955c8eece69ee484f1b52bd27335bd11b019)，[官方权重固定版本](https://huggingface.co/federicogirella/lots/tree/1172dbc1aceefd121e84ea547ef39aa62ad994e1)。此前服务器直连/代理下载失败日志保留；用户授权后，本地从官方固定revision下载24项资产，共9134607130字节，经9个分包上传，服务器校验分包、完整归档和全部24文件SHA后离线推理。分包不含源代码，源代码始终通过git pull部署。{link('资产与版本审计',root/'lots/assets_provenance.json')}、{link('上传校验',root/'lots/asset_transfer_verification.json')}及{link('隔离环境',root/'lots/runtime_environment.json')}可追溯依赖和权重。
+
+固定四例先实际检查，能生成独立挂衣/挂裙，但存在包袋结构失败、颜色和背景偏差。AI按最低可运行任务门槛放行后扩展原96身份，网络未修改；沿用官方global prompt、negative prompt、Euler30、CFG5、scale0.8和身份seed，保存实际latent形状/精度/SHA。四例原图原样复用，其余92张新增，未作质量筛除。正式生成351秒，冒烟64秒，统一评价47秒；这些为各自单A30作业分配时间，不是纯采样时间。完整批次不保证每图都是独立白底服装：实际出现包袋变成上衣、人物入镜、拍摄背景和颜色偏离，所以作为有任务限制的补充基线，不称为严格白底任务完全对齐或论文指标复现成功。{link('冒烟放行规则',root/'lots/code/protocols/smoke_release_20261029.json')}、{link('96原生图与逐图元数据',root/'lots/formal')}、{link('最终状态',root/'lots/candidate_status.json')}均保留。
+
+{link('普通案例（输入哈希4例）',root/'lots/figures/ordinary_hash4.png')}和{link('失败尾部（高Leak/低IoU后选择）',root/'lots/figures/failure_tail.png')}同时展示草图、仅评价用GT、原生方图和转换后评价图；{link('96原生图总览',root/'lots/figures/all96_native_contact.png')}与{link('图源清单',root/'lots/panel_provenance.csv')}保留所有输出。AI实际图审记录见{link('LOTS图审',root/'lots/visual_review.json')}，不是人类评分。普通案例中203183240的包袋生成成上衣、144929078生成成外套；失败尾部171531554出现人物局部、131993724的裙子变成短裤，均未删除。官方预训练数据曝光与其训练seed未知，不宣称完全无污染。
 
 ## 6. 真人盲评：材料就绪，真实参与者0
 
@@ -94,13 +106,13 @@ LOTS按用户要求独立放在{link('本地LOTS项目',project.parent/'LOTS')}�
 
 ## 7. 资源、复核和复跑入口
 
-本轮{resource['total_jobs']}个已提交作业已结束：20完成、4失败、3取消；12个GPU作业全部成功，共{resource['actual_gpu_hours']:.6f} GPU小时（A30分配时间，不含排队/历史训练）。BF完整批次分为两张单卡并行；按空闲卡与队列限制调度。初次审计路径错误已修复；LOTS下载失败和迁移/重复下载取消均保留。{link('最终资源账本',root/'resource_ledger.csv')}保留原始快照并用{link('最终sacct截图',root/'audit/final_jobs_and_bundle.png')}补全最后两个CPU作业的结束状态，不编造未捕获的时间和节点字段。
+本轮{resource['total_jobs']}个已提交作业已结束：{resource['job_states']['COMPLETED']}完成、{resource['job_states']['FAILED']}失败、{resource['job_states']['CANCELLED']}取消；{resource['gpu_jobs']}个GPU作业全部成功，共{resource['actual_gpu_hours']:.6f} GPU小时（A30分配时间，不含排队/历史训练）。BF完整批次分为两张单卡并行；LOTS单卡原生512推理约8.73GiB峰值，92张新增在351秒内完成，未为增加卡数引入新的并行实现。按空闲卡与队列限制调度。初次审计路径错误已修复；LOTS早期下载失败和迁移/重复下载取消均保留。{link('最终资源账本',root/'resource_ledger.csv')}按job_id去重，保留原始快照；{link('原轮次最终sacct截图',root/'audit/final_jobs_and_bundle.png')}及{link('LOTS最终sacct字段',root/'lots/server_formal_job_fields.png')}补全各包最后作业的结束状态，不编造未捕获的字段。
 
-结果包166491245字节、2746成员，SHA256=`73211dfeb7fde08cd805ce5322aaec2a38e1b3fde9819bb251ea6b6279ea734a`；2745项文件大小与SHA逐项通过。旧P0的480图也已核验；新增448图无GT进入生成。{link('下载校验',root/'audit/download_integrity.json')}与{link('执行状态',root/'execution_status.json')}可追溯全部范围。
+原结果包166491245字节、2746成员，SHA256=`73211dfeb7fde08cd805ce5322aaec2a38e1b3fde9819bb251ea6b6279ea734a`；2745项文件大小与SHA逐项通过。LOTS正式包{lots['bundle']['archive_bytes']}字节、{lots['bundle']['members']}成员，SHA256=`{lots['bundle']['archive_sha256']}`；{lots['bundle']['verified_files']}项文件大小与SHA逐项通过，原包均保持不变。旧P0的480图也已核验；本轮新增544图无GT进入生成，LOTS转换后的评价图是派生文件，不重复计为新的独立生成。{link('原包下载校验',root/'audit/download_integrity.json')}、{link('LOTS下载校验',root/'lots/formal_download_integrity.json')}与{link('执行状态',root/'execution_status.json')}可追溯全部范围。
 
-服务器数值汇总代码提交`94ba019`；本地图表/台账/报告程序提交`{commit[:7]}`，分支`codex/t3-p0-p1-20261028`；LOTS独立分支`codex/lots-repro-20261028`提交`201af7d`。代码上传始终为本地Git提交/推送、服务器git pull，未采用其他代码上传路线。服务器原包保持原样；本地仅重排图标签、完善台账，并用同一次统一指标计算配对统计。
+服务器原数值汇总代码提交`94ba019`，LOTS统一评价提交`{lots['metric_commit'][:7]}`；本地图表/台账/报告程序提交`{commit[:7]}`，分支`codex/t3-p0-p1-20261028`；LOTS独立分支`codex/lots-repro-20261028`，生成提交分别为`a394b32`（复用4图）、`f6408a1`（其余92图），审计/打包提交`{lots['audit_commit'][:7]}`。代码上传始终为本地Git提交/推送、服务器git pull，未采用其他代码上传路线。服务器原包保持原样；本地重排图标签、完善台账、并入LOTS补充结果，并用同一次统一指标计算内部配对统计。
 
-本地可从{link('代码快照',root/'code/tools')}复跑统计与报告；服务器主入口是`scripts/t3_p0p1.sbatch`的`generate/evaluate/review/aggregate/package`动作，输入和旧新输出哈希冻结。原始项目中用户未提交代码未被修改。后续剩余工作为真实试评/正式评分，以及LOTS资产可访问后的实际冒烟；本轮不新增内部训练。
+本地可从{link('代码快照',root/'code/tools')}复跑统计与报告；服务器主入口是`scripts/t3_p0p1.sbatch`的`generate/evaluate/review/aggregate/package`动作，LOTS入口是其独立项目的`run_experiment.sbatch`，输入和旧新输出哈希冻结。原始项目中用户未提交代码未被修改。后续剩余工作为真实试评、据此冻结正式人评及收集评分；本轮不新增内部训练。
 '''
     target=project/'docs/T3_P0_P1实验结果_20261028.md';target.write_text(content,encoding='utf-8')
     shutil.copy2(__file__,root/'code/tools'/Path(__file__).name)
