@@ -213,6 +213,25 @@ def environment():
     write(OUT/'runtime_environment.json',info);print('ENVIRONMENT_READY',info,flush=True)
 
 
+def package_results():
+    if (PROJECT/'assets.json').is_file():shutil.copy2(PROJECT/'assets.json',OUT/'assets_provenance.json')
+    code=OUT/'code';code.mkdir(parents=True,exist_ok=True)
+    tracked=subprocess.check_output(['git','-C',str(PROJECT),'ls-files'],text=True).splitlines()
+    for name in tracked:
+        source=PROJECT/name
+        if source.is_file():
+            target=code/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
+    for source in (PROJECT/'logs').glob('*.log'):
+        target=OUT/'logs'/source.name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
+    paths=[p for p in OUT.rglob('*') if p.is_file() and p.suffix not in ['.gz','.tgz'] and p.name not in ['bundle_manifest.json','bundle_info.json']]
+    write(OUT/'bundle_manifest.json',[dict(path=str(p.relative_to(OUT)),sha256=sha(p),bytes=p.stat().st_size) for p in paths])
+    archive=PROJECT/'transfer/smoke_review.tar.gz'
+    with tarfile.open(archive,'w:gz') as bundle:
+        for path in paths+[OUT/'bundle_manifest.json']:bundle.add(path,arcname=str(path.relative_to(OUT)),recursive=False)
+    write(PROJECT/'transfer/smoke_bundle_info.json',dict(sha256=sha(archive),bytes=archive.stat().st_size,members=len(paths)+1,weights_included=False))
+    print('LOTS_RESULT_BUNDLE',read(PROJECT/'transfer/smoke_bundle_info.json'),flush=True)
+
+
 def audit():
     """保存真实准备状态与失败证据，不把下载失败称为模型任务不兼容。"""
     mirror=EXPERIMENT/'lots'
@@ -240,5 +259,5 @@ def audit():
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit','import_assets','environment'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit','import_assets','environment','package_results'])
     args=parser.parse_args();globals()[args.action]()
