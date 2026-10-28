@@ -61,7 +61,7 @@ def download(group,asset,row):
         if expected:return sha(path)==expected
         value=hashlib.sha1(('blob '+str(row['size'])+'\0').encode()+path.read_bytes()).hexdigest()
         return value==row['blobId']
-    if target.is_file() and verify(target):return dict(path=str(target.relative_to(ROOT)),bytes=row['size'],sha256=sha(target))
+    if target.is_file() and verify(target):return dict(path=target.relative_to(ROOT).as_posix(),bytes=row['size'],sha256=sha(target))
     partial=target.with_name(target.name+'.part')
     url=f"https://huggingface.co/{asset['repository']}/resolve/{asset['revision']}/{name}"
     if row['size']>512*1024*1024:
@@ -69,7 +69,7 @@ def download(group,asset,row):
         assert verify(partial),('OFFICIAL_HASH_OR_SIZE_MISMATCH',name)
         partial.replace(target)
         with LOCK:print('VERIFIED',group,name,row['size'],flush=True)
-        return dict(path=str(target.relative_to(ROOT)),bytes=row['size'],sha256=sha(target))
+        return dict(path=target.relative_to(ROOT).as_posix(),bytes=row['size'],sha256=sha(target))
     for attempt in range(1,9):
         try:
             offset=partial.stat().st_size if partial.exists() else 0
@@ -86,7 +86,7 @@ def download(group,asset,row):
             assert verify(partial),('OFFICIAL_HASH_OR_SIZE_MISMATCH',name)
             partial.replace(target)
             with LOCK:print('VERIFIED',group,name,row['size'],flush=True)
-            return dict(path=str(target.relative_to(ROOT)),bytes=row['size'],sha256=sha(target))
+            return dict(path=target.relative_to(ROOT).as_posix(),bytes=row['size'],sha256=sha(target))
         except Exception as error:
             with LOCK:print('DOWNLOAD_RETRY',group,name,attempt,type(error).__name__,flush=True)
             if attempt==8:raise
