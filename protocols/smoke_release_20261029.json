@@ -1,0 +1,47 @@
+{
+  "allow_formal_generation": true,
+  "reviewer": "AI actual image inspection",
+  "human_reviewers": 0,
+  "scope": "runnable independent-garment/accessory generation with native background limitations; not quality superiority",
+  "input_manifest_sha256": "f9cc308316265f8460a36d180e17d71fce5e579f25d5f5e12dd658b4f5aad478",
+  "official_pipeline_sha256": "a2df89021b94751b26c5897205247a3d23e9f8685a61bd1e326fd1a8d5edcfca",
+  "native_config": {
+    "resolution": 512,
+    "steps": 30,
+    "scale": 0.8,
+    "cfg": 5,
+    "scheduler": "EulerDiscreteScheduler",
+    "global_prompt": "High quality photo of a model, artistic, 4k"
+  },
+  "smoke_images": {
+    "169075796": "f1931056564fe85b7642d9aadd3d08dcb61ea84f56cbb9040a8c063c820d31f7",
+    "195717945": "4db8d29c88d830010dbe271a36da27452e7e77e0c569eaee5a13b4df2ca3fd94",
+    "204869123": "7e110898f0d4a23b771b3ff5abc1461929854c88a2e7f9364a3db5ed444ccfa6",
+    "162267067": "8fca34a0ca04813cfe557bc7d0da50a56985c6840ed3c0a0e3123d078bd17f96"
+  },
+  "notes": {
+    "169075796": "独立挂衣上衣，背景为摄影场景，领型及颜色与caption仍有差别。",
+    "195717945": "包袋结构严重变形、提手不清；作为失败保留，不从正式身份清单删除。",
+    "204869123": "独立长裙，但颜色不符且存在强背景纹样。",
+    "162267067": "独立挂裙，未准确表现橙色与褶皱。"
+  },
+  "formal_original_identities": 96,
+  "new_reference_outputs": 0,
+  "texture_reference_used": false,
+  "GT_used_in_inference": false,
+  "formal_hyperparameter_changes": 0,
+  "output_processing": "preserve native512 square; direct BILINEAR384x512 for uniform evaluation, same conversion rule as BF",
+  "metrics": [
+    "edge_f1",
+    "leak",
+    "iou",
+    "edge_l1",
+    "lpips"
+  ],
+  "not_applicable": [
+    "tcf_lab",
+    "dists_margin",
+    "color_margin"
+  ],
+  "failure_policy": "retain all outputs; no winner-based filtering"
+}

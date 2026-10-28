@@ -9,6 +9,8 @@ import hashlib
 import json
 import shutil
 import tarfile
+import re
+import csv
 
 PROJECT=Path(__file__).resolve().parent
 OUT=PROJECT/'output/t3_p0_p1_20261028'
@@ -104,7 +106,7 @@ def download():
     print('LOTS_ALL_ASSETS_READY',flush=True)
 
 
-def smoke():
+def generate(formal=False):
     import hashlib
     import numpy as np
     import torch
@@ -113,6 +115,11 @@ def smoke():
     from transformers import AutoModel
     sys.path.insert(0,str(PROJECT/'src'))
     from lots.lots_pipeline import LOTSPipeline
+    if formal:
+        release=read(PROJECT/'protocols/smoke_release_20261029.json')
+        assert release['allow_formal_generation'] and release['human_reviewers']==0
+        assert sha(EXPERIMENT/'protocol/input_manifest.json')==release['input_manifest_sha256']
+        assert sha(PROJECT/'src/lots/lots_pipeline.py')==release['official_pipeline_sha256']
     assets=read(PROJECT/'assets.json')
     adapter=Path(assets['adapter']['path'])/'ckpts/lots/lots.bin'
     base=StableDiffusionXLPipeline.from_pretrained(assets['sdxl']['path'],torch_dtype=torch.float16,
@@ -130,35 +137,61 @@ def smoke():
         return value
     pipe.pipe.prepare_latents=capture_latents
     rows=[r for r in read(EXPERIMENT/'protocol/input_manifest.json') if r['condition']=='original']
-    rows=sorted(rows,key=lambda r:hashlib.sha256(('T3PP_LOTS/'+r['id']).encode()).hexdigest())[:4]
+    if not formal:rows=sorted(rows,key=lambda r:hashlib.sha256(('T3PP_LOTS/'+r['id']).encode()).hexdigest())[:4]
+    stage='formal' if formal else 'smoke'
+    existing={r['id']:r for r in read(OUT/stage/'manifest.json')} if (OUT/stage/'manifest.json').exists() else {}
+    smoke_records={r['id']:r for r in read(OUT/'smoke/manifest.json')} if formal else {}
     results=[]
     for row in rows:
-        seed=row['seed'];torch.manual_seed(seed);np.random.seed(seed)
-        before=time.perf_counter();torch.cuda.reset_peak_memory_stats()
-        with torch.no_grad():
-            # 保留官方原生global prompt和30步/0.8scale；仅把本实验草图和caption映射为单pair。
-            image=pipe.generate(prompt='High quality photo of a model, artistic, 4k',
-                pil_images=[Image.open(row['sketch']).convert('RGB')],descriptions=[row['caption']],
-                num_samples=1,num_inference_steps=30,resolution=512,scale=.8,seed=seed)[0]
-        path=OUT/'smoke/native'/(row['id']+'.png');path.parent.mkdir(parents=True,exist_ok=True);image.save(path)
-        mirror=EXPERIMENT/'lots/smoke/native'/path.name;mirror.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,mirror)
-        results.append(dict(id=row['id'],seed=seed,output=str(path),output_sha256=sha(path),
-            sketch_sha256=row['sketch_sha256'],caption=row['caption'],reference_texture_used=False,GT_used=False,
-            native_size=list(image.size),seconds=time.perf_counter()-before,peak_gib=torch.cuda.max_memory_allocated()/2**30,
-            code_commit=subprocess.check_output(['git','-C',str(PROJECT),'rev-parse','HEAD'],text=True).strip(),
-            official_pipeline_sha256=sha(PROJECT/'src/lots/lots_pipeline.py'),
-            adapter_sha256=assets['adapter']['files']['ckpts/lots/lots.bin']['sha256'],
-            inference_steps=30,scale=.8,cfg=float(pipe.pipe.guidance_scale),scheduler=pipe.pipe.scheduler.__class__.__name__,
-            negative_prompt='monochrome, lowres, bad anatomy, worst quality, low quality',
-            global_prompt='High quality photo of a model, artistic, 4k',**latent_info))
-        write(OUT/'smoke/manifest.json',results)
-        write(EXPERIMENT/'lots/smoke/manifest.json',results)
-        print('LOTS_SMOKE',row['id'],len(results),flush=True)
-    status=dict(images=4,network_changed=False,official_pipeline=True,
-        adapter_sha256=sha(adapter),compatibility='pending actual image review; no expansion before task compatibility confirmed',
+        assert sha(row['sketch'])==row['sketch_sha256']
+        path=OUT/stage/'native'/(row['id']+'.png');path.parent.mkdir(parents=True,exist_ok=True)
+        reused=existing.get(row['id'],smoke_records.get(row['id']))
+        if reused:
+            record=dict(reused);source=Path(record['output'])
+            assert record['seed']==row['seed'] and record['caption']==row['caption'] and sha(source)==record['output_sha256']
+            if source!=path:shutil.copy2(source,path)
+            record.update(output=str(path),reused_from_smoke=row['id'] in smoke_records)
+        else:
+            seed=row['seed'];torch.manual_seed(seed);np.random.seed(seed)
+            before=time.perf_counter();torch.cuda.reset_peak_memory_stats();latent_info.clear()
+            with torch.no_grad():
+                # 官方原生global prompt、30步、scale0.8；单个草图/caption对，不修改网络。
+                image=pipe.generate(prompt='High quality photo of a model, artistic, 4k',
+                    pil_images=[Image.open(row['sketch']).convert('RGB')],descriptions=[row['caption']],
+                    num_samples=1,num_inference_steps=30,resolution=512,scale=.8,seed=seed)[0]
+            image.save(path)
+            record=dict(id=row['id'],seed=seed,output=str(path),output_sha256=sha(path),
+                sketch_sha256=row['sketch_sha256'],caption=row['caption'],reference_texture_used=False,GT_used=False,
+                native_size=list(image.size),seconds=time.perf_counter()-before,peak_gib=torch.cuda.max_memory_allocated()/2**30,
+                code_commit=subprocess.check_output(['git','-C',str(PROJECT),'rev-parse','HEAD'],text=True).strip(),
+                official_pipeline_sha256=sha(PROJECT/'src/lots/lots_pipeline.py'),
+                adapter_sha256=assets['adapter']['files']['ckpts/lots/lots.bin']['sha256'],
+                inference_steps=30,scale=.8,cfg=float(pipe.pipe.guidance_scale),scheduler=pipe.pipe.scheduler.__class__.__name__,
+                negative_prompt='monochrome, lowres, bad anatomy, worst quality, low quality',
+                global_prompt='High quality photo of a model, artistic, 4k',**latent_info)
+        mirror=EXPERIMENT/'lots'/stage/'native'/path.name;mirror.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,mirror)
+        if formal:
+            resized=OUT/'formal/eval384x512'/path.name;resized.parent.mkdir(parents=True,exist_ok=True)
+            Image.open(path).convert('RGB').resize((384,512),Image.Resampling.BILINEAR).save(resized)
+            meta=dict(record,output=str(resized),native_output=str(path),native_output_sha256=record['output_sha256'],output_sha256=sha(resized),
+                evaluation_image=str(resized),evaluation_size=[384,512],GT_used_in_inference=False,
+                resampling='native512 square directly BILINEAR384x512, same conversion rule as BF',reference_margin_eligible=False)
+            write(resized.with_suffix('.json'),meta)
+            published=EXPERIMENT/'outputs/LOTS/original'/path.name;published.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(resized,published);write(published.with_suffix('.json'),meta)
+        results.append(record)
+        write(OUT/stage/'manifest.json',results);write(EXPERIMENT/'lots'/stage/'manifest.json',results)
+        print('LOTS_'+stage.upper(),row['id'],len(results),'/',len(rows),flush=True)
+    status=dict(images=len(results),network_changed=False,official_pipeline=True,
+        adapter_sha256=sha(adapter),compatibility='released from smoke4; quality failures retained' if formal else 'pending actual image review',
         reference_margin_eligible=False,training=0)
-    write(OUT/'smoke/status.json',status)
-    write(EXPERIMENT/'lots/smoke/status.json',status)
+    write(OUT/stage/'status.json',status);write(EXPERIMENT/'lots'/stage/'status.json',status)
+
+
+def smoke():generate(False)
+
+
+def full():generate(True)
 
 
 def import_assets():
@@ -216,6 +249,19 @@ def environment():
 
 def package_results():
     if (PROJECT/'assets.json').is_file():shutil.copy2(PROJECT/'assets.json',OUT/'assets_provenance.json')
+    if (EXPERIMENT/'metrics/LOTS').is_dir():shutil.copytree(EXPERIMENT/'metrics/LOTS',OUT/'metrics',dirs_exist_ok=True)
+    ids=sorted({m.group(1) for p in (PROJECT/'logs').glob('*.log') if (m:=re.search(r'_(\d+)\.log$',p.name))})
+    raw=subprocess.check_output(['sacct','-X','-j',','.join(ids),'--parsable2','--noheader',
+        '--format=JobIDRaw,JobName,State,ElapsedRaw,AllocTRES,ExitCode,Start,End,NodeList'],text=True)
+    (OUT/'sacct_raw.txt').write_text(raw)
+    resources=[]
+    for line in raw.splitlines():
+        job,name,state,seconds,tres,exitcode,start,end,node=line.split('|')[:9]
+        match=re.search(r'gres/gpu=(\d+)',tres);gpus=int(match.group(1)) if match else 0
+        resources.append(dict(job_id=job,name=name,state=state,elapsed_seconds=int(seconds),allocated_gpus=gpus,
+            gpu_hours=int(seconds)*gpus/3600,allocation=tres,exit_code=exitcode,start=start,end=end,node=node))
+    with (OUT/'resource_ledger.csv').open('w',newline='') as stream:
+        writer=csv.DictWriter(stream,fieldnames=list(resources[0]));writer.writeheader();writer.writerows(resources)
     code=OUT/'code';code.mkdir(parents=True,exist_ok=True)
     tracked=subprocess.check_output(['git','-C',str(PROJECT),'ls-files'],text=True).splitlines()
     for name in tracked:
@@ -226,12 +272,14 @@ def package_results():
         target=OUT/'logs'/source.name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
     paths=[p for p in OUT.rglob('*') if p.is_file() and p.suffix not in ['.gz','.tgz'] and p.name not in ['bundle_manifest.json','bundle_info.json']]
     write(OUT/'bundle_manifest.json',[dict(path=str(p.relative_to(OUT)),sha256=sha(p),bytes=p.stat().st_size) for p in paths])
-    archive=PROJECT/'transfer/smoke_review.tar.gz'
+    stage='formal' if (OUT/'formal/status.json').exists() else 'smoke'
+    archive=PROJECT/'transfer'/(stage+'_review.tar.gz')
     with tarfile.open(archive,'w:gz') as bundle:
         for path in paths+[OUT/'bundle_manifest.json']:bundle.add(path,arcname=str(path.relative_to(OUT)),recursive=False)
-    write(PROJECT/'transfer/smoke_bundle_info.json',dict(sha256=sha(archive),bytes=archive.stat().st_size,members=len(paths)+1,weights_included=False))
+    info=PROJECT/'transfer'/(stage+'_bundle_info.json')
+    write(info,dict(sha256=sha(archive),bytes=archive.stat().st_size,members=len(paths)+1,weights_included=False))
     shutil.copytree(OUT,EXPERIMENT/'lots',dirs_exist_ok=True)
-    print('LOTS_RESULT_BUNDLE',read(PROJECT/'transfer/smoke_bundle_info.json'),flush=True)
+    print('LOTS_RESULT_BUNDLE',read(info),flush=True)
 
 
 def audit():
@@ -240,11 +288,13 @@ def audit():
     errors={p.name:read(p) for p in sorted((OUT/'asset_errors').glob('*.json'))}
     assets=read(PROJECT/'assets.json') if (PROJECT/'assets.json').is_file() else None
     smoke_status=read(OUT/'smoke/status.json') if (OUT/'smoke/status.json').is_file() else None
+    formal_status=read(OUT/'formal/status.json') if (OUT/'formal/status.json').is_file() else None
     status=dict(upstream=read(PROJECT/'UPSTREAM.json'),
         reproduction_commit=subprocess.check_output(['git','-C',str(PROJECT),'rev-parse','HEAD'],text=True).strip(),
         project_server=str(PROJECT),project_local='F:/fuxian/LOTS',
-        state='SMOKE_AWAITS_TASK_REVIEW' if smoke_status else 'ASSETS_READY_SMOKE_NOT_RUN' if assets else 'NOT_REPRODUCED_ASSET_DOWNLOAD_FAILED',
+        state='FORMAL96_COMPLETE' if formal_status else 'SMOKE_AWAITS_TASK_REVIEW' if smoke_status else 'ASSETS_READY_SMOKE_NOT_RUN' if assets else 'NOT_REPRODUCED_ASSET_DOWNLOAD_FAILED',
         official_assets_complete=bool(assets),actual_smoke_images=smoke_status.get('images',0) if smoke_status else 0,
+        actual_formal_images=formal_status.get('images',0) if formal_status else 0,
         task_compatibility='pending actual image review' if smoke_status else 'not assessed without outputs',reference_margin_eligible=False,
         network_changed=False,training=0,errors=errors,
         limitation='asset access failure is an infrastructure result; it does not show that LOTS is incompatible or inferior')
@@ -261,5 +311,5 @@ def audit():
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit','import_assets','environment','package_results'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','full','audit','import_assets','environment','package_results'])
     args=parser.parse_args();globals()[args.action]()
