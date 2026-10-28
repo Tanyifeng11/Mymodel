@@ -30,13 +30,14 @@ def evaluate(arm):
     torch.backends.cudnn.allow_tf32=False
     torch.backends.cudnn.benchmark=False
     rows=read(ROOT/'protocol/input_manifest.json')
-    if arm in ['E0','E1']:
+    if arm in ['E0','E1','LOTS']:
         rows=[r for r in rows if r['condition']=='original']
     old_protocol=read(SUP/'evaluation/metric_protocol.json')
     assert all(sha(SOURCE/path)==digest for path,digest in old_protocol['evaluation_code'].items())
-    dists=response.load_dists('cuda')
-    # 先回放三个真实历史病例，严格核对与冻结DISTS评价精度。
-    write(ROOT/'audit'/('DISTS_replay_'+arm+'.json'),response.historical_device_check(dists))
+    if arm!='LOTS':
+        dists=response.load_dists('cuda')
+        # LOTS无参考输入，不加载或计算参考Margin；其他方法先回放历史DISTS。
+        write(ROOT/'audit'/('DISTS_replay_'+arm+'.json'),response.historical_device_check(dists))
     lpips_model,lpips_assets=frozen_lpips()
     by_id={row['id']:row for row in rows if row['condition']=='original'}
     swapped={row['id']:row for row in rows if row['condition']=='swapped'}
@@ -60,12 +61,13 @@ def evaluate(arm):
             edge_f1=structure.get('edge_f1'),iou=structure.get('sketch_iou'),edge_l1=structure.get('edge_l1'),
             leak=leak.get('leak_colored_frac'),leak_is_legacy_background_proxy=True,
             lpips=None,tcf_lab=None,dists_margin=None,color_margin=None,
-            input_reference_sha256=row['reference_sha256'],input_sketch_sha256=row['sketch_sha256'])
+            input_reference_sha256=None if arm=='LOTS' else row['reference_sha256'],input_sketch_sha256=row['sketch_sha256'])
+        if arm=='LOTS':record.update(reference_texture_used=False,reference_margin_eligible=False,tcf_not_applicable='no reference texture input')
         if row['condition']=='original':
             gt=Image.open(row['gt']).convert('RGB').resize((384,512),Image.Resampling.BILINEAR)
             record['lpips']=float(lpips_model(tensor(Image.open(path).convert('RGB')),tensor(gt)).mean())
-            record['tcf_lab']=compute_texture_color_fidelity(texture_path=row['reference'],**kwargs).get('tcf_lab_delta')
-        if row['id'] in swapped:
+            if arm!='LOTS':record['tcf_lab']=compute_texture_color_fidelity(texture_path=row['reference'],**kwargs).get('tcf_lab_delta')
+        if arm!='LOTS' and row['id'] in swapped:
             old=by_id[row['id']]['reference'];new=swapped[row['id']]['reference']
             old_color=compute_texture_color_fidelity(texture_path=old,**kwargs).get('tcf_lab_delta')
             new_color=compute_texture_color_fidelity(texture_path=new,**kwargs).get('tcf_lab_delta')
