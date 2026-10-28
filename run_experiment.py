@@ -230,6 +230,7 @@ def package_results():
     with tarfile.open(archive,'w:gz') as bundle:
         for path in paths+[OUT/'bundle_manifest.json']:bundle.add(path,arcname=str(path.relative_to(OUT)),recursive=False)
     write(PROJECT/'transfer/smoke_bundle_info.json',dict(sha256=sha(archive),bytes=archive.stat().st_size,members=len(paths)+1,weights_included=False))
+    shutil.copytree(OUT,EXPERIMENT/'lots',dirs_exist_ok=True)
     print('LOTS_RESULT_BUNDLE',read(PROJECT/'transfer/smoke_bundle_info.json'),flush=True)
 
 
@@ -244,7 +245,7 @@ def audit():
         project_server=str(PROJECT),project_local='F:/fuxian/LOTS',
         state='SMOKE_AWAITS_TASK_REVIEW' if smoke_status else 'ASSETS_READY_SMOKE_NOT_RUN' if assets else 'NOT_REPRODUCED_ASSET_DOWNLOAD_FAILED',
         official_assets_complete=bool(assets),actual_smoke_images=smoke_status.get('images',0) if smoke_status else 0,
-        task_compatibility='not assessed without outputs',reference_margin_eligible=False,
+        task_compatibility='pending actual image review' if smoke_status else 'not assessed without outputs',reference_margin_eligible=False,
         network_changed=False,training=0,errors=errors,
         limitation='asset access failure is an infrastructure result; it does not show that LOTS is incompatible or inferior')
     write(OUT/'candidate_status.json',status);write(mirror/'candidate_status.json',status)
