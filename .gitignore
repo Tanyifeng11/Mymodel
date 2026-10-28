@@ -12,3 +12,4 @@ __pycache__/
 *.zip
 upstream_snapshot/
 .fetch.lock
+transfer/

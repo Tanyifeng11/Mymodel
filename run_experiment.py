@@ -8,6 +8,7 @@ from pathlib import Path
 import hashlib
 import json
 import shutil
+import tarfile
 
 PROJECT=Path(__file__).resolve().parent
 OUT=PROJECT/'output/t3_p0_p1_20261028'
@@ -147,6 +148,49 @@ def smoke():
     write(EXPERIMENT/'lots/smoke/status.json',status)
 
 
+def import_assets():
+    """导入用户授权本地下载、网页上传的权重包；源代码仍通过git pull传递。"""
+    folder=PROJECT/'transfer';manifest=read(folder/'assets_bundle_manifest.json')
+    assert manifest['source_code_included'] is False
+    archive=folder/'lots_assets.tar'
+    with archive.open('wb') as out:
+        for row in manifest['parts']:
+            path=folder/row['name']
+            assert path.name==row['name'] and path.stat().st_size==row['bytes'] and sha(path)==row['sha256']
+            with path.open('rb') as source:shutil.copyfileobj(source,out,8*1024*1024)
+            print('IMPORT_PART_VERIFIED',path.name,flush=True)
+    assert archive.stat().st_size==manifest['archive_bytes'] and sha(archive)==manifest['archive_sha256']
+    expected={row['path']:row for row in manifest['files']}
+    with tarfile.open(archive,'r:') as bundle:
+        members=bundle.getmembers()
+        assert len(members)==len(expected)
+        for member in members:
+            relative=Path(member.name)
+            assert member.isfile() and not relative.is_absolute() and '..' not in relative.parts
+            assert relative.parts[0]=='assets' and member.name in expected
+            target=PROJECT/relative;target.parent.mkdir(parents=True,exist_ok=True)
+            with bundle.extractfile(member) as source,target.open('wb') as out:shutil.copyfileobj(source,out,8*1024*1024)
+            row=expected[member.name]
+            assert target.stat().st_size==row['bytes'] and sha(target)==row['sha256']
+            print('IMPORT_FILE_VERIFIED',member.name,flush=True)
+    assets=manifest['assets']
+    for name,item in assets.items():item['path']=str(PROJECT/item['path'])
+    # 官方pipeline固定用该公共processor ID，填充标准离线Hub缓存，不改官方网络代码。
+    processor=assets['processor'];source=Path(processor['path'])/'preprocessor_config.json'
+    cache=Path(os.environ.get('HF_HOME',str(PROJECT/'cache/huggingface')))/'hub/models--facebook--dinov2-base'
+    snapshot=cache/'snapshots'/processor['revision']/'preprocessor_config.json';snapshot.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(source,snapshot);(cache/'refs').mkdir(exist_ok=True);(cache/'refs/main').write_text(processor['revision'])
+    from huggingface_hub import try_to_load_from_cache
+    cached=try_to_load_from_cache('facebook/dinov2-base','preprocessor_config.json',cache_dir=str(cache.parent))
+    assert isinstance(cached,str) and sha(cached)==sha(source)
+    assets['processor'].update(path=cached,sha256=sha(source))
+    write(PROJECT/'assets.json',assets)
+    write(OUT/'asset_transfer_verification.json',dict(archive_sha256=manifest['archive_sha256'],
+        parts=len(manifest['parts']),files=len(expected),all_file_hashes_match=True,
+        source='official pinned assets downloaded locally and uploaded via school portal; no source code in package'))
+    print('IMPORTED_OFFICIAL_ASSETS_COMPLETE',len(expected),flush=True)
+
+
 def audit():
     """保存真实准备状态与失败证据，不把下载失败称为模型任务不兼容。"""
     mirror=EXPERIMENT/'lots'
@@ -174,5 +218,5 @@ def audit():
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit','import_assets'])
     args=parser.parse_args();globals()[args.action]()
