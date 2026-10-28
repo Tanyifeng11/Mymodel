@@ -5,6 +5,7 @@ cd "$PROJECT"
 export PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 export HF_HUB_DISABLE_XET=1 HF_HOME="$PROJECT/cache/huggingface"
+export HF_ENDPOINT=https://huggingface.co HF_HUB_ETAG_TIMEOUT=30 HF_HUB_DOWNLOAD_TIMEOUT=60
 if [[ "$1" == "fetch" ]]; then
   # 沿用集群既有HTTP代理，供官方PyPI/HuggingFace下载使用。
   export HTTP_PROXY=http://211.67.63.75:3128 HTTPS_PROXY=http://211.67.63.75:3128

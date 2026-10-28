@@ -46,9 +46,7 @@ def retry(function,name):
 
 
 def fetch():
-    from huggingface_hub import HfApi,snapshot_download,hf_hub_download
     os.environ['HF_HUB_DISABLE_XET']='1'
-    target=PROJECT
     env=PROJECT/'.venv'
     if not (env/'bin/python').exists():
         subprocess.check_call([sys.executable,'-m','venv','--system-site-packages',str(env)])
@@ -57,7 +55,14 @@ def fetch():
              '--index-url','https://pypi.org/simple','diffusers==0.33.1','transformers==4.48.3',
              'huggingface-hub==0.28.1','accelerate==1.3.0','tokenizers==0.21.0','safetensors','sentencepiece']
     retry(lambda:subprocess.check_call(install),'environment')
-    api=HfApi();assets={}
+    # 下载阶段也用同一隔离SDK，避免父环境huggingface_hub版本改变下载行为。
+    subprocess.check_call([str(env/'bin/python'),str(__file__),'download'])
+
+
+def download():
+    from huggingface_hub import HfApi,snapshot_download,hf_hub_download
+    target=PROJECT
+    api=HfApi(endpoint='https://huggingface.co');assets={}
     specs={
       'adapter':('federicogirella/lots','1172dbc1aceefd121e84ea547ef39aa62ad994e1',['ckpts/lots/*']),
       'sdxl':('stabilityai/stable-diffusion-xl-base-1.0',None,
@@ -67,7 +72,7 @@ def fetch():
       'dino':('facebook/dinov2-small',None,['config.json','preprocessor_config.json','model.safetensors']),
     }
     for name,(repo,revision,patterns) in specs.items():
-        info=retry(lambda:api.model_info(repo,revision=revision),name+'_metadata')
+        info=retry(lambda:api.model_info(repo,revision=revision,timeout=30),name+'_metadata')
         if name=='dino':
             available={item.rfilename for item in info.siblings}
             patterns=['config.json','preprocessor_config.json',
@@ -131,5 +136,5 @@ def smoke():
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','smoke'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke'])
     args=parser.parse_args();globals()[args.action]()
