@@ -10,3 +10,5 @@ __pycache__/
 *.bin
 *.safetensors
 *.zip
+upstream_snapshot/
+.fetch.lock
