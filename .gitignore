@@ -1,0 +1,12 @@
+.venv/
+assets/
+cache/
+output/
+logs/
+assets.json
+assets_progress.json
+__pycache__/
+*.pyc
+*.bin
+*.safetensors
+*.zip

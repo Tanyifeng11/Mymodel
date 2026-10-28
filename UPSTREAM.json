@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/intelligolabs/lots",
+  "commit": "49e3955c8eece69ee484f1b52bd27335bd11b019",
+  "license": "MIT; see LICENSE",
+  "source_modifications": [],
+  "weights": "https://huggingface.co/federicogirella/lots",
+  "weights_revision": "1172dbc1aceefd121e84ea547ef39aa62ad994e1",
+  "task": "localized sketch/text conditioned complete fashion outlook; independent reference texture unsupported",
+  "use": "official network smoke with a single sketch-caption pair; no network changes"
+}
