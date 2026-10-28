@@ -192,7 +192,7 @@ def external_audit():
     state=torch.load(path,map_location='cpu')
     vq=bf/'models/first_stage_models/vq-f8/model.ckpt'
     info=dict(checkpoint_path=str(path),checkpoint_sha256=sha(path),epoch=state.get('epoch'),global_step=state.get('global_step'),
-        vq_path=str(vq),vq_sha256=sha(vq),training_config=str(saved[0]),training_config_sha256=sha(saved[0]),
+        vq_path=str(vq),vq_sha256=sha(vq),training_config_path=str(saved[0]),training_config_sha256=sha(saved[0]),
         training_manifest=str(trainpath),training_manifest_sha256=sha(trainpath),training_samples=len(train),
         training_overlap_ids=overlap,training_config=OmegaConf.to_container(config,resolve=True),
         provenance='historical checkpoint folder, saved config and current manifest reconstruction',
