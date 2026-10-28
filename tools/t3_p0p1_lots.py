@@ -44,6 +44,10 @@ def fetch():
     }
     for name,(repo,revision,patterns) in specs.items():
         info=retry(lambda:api.model_info(repo,revision=revision),name+'_metadata')
+        if name=='dino':
+            available={item.rfilename for item in info.siblings}
+            patterns=['config.json','preprocessor_config.json',
+                      'model.safetensors' if 'model.safetensors' in available else 'pytorch_model.bin']
         local=retry(lambda:snapshot_download(repo_id=repo,revision=info.sha,allow_patterns=patterns,
                     local_dir=str(target/'assets'/name),max_workers=2),name)
         files={str(path.relative_to(local)):dict(size=path.stat().st_size,sha256=sha(path))

@@ -30,7 +30,9 @@ def selected_rows(arm, smoke, shard=0, shards=1):
 
 
 def internal(arm):
-    path=Path(read(ROOT/'audit/server_inventory.json')['models'][arm]['path'])
+    registry=read(ROOT/'audit/server_inventory.json')['models'][arm]
+    path=Path(registry['path'])
+    assert sha(path)==registry['sha256']
     spec=importlib.util.spec_from_file_location('t3pp_frozen_internal',SOURCE/'inference_IMAGGarment-1.py')
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     sd=PROJECT/'models/stable-diffusion-v1-5'
@@ -138,6 +140,10 @@ def bf():
 
 def generate(arm,smoke=False,shard=0,shards=1):
     rows=selected_rows(arm,smoke,shard,shards)
+    runtime_commit=__import__('subprocess').check_output(['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip()
+    write(ROOT/'audit'/('generation_'+arm+'_'+os.environ.get('SLURM_JOB_ID','local')+'.json'),
+          dict(code_commit=runtime_commit,runner_sha256=sha(__file__),torch=torch.__version__,
+               python=sys.version,gpu=torch.cuda.get_device_name(),arm=arm,smoke=smoke,shard=shard,shards=shards))
     torch.set_num_threads(2);torch.backends.cudnn.benchmark=False
     with torch.no_grad():
         runner=internal(arm) if arm in ['E0','E1'] else cnipa() if arm=='ControlNet+IP-Adapter' else bf()
@@ -157,7 +163,7 @@ def generate(arm,smoke=False,shard=0,shards=1):
                 prompt=row['caption'] if meta['text_used'] else None,GT_used_in_inference=False,
                 output_sha256=sha(path),input_sketch_sha256=row['sketch_sha256'],input_reference_sha256=row['reference_sha256'],
                 seconds=time.perf_counter()-begin,peak_allocated_gib=torch.cuda.max_memory_allocated()/2**30,
-                code_commit=__import__('subprocess').check_output(['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip())
+                code_commit=runtime_commit)
             write(path.with_suffix('.json'),meta);results.append(meta)
             print('OUTPUT',arm,row['id'],row['condition'],len(results),'/',len(rows),flush=True)
     write(ROOT/'generation'/f'{arm}_{"smoke" if smoke else "formal"}_shard{shard}.json',
