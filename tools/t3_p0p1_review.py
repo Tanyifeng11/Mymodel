@@ -101,10 +101,10 @@ def review(project):
                             ('E1','与 E0 独立训练，启用固定层级路由；为 T3 初始化模型')]:
         registry.append(dict(model_id=arm, role='training_stage_background', model_definition=definition,
             input_modalities='text+sketch+reference', checkpoint_sha256=inventory.get('models',{}).get(arm,{}).get('sha256','pending server inventory'),
-            training_seed=42, training_steps=28365, initialization_checkpoint='texture_adapter_bf_e20, independently trained',
+            training_seed='None (historical configuration; not seed42)', training_steps=28365, initialization_checkpoint='texture_adapter_bf_e20, independently trained',
             dataset_split='P2b96 evaluation pending', inference_config='same frozen P2b settings, E0 routing disabled',
             metric_protocol_version='pending same-protocol inference', result_source='docs/E0_E1_E2_E5_训练方法_文献依据与性能详解_20261018.md',
-            status='definition established; P2b outputs pending', comparability_notes='historical 500 set cannot join P2b ranking'))
+            status='definition established; P2b outputs pending', comparability_notes='historical500 set cannot join P2b ranking;28365 is historical global-step endpoint, not newly audited successful optimizer updates'))
     contrasts = []
     for baseline in ['B','T1','T2','C']:
         group = []

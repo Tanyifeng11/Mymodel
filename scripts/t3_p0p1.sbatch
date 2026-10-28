@@ -21,6 +21,8 @@ case "$1" in
     bash /share/home/u2515283058/LOTS/run_experiment.sbatch smoke ;;
   review) python -m tools.t3_p0p1_review --project /share/home/u2515283058/Mymodel ;;
   human) python -m tools.t3_p0p1_human --project /share/home/u2515283058/Mymodel ;;
+  aggregate) python -m tools.t3_p0p1_finalize aggregate ;;
+  package) python -m tools.t3_p0p1_finalize package ;;
   evaluate) shift; python -m tools.t3_p0p1_evaluate "$@" ;;
   *) python -m tools.t3_p0p1 "$@" ;;
 esac
