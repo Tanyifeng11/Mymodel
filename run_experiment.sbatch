@@ -6,6 +6,9 @@ export PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 export HF_HUB_DISABLE_XET=1 HF_HOME="$PROJECT/cache/huggingface"
 if [[ "$1" == "fetch" ]]; then
+  # 沿用集群既有HTTP代理，供官方PyPI/HuggingFace下载使用。
+  export HTTP_PROXY=http://211.67.63.75:3128 HTTPS_PROXY=http://211.67.63.75:3128
+  export http_proxy="$HTTP_PROXY" https_proxy="$HTTPS_PROXY"
   exec 9>"$PROJECT/.fetch.lock"
   if ! flock -n 9; then
     echo "LOTS_FETCH_ALREADY_RUNNING"

@@ -53,7 +53,8 @@ def fetch():
     if not (env/'bin/python').exists():
         subprocess.check_call([sys.executable,'-m','venv','--system-site-packages',str(env)])
     # 所有安装只写隔离venv，保留已有torch2.5.1，不更新其他实验环境。
-    install=[str(env/'bin/python'),'-m','pip','install','diffusers==0.33.1','transformers==4.48.3',
+    install=[str(env/'bin/python'),'-m','pip','install','--timeout','30','--retries','2',
+             '--index-url','https://pypi.org/simple','diffusers==0.33.1','transformers==4.48.3',
              'huggingface-hub==0.28.1','accelerate==1.3.0','tokenizers==0.21.0','safetensors','sentencepiece']
     retry(lambda:subprocess.check_call(install),'environment')
     api=HfApi();assets={}
