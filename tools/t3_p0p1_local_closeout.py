@@ -24,9 +24,10 @@ def closeout(project):
     data={a:{p.stem:read(p) for p in (server/'metrics'/a/'original').glob('*.json')}
           for a in ['B','T1','T2','C','T3']}
     contrasts=[]
+    ids=[row['id'] for row in read(server/'protocol/input_manifest.json') if row['condition']=='original']
     for baseline in ['B','T1','T2','C']:
         for metric,direction in METRICS.items():
-            ids=sorted(data['T3']);assert set(ids)==set(data[baseline]) and len(ids)==96
+            assert set(ids)==set(data['T3'])==set(data[baseline]) and len(ids)==96
             values=[data['T3'][i][metric]-data[baseline][i][metric] for i in ids]
             contrasts.append(dict(baseline=baseline,metric=metric,favorable_direction=direction,
                 protocol='uniform CUDA float32; TF32 disabled; retrospective development',
