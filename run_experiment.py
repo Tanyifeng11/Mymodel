@@ -148,7 +148,8 @@ def smoke():
             code_commit=subprocess.check_output(['git','-C',str(PROJECT),'rev-parse','HEAD'],text=True).strip(),
             official_pipeline_sha256=sha(PROJECT/'src/lots/lots_pipeline.py'),
             adapter_sha256=assets['adapter']['files']['ckpts/lots/lots.bin']['sha256'],
-            inference_steps=30,scale=.8,scheduler=pipe.pipe.scheduler.__class__.__name__,
+            inference_steps=30,scale=.8,cfg=float(pipe.pipe.guidance_scale),scheduler=pipe.pipe.scheduler.__class__.__name__,
+            negative_prompt='monochrome, lowres, bad anatomy, worst quality, low quality',
             global_prompt='High quality photo of a model, artistic, 4k',**latent_info))
         write(OUT/'smoke/manifest.json',results)
         write(EXPERIMENT/'lots/smoke/manifest.json',results)

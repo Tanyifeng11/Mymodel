@@ -5,6 +5,7 @@ output/
 logs/
 assets.json
 assets_progress.json
+assets_local_verified.json
 __pycache__/
 *.pyc
 *.bin
