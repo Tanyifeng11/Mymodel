@@ -122,6 +122,13 @@ def smoke():
     for module in [pipe.pipe.unet,pipe.pipe.vae,pipe.pipe.text_encoder,pipe.pipe.text_encoder_2,
                    pipe.image_encoder,pipe.image_proj_model,pipe.text_proj_model,pipe.pair_former]:
         module.eval().requires_grad_(False)
+    latent_info={};original_prepare=pipe.pipe.prepare_latents
+    def capture_latents(*args,**kwargs):
+        value=original_prepare(*args,**kwargs)
+        latent_info.update(initial_latent_sha256=hashlib.sha256(value.detach().cpu().numpy().tobytes()).hexdigest(),
+                           latent_shape=list(value.shape),latent_dtype=str(value.dtype))
+        return value
+    pipe.pipe.prepare_latents=capture_latents
     rows=[r for r in read(EXPERIMENT/'protocol/input_manifest.json') if r['condition']=='original']
     rows=sorted(rows,key=lambda r:hashlib.sha256(('T3PP_LOTS/'+r['id']).encode()).hexdigest())[:4]
     results=[]
@@ -137,7 +144,12 @@ def smoke():
         mirror=EXPERIMENT/'lots/smoke/native'/path.name;mirror.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,mirror)
         results.append(dict(id=row['id'],seed=seed,output=str(path),output_sha256=sha(path),
             sketch_sha256=row['sketch_sha256'],caption=row['caption'],reference_texture_used=False,GT_used=False,
-            native_size=list(image.size),seconds=time.perf_counter()-before,peak_gib=torch.cuda.max_memory_allocated()/2**30))
+            native_size=list(image.size),seconds=time.perf_counter()-before,peak_gib=torch.cuda.max_memory_allocated()/2**30,
+            code_commit=subprocess.check_output(['git','-C',str(PROJECT),'rev-parse','HEAD'],text=True).strip(),
+            official_pipeline_sha256=sha(PROJECT/'src/lots/lots_pipeline.py'),
+            adapter_sha256=assets['adapter']['files']['ckpts/lots/lots.bin']['sha256'],
+            inference_steps=30,scale=.8,scheduler=pipe.pipe.scheduler.__class__.__name__,
+            global_prompt='High quality photo of a model, artistic, 4k',**latent_info))
         write(OUT/'smoke/manifest.json',results)
         write(EXPERIMENT/'lots/smoke/manifest.json',results)
         print('LOTS_SMOKE',row['id'],len(results),flush=True)
