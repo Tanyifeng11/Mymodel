@@ -139,7 +139,7 @@ def bf():
 def generate(arm,smoke=False,shard=0,shards=1):
     rows=selected_rows(arm,smoke,shard,shards)
     torch.set_num_threads(2);torch.backends.cudnn.benchmark=False
-    with torch.inference_mode():
+    with torch.no_grad():
         runner=internal(arm) if arm in ['E0','E1'] else cnipa() if arm=='ControlNet+IP-Adapter' else bf()
         results=[]
         for row in rows:
