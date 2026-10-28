@@ -168,6 +168,8 @@ def plot(root, contrasts):
 
 def input_image(sup, meta, kind):
     path = sup/'inputs'/(meta['inputs'][kind]+'.jpg')
+    if not path.exists():
+        path=sup.parent/'t3_p0_p1_20261028/inputs'/(meta['inputs'][kind]+'.jpg')
     assert sha(path) == meta['inputs'][kind]
     return path
 
