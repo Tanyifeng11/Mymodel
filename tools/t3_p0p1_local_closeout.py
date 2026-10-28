@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageOps
 from tools.t3_p0p1 import read, write, sha, csv_write
-from tools.t3_p0p1_review import sources
+from tools.t3_p0p1_review import sources, METRICS, paired_stats, holm
 
 
 def closeout(project):
@@ -20,6 +20,19 @@ def closeout(project):
     for folder in ['tables','code']:
         shutil.copytree(server/folder,root/folder,dirs_exist_ok=True)
     shutil.copy2(__file__,root/'code/tools'/Path(__file__).name)
+    # 外部统一表的LPIPS与旧P0有微小数值差异，配对统计也明确使用同一次重算。
+    data={a:{p.stem:read(p) for p in (server/'metrics'/a/'original').glob('*.json')}
+          for a in ['B','T1','T2','C','T3']}
+    contrasts=[]
+    for baseline in ['B','T1','T2','C']:
+        for metric,direction in METRICS.items():
+            ids=sorted(data['T3']);assert set(ids)==set(data[baseline]) and len(ids)==96
+            values=[data['T3'][i][metric]-data[baseline][i][metric] for i in ids]
+            contrasts.append(dict(baseline=baseline,metric=metric,favorable_direction=direction,
+                protocol='uniform CUDA float32; TF32 disabled; retrospective development',
+                **paired_stats(values,baseline+'/'+metric)))
+    for family in [[r for r in contrasts if r['baseline']!='C'],[r for r in contrasts if r['baseline']=='C']]:holm(family)
+    csv_write(root/'tables/internal_uniform_paired_statistics.csv',contrasts)
     # 从经过哈希验证的真实输入/输出重绘，不合成、不修饰模型图像。
     lookup={row['sha256']:server/row['path'] for row in read(server/'bundle_manifest.json')
             if Path(row['path']).suffix.lower() in ['.png','.jpg','.jpeg']}
