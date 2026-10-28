@@ -147,6 +147,32 @@ def smoke():
     write(EXPERIMENT/'lots/smoke/status.json',status)
 
 
+def audit():
+    """保存真实准备状态与失败证据，不把下载失败称为模型任务不兼容。"""
+    mirror=EXPERIMENT/'lots'
+    errors={p.name:read(p) for p in sorted((OUT/'asset_errors').glob('*.json'))}
+    assets=read(PROJECT/'assets.json') if (PROJECT/'assets.json').is_file() else None
+    smoke_status=read(OUT/'smoke/status.json') if (OUT/'smoke/status.json').is_file() else None
+    status=dict(upstream=read(PROJECT/'UPSTREAM.json'),
+        reproduction_commit=subprocess.check_output(['git','-C',str(PROJECT),'rev-parse','HEAD'],text=True).strip(),
+        project_server=str(PROJECT),project_local='F:/fuxian/LOTS',
+        state='SMOKE_AWAITS_TASK_REVIEW' if smoke_status else 'ASSETS_READY_SMOKE_NOT_RUN' if assets else 'NOT_REPRODUCED_ASSET_DOWNLOAD_FAILED',
+        official_assets_complete=bool(assets),actual_smoke_images=smoke_status.get('images',0) if smoke_status else 0,
+        task_compatibility='not assessed without outputs',reference_margin_eligible=False,
+        network_changed=False,training=0,errors=errors,
+        limitation='asset access failure is an infrastructure result; it does not show that LOTS is incompatible or inferior')
+    write(OUT/'candidate_status.json',status);write(mirror/'candidate_status.json',status)
+    for name in ['run_experiment.py','run_experiment.sbatch','UPSTREAM.json','LICENSE']:
+        destination=mirror/'code'/name;destination.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(PROJECT/name,destination)
+    for folder,source in [('logs',PROJECT/'logs'),('asset_errors',OUT/'asset_errors')]:
+        for path in source.glob('*'):
+            if path.is_file():
+                destination=mirror/folder/path.name;destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,destination)
+    if assets:write(mirror/'assets_provenance.json',assets)
+    print('LOTS_AUDIT',status['state'],status['actual_smoke_images'],flush=True)
+
+
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit'])
     args=parser.parse_args();globals()[args.action]()
