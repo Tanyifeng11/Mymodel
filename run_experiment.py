@@ -72,6 +72,18 @@ def download():
       'dino':('facebook/dinov2-small',None,['config.json','preprocessor_config.json','model.safetensors']),
     }
     for name,(repo,revision,patterns) in specs.items():
+        if name=='adapter':
+            # 已有官方冻结revision与文件清单，无需先访问可能超时的模型信息API。
+            local=target/'assets'/name
+            for filename in ['ckpts/lots/lots.bin','ckpts/lots/pair_former_config.json']:
+                retry(lambda:hf_hub_download(repo,filename,revision=revision,local_dir=str(local)),
+                      'adapter_'+Path(filename).name)
+            files={str(path.relative_to(local)):dict(size=path.stat().st_size,sha256=sha(path))
+                   for path in local.rglob('*') if path.is_file() and '.cache' not in path.parts}
+            assets[name]=dict(repository=repo,revision=revision,path=str(local),files=files)
+            write(target/'assets_progress.json',assets)
+            print('LOTS_ASSET_READY',name,revision,len(files),flush=True)
+            continue
         info=retry(lambda:api.model_info(repo,revision=revision,timeout=30),name+'_metadata')
         if name=='dino':
             available={item.rfilename for item in info.siblings}
