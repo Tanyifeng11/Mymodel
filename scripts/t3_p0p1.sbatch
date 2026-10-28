@@ -7,6 +7,7 @@ export PYTHONPATH="$PWD:$PWD/tools"
 export PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false WANDB_MODE=disabled
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export PYTHONDONTWRITEBYTECODE=1
 case "$1" in
   generate)
     shift
@@ -15,10 +16,9 @@ case "$1" in
     fi
     python -m tools.t3_p0p1_generate "$@" ;;
   lots_fetch)
-    unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
-    /share/home/u2515283058/.conda/envs/texfusion-dit/bin/python -m tools.t3_p0p1_lots fetch ;;
+    bash /share/home/u2515283058/LOTS/run_experiment.sbatch fetch ;;
   lots_smoke)
-    "$RUN/lots_env/bin/python" -m tools.t3_p0p1_lots smoke ;;
+    bash /share/home/u2515283058/LOTS/run_experiment.sbatch smoke ;;
   review) python -m tools.t3_p0p1_review --project /share/home/u2515283058/Mymodel ;;
   human) python -m tools.t3_p0p1_human --project /share/home/u2515283058/Mymodel ;;
   evaluate) shift; python -m tools.t3_p0p1_evaluate "$@" ;;
