@@ -91,10 +91,14 @@ def audit():
                  and 'source' not in p.relative_to(base).parts]
         result['sources'][name] = [file_info(p) for p in sorted(paths)]
     bf = PROJECT.parent/'BF-Fashion-'
-    control = PROJECT.parent/'control_ip'
+    control = PROJECT.parent/'cn_ipa_repro_20261022'
     for name, repo in [('BF-Fashion', bf), ('control_ip', control)]:
-        entry = dict(path=str(repo), git=command(['git', 'rev-parse', 'HEAD'], repo),
-                     status=command(['git', 'status', '--short'], repo))
+        entry = dict(path=str(repo), exists=repo.is_dir())
+        if not repo.is_dir():
+            result[name] = entry
+            continue
+        gitroot = repo if (repo/'.git').exists() else repo/'source'
+        entry.update(git=command(['git', 'rev-parse', 'HEAD'], gitroot) if gitroot.exists() else None)
         candidates = list(repo.glob('logs/*/checkpoints/last.ckpt')) if name == 'BF-Fashion' else []
         entry['checkpoints'] = [file_info(path) for path in sorted(candidates)]
         entry['training_configs'] = [str(p) for p in sorted(repo.glob('logs/*/configs/*project.yaml'))]
@@ -102,8 +106,9 @@ def audit():
                                        ['output', 'output_eval', 'eval_output', 'cn_ipa']]
         if name == 'control_ip':
             entry['selection_files'] = [dict(file_info(p), content=read(p)) for p in
-                sorted(repo.glob('output_eval/**/selection/*checkpoint.json'))]
-            entry['candidate_roots'] = [str(p) for p in repo.glob('output_eval/*') if p.is_dir()]
+                sorted(repo.glob('selection/*checkpoint.json'))]
+            entry['frozen_final_choice'] = read(repo/'selection/frozen_final_choice.json')
+            entry['candidate_roots'] = [str(p) for p in repo.iterdir() if p.is_dir()]
         result[name] = entry
     result['conda_environments'] = command(['bash', '-lc', 'ls -1 /share/home/u2515283058/.conda/envs'])
     write(ROOT/'audit/server_inventory.json', result)
