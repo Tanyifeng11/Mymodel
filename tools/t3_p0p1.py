@@ -223,8 +223,34 @@ def assets():
     external_audit()
 
 
+def release_smoke():
+    """实际查看四例图像后放行；无新增调参、无真人评分。"""
+    cases=['154724802','179331228','192397990','203375013']
+    checks=[]
+    for arm in ['BF-Fashion','ControlNet+IP-Adapter']:
+        for identity in cases:
+            first=ROOT/'outputs'/arm/'original'/(identity+'.png')
+            second=ROOT/'outputs'/arm/'swapped'/(identity+'.png')
+            a,b=read(first.with_suffix('.json')),read(second.with_suffix('.json'))
+            assert sha(first)==a['output_sha256'] and sha(second)==b['output_sha256']
+            assert a['initial_latent_sha256']==b['initial_latent_sha256']
+            assert a['input_sketch_sha256']==b['input_sketch_sha256']
+            assert not a['GT_used_in_inference'] and not b['GT_used_in_inference']
+            checks.append(dict(arm=arm,id=identity,old_sha256=sha(first),new_sha256=sha(second)))
+    notes={
+      '154724802':'两外部方法均能转向粉色；存在领口或轮廓差异，CN背景偏灰。',
+      '179331228':'包袋而非纯服装样本；两方法均呈黄色响应，不能据此代表纹样保真。',
+      '192397990':'BF变化较细微，CN出现夸张花纹；T3也出现较大领型变化，全部保留。',
+      '203375013':'BF新旧图差别较小；CN原图存在明显背景块状伪影，保留作失败案例。'}
+    write(ROOT/'protocol/external_smoke_release.json',dict(passed=True,checks=checks,reviewer='AI actual image review',
+        human_reviewers=0,case_notes=notes,task_compatible='standalone garment/accessory outputs',
+        restrictions='background and motif failures remain; release only validates runnable inputs and output task, not quality superiority',
+        hyperparameter_changes=0,formal_outputs_per_model=128,original=96,swapped=32))
+    print('EXTERNAL_SMOKE_RELEASED',flush=True)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['audit','prepare','external_audit','assets'])
+    parser.add_argument('action', choices=['audit','prepare','external_audit','assets','release_smoke'])
     args = parser.parse_args()
     globals()[args.action]()

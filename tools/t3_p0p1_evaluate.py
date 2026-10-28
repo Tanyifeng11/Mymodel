@@ -88,4 +88,6 @@ def evaluate(arm):
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('arm');args=parser.parse_args();evaluate(args.arm)
+    parser=argparse.ArgumentParser();parser.add_argument('arm',nargs='+');args=parser.parse_args()
+    for arm in args.arm:
+        evaluate(arm)
