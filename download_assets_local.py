@@ -13,6 +13,42 @@ TRANSFER=ROOT/'transfer'
 LOCK=threading.Lock()
 
 
+def ranged_download(url,partial,total):
+    """官方HTTP Range并发续传；只在全部拼接后按官方整体SHA验收。"""
+    folder=partial.parent/(partial.name+'.ranges');folder.mkdir(exist_ok=True)
+    prefix=folder/'prefix.bin'
+    if not (folder/'plan.json').exists():
+        if partial.exists():partial.replace(prefix)
+        offset=prefix.stat().st_size if prefix.exists() else 0
+        (folder/'plan.json').write_text(json.dumps(dict(prefix=offset)))
+    offset=json.loads((folder/'plan.json').read_text())['prefix']
+    ranges=[(start,min(start+128*1024*1024,total)-1) for start in range(offset,total,128*1024*1024)]
+    def segment(bounds):
+        start,end=bounds;path=folder/f'{start}-{end}.bin';size=end-start+1
+        for attempt in range(1,9):
+            have=path.stat().st_size if path.exists() else 0
+            if have==size:return path
+            try:
+                with requests.get(url,headers={'Range':f'bytes={start+have}-{end}'},stream=True,timeout=(30,60)) as response:
+                    response.raise_for_status()
+                    assert response.status_code==206 and response.headers.get('Content-Range')==f'bytes {start+have}-{end}/{total}'
+                    with path.open('ab') as out:
+                        for chunk in response.iter_content(4*1024*1024):out.write(chunk)
+                assert path.stat().st_size==size
+                with LOCK:print('RANGE_READY',partial.name,start,end,flush=True)
+                return path
+            except Exception as error:
+                with LOCK:print('RANGE_RETRY',partial.name,start,attempt,type(error).__name__,flush=True)
+                if attempt==8:raise
+                time.sleep(10)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6 if total>3*1024**3 else 3) as pool:
+        chunks=list(pool.map(segment,ranges))
+    with partial.open('wb') as out:
+        for path in ([prefix] if offset else [])+chunks:
+            with path.open('rb') as stream:
+                while block:=stream.read(8*1024*1024):out.write(block)
+
+
 def sha(path):
     with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
@@ -28,6 +64,12 @@ def download(group,asset,row):
     if target.is_file() and verify(target):return dict(path=str(target.relative_to(ROOT)),bytes=row['size'],sha256=sha(target))
     partial=target.with_name(target.name+'.part')
     url=f"https://huggingface.co/{asset['repository']}/resolve/{asset['revision']}/{name}"
+    if row['size']>512*1024*1024:
+        ranged_download(url,partial,row['size'])
+        assert verify(partial),('OFFICIAL_HASH_OR_SIZE_MISMATCH',name)
+        partial.replace(target)
+        with LOCK:print('VERIFIED',group,name,row['size'],flush=True)
+        return dict(path=str(target.relative_to(ROOT)),bytes=row['size'],sha256=sha(target))
     for attempt in range(1,9):
         try:
             offset=partial.stat().st_size if partial.exists() else 0

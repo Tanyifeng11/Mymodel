@@ -191,6 +191,16 @@ def import_assets():
     print('IMPORTED_OFFICIAL_ASSETS_COMPLETE',len(expected),flush=True)
 
 
+def environment():
+    import torch,transformers,diffusers,huggingface_hub
+    sys.path.insert(0,str(PROJECT/'src'))
+    from lots.lots_pipeline import LOTSPipeline
+    info=dict(python=sys.version,torch=torch.__version__,transformers=transformers.__version__,
+        diffusers=diffusers.__version__,huggingface_hub=huggingface_hub.__version__,
+        official_pipeline_imported=LOTSPipeline.__name__,cuda_available=torch.cuda.is_available())
+    write(OUT/'runtime_environment.json',info);print('ENVIRONMENT_READY',info,flush=True)
+
+
 def audit():
     """保存真实准备状态与失败证据，不把下载失败称为模型任务不兼容。"""
     mirror=EXPERIMENT/'lots'
@@ -218,5 +228,5 @@ def audit():
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit','import_assets'])
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['fetch','download','smoke','audit','import_assets','environment'])
     args=parser.parse_args();globals()[args.action]()
