@@ -5,6 +5,54 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from tools.t3_p0p1 import csv_write,sha,read as read_json
+from tools.pattern_fidelity_run import resolve,SERVER
+
+
+def readable_manifests(project,root,server):
+    outputs=read_json(server/'manifests/outputs.json');pairs={};reference_patches=[];expanded=[];legacy=[]
+    cases={(r['split'],r['id']):r for r in read_json(server/'manifests/identities.json')}
+    for (split,identity),case in cases.items():
+        pairs[split,identity]=dict(split=split,identity_id=identity,reference_old_path=case['old'],reference_old_sha256=case['old_sha256'],reference_new_path=case['new'],reference_new_sha256=case['new_sha256'])
+        for role in ['old','new']:
+            strip=server/'crops/reference_patches'/split/(identity+'_'+role+'.png')
+            for n,(y,x) in enumerate((y,x) for y in [0,149,299,448] for x in [0,107,213,320]):
+                reference_patches.append(dict(split=split,identity_id=identity,reference_condition=role,strip_path=str(strip),strip_sha256=sha(strip),patch_index=n,x=x,y=y,size=64,canvas='OpenCV RGB + LANCZOS384x512'))
+    cache={}
+    for item in outputs:
+        meta=item['metadata_old'];model=item['model_id'];split=item['split'];identity=item['identity_id']
+        row={k:v for k,v in item.items() if not k.startswith('metadata_')}
+        row.update(resolution=json.dumps(meta.get('native_size',[384,512])),evaluation_resolution='384x512',
+            sampler=meta.get('sampler','DDIM; prior frozen protocol'),inference_steps=meta.get('steps',50),
+            guidance_scales=json.dumps({k:meta[k] for k in ['cfg','cn_scale','ip_scale','scale_1','scale_2'] if k in meta}) if model in ['BF-Fashion','ControlNet+IP-Adapter'] else 'CFG7; sketch0.6; reference1 (prior frozen protocol)')
+        expanded.append(row)
+        if split=='P2b_swap32':path=resolve(project,SERVER/'output_eval/t3_p0_p1_20261028/metrics'/model/'per_image.csv')
+        else:
+            arm={'T3-no-body':'T3_no_body_s42','T3-no-rest':'T3_no_rest_s42'}.get(model,model)
+            folder='t3_reference_response_20261027'+('/exploratory_extension_20261027' if model.startswith('T3-no') else '')
+            path=resolve(project,SERVER/'output_eval'/folder/'metrics'/arm/'per_identity.csv')
+        if path not in cache:cache[path]=(rows(path),sha(path))
+        data,digest=cache[path]
+        for old in data:
+            if old.get('id',old.get('identity'))!=identity:continue
+            condition=old.get('condition',old.get('stage'))
+            if condition not in ['original','swapped']:continue
+            role='old' if condition=='original' else 'new'
+            assert old['output_sha256']==item['output_'+role+'_sha256']
+            legacy.append(dict(split=split,identity_id=identity,model=model,condition=condition,output_sha256=old['output_sha256'],
+                legacy_color_margin=old.get('color_margin'),legacy_dists_margin=old.get('dists_margin',old.get('margin')),
+                source=str(path),source_sha256=digest,scope='legacy full-garment color and90%-occupancy DISTS; not pooled with new strict-body metrics'))
+    assert len(legacy)==1472
+    csv_write(root/'manifests/existing_outputs.csv',expanded)
+    csv_write(root/'manifests/reference_pairs.csv',list(pairs.values()))
+    csv_write(root/'manifests/reference_patches.csv',reference_patches)
+    generated=[]
+    for path in (server/'manifests').glob('generated_patches_*.csv'):generated.extend(rows(path))
+    csv_write(root/'manifests/generated_body_patches.csv',generated)
+    csv_write(root/'metrics/legacy_color_dists_metrics.csv',legacy)
+    masks=rows(server/'manifests/mask_manifest.csv')
+    for row in masks:row.update(mask_confidence=None,confidence_note='no calibrated numerical confidence; fixed sketch-only source; area/patch validity and visual defects reported')
+    csv_write(root/'manifests/mask_manifest.csv',masks)
 
 
 def rows(path):
@@ -20,6 +68,7 @@ def report(project):
     def number(value):return 'N/A' if value in ['',None] else f'{float(value):.6f}'
     summary=read(server/'report/analysis_summary.json');release=summary['release'];integrity=read(root/'audit/final_download_integrity.json')
     assert integrity['passed']
+    readable_manifests(project,root,server)
     means={(r['split'],r['model'],r['metric']):r for r in rows(server/'statistics/model_means.csv')}
     stats=rows(server/'statistics/paired_statistics.csv');safety=rows(server/'statistics/structure_safety.csv')
     def mean_cell(split,arm,metric):
@@ -31,6 +80,12 @@ def report(project):
     supplement=means_table('viewed128',['C','T3','T3-no-body','T3-no-rest'])
     selected=[r for r in stats if r['split']=='P2b_swap32' and r['baseline'] in ['B','T1','T2'] and r['subset']=='all_valid' and r['metric'] in ['gray_fft_new','dists_gray_margin','color_margin']]
     paired=table(['T3−对照','指标','配对n','均值差','95% CI','Holm p'],[[r['baseline'],r['metric'],r['n'],number(r['delta']),('['+number(r['ci_low'])+', '+number(r['ci_high'])+']') if r['ci_low'] else 'N/A',number(r['p_holm'])] for r in selected])
+    extra=[r for r in stats if r['split']=='viewed128' and r['subset']=='all_valid' and ((r['baseline']=='C' and r['metric'] in ['orientation_angle_new','dists_gray_margin']) or (r['baseline'].startswith('T3-no') and r['metric'] in ['dists_rgb_margin','dists_gray_margin','iou','leak']))]
+    extra_table=table(['128身份 / T3−对照','指标','配对n','均值差','95% CI','预定补充族p'],[[r['baseline'],r['metric'],r['n'],number(r['delta']),('['+number(r['ci_low'])+', '+number(r['ci_high'])+']') if r['ci_low'] else 'N/A',number(r['p_holm'])] for r in extra])
+    significant=[r for r in stats if r['family']=='secondary66' and r['p_holm'] and float(r['p_holm'])<.05]
+    significant_table=table(['主要内部次要族 / 对照','指标','n','T3−对照','Holm p'],[[r['baseline'],r['metric'],r['n'],number(r['delta']),number(r['p_holm'])] for r in significant]) if significant else '本次主要内部次要族没有通过0.05的项目。'
+    extra_path=server/'figures/structure_regression_supplement_posthoc.png'
+    extra_link=link('128身份结果后结构权衡诊断',extra_path) if extra_path.exists() else '该规则未检索到可展示的128身份候选，未制造案例'
     coverage=table(['参考新纹样类别','32身份','128身份'],[[k,release['reference_only_counts']['P2b_swap32']['new_reference_categories'][k],release['reference_only_counts']['viewed128']['new_reference_categories'][k]] for k in release['reference_only_counts']['P2b_swap32']['new_reference_categories']])
     primary=table(['数据组','身份','严格内部patch有效','冻结主终点有效'],[[split,r['identities'],r['body_valid'],r['primary_eligible']] for split,r in release['reference_only_counts'].items()])
     grouped={}
@@ -61,6 +116,8 @@ def report(project):
 
 {link('固定mask与patch清单',server/'manifests/mask_manifest.csv')}、{link('mask/patch实际QA',server/'figures/mask_patch_QA.png')}和{link('已有输出及哈希清单',server/'manifests/existing_outputs.csv')}可追溯输入、checkpoint、训练seed、推理、旧新输出和mask哈希。结构/背景代理仍按历史代码评价完整图像；GT只用于其评价，未用于本轮生成或纹样mask选择。
 
+本地另有包含原生分辨率/采样器/步数的{link('规范输出清单',root/'manifests/existing_outputs.csv')}、{link('旧新参考配对',root/'manifests/reference_pairs.csv')}、{link('参考patch坐标',root/'manifests/reference_patches.csv')}和{link('生成body patch清单',root/'manifests/generated_body_patches.csv')}。mask未校准数值置信度，记N/A；零内部patch的缺陷未人工修补或按模型效果删除。
+
 ## 2. 指标定义和验证
 
 颜色采用固定Lab8×8×8直方图JS距离；Margin为同一新条件输出到旧参考距离减新参考距离。DISTS使用冻结官方VGG16及权重，对固定patch集做对称最近邻聚合，同时报告RGB与统一亮度归一化灰度视图。灰度处理为Rec.709亮度减均值、除以max(std,2/255)，乘0.18加0.5并clip至[0,1]，复制三通道；没有按模型调色或锐化。
@@ -72,6 +129,8 @@ def report(project):
 合成条纹8/16像素及0°/45°/90°方向正控通过；相同图频谱距离为0，旋转90°和周期翻倍能被区分，常量图不产生虚假零距离。{link('合成正控',server/'audit/synthetic_controls.json')}、{link('参考裁剪/亮度/平移/模糊敏感性',server/'audit/reference_sensitivity.csv')}、{link('mask腐蚀与48/64/96/128尺寸可用性',server/'audit/mask_patch_sensitivity.csv')}、{link('FFT与自相关QA',server/'figures/fft_autocorrelation_QA.png')}均保留。敏感性分析不用于事后改主规则；正控通过也不等于指标已被人类感知验证。
 
 STSIM未取得已核验且许可明确的2013等价实现，按可选指标记N/A，未拿SSIM替代；无可靠纹样分类器/OCR，未制造花卉、文字或logo身份准确率。{link('STSIM状态表',server/'metrics/stsim_metrics.csv')}与{link('局部语义指标状态表',server/'metrics/motif_metrics.csv')}明确原因。
+
+{link('旧颜色Margin与DISTS逐图保留表',root/'metrics/legacy_color_dists_metrics.csv')}另外保留1472条与输出SHA匹配的历史记录；它们沿用旧区域与定义，没有被新Lab直方图或严格body结果覆盖。
 
 ## 3. 描述性结果：均值（有效身份n）
 
@@ -88,6 +147,16 @@ STSIM未取得已核验且许可明确的2013等价实现，按可选指标记N/
 以身份为单位，配对bootstrap与sign-flip各10000次。CI为未校正描述区间；冻结主终点3项Holm但有效n=0，未生成主检验p值。主要内部其余3对照×22端点成66项Holm族，包含不适用端点的预定族规模；C、两个外部模型和两个消融按各自预定端点族分别处理。所有结果是单训练seed与已查看数据上的探索，未将patch当独立样本。
 
 {paired}
+频谱次要比较只有4个适用身份，不能因一个未校正bootstrap区间未跨0就宣称显著或稳定。主要内部的灰度DISTS Margin未得到稳定优势；新Lab颜色响应也不能替代纹样证明。
+
+主要内部66项次要家族中通过0.05的项目如下；背景代理改善仍不构成纹样保真度证明：
+
+{significant_table}
+
+128身份的预定补充比较：
+
+{extra_table}
+相对C的方向角误差可有探索性正向信号，但样本小，且C补充族按端点单项处理，没有跨全部补充指标校正，不能等同主要内部家族验证。消融也只代表已查看128身份和seed42；RGB与灰度结果、结构保护需共同解释，不能挑有利的一列。
 全量{link('配对统计',server/'statistics/paired_statistics.csv')}还包括中位数差、有效n和随机种子；{link('类别分层统计',server/'statistics/category_stratified_statistics.csv')}按8类×3对照×22端点统一校正，n<2不作检验。类别小样本不能支持强类别结论。{link('配对效果与CI图',server/'figures/paired_effects.png')}保持各指标自己的量纲。
 
 结构保护沿用历史诊断界限IoU0.010、EdgeF1 0.020、Leak0.005，对旧新条件共6端点给Bonferroni单侧界；这是已查看样本上的补充诊断，不是新的确认门槛成功。
@@ -100,6 +169,8 @@ STSIM未取得已核验且许可明确的2013等价实现，按可选指标记N/
 {link('普通输入哈希4例',server/'figures/ordinary_hash4.png')}、{link('外部普通面板',server/'figures/external_/ordinary_hash4.png')}显示固定草图、旧新参考及各方法旧新输出。另按预先写入程序的规则选取频谱改善、颜色响应但灰度纹理失败、结构退化候选，属于结果后选择的诊断面板，不能当作无偏总体展示。若没有满足条件的案例，不制造该类成功或失败。
 
 本轮实际AI图审结论：{visual['summary']}
+
+主32身份的冻结规则未找到“频谱改善且结构退化”候选；因此另作128身份补充检索：{extra_link}，按T3相对C灰度DISTS新参考距离更低、同时IoU下降超过0.01或Leak上升超过0.005筛选。该补充检索不改变任何统计终点，也不当作无偏样本。
 
 逐图观察与局限见{link('实际图审记录',root/'audit/visual_review.json')}，面板与文件SHA见{link('图源清单',server/'figures_manifest.csv')}；每个面板都可对应逐身份指标。AI观察不是人类盲评，不能替代应用价值验证。
 
@@ -118,6 +189,8 @@ STSIM未取得已核验且许可明确的2013等价实现，按可选指标记N/
 正式包{integrity['bytes']}字节，{integrity['members']}成员，SHA256=`{integrity['sha256']}`；{integrity['verified_files']}项文件大小与SHA均通过。准备包SHA256=`0c6630e8efab8fb93e03b95681fbf7b68903b606fe3ada41656264eda22dc76c`，1002项文件也全部通过。原有P0/P1、128确认和消融包未覆盖。
 
 评价冻结提交`{release['commit'][:7]}`、评价文件SHA=`{release['evaluator_sha256']}`；完整版本和环境见{link('run manifest',server/'run_manifest.json')}，本地报告代码提交`{commit[:7]}`。代码部署沿用本地提交/推送、服务器git pull；不采用其他代码上传路径。{link('冻结协议',server/'protocol')}、{link('评价代码快照',server/'code')}和{link('原包下载校验',root/'audit/final_download_integrity.json')}提供复跑入口。
+
+首版统计包另行保留；之后仅固定身份排序以保证随机抽样可复跑，并修正QA草图默认伪彩显示，未重跑GPU或改变指标/样本/检验族。{link('实现修正记录',server/'audit/implementation_corrections.json')}和{link('本地复跑核验',root/'audit/statistics_repeatability.json')}保留证据。
 
 文献用于设计背景，本文固定JS频谱诊断并非复现频域论文的训练损失：[Liang等，CGF2023](https://doi.org/10.1111/cgf.14938)、[STSIM原文](https://users.eecs.northwestern.edu/~pappas/papers/zujovic_tip13.pdf)、[DISTS官方代码](https://github.com/dingkeyan93/DISTS)、[纹理特征评价局限](https://doi.org/10.1109/TPAMI.2020.2964533)。
 '''
