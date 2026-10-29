@@ -17,7 +17,7 @@ PROTOCOL = dict(version='PATTERN-FIDELITY-20261029-v1', new_training=0,
         selection='row-major candidate grid then equally spaced rounded indices; no output inspected'),
     reference='OpenCV RGB decode; LANCZOS384x512; fixed4x4 grid64; apparent image scale, not physical textile scale',
     orientation=dict(bins=24,gradient_sigma=1,tensor_sigma=2,angle='line tangent modulo180',
-        confidence_min=.35,gray_std_min=2/255.,histogram='energy*coherence weighted; JS base2'),
+        confidence_min=.35,gray_std_min=2/255.,histogram='energy*coherence weighted; JS base2; angle from unbinned pixel circular moment'),
     spectrum=dict(size=64,window='2D Hann',demean=True,power=True,DC_radius_removed=1,
         smoothing_sigma=1,distance='JS base2 [0,1]',views=['RGB channel-summed power','luminance-normalized gray']),
     periodicity=dict(lags=[3,31],autocorrelation_min=.2,prominence_min=.1,
@@ -70,8 +70,8 @@ def direction(rgb):
     weight=(energy*coherence)[4:-4,4:-4];theta=angle[4:-4,4:-4]
     hist=np.histogram(theta,bins=24,range=(0,np.pi),weights=weight)[0]
     if y.std()<2/255. or hist.sum()<1e-12:return dict(hist=None,angle=None,confidence=0.)
-    hist=hist/hist.sum();centers=(np.arange(24)+.5)*np.pi/24
-    moment=np.sum(hist*np.exp(2j*centers));confidence=abs(moment)
+    hist=hist/hist.sum()
+    moment=np.sum(weight*np.exp(2j*theta))/weight.sum();confidence=abs(moment)
     return dict(hist=hist.astype('float32'),angle=float(np.angle(moment)/2%np.pi*180/np.pi),confidence=float(confidence))
 
 
