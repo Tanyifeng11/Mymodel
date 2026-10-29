@@ -170,7 +170,8 @@ def evaluate(project,split,models):
                     for role in ['old','new']:
                         rec['orientation_confidence_ref_'+role]=float(np.median([d['orientation']['confidence'] for d in refdesc[role]]))
                         rec['period_confidence_ref_'+role]=float(np.median([d['period']['confidence'] for d in refdesc[role]]))
-                        comparison=compare(desc,refdesc[role],regular,directional)
+                        role_regular=annotation[case[role+'_sha256']]['category'] in PROTOCOL['periodicity']['classes']
+                        comparison=compare(desc,refdesc[role],role_regular,role_regular)
                         for key,value in comparison.items():rec[key+'_'+role]=value
                         for view in ['rgb','gray']:rec['dists_'+view+'_'+role]=response.patch_distance(model,feature[view],ref_features[role][view])
                         rec['color_'+role]=js(hist,refhist[role])
