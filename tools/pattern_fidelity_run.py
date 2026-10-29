@@ -158,9 +158,22 @@ def package(project):
     import tarfile
     root=project/'output_eval'/NAME
     code=root/'code';code.mkdir(exist_ok=True)
-    for name in ['tools/pattern_fidelity_core.py','tools/pattern_fidelity_run.py','scripts/pattern_fidelity.sbatch']:
+    names=[p.relative_to(SOURCE).as_posix() for p in (SOURCE/'tools').glob('pattern_fidelity_*.py')]+['tools/pattern_reference_labels.csv','scripts/pattern_fidelity.sbatch','eval/metrics.py','eval/eval_utils.py','garment_mask_utils.py']
+    for name in names:
         dest=code/name;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(SOURCE/name,dest)
-    paths=[p for p in root.rglob('*') if p.is_file() and p.name not in ['bundle_manifest.json','review_results.tar.gz','bundle_info.json'] and 'source' not in p.relative_to(root).parts]
+    ids=sorted({m.group(1) for p in (root/'logs').glob('*.log') if (m:=__import__('re').search(r'_(\d+)\.log$',p.name))})
+    raw=subprocess.check_output(['sacct','-X','-j',','.join(ids),'--parsable2','--noheader','--format=JobIDRaw,JobName,State,ElapsedRaw,AllocTRES,ExitCode,Start,End,NodeList'],text=True)
+    (root/'audit/sacct_raw.txt').write_text(raw,encoding='utf-8')
+    ledger=[]
+    for line in raw.splitlines():
+        job,name,state,seconds,tres,exitcode,start,end,node=line.split('|')[:9]
+        match=__import__('re').search(r'gres/gpu=(\d+)',tres);gpus=int(match.group(1)) if match else 0
+        ledger.append(dict(job_id=job,name=name,state=state,elapsed_seconds=int(seconds),allocated_gpus=gpus,gpu_hours=int(seconds)*gpus/3600,allocation=tres,exit_code=exitcode,start=start,end=end,node=node))
+    csv_write(root/'resource_ledger.csv',ledger)
+    write(root/'run_manifest.json',dict(commit=subprocess.check_output(['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip(),files={name:sha(SOURCE/name) for name in names},
+        initial_code=read(root/'protocol/initial_code.json'),evaluation_release=read(root/'protocol/evaluation_release.json') if (root/'protocol/evaluation_release.json').exists() else None,
+        new_generation=0,new_training=0,analysis_complete=(root/'report/analysis_summary.json').is_file(),preparation_archive='archives/preparation_review.tar.gz retained separately; not nested in final bundle'))
+    paths=[p for p in root.rglob('*') if p.is_file() and p.name not in ['bundle_manifest.json','bundle_info.json'] and not p.name.endswith(('.tar.gz','.tgz')) and 'source' not in p.relative_to(root).parts]
     write(root/'bundle_manifest.json',[dict(path=p.relative_to(root).as_posix(),sha256=sha(p),bytes=p.stat().st_size) for p in paths])
     archive=root/'review_results.tar.gz'
     with tarfile.open(archive,'w:gz') as tar:

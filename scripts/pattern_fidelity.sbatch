@@ -6,7 +6,10 @@ export PYTHONPATH="$PWD:$PWD/tools"
 export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled
-if [[ "$1" == "release" || "$1" == "evaluate" ]]; then
+if [[ "$1" == "analyze" ]]; then
+  shift
+  python -m tools.pattern_fidelity_analysis "$@"
+elif [[ "$1" == "release" || "$1" == "evaluate" ]]; then
   python -m tools.pattern_fidelity_evaluate "$@"
 else
   python -m tools.pattern_fidelity_run "$@"
