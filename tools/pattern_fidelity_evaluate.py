@@ -61,6 +61,13 @@ def release(project):
     assert all(annotation[r['reference_sha256']]['category'] in PROTOCOL['category_rules'] for r in refs)
     frozen(root/'pattern_labels/reference_pattern_labels.json',[dict(r,**annotation[r['reference_sha256']]) for r in refs])
     csv_write(root/'pattern_labels/reference_pattern_labels.csv',read(root/'pattern_labels/reference_pattern_labels.json'))
+    gt_sources={r['id']:r['gt'] for r in read(resolve(project,SERVER/'output_eval/t3_p0_p1_20261028/protocol/input_manifest.json')) if r['condition']=='original'}
+    gt_sources.update({r['id']:r['gt'] for r in read(resolve(project,SERVER/'output_eval/t3_reference_response_20261027/splits/confirmation.json'))})
+    gt_assets=[]
+    for case in read(root/'manifests/identities.json'):
+        relative,digest=asset(root,resolve(project,gt_sources[case['id']]))
+        gt_assets.append(dict(split=case['split'],id=case['id'],path=relative,sha256=digest,usage='legacy structure/background evaluation only; not body mask or inference'))
+    frozen(root/'manifests/gt_evaluation_assets.json',gt_assets)
     calibration(root)
     eligibility=[];cache={}
     for case in read(root/'manifests/identities.json'):
@@ -113,7 +120,7 @@ def evaluate(project,split,models):
     root=project/'output_eval'/NAME;release=read(root/'protocol/evaluation_release.json')
     assert release['allow_evaluation'] and sha(SOURCE/'tools/pattern_fidelity_core.py')==release['core_sha256']
     assert sha(Path(__file__))==release['evaluator_sha256']
-    response.ROOT=root
+    response.ROOT=root/'runtime_assets'/split/models[0]
     model=response.load_dists('cuda');sanity=response.sanity(model)
     write(root/'audit'/('DISTS_sanity_'+split+'_'+models[0]+'.json'),sanity)
     torch.set_num_threads(2)
