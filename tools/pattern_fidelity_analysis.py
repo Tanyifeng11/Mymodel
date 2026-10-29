@@ -73,7 +73,7 @@ def scientific_figures(root,contrasts,cases):
     if invalid and invalid not in fixed:fixed.append(invalid)
     fig,axes=plt.subplots(len(fixed),3,figsize=(9,3*len(fixed)),squeeze=False,constrained_layout=True)
     for row,case in enumerate(fixed):
-        axes[row,0].imshow(Image.open(root/case['sketch']));axes[row,0].set_title(case['split']+' '+case['id'],fontsize=8)
+        axes[row,0].imshow(Image.open(root/case['sketch']).convert('RGB'));axes[row,0].set_title(case['split']+' '+case['id'],fontsize=8)
         axes[row,1].imshow(Image.open(root/case['body']),cmap='gray');axes[row,1].set_title('fixed eroded body; n='+str(case['patch_n']),fontsize=8)
         for x,y in case['coords']:axes[row,1].add_patch(Rectangle((x,y),64,64,fill=False,edgecolor='red',lw=1))
         axes[row,2].imshow(Image.open(root/case['new']));axes[row,2].set_title('new reference; not model output',fontsize=8)
@@ -92,7 +92,7 @@ def scientific_figures(root,contrasts,cases):
 
 
 def panel(root,identities,split,kind,lookup,external=False):
-    sources=[];arms=['T3','BF-Fashion','ControlNet+IP-Adapter'] if external else ['B','T1','T2','T3']
+    sources=[];arms=['C','T3','T3-no-body','T3-no-rest'] if split=='viewed128' else ['T3','BF-Fashion','ControlNet+IP-Adapter'] if external else ['B','T1','T2','T3']
     cases={r['id']:r for r in read(root/'manifests/identities.json') if r['split']==split}
     manifest={(r['identity_id'],r['model_id']):r for r in read(root/'manifests/outputs.json') if r['split']==split}
     width=(3+len(arms)*2)*140;canvas=Image.new('RGB',(width,250*len(identities)),'white');draw=ImageDraw.Draw(canvas)
@@ -163,12 +163,12 @@ def analyze(project):
             comp={r['id']:r for r in new if r['split']==split and r['model']==baseline}
             for metric,direction in ENDPOINTS.items():
                 for subset in ['all_valid','primary_eligible'] if metric=='gray_fft_new' else ['all_valid']:
-                    pairs=[(cases[i],comp[i]) for i in cases.keys()&comp.keys() if cases[i].get(metric) is not None and comp[i].get(metric) is not None and (subset!='primary_eligible' or cases[i]['primary_eligible'])]
+                    pairs=[(cases[i],comp[i]) for i in sorted(cases.keys()&comp.keys()) if cases[i].get(metric) is not None and comp[i].get(metric) is not None and (subset!='primary_eligible' or cases[i]['primary_eligible'])]
                     contrasts.append(dict(split=split,baseline=baseline,comparison='T3-'+baseline,metric=metric,favorable_direction=direction,subset=subset,
                         **paired([a[metric]-b[metric] for a,b in pairs],split+baseline+metric+subset)))
                 if split=='P2b_swap32' and baseline in ['B','T1','T2']:
                     for category in PROTOCOL['category_rules']:
-                        pairs=[(cases[i],comp[i]) for i in cases.keys()&comp.keys() if cases[i]['category']==category and cases[i].get(metric) is not None and comp[i].get(metric) is not None]
+                        pairs=[(cases[i],comp[i]) for i in sorted(cases.keys()&comp.keys()) if cases[i]['category']==category and cases[i].get(metric) is not None and comp[i].get(metric) is not None]
                         stratified.append(dict(split=split,baseline=baseline,metric=metric,category=category,favorable_direction=direction,**paired([a[metric]-b[metric] for a,b in pairs],baseline+metric+category)))
     families={}
     for row in contrasts:
@@ -222,6 +222,18 @@ def analyze(project):
         'structure_regression_candidate':sorted([i for i in eligible if delta(i,'gray_fft_new')<0 and ((delta(i,'iou') or 0)<-.01 or (delta(i,'leak') or 0)>.005)],key=lambda i:delta(i,'iou'))[:3]}
     for name,ids in selections.items():
         if ids:provenance+=panel(root,ids,'P2b_swap32',name,index)
+    supplementary=[]
+    for row in new:
+        if row['split']!='viewed128' or row['model']!='T3' or row.get('dists_gray_new') is None:continue
+        control=index['viewed128',row['id'],'C','swapped']
+        if control.get('dists_gray_new') is not None and row['dists_gray_new']<control['dists_gray_new'] and (row['iou']<control['iou']-.01 or row['leak']>control['leak']+.005):
+            supplementary.append((row['iou']-control['iou'],row['id']))
+    extra=[identity for _,identity in sorted(supplementary)[:3]]
+    if extra:provenance+=panel(root,extra,'viewed128','structure_regression_supplement_posthoc',index)
+    write(root/'audit/implementation_corrections.json',dict(sorted_identity_order=True,reason='fixed Monte Carlo index order for exact repeatability; metric definitions, identities, endpoint families unchanged',
+        initial_analysis_commit='fac5ab9',initial_package_retained='archives/analysis_v1_review.tar.gz',
+        sketch_QA='RGB display avoids matplotlib default pseudocolor; no image/metric pixels changed',
+        supplementary_diagnostic=dict(ids=extra,selection='posthoc viewed128 T3 vs C: lower gray DISTS_new with IoU deterioration>.01 or Leak increase>.005; largest IoU losses; diagnostics only; no statistical endpoint changed')))
     csv_write(root/'figures_manifest.csv',provenance)
     scientific_figures(root,contrasts,read(root/'manifests/identities.json'))
     write(root/'report/analysis_summary.json',dict(complete=True,rows=len(records),output_pairs=736,new_generation=0,new_training=0,

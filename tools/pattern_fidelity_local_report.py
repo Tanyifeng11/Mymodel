@@ -12,7 +12,7 @@ def rows(path):
 
 
 def report(project):
-    root=project/'output_eval/pattern_fidelity_eval_20261029';server=root/'server_results'
+    root=project/'output_eval/pattern_fidelity_eval_20261029';server=root/'server_results_final'
     read=lambda p:json.loads(p.read_text(encoding='utf-8-sig'))
     link=lambda label,p:'['+label+']('+p.as_posix()+')'
     def table(header,data):
