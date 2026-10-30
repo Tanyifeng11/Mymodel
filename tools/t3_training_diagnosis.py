@@ -297,7 +297,7 @@ def load_pipe(project, stage):
                 assert all(torch.equal(v, state[k].to(device=v.device, dtype=v.dtype)) for k, v in model.state_dict().items())
                 verification.append(dict(component=record['key'], tensors=len(state), strict=True, device_values_equal=True))
                 del state
-        write(root/'audit'/('loaded_state_'+stage+'_'+os.environ.get('SLURM_JOB_ID', 'local')+'.json'), verification)
+        write(root/'audit'/('loaded_state_'+stage+'_'+os.environ.get('SLURM_JOB_ID', 'local')+'_shard'+os.environ.get('T3_DIAG_SHARD', 'single')+'.json'), verification)
     for model in [pipe.unet, pipe.reference_unet, pipe.vae, pipe.text_encoder, pipe.image_encoder, pipe.bf_texture_conditioner]:
         model.eval().requires_grad_(False)
     pipe.set_layer_group_enabled(True)
@@ -337,7 +337,7 @@ def generate(project, stage, shard=0, shards=1, pipe=None):
         pipe.prepare_latents = audited
         for row in rows:
             path = root/'outputs'/stage/row['condition']/(row['id']+'.png')
-            if path.exists():
+            if path.exists() and path.with_suffix('.json').exists():
                 saved = read(path.with_suffix('.json'))
                 assert saved['output_sha256'] == sha(path)
                 assert saved['initial_latent_sha256'] == row['historical_initial_latent_sha256']
@@ -458,7 +458,8 @@ def worker(project, shard=0, shards=1):
     import torch
     gpu_setup()
     root = project/'output_eval'/NAME
-    write(root/'audit'/('worker_'+os.environ.get('SLURM_JOB_ID', 'local')+'.json'),
+    os.environ['T3_DIAG_SHARD'] = str(shard)
+    write(root/'audit'/('worker_'+os.environ.get('SLURM_JOB_ID', 'local')+'_shard%d.json'%shard),
           dict(shard=shard, shards=shards, runner_sha256=sha(__file__), registry_sha256=sha(root/'protocol/checkpoints.json'),
                commit=subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip(),
                torch=torch.__version__, python=platform.python_version(), gpu=torch.cuda.get_device_name(), new_training=0))
