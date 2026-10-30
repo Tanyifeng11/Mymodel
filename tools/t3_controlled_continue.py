@@ -78,6 +78,9 @@ def train():
     # Slurm批处理环境中的默认设备不能被两个进程共同沿用。
     local_rank=int(os.environ['LOCAL_RANK'])
     previous_device=os.environ.get('ACCELERATE_TORCH_DEVICE')
+    print('LAUNCH_ALLOCATION',dict(host=os.environ.get('HOSTNAME'),nodes=os.environ.get('SLURM_JOB_NUM_NODES'),
+        visible=os.environ.get('CUDA_VISIBLE_DEVICES'),local_rank=local_rank,
+        cuda_count=torch.cuda.device_count()),flush=True)
     assert torch.cuda.device_count()==2 and local_rank in [0,1]
     os.environ['ACCELERATE_TORCH_DEVICE']='cuda:%d'%local_rank
     torch.cuda.set_device(local_rank)

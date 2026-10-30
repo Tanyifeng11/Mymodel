@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --nodes=1
 set -euo pipefail
 cd /share/home/u2515283058/Mymodel/output_eval/t3_p0_p1_20261028/source
 export PATH=/share/home/u2515283058/.conda/envs/Mymodel/bin:$PATH
