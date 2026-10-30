@@ -74,6 +74,16 @@ def prepare():
 
 def train():
     import torch
+    # 显式按启动器LOCAL_RANK绑定设备，再创建Accelerator及任何CUDA上下文。
+    # Slurm批处理环境中的默认设备不能被两个进程共同沿用。
+    local_rank=int(os.environ['LOCAL_RANK'])
+    previous_device=os.environ.get('ACCELERATE_TORCH_DEVICE')
+    assert torch.cuda.device_count()==2 and local_rank in [0,1]
+    os.environ['ACCELERATE_TORCH_DEVICE']='cuda:%d'%local_rank
+    torch.cuda.set_device(local_rank)
+    print('RANK_DEVICE_BINDING',dict(rank=os.environ['RANK'],local_rank=local_rank,
+        current_device=torch.cuda.current_device(),visible=os.environ.get('CUDA_VISIBLE_DEVICES'),
+        previous_accelerate_device=previous_device),flush=True)
     from tools.e2a_sup_train import Hook
     from tools.e2a_attr_runtime import AuditRuntime as OriginalRuntime
     from tools.e2a_sup_common import canonical_environment
