@@ -315,7 +315,7 @@ def gpu_setup():
     torch.backends.cudnn.deterministic = True
 
 
-def generate(project, stage, shard=0, shards=1):
+def generate(project, stage, shard=0, shards=1, pipe=None):
     import time
     import torch
     from PIL import Image
@@ -324,7 +324,8 @@ def generate(project, stage, shard=0, shards=1):
     rows = [r for i, r in enumerate(read(root/'protocol/input_manifest.json')) if i % shards == shard]
     digest = lambda t: hashlib.sha256(t.detach().cpu().numpy().tobytes()).hexdigest()
     with torch.inference_mode():
-        pipe = load_pipe(project, stage)
+        if pipe is None:
+            pipe = load_pipe(project, stage)
         captured = {}
         prepare_latents = pipe.prepare_latents
         def audited(*args, **kwargs):
@@ -364,7 +365,7 @@ def generate(project, stage, shard=0, shards=1):
     write(root/'audit'/('generation_'+stage+'_shard%d.json'%shard), dict(complete=True, n=len(rows), shard=shard, shards=shards))
 
 
-def loss_probe(project, stage, shard=0, shards=1):
+def loss_probe(project, stage, shard=0, shards=1, pipe=None):
     import importlib.util
     import torch
     import torch.nn.functional as F
@@ -378,10 +379,12 @@ def loss_probe(project, stage, shard=0, shards=1):
     spec.loader.exec_module(training)
     probes = read(root/'protocol/loss_probes.json')
     with torch.inference_mode():
-        pipe = load_pipe(project, stage)
+        if pipe is None:
+            pipe = load_pipe(project, stage)
         # 单步监督前向使用训练默认scale=1；生成时的sketch_scale=.6只用于完整采样。
         pipe.set_scale(1.)
         pipe.set_ipa_scale(1.)
+        pipe.set_texture_token_enabled(True)
         dataset = training.JointTextureDataset(str(root/'protocol/loss_probes.json'), pipe.tokenizer,
             image_root='', width=384, height=512, texture_preprocess_mode='plain_resize')
         style_model = training.VGGGramStyleLoss().cuda().eval().requires_grad_(False)
@@ -445,6 +448,19 @@ def loss_probe(project, stage, shard=0, shards=1):
             print('LOSS_PROBE', stage, row['split'], row['id'], flush=True)
     csv_write(root/'loss_probe'/('combined_'+stage+'_shard%d.csv'%shard), results)
     write(root/'audit'/('loss_probe_'+stage+'_shard%d.json'%shard), dict(complete=True, rows=len(results)))
+
+
+def worker(project, shard=0, shards=1):
+    import gc
+    import torch
+    gpu_setup()
+    for stage in ['E1_init', 'T3_u28048', 'T3_final']:
+        pipe = load_pipe(project, stage)
+        generate(project, stage, shard, shards, pipe=pipe)
+        loss_probe(project, stage, shard, shards, pipe=pipe)
+        del pipe
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
 def evaluate(project, stage):
@@ -523,13 +539,15 @@ def evaluate(project, stage):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('action', choices=['logs', 'inventory', 'prepare', 'generate', 'loss_probe', 'evaluate'])
+    p.add_argument('action', choices=['logs', 'inventory', 'prepare', 'generate', 'loss_probe', 'evaluate', 'worker'])
     p.add_argument('--project', type=Path, default=Path('/share/home/u2515283058/Mymodel'))
     p.add_argument('--stage', default='T3_final')
     p.add_argument('--shard', type=int, default=0)
     p.add_argument('--shards', type=int, default=1)
     a = p.parse_args()
-    if a.action in ['generate', 'loss_probe']:
+    if a.action == 'worker':
+        worker(a.project, a.shard, a.shards)
+    elif a.action in ['generate', 'loss_probe']:
         globals()[a.action](a.project, a.stage, a.shard, a.shards)
     elif a.action == 'evaluate':
         evaluate(a.project, a.stage)
