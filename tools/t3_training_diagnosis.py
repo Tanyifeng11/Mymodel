@@ -252,6 +252,8 @@ def prepare(project):
             comparison='fixed-input diagnostic; absolute levels not comparable to historical stochastic/dropout training log'),
         metric_scope='legacy structure/background proxies + RGB/gray body-patch DISTS + Lab histogram; no valid periodicity primary endpoint',
         analysis='identity paired descriptive effects and bootstrap CI; no new confirmatory success claim',
+        comparisons=['T3_final minus E1_init', 'T3_final minus T3_u28048'],
+        bootstrap=dict(samples=10000, seed=301042, order='sorted identity IDs', CI='descriptive paired percentile 95%; no multiplicity claim'),
         checkpoint_limitation='only initialization and two late snapshots; cannot establish early/middle validation trajectory',
         code_commit=subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip())
     write(root/'protocol/config.json', config)
@@ -452,8 +454,14 @@ def loss_probe(project, stage, shard=0, shards=1, pipe=None):
 
 def worker(project, shard=0, shards=1):
     import gc
+    import platform
     import torch
     gpu_setup()
+    root = project/'output_eval'/NAME
+    write(root/'audit'/('worker_'+os.environ.get('SLURM_JOB_ID', 'local')+'.json'),
+          dict(shard=shard, shards=shards, runner_sha256=sha(__file__), registry_sha256=sha(root/'protocol/checkpoints.json'),
+               commit=subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip(),
+               torch=torch.__version__, python=platform.python_version(), gpu=torch.cuda.get_device_name(), new_training=0))
     for stage in ['E1_init', 'T3_u28048', 'T3_final']:
         pipe = load_pipe(project, stage)
         generate(project, stage, shard, shards, pipe=pipe)
