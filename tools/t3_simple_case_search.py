@@ -147,12 +147,18 @@ def generate(arms, cases=None):
     torch.backends.cudnn.allow_tf32 = False
     torch.backends.cudnn.benchmark = False
     commit = subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip()
+    # 记录修复后真正运行的入口；prepare阶段的初版快照继续保留。
+    snapshot = ROOT/'code/runtime'/commit/'t3_simple_case_search.py'
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    if not snapshot.exists():
+        shutil.copy2(__file__, snapshot)
     for arm in arms:
         assert arm in spec['core_models']+spec['supplementary_models']
         audit = dict(arm=arm, rows=len(rows), cases=cases, code_commit=commit, torch=torch.__version__,
                      python=sys.version, gpu=torch.cuda.get_device_name(), runner_sha256=sha(__file__))
         write(ROOT/'audit'/('generation_'+arm+'_'+os.environ.get('SLURM_JOB_ID', 'local')+'.json'), audit)
-        with torch.inference_mode():
+        # BF的历史隔离环境使用旧PyTorch，与原生成程序保持相同no_grad上下文。
+        with torch.no_grad():
             runner = legacy.bf() if arm == 'BF-Fashion' else legacy.cnipa() if arm == 'ControlNet+IP-Adapter' else legacy.internal(arm)
             for index, saved_row in enumerate(rows):
                 row = dict(saved_row)
