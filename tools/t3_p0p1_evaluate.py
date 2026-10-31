@@ -17,7 +17,7 @@ def output_path(arm,row):
 
 
 @torch.inference_mode()
-def evaluate(arm):
+def evaluate(arm, include_swap=False):
     from eval.eval_utils import prepare_evaluation_masks,json_safe
     from eval.metrics import compute_structure_preservation,compute_texture_leakage,compute_texture_color_fidelity
     from tools.e2a_attr_eval import frozen_lpips
@@ -30,7 +30,7 @@ def evaluate(arm):
     torch.backends.cudnn.allow_tf32=False
     torch.backends.cudnn.benchmark=False
     rows=read(ROOT/'protocol/input_manifest.json')
-    if arm in ['E0','E1','LOTS']:
+    if arm=='LOTS' or (arm in ['E0','E1'] and not include_swap):
         rows=[r for r in rows if r['condition']=='original']
     old_protocol=read(SUP/'evaluation/metric_protocol.json')
     assert all(sha(SOURCE/path)==digest for path,digest in old_protocol['evaluation_code'].items())
