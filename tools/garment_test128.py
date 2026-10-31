@@ -42,6 +42,13 @@ def prepare():
     training = {p.stem.split('_')[0] for folder in ['cloth', 'gt']
                 for p in (data/'training'/folder).glob('*') if p.is_file()}
     assert training, '训练编号目录不存在，不可跳过重叠检查'
+    bf_asset = read(shared.OLD/'audit/BF_provenance.json')
+    train_manifest = Path(bf_asset['training_manifest'])
+    assert sha(train_manifest) == bf_asset['training_manifest_sha256']
+    bf_training = {Path(r['cloth']).stem.split('_')[0] for r in read(train_manifest)}
+    training |= bf_training
+    assert sha(bf_asset['checkpoint_path']) == bf_asset['checkpoint_sha256']
+    assert sha(bf_asset['vq_path']) == bf_asset['vq_sha256']
     previous = set()
     previous_audit = []
     for source in spec['prior_manifests']:
@@ -86,6 +93,9 @@ def prepare():
     freeze(ROOT/'protocol/controlled_protocol.json', protocol)
     for relative in ['audit/server_inventory.json', 'audit/BF_provenance.json', 'protocol/cnipa_choice.json']:
         shutil.copy2(shared.OLD/relative, ROOT/relative)
+    bf_asset.update(training_overlap_ids=[], current_test_product_root_overlap=[],
+        current_test_manifest_sha256=sha(ROOT/'protocol/input_manifest.json'))
+    write(ROOT/'audit/BF_provenance.json', bf_asset)
     asset = read(shared.SG_OLD/'audit/assets.json')
     asset.update(runner_commit=subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip(),
         current_test_manifest_sha256=sha(ROOT/'protocol/input_manifest.json'))
