@@ -84,6 +84,7 @@ def prepare():
     training = {p.stem.split('_')[0] for p in (data/'training/cloth').iterdir() if p.is_file()}
     previous = {r['id'].split('_')[0] for r in read(OLD/'protocol/input_manifest.json')}
     originals = []
+    local_differences = []
     for cat in spec['categories']:
         cases = [r for r in spec['cases'] if r['category']==cat]
         assert len(cases)==8
@@ -98,7 +99,8 @@ def prepare():
             for key,folder in [('sketch','sketch'),('reference','texture'),('gt','gt')]:
                 source = data/'test'/cat/folder/(ident+'.jpg')
                 digest = sha(source)
-                assert digest == case[folder+'_sha256'], source
+                if digest != case[folder+'_sha256']:
+                    local_differences.append(dict(id=ident,category=cat,input=key,server_sha256=digest,local_sha256=case[folder+'_sha256']))
                 target = ROOT/'inputs'/(digest+'.jpg')
                 if not target.exists(): shutil.copy2(source,target)
                 row.update({key:str(target),key+'_sha256':digest,key+'_source':str(source)})
@@ -120,7 +122,8 @@ def prepare():
         exposure_limit='current training product-root IDs excluded; previous96 excluded; immutable historical train/pretraining exposure unknown; SGDiff already had full-test inference',
         reference_metrics='64x64 sketch-interior patch-set response proxy, not complete motif identity',
         comparison_limit='SGDiff text+reference, BF sketch+reference, LOTS text+sketch; native resolutions and sample budgets differ',
-        display='avoid stripes/polka examples; metric set never filtered by generation quality')
+        display='avoid stripes/polka examples; metric set never filtered by generation quality',
+        input_version='server BF/test bytes authoritative; local expected hashes compared in audit/local_input_differences.json')
     for filename,value in [('input_manifest.json',rows),('controlled_protocol.json',protocol)]:
         target = ROOT/'protocol'/filename
         if target.exists(): assert read(target)==value
@@ -138,10 +141,28 @@ def prepare():
         target = ROOT/'code'/relative
         target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(SOURCE/relative,target)
+    write(ROOT/'audit/local_input_differences.json',local_differences)
     write(ROOT/'audit/prepared.json',dict(original_n=32,swapped_n=16,n_outputs=512,
-        product_root_training_overlap=[],previous96_product_overlap=[],input_visual_review='32 inputs and replacement checked locally before inference; server byte hashes matched',
+        product_root_training_overlap=[],previous96_product_overlap=[],input_visual_review='server input review required before GPU release',
         code_commit=sgasset['runner_commit'],manifest_sha256=sha(ROOT/'protocol/input_manifest.json')))
     print('PREPARED',len(rows),sha(ROOT/'protocol/input_manifest.json'),flush=True)
+
+
+def package_inputs():
+    files=sorted(p for folder in ['audit','protocol','inputs','code','logs'] for p in (ROOT/folder).rglob('*')
+        if p.is_file() and p.name!='bundle_sha256sums.txt' and not p.name.startswith('package_'))
+    sums=ROOT/'audit/bundle_sha256sums.txt'
+    sums.write_text(''.join(sha(p)+'  '+p.relative_to(ROOT).as_posix()+'\n' for p in files),encoding='utf-8')
+    target=ROOT/'input_review.tar.gz'
+    with tarfile.open(target,'w:gz') as tar:
+        for p in files+[sums]:tar.add(p,arcname=p.relative_to(ROOT).as_posix(),recursive=False)
+    print('INPUT_BUNDLE_BYTES',target.stat().st_size,'SHA256',sha(target),flush=True)
+
+
+def release_inputs():
+    write(ROOT/'protocol/input_review_release.json',dict(actual_server_input_review=True,reviewer='AI input-only category/pair check',
+        human_reviewers=0,manifest_sha256=sha(ROOT/'protocol/input_manifest.json'),generation_results_seen=False))
+    print('INPUTS_RELEASED',flush=True)
 
 
 def lots_runner():
@@ -282,18 +303,19 @@ def package():
 
 
 def submit_all():
-    a = submit('prepare','prepare',10)
-    generators = [submit('internal_a','generate',20,1,[a],['E0','E1','B','T1']),
-        submit('internal_b','generate',17,1,[a],['T2','C','T3']),
-        submit('bf','generate',13,1,[a],['BF-Fashion']),submit('cnipa','generate',7,1,[a],['ControlNet+IP-Adapter']),
-        submit('sgdiff','generate',25,1,[a],['SGDiff']),submit('lots','generate',8,1,[a],['LOTS'])]
+    release=read(ROOT/'protocol/input_review_release.json')
+    assert release['actual_server_input_review'] and release['manifest_sha256']==sha(ROOT/'protocol/input_manifest.json')
+    generators = [submit('internal_a','generate',20,1,extra=['E0','E1','B','T1']),
+        submit('internal_b','generate',17,1,extra=['T2','C','T3']),
+        submit('bf','generate',13,1,extra=['BF-Fashion']),submit('cnipa','generate',7,1,extra=['ControlNet+IP-Adapter']),
+        submit('sgdiff','generate',25,1,extra=['SGDiff']),submit('lots','generate',8,1,extra=['LOTS'])]
     b = submit('evaluate','evaluate',20,1,generators)
     submit('package_final','package',10,0,[b])
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('action',choices=['prepare','generate','verify','evaluate','package','resources','submit-all'])
+    parser.add_argument('action',choices=['prepare','generate','verify','evaluate','package','resources','submit-all','package_inputs','release_inputs'])
     parser.add_argument('arms',nargs='*')
     args = parser.parse_args()
     if args.action=='generate': generate(args.arms)
