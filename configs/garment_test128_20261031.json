@@ -1,0 +1,956 @@
+{
+  "name": "garment_test128_20261031",
+  "categories": [
+    "top",
+    "outwear",
+    "pants",
+    "dress"
+  ],
+  "original_n": 128,
+  "swapped_n": 0,
+  "gpu_seconds_cap": 14400,
+  "training_updates": 0,
+  "selection": "fixed SHA256 order of available BF/test image triplets; unique product roots; exclude current train, previous96, previous32 and two input-reviewed mislabelled playsuits",
+  "input_only_exclusions": {
+    "95285751": "dataset dress label, but GT is a short playsuit rather than a dress",
+    "130470608": "dataset dress label, but GT is a short playsuit rather than a dress"
+  },
+  "prior_manifests": [
+    {
+      "server_relative": "t3_p0_p1_20261028/protocol/input_manifest.json",
+      "sha256": "f9cc308316265f8460a36d180e17d71fce5e579f25d5f5e12dd658b4f5aad478"
+    },
+    {
+      "server_relative": "garment_test32_20261031/protocol/input_manifest.json",
+      "sha256": "62c6c148222c7bcbfcacea197a9e9e0bfef55ead6bf861423cef0da31392f5db"
+    }
+  ],
+  "local_input_review": {
+    "n": 128,
+    "actual_images_seen": true,
+    "reviewer": "AI nonblind input-only",
+    "human_reviewers": 0,
+    "bags_or_accessories_found": 0,
+    "generation_results_seen": false,
+    "faint_sketches_require_server_review": [
+      "169947717",
+      "144360119",
+      "169391821",
+      "139506765",
+      "139846192"
+    ]
+  },
+  "highlight_avoid_input_ids": [
+    "159660697",
+    "170621544",
+    "88977898",
+    "139941662",
+    "63595993",
+    "203067804",
+    "210972276",
+    "215258537_14",
+    "198333848",
+    "184107701",
+    "189506646",
+    "29575430"
+  ],
+  "highlight_policy": "post-result selection of about 8-12 T3 examples; evaluate structure, reference color/texture, artifacts and BF comparison jointly; do not infer population superiority from selected images",
+  "cases": [
+    {
+      "id": "160602521",
+      "category": "top",
+      "texture_sha256": "99be250523cfcf976734bdd58f718f46a01004ac84b0d3e7d71c655df1e17a0f",
+      "sketch_sha256": "9f14cd56768a5e7a1269a8435731f150430378e626641cdd06c92b940987e3a1",
+      "gt_sha256": "9f5a7b306691514f99b391d7e3af37d551de066a58b80f0af035887495aa23f0"
+    },
+    {
+      "id": "212535866",
+      "category": "top",
+      "texture_sha256": "fbc9c1d29c0fd9ff1ab38ce5c9cdca4f0971c486ee49b8b357e9407c9c9af99d",
+      "sketch_sha256": "22f00b6e1b2c075a42fea6069721d244e36a3e85b8f2def54d48b846b994e1d6",
+      "gt_sha256": "2ff1a5d4d5df53d80511b549f84aacb6b00a44a8995a1c23b9b5e10f166d49f4"
+    },
+    {
+      "id": "199449768",
+      "category": "top",
+      "texture_sha256": "1303ed2d802d9cc0c3707d83b98e7b6c03b977fa37648ddc8d5f26a044338589",
+      "sketch_sha256": "7844ccae4e7e4dbe6f058f9fd1cb9476228f2038cca43ae3ce2c7667d92cdba7",
+      "gt_sha256": "020753b2550b3bd779a081709808cdd783b77b05fdd76318e4e87adf5ba54baa"
+    },
+    {
+      "id": "96878090",
+      "category": "top",
+      "texture_sha256": "c84a474304662262e1a1e40f5a292934cfa437b7faefea5e584c554c710ee9c3",
+      "sketch_sha256": "26e8803857c5ad3cd105f18eaacbea031b3f22b93c889a4dfac47e7cb45e085a",
+      "gt_sha256": "8643b2b2df5fae51b15fdc5457fb81e06960e5d7689925643bb3ba6636848fb2"
+    },
+    {
+      "id": "114050128",
+      "category": "top",
+      "texture_sha256": "823653811b510c9c8cb3ffa7a9e7b97f6fd7e44e47241c8319f5527ad8cc64bc",
+      "sketch_sha256": "628fba4f72d38bafe4dc7a986a50f40442154eb91f8ecf56cee076cf6f143907",
+      "gt_sha256": "a42680f5790988fb7a6d8a3c4b4ec68eac8e4391a8ef72beeafa2c18d7520538"
+    },
+    {
+      "id": "129524367",
+      "category": "top",
+      "texture_sha256": "3d8f6611df13e12ef6a443a21eecb92dd5f023bbb082759a4b1c3fbce2d12d99",
+      "sketch_sha256": "801da8660d4e7d4d855e68a46d98438622319c166041ac73e39ecf26f148514f",
+      "gt_sha256": "15b00c631c85a95802cf8f8a587f5b2feacf8a9d8367ecdc4582ce0c77f7ee95"
+    },
+    {
+      "id": "198167841",
+      "category": "top",
+      "texture_sha256": "272d197d83144c0df19b9a83d93c41fcff00a24e679648f70033c5070aa6bc83",
+      "sketch_sha256": "3687b616746e8cf1e86582f4a7576e1e5971656c11a5ea1dcccdccafeed11d8e",
+      "gt_sha256": "77d4a8154a04da086455638f14864a17520de4dba0e5a84ee28e9e34807f2445"
+    },
+    {
+      "id": "199070462",
+      "category": "top",
+      "texture_sha256": "88f322c428f71636a87014cd397a0eabff82562ef8c653ff572d431254da1767",
+      "sketch_sha256": "a7f507dc1ef125b4eb05183469c61fc150648cdb72d05a48efc18d28688f29c9",
+      "gt_sha256": "15950ccf2f256a6f9bfa8fa350e5e6c10e2caac135ac945b25af8b030f7720de"
+    },
+    {
+      "id": "144216852",
+      "category": "top",
+      "texture_sha256": "751dfba7f58a655c289953a7854df4d0dc4f7641c6a4ae5494e0783c8c04c725",
+      "sketch_sha256": "19f83348f1911a9c78b8b884b3b42d3d64444f8ecea662e608f672fb037d9865",
+      "gt_sha256": "d93ee6f28520c8275daaa0515ae8b777e64e5242485de39ec594a30df1c4c95d"
+    },
+    {
+      "id": "56449996",
+      "category": "top",
+      "texture_sha256": "848dca2aef54bb746658c4ea55ea0de10dd8dd469529755616698175aac320c5",
+      "sketch_sha256": "5e4974d648c9cd2480bffa370783d43d1fe262b3e2db02e02559ee8553955489",
+      "gt_sha256": "6d51876aa654113c3250b50994da199993e382fdd9bb788de86e9f759aeefcac"
+    },
+    {
+      "id": "167028787",
+      "category": "top",
+      "texture_sha256": "afccbaa76b4e6a6e7308adc98ca35ef0ec89f38c1efaece5080b7f566f871051",
+      "sketch_sha256": "05e1fc1ebd201926205981339406d39c71d0f1d33aa1945624878f34829c25db",
+      "gt_sha256": "71e83408aa184a56fa8c365dbe88b2c8e7dc88ca35825b7dfb3e9c3444054007"
+    },
+    {
+      "id": "159660697",
+      "category": "top",
+      "texture_sha256": "b61e783d3c5ee08cf583de7edf753630f1eb6236782e39f645202218c9b80b3b",
+      "sketch_sha256": "78f4d10d1dc357188030d123df216e48186d56ecf2305e51e9de3f7fc6db5ce8",
+      "gt_sha256": "0651c38ecbcc85938ab4f5c7d9dc7d74efd32f386b6fa72443e973e8871cf2c7"
+    },
+    {
+      "id": "92773822",
+      "category": "top",
+      "texture_sha256": "cbcba555fb56964f9b78d95a2545c8c385f6df4185106332bd80c1ce6c0cdfdc",
+      "sketch_sha256": "96170371c546dfe1745a5ce4dbe3c9bec5627371d8e5a774eff2582cc84f17bb",
+      "gt_sha256": "0cc4083fa2aab7ef2f94919480bb370203b3a7a0a40fa24ab40432ee0ba8d630"
+    },
+    {
+      "id": "69236132",
+      "category": "top",
+      "texture_sha256": "1e5687c6603ddbdfd5e2f28f08969b6832ef68d965f18608ed499c64ee159a92",
+      "sketch_sha256": "98bd33e27165e28f0df7f67f0a5a18fff5b91a6aaf3b9ed0b878bb1ba4639546",
+      "gt_sha256": "3ee38e81943763604969b3cbfc57681928293b04c109234fc909b4b34e4a1c0c"
+    },
+    {
+      "id": "205362046",
+      "category": "top",
+      "texture_sha256": "1929efc47e3518d70f44fbae3429fb8179ac5a621711138cb4e3a3a47eb1f0fa",
+      "sketch_sha256": "a2676892ccb5566c501002c30b9adc7fc2e43f7c0a9322bcc7c889cd0c0a426a",
+      "gt_sha256": "f6e9881f1b340185b104f74efb78f9c9f717c021bb8dae38cfa53b20f556a182"
+    },
+    {
+      "id": "170621544",
+      "category": "top",
+      "texture_sha256": "e118d139afc7894ed552be2fe18e9da4739cc8b6b2cfb65c2a73148d44d8f0b8",
+      "sketch_sha256": "bbf1eea2c2a3caeecd2ac1c0afc1a3bbd033ad01b34628ae4b4de98bfd30f201",
+      "gt_sha256": "3d6e72bdeb3c283739dcc7ad5137a7c08af9b4c8b52141f06b4b907603609d5b"
+    },
+    {
+      "id": "88977898",
+      "category": "top",
+      "texture_sha256": "29dead103963efb1c98529264e38baa03d702505bad75c3bc20bf6024d54d051",
+      "sketch_sha256": "c3c32a8160d4b06228e75307961ea4a7280fcca7e79c8a1b97e08d42b8005f0f",
+      "gt_sha256": "15d768dfb3dd23c038763f8d3714519a9ae6da4132190c53445e13a6e5620724"
+    },
+    {
+      "id": "154082649",
+      "category": "top",
+      "texture_sha256": "410c4f53950392088501afd55ae6d556536930e0f41aa9f3ad65034ecf5b2e60",
+      "sketch_sha256": "280a8a57557d350d7bc7c0764a3b917ff9b5fd0fb7175adab2866ab5f9b6f460",
+      "gt_sha256": "e3a4a57eec3dd8498b814a2ef15ee70dd1f30c131d0d00b1dda70094fa78aace"
+    },
+    {
+      "id": "194716532",
+      "category": "top",
+      "texture_sha256": "ac9a7c2a4dd8b4f60d5d934650e4dd483a2bc6cf10bb99517c062cf4c0e3de51",
+      "sketch_sha256": "57fb5960840c0ec1e4e5ff4bdc26ab0aaa669b1ab7e00c0f1561c56ad870152f",
+      "gt_sha256": "ae2340e6ac00e02a465804df163e7773d349473e3c02b166de660117227d9d8c"
+    },
+    {
+      "id": "65083388",
+      "category": "top",
+      "texture_sha256": "b2d202c71f141fc176b957dc9da1eafb29fccbdf45b1ca8a59aadea79783d95b",
+      "sketch_sha256": "dd2871c4c850f3eccf2680f4542384cd6fae78794bed6526d6e1e4539c36ad4f",
+      "gt_sha256": "d7fc36bab7fd5f256705c51c0f5f1d0c7b4a6b46550b67fd7ec7cd0a70608d77"
+    },
+    {
+      "id": "178906809",
+      "category": "top",
+      "texture_sha256": "f9048ff8a15e45d4ee35ace57ba7ddd39f227a1990c4cba4a92ddcec2f53671a",
+      "sketch_sha256": "4d330a590e61447d1a07d03aab410d2353687ff12169180b2e2071ad23455aee",
+      "gt_sha256": "92a19c7b103a2a6cb0f3f80e187471672c43f7502e0066089ead22d9f852676b"
+    },
+    {
+      "id": "168223425",
+      "category": "top",
+      "texture_sha256": "e4186e3a81d70176665e4b4a7a28efc2d31a666415f2c3adc937ad4d78254fce",
+      "sketch_sha256": "2a7227a3cfc3843cbd842d188e71a256e2fe0b154da1d6e83998ffe7fcc9ae5d",
+      "gt_sha256": "02f899248eea3d96019bd920c3c88edd106586b43be4e22381a1b17efc9f99cd"
+    },
+    {
+      "id": "124476093",
+      "category": "top",
+      "texture_sha256": "951006ffca202fd87e9c2f6461257de83f77693de6f971a9f370cb35167d5643",
+      "sketch_sha256": "bf623df2ecdc708b419a967c1cd01d8161c9d9aa17dd8d3a4e526bb124acc174",
+      "gt_sha256": "0493d2e8df20330b519f74bc82cb3044f6ec5c1868151ffbfdbc366d1d837d4a"
+    },
+    {
+      "id": "214019814",
+      "category": "top",
+      "texture_sha256": "b6e437191e91b2e2a7027e88c3c19fbc8dda2cfed90fec5a006be3e3480135d0",
+      "sketch_sha256": "720688fdd6dc9da1a3a265c2a95c94baccee6dae8f521d1a16e60d8e46a214ee",
+      "gt_sha256": "f698d7ecfe0db17b59194c2515afd4fbbd6db43264e8ad4c54d8dfbf773a3927"
+    },
+    {
+      "id": "171590511",
+      "category": "top",
+      "texture_sha256": "c22724f6c2da8ab150e5ba16be2ea949e4666f0b58f6abb52fe7e8103b22fb85",
+      "sketch_sha256": "0861d6a15d2a93802d935773bfe75dd577c74cad0a50d159e53041b223e7bcb0",
+      "gt_sha256": "4e81ab33554056dea8f3fcb7bf32b7bc868936069bb43d9cdeca832cf890648f"
+    },
+    {
+      "id": "209081216",
+      "category": "top",
+      "texture_sha256": "23cc5e98f7633edd5f70f9c0456a0853ece6c851b6fc8e9749062b90d229e7a5",
+      "sketch_sha256": "92e558ddb3454606fe15ed01a9237c6706b8c0e544e8e9a2201befbaa03c677d",
+      "gt_sha256": "6a925c5a445030db77f30b2bc58f2f21c359b4b72142695d2efd13acd7a7e911"
+    },
+    {
+      "id": "139941662",
+      "category": "top",
+      "texture_sha256": "d8213a83d7c12cfd79f6b3db56d7019d86b6d39332a31ba2ea535de9f27c90cc",
+      "sketch_sha256": "9616ee8c8951017ffdfccbdfeb54ff7a0876b981311f6f8aca8618494b7ac2c4",
+      "gt_sha256": "9e7fa9acdf22b00eb7299e20bb8bf2ffb8fa7c5c026e03c656086ea4de02d137"
+    },
+    {
+      "id": "63595993",
+      "category": "top",
+      "texture_sha256": "5a0fed987223cf9f80960b74789ae08ebddb8d217ad1add95b63e4c3da4308ca",
+      "sketch_sha256": "3f998e31af1a34d5eb32ce62636e4e0a0755b9284842bd6dfcd8df393403ebfc",
+      "gt_sha256": "1af960a59b4a7ee5a89a016f3d550c3b8e77dafa9910796d51218ceff6f0de6d"
+    },
+    {
+      "id": "156999910",
+      "category": "top",
+      "texture_sha256": "8af7caf46227f6b575284b6fd99c4355a9f890f89d877ed2789a489580cefea5",
+      "sketch_sha256": "20e617fd851c58bf8a4b382e769e7893d10d78d951e822fffed55884959977b5",
+      "gt_sha256": "7e0bcb48dc0e72e1086bb81af765e87efccd80af72fc7c8ce124a10775feb8b1"
+    },
+    {
+      "id": "210972276",
+      "category": "top",
+      "texture_sha256": "f377c0c1e577c9e68d6efa66ad0a9074429419420d92e5894ba79b15cdefe1a9",
+      "sketch_sha256": "e399fb88ced417588a822b9e702c9d8ba947f67e1abb0d5c45affb69f4106737",
+      "gt_sha256": "4fc9fa7fc8585e6b2a218982947aa9660c9f7f187e9199bfa40d63a3127b7f7d"
+    },
+    {
+      "id": "202622944",
+      "category": "top",
+      "texture_sha256": "47caff11d95a2c1aa1eece9a47809314337a73aab031b875ec70ebd69beca0a5",
+      "sketch_sha256": "be5b38a5e209cae842217486a2b5c430f13bac1250f20df1d33b6f08d4773e25",
+      "gt_sha256": "b2247696b5db126d309187d476988e040faa4de6a4a2e483c0151d1a00de7f3b"
+    },
+    {
+      "id": "203067804",
+      "category": "top",
+      "texture_sha256": "d22b00b0e6da8be2007bee617ea54c0d0210204a67dee797811034eae23ee9fb",
+      "sketch_sha256": "5d93d9d86da639f982073e4f2c4630f3564d9bd259f0d5763d6a9a98700f7527",
+      "gt_sha256": "d7d6987f559abd1119f3e81ca449dbf4416c42af5464b6e21bc8152c3318f494"
+    },
+    {
+      "id": "144360119",
+      "category": "outwear",
+      "texture_sha256": "e22cbb2af8b0ca45d8503b5c566cc645ef65c3cfdb07481f73660045ddd13e3b",
+      "sketch_sha256": "6130adfac96a431b64b84b30e8336ef9536f86347888e7cb73af2e909667967a",
+      "gt_sha256": "2b845d0de6527c5b71f5615d283d79a1140a78cbdd347839b710bed841c4a1ab"
+    },
+    {
+      "id": "192409945",
+      "category": "outwear",
+      "texture_sha256": "8be0a1992847166745d326ccc4adba816ad0e0ac6b1f8d1c882cedde68e07bcf",
+      "sketch_sha256": "463737cb73286b909f7008d13ec9cf3bf19c0d435cf16780694ac358f96858dc",
+      "gt_sha256": "c705040c1a1782df37d3d533ac3bc0f8dbdd16525305d145a2931581712735a9"
+    },
+    {
+      "id": "152281793",
+      "category": "outwear",
+      "texture_sha256": "607b31ea389f59009c302303b74ae83b8d7007630de6def318f0f62db09e94a0",
+      "sketch_sha256": "9cf2075f754708d2655c5b56aa80fc1a33404aa11d83968b1118cd60409d7ab8",
+      "gt_sha256": "704311e996c169a76f07ab9fd578b09cbea9b134d4f716ea12e00c03748f6148"
+    },
+    {
+      "id": "169947717",
+      "category": "outwear",
+      "texture_sha256": "228bf1b364ca6b031e147c6e81b9d2ebe8d82cc0591fb54846fe0b4e4887c298",
+      "sketch_sha256": "b916ea1c9c3506c9d4f3b440f3948fafce6a235d93d0c87aa5457dcf430eb7a2",
+      "gt_sha256": "a49b4245b7c3f2b2fa06372357dd4068ccaa917af0591158ad18e802ba48fad1"
+    },
+    {
+      "id": "104898516_10",
+      "category": "outwear",
+      "texture_sha256": "59c0c2040a682c8ef4bdcfb676c81d5e0af2009826b854657a2cb20bca42f665",
+      "sketch_sha256": "f71fbacd1e1b5752b0db51a6be78bec371c27aaf98628d99479c5995825b50d8",
+      "gt_sha256": "826d538973c25bfae015afa1c72d76e3caaa31cd6a66c5a4d2462eb52a6764da"
+    },
+    {
+      "id": "149257054",
+      "category": "outwear",
+      "texture_sha256": "90dc286501792e40263f1f2a454041bca4d7930684a1285e8d83efbdb431b222",
+      "sketch_sha256": "aecd602032c9d66b2762bfbaffb6e758e6506d70017a549bfc0261c88a9dab54",
+      "gt_sha256": "11460dcd9cde8f77ce54653c3cd5d167778d67fa78f0bd145a5609c2f7497c0f"
+    },
+    {
+      "id": "64959928",
+      "category": "outwear",
+      "texture_sha256": "1e215d1fc15d2ed7c8cb4bee4f5acc3ab97d002bb7cb0a2219698c87e28692fc",
+      "sketch_sha256": "0b9a72cba88307beb80273e9840282d12c2d2f872adbd4d64794b49c2f78abfc",
+      "gt_sha256": "9a4e409fefaa2d978875c31670e00c992efeab7d39f2a712c34274ab6ef29c4f"
+    },
+    {
+      "id": "215258537_14",
+      "category": "outwear",
+      "texture_sha256": "45650b538a0500e2dd817229259b6d3d7091ba47326176873e7cafb2c7be75fe",
+      "sketch_sha256": "62b91d9d6223f36a3d2b2eed1e6d9ca461448e361c6e1276ed55ac2f9e729071",
+      "gt_sha256": "d08b47ac7abd017507823d2b37e36b99fa6c1aa397ae0487808385da3121d789"
+    },
+    {
+      "id": "160588585",
+      "category": "outwear",
+      "texture_sha256": "77e8d11806113fcbf4683fe97abab2900404220e8642a552f5ac4bf45dc55451",
+      "sketch_sha256": "f730b5d603f065a63b97b48e6c6e6f61c768739d8323e81a30b6ac4d69c22b9d",
+      "gt_sha256": "a987fb950fddaa4b86e5da590fa74b40bee774cc5b316125d22d110510dc0b08"
+    },
+    {
+      "id": "174647126",
+      "category": "outwear",
+      "texture_sha256": "f4a182be3147810eb7b7288199ebb3dd8358ae9d493ff5e7cacfad63de063b12",
+      "sketch_sha256": "1faf7ea9782d588f17f17a83fac4aedfec50db5762bfa60922c7d45892f673dc",
+      "gt_sha256": "ce95cfeff5451e6a3e2d7e07776d24d5606c2eaaf3ad9e12c48f25f9df8f859a"
+    },
+    {
+      "id": "166648145",
+      "category": "outwear",
+      "texture_sha256": "2f47e34150717b85b3d3631ff245c00f71a15725f76a309f2ec043e9888ef4d6",
+      "sketch_sha256": "5a33729556f3aa811ff09d8fdebda29629bd994ccf4ea82c6ded32e2c28dcfad",
+      "gt_sha256": "c97e5c890ab010b6b5ef02829638735efcd80ee526bb65cb91fe8a44b8e66fa5"
+    },
+    {
+      "id": "147779708",
+      "category": "outwear",
+      "texture_sha256": "c3f947e0cb57c084a62bba0dc6632bb031d93260052978552eed3b4195e0e0b0",
+      "sketch_sha256": "bfba18021c2fdf90c909857c506f58ecbdbf7d179d16a6fcfd1d071039dbf847",
+      "gt_sha256": "bbb3632218bb3bd2f3607d45fefd5f35959913e3fd9fa749da902e7e58c640cd"
+    },
+    {
+      "id": "93724182",
+      "category": "outwear",
+      "texture_sha256": "1039a8ef698121ba7f740325288b27b228873e103e265f68cebf8844b9bda05e",
+      "sketch_sha256": "015ec7382bec18b406afc065b8ca9ad0c3f051d82a9eec836ad7083ba46e0674",
+      "gt_sha256": "5976b26842f38f531d2738dd2e401658df255299ec334ba58dc1e83be5b38311"
+    },
+    {
+      "id": "125672809",
+      "category": "outwear",
+      "texture_sha256": "8df9baf0632339af08fc00252a93ef841eb6ac339a16c3bf0e7fe30af7cb95da",
+      "sketch_sha256": "248afa83f1c9c9a582ca4d5d9f97195ab90337c483d15b4bba91b63a0dbccb0f",
+      "gt_sha256": "6c18a295a97149a41b1bb07b804f31e0e18dfde7f478b5b8648c7df942341b13"
+    },
+    {
+      "id": "193347981",
+      "category": "outwear",
+      "texture_sha256": "1ebb4ba815a15874a75d612e65346dc4a3249b27f605cfc3524f064a426c393d",
+      "sketch_sha256": "3847dc5bd260e01e4895508e84a86a219d84d391ccfd47a8c886293242f58bba",
+      "gt_sha256": "7259f12b2673eaac56a8d29836ef5abbcf55def4b6b193c27813ae4561acb472"
+    },
+    {
+      "id": "186627949",
+      "category": "outwear",
+      "texture_sha256": "476e4001d19b8f5df54a4b12dcba445aa829d56f019e67983f47bdd79d328a6f",
+      "sketch_sha256": "f4173d376171dd9e244030a3c416bb43f9ed604230ae219516f80b8782908ec3",
+      "gt_sha256": "4c73453df8651fab6259fad0f5cad42cdcaf4ace077eca9754e71ccdef845945"
+    },
+    {
+      "id": "147017156",
+      "category": "outwear",
+      "texture_sha256": "45f9ec577e651db271b296c9c8ae2da31ab5d0919e862b6a1216d8feceb35039",
+      "sketch_sha256": "e6adcfd937f24248ad54fe44bb2b8d669414dae6db6c96838692226e7bf0d148",
+      "gt_sha256": "05b0607f2d48be78d789e6a997639d553035f66f9c11361cf03506fab155a8de"
+    },
+    {
+      "id": "169391821",
+      "category": "outwear",
+      "texture_sha256": "7f4bc81944c930f3ea80baace85ce25e24ddcc5911ba4dc230d4bb904d03e265",
+      "sketch_sha256": "167d8ca58c097dfee8d8416e335f1f1f96382f938a6febd60aef60bb0221a1f2",
+      "gt_sha256": "ac6f2459d4018fb4863748b0989de4230b971fee83d7a3dff391bdfd2df4934c"
+    },
+    {
+      "id": "52898126",
+      "category": "outwear",
+      "texture_sha256": "0050198bceafeac4203c17b4ceb6573e040d85e8d1e7be7bd3a256a127e379cc",
+      "sketch_sha256": "40b0c55a62edcc41858e9097ce70442913478feb232937eed750213cf14ee049",
+      "gt_sha256": "24fb5357e850494dd88736cd9ccc5bfabf0545df136c1cad03bf78b79388c560"
+    },
+    {
+      "id": "75577005",
+      "category": "outwear",
+      "texture_sha256": "59621c7fa4bccf2301d0d6571a0308dea4e236d291a83655e847e3f36956de56",
+      "sketch_sha256": "50656194e170979e94d46c788eb175a0518d9db1f1549f7956e9d295420ff9db",
+      "gt_sha256": "3090be8ff454f5f5a600f2d0f7889c341675d73fd0cf84b54b8b53cc6cfc4d40"
+    },
+    {
+      "id": "191055572",
+      "category": "outwear",
+      "texture_sha256": "3b29bb350cce834de851913aeec3370d2bd60daa7f78aeac84a8824b970643f1",
+      "sketch_sha256": "a0f59b8144632416116e305d60a5f8f2cb0feea7a04fc088bce79191c62fa3f8",
+      "gt_sha256": "c97c36aeab174fca16bf65503c2e985c2c0b7ba3b00348be6bafadcd6812d38d"
+    },
+    {
+      "id": "181859212",
+      "category": "outwear",
+      "texture_sha256": "16a1acdb93bff388c17e79ec887cfa6b1d5d9d782738535bf26f462d6d75391a",
+      "sketch_sha256": "62ecf3bcab7067719bcf8851f2ee5458d38c882fdcfcaf426ca7cc40e2df04eb",
+      "gt_sha256": "a3ba7f0513f8b943b31462bb22842fb6ec4b6d8fe77914c9f6674930382e9fc0"
+    },
+    {
+      "id": "52570595",
+      "category": "outwear",
+      "texture_sha256": "c104884c642f5c41294303648ae8d873da8543b50b8683a5dd9a4eb27d166100",
+      "sketch_sha256": "a0eed2b414e2a21f832b292be2c4129df82af4b516a7a490999d9558c9178b11",
+      "gt_sha256": "3ec8d18d8efd2e963bc0c9ed9fd4f310184b98d5643d1adedebcd80f928110ad"
+    },
+    {
+      "id": "72762882",
+      "category": "outwear",
+      "texture_sha256": "7931b04ce1e51311804342db2709edc3582072532a1ac354b2f5f546c4e2eb65",
+      "sketch_sha256": "7e2ccffd79c4eb4a2572dbd467c23ca90a167b7e2c327103863987d1448ab51d",
+      "gt_sha256": "cccd89fb8b22756bba1e346562dd9b04671c3e03c206b3fb3ae052f4b27a0171"
+    },
+    {
+      "id": "146449643",
+      "category": "outwear",
+      "texture_sha256": "5add4e88058116dcefc92147a470446ffd4934b6f084bf1d84132d514fd78428",
+      "sketch_sha256": "2dc4fc6b2064431625de20c624519d526b325fac38e064bf27123bbd1159e6b4",
+      "gt_sha256": "fed243038ad2ab20a2ef1d69e79591e286cc2b1e40fb7d2645f64f8d24660c8b"
+    },
+    {
+      "id": "53644123",
+      "category": "outwear",
+      "texture_sha256": "4b25e3e23cad6d717185344b20a02e95f0c55a72abbff9499688dabb8ea64d41",
+      "sketch_sha256": "81550d70669e1d355528b7cbeb7353a03dcc0170b8d17cf5bcbcff592695dea1",
+      "gt_sha256": "62ef34974c7c2dff0a5b063995c1c57f1ab23a263c1cea0a3a71b33bf8b8d611"
+    },
+    {
+      "id": "194777591",
+      "category": "outwear",
+      "texture_sha256": "d4c69addee0b856a97e9c120bfdef00e438d7c6316289ac27616b9e83350f54a",
+      "sketch_sha256": "53267ea8267d57718cfe9fae95133a0b950512a9674e89a823a925a23607d3e7",
+      "gt_sha256": "0e16b9c95fd5869a5f0e39164984ac4342a0a88b09bb5d6d35d9204211f2f14b"
+    },
+    {
+      "id": "63059894",
+      "category": "outwear",
+      "texture_sha256": "e071cb07e5a1d96fc82d25aa1d83535eea927148937f53d48c4a5b45eaa56390",
+      "sketch_sha256": "429fa03022710eda2b247b883ecb9bcdf114b8c5300eb7cd863e0d9e41ae6595",
+      "gt_sha256": "4058a80a15081d909ef3e944edeb901c007053d37bf4165ea2219afdc0413f8e"
+    },
+    {
+      "id": "198333848",
+      "category": "outwear",
+      "texture_sha256": "651aa2e9b3f10317f3c262be0ccd837abd3c911fc2a6e331dbd8a88ebf358666",
+      "sketch_sha256": "9623d0962822358a43608501731eddd9fee846ed078023ac9c5393f95b5984ae",
+      "gt_sha256": "708f330cd4e2b81c825067b4f5b1009d0d963192add604b56c2fa39b098cf84d"
+    },
+    {
+      "id": "148830337",
+      "category": "outwear",
+      "texture_sha256": "35ab3252691a7173c1e34dfbc1aabe9e2082f673f29e2bb1268aab38ea79e3b2",
+      "sketch_sha256": "44b1ed6a6b88f8eaf1883429942577f677a138cf6c2302da4d42c0b2eab897f5",
+      "gt_sha256": "1b1a9e9e9eb2526b0fe60a81612e38fe4d9a29c03ae7e54667fc1460f27f7e74"
+    },
+    {
+      "id": "170363086",
+      "category": "outwear",
+      "texture_sha256": "603cab58ba712bd1c8ed475333cb312e289352b4ef79e7050786a92aea92f0e3",
+      "sketch_sha256": "62c7d83e843a1783e9ad6226021b6291673ead3823d4425b2fac523d2c42b794",
+      "gt_sha256": "42d9bca924e0ba7860f3a208d5fb6fc72d84c5d1696b9a1712cd802fbc9077f3"
+    },
+    {
+      "id": "92333549",
+      "category": "outwear",
+      "texture_sha256": "261845e38a406d25ffe5002ab5d30c7c7306d96c76b1c0249071f1203223e40e",
+      "sketch_sha256": "34906e983a26b30b1179ec5b8f39e6b99efa42aaab4298b2ff0b1e74a14ca3d4",
+      "gt_sha256": "44a90aec46a27fcfb8f3ba18db165942278b7753870779bf00f1657e99bfd9d2"
+    },
+    {
+      "id": "203126682",
+      "category": "pants",
+      "texture_sha256": "3abddd22b3690661d9cbad6cceb65391416f9047a37eee701079967dc572e0f7",
+      "sketch_sha256": "158f8b2d29617027579c55ee20ba58792f30e6c97831593c418a6c5adee437e6",
+      "gt_sha256": "0be85633f962df1ee92c7ca77d674d17e9163dd796e8bc0389a0988e35428acd"
+    },
+    {
+      "id": "191052698",
+      "category": "pants",
+      "texture_sha256": "e0d62d1a32b835a5764a896df79fc7022902a6d257c66c750d4ab922ef253615",
+      "sketch_sha256": "33793e2404837ab6f9c5ba0a33cd9c7abb616313dca338a14089a2d2a000f7f2",
+      "gt_sha256": "6e7ae92eab81ccc5107447f24bc0f75b39b6aae734e8a20a2ee851525783ec4a"
+    },
+    {
+      "id": "159356579",
+      "category": "pants",
+      "texture_sha256": "dcf7038b397cd1cb9ae7d81accc7286648fc8b50976701d7b1b05d078ecc2e5c",
+      "sketch_sha256": "338fe9dc5b708eb7158b18998ab5de96a61d06a737448c77324a1a9728fcaa03",
+      "gt_sha256": "109604cfe058a2ff53f3294179c5d7292d2b6c2c5f406536ccab7f12a337c47e"
+    },
+    {
+      "id": "143878318",
+      "category": "pants",
+      "texture_sha256": "ed8ae040d01f7959d08dbc8505015fa5835f60216df3606e03c7f8d776e4ce3e",
+      "sketch_sha256": "d093f290c1fada85a6d467716f7df80a8bc07a165814b51f7207f4bee3bec951",
+      "gt_sha256": "ed483c42a5260d4f8edff23dba688c2f2148637b1fa3626255a6e8267640aa92"
+    },
+    {
+      "id": "214095476",
+      "category": "pants",
+      "texture_sha256": "00ba972a419b8e78793f52e5a024612b7c59ee88f361956a87086c1b6c9cfe94",
+      "sketch_sha256": "2c1b18da2165843d6d133eebf1f16166cbbc985879fb32f554bf4091f77f55ab",
+      "gt_sha256": "386bbac38f0d7e56f0434eef176a5c949ec29190ac8ebdce04c99b70f198e131"
+    },
+    {
+      "id": "157078713",
+      "category": "pants",
+      "texture_sha256": "bcc8e95596ef37c77136a9ecc437d228dbdcf031fb1e1da18e8a67408650294b",
+      "sketch_sha256": "998eb7fe7c8455e1417111592a8992e2f8fd2ab87a92a5ce323af29d485aa7e1",
+      "gt_sha256": "6a7cc2d6b8301b3890b7156b3aebcee8c850c67750b70b716fe305e68b7e5c46"
+    },
+    {
+      "id": "109620447",
+      "category": "pants",
+      "texture_sha256": "79ff80704e8b1b910992f881d14e345b8d9b7abfe03c5078c50222bfa9788b6a",
+      "sketch_sha256": "4b8db1f4c219c43eadb55d852dfc2af2af562d54095fa92c61dbbfb210e44a7e",
+      "gt_sha256": "f4a4911116ebf0fae0da267b04914751a1878d95edd9515da2c2e1151bfb46ee"
+    },
+    {
+      "id": "115228803",
+      "category": "pants",
+      "texture_sha256": "7fa1de971a1cecb16de3309a3c9763d4a3607088d67d0ef1d27b447984c92460",
+      "sketch_sha256": "e5306fd21d024a7a720fbc1b6b3c7a7f76d99cb4da18afdcd5d2a3cc0dd1b56d",
+      "gt_sha256": "e321260338037f800ec46dfe1df4bc7ff724315d5fc316b9f13ce3ae37eba198"
+    },
+    {
+      "id": "157021170",
+      "category": "pants",
+      "texture_sha256": "3e251a7d6c04649f409045508dde2e48d6efd09b4ef81f8367368089f44552c3",
+      "sketch_sha256": "174ab6c35be91e11594c81231544f132568f8d6b6df7b1e945d7b58f9b36ab0d",
+      "gt_sha256": "fadbc381e1bcefa351a76155205e41a9dcf233df20f80eec7e2df910d9026a6c"
+    },
+    {
+      "id": "184107701",
+      "category": "pants",
+      "texture_sha256": "8d801ca7f2b4e2dd3b0a6af7999e3957e4e81eaa3ed5721fefaa502715b638ee",
+      "sketch_sha256": "ac58dac8d616a63d60031f5bb2cc8e05af9a0954b2266a02b75c3448d4e9fe7c",
+      "gt_sha256": "b8031d7b78ff3717432af477a2fdca43a9c8407c50a9420a61361324a6601261"
+    },
+    {
+      "id": "196741277",
+      "category": "pants",
+      "texture_sha256": "b57c3001dd801adc3763c9d546c29b722305b7a27f7bf7472f195d4d33d58241",
+      "sketch_sha256": "fe8ffe4bfaea99b345e7728fdc5beda47685c7836a04eafd43f012ff70d4c6a7",
+      "gt_sha256": "75ecb094bf9490aafb39453468e153d01d68be63197e230dc89befda4524587f"
+    },
+    {
+      "id": "77823388",
+      "category": "pants",
+      "texture_sha256": "40c44dcbcb11e2395f5cf7abff5120a1b126a40471f995cdb2d7fa1e38a49895",
+      "sketch_sha256": "5ed362c68248b079e3b384ecad08840a56a787a2aeacb450a3c3e2261c47b4e5",
+      "gt_sha256": "66b54863eb8fba6d712fc4f1bd065a5d8bbb61fa83a3b2c3b2b8343a17a280ed"
+    },
+    {
+      "id": "57563886",
+      "category": "pants",
+      "texture_sha256": "e797095ae489262224e31694dc1d470cafaab9d3c3e5717f75a4ba6344ab35ca",
+      "sketch_sha256": "c912c0b37237cb2496aae9f347146bfb0002620ad8e91bba0430543f17a5a565",
+      "gt_sha256": "c19c5e8d4063a39318aa5ae16479b66ab1f37d9280e5d7247d0cc21d7cf1121a"
+    },
+    {
+      "id": "139506765",
+      "category": "pants",
+      "texture_sha256": "1bc539848340df7c380ead51938d1c78e0fc098244632bc52f10419e6c74fae9",
+      "sketch_sha256": "cf82f0f93b19d5f816dc8d0d1f1f778de0472eadfdcd29a893ce265687584ca8",
+      "gt_sha256": "357715a05b3d3228ad5c12234a0ea9bc196ae373660d5531aaf70f7458e15b88"
+    },
+    {
+      "id": "164579876",
+      "category": "pants",
+      "texture_sha256": "b9d2d4a5f9832c72cda120f77791c2e42ed71f0da659efe17c5ae5d666b26fc2",
+      "sketch_sha256": "e09c46456472851c9bffa05290ffacd5e5ad61d6999488d3e0cdb282514a357b",
+      "gt_sha256": "3179234a1ef7df3e82cf8ecaa1b9bfa93ed76f66a2fef65ccced6be8129a33e5"
+    },
+    {
+      "id": "189127424",
+      "category": "pants",
+      "texture_sha256": "f39d30dbdc60f2b6002c017cb788784a108e88d4ea80a88a951037d9da895c24",
+      "sketch_sha256": "64c648eae5973f8bc86a04a2baeb5c39d9dbcd0bfb0af9407694ad5d6fc4d651",
+      "gt_sha256": "6e09c47e0c6dd05d1c65cef6e983a1a85999cd651718e0a4c0b979e866f12249"
+    },
+    {
+      "id": "171532970",
+      "category": "pants",
+      "texture_sha256": "e796524195b674123133dc052fd63fb472bc753ae7af15267c58010fc82b80da",
+      "sketch_sha256": "001a91ddb69077e05b554d49c0eda7d3a19bf2d10773b7142a131a033e936b2f",
+      "gt_sha256": "59f279522693cfd089f2ac0218a6880286a915bb36b5afc49fc508d25bf89f58"
+    },
+    {
+      "id": "156610075",
+      "category": "pants",
+      "texture_sha256": "ae96f2a72208ca2275890bca64479c9e9d6a8873ee8c9529f7da61c3d87ca49f",
+      "sketch_sha256": "4271550bcd1029dbb778fde1915a9afe0013418a0d85e51f8b56a5912355aff7",
+      "gt_sha256": "bf8941e53381f650b38ae48e9fcfc44804b97a5fe24028d0db8561d986f3a287"
+    },
+    {
+      "id": "178706631",
+      "category": "pants",
+      "texture_sha256": "299afdfbe0e171dc29040adfc431207732080f2ca854ecd9d943279d2a85ceba",
+      "sketch_sha256": "20f579241115bad51e92e490442275962847520a091e2a0475b014d19c10b54a",
+      "gt_sha256": "ed239f9b7e601578c553f9da7202a292ace8ec0bd2c9884b66f127feac79af16"
+    },
+    {
+      "id": "157174934",
+      "category": "pants",
+      "texture_sha256": "4ab6ded7257d9d1645c6dd5cb7d874328476d243d1ba9a855ee7d3df2c53bc2a",
+      "sketch_sha256": "c56ecbd2c7ccc35429751dbc425813da176d50f2261983e130c2b98ff55013a6",
+      "gt_sha256": "77ee35e9e1fa8fda633b468b0ea79f682d5b337c7281de803ba946fffb92e3dc"
+    },
+    {
+      "id": "190868834",
+      "category": "pants",
+      "texture_sha256": "c092df29a14d867ae362c0a894a8c20452a71d594d4cb6df26221c8546f1c050",
+      "sketch_sha256": "c73351e764155ac705f9f430b29a94f07985a721907c7842a2b61c8d4b3d8a66",
+      "gt_sha256": "d9a352d462fada714ba3f3a4d48c396d2a09ca3cbe36a8e34913bd2b7c47599a"
+    },
+    {
+      "id": "124955772",
+      "category": "pants",
+      "texture_sha256": "a5a23732fb84d0f1a4a3fd7173cfa4fede0986a39746fcef34b89c3ffff8ccc6",
+      "sketch_sha256": "13298d5a2d9a9b350650f15132fa74aa6dc1fb2c123b452d9a66ccf188160597",
+      "gt_sha256": "9a5103dbfa81339fea7d3cc4a07c6426e5c36320ac6a652672dbfee6818bba99"
+    },
+    {
+      "id": "182394538",
+      "category": "pants",
+      "texture_sha256": "fcc6b0824380c30e089584a8d3040fd974633dddfbbea40dea58b15f08dbaaaf",
+      "sketch_sha256": "44f18cfc4965c30558346696632d85703606ed2f1a062c6418159318d230eec5",
+      "gt_sha256": "c83d7b36b4011fb2cb188c3bb6435b28a4c90222e74618f8015df0f7d67418b5"
+    },
+    {
+      "id": "101313763",
+      "category": "pants",
+      "texture_sha256": "323f112b3f10c6a15f5afed8fa03bc9499e1168a9a6e4bd051116966185dc705",
+      "sketch_sha256": "3e9b81d56aed62a974a88628c94ae316f0558649703d0c1f7a23e12a1dc2412e",
+      "gt_sha256": "bb895d5e860e2f33e6fefce2e026d11dd1727984dbe6774edd111b98e5aaacc9"
+    },
+    {
+      "id": "12130857",
+      "category": "pants",
+      "texture_sha256": "6bec4c4ccdca82392da868dd6a2334698978e7240f82e5ef4157633795ba665e",
+      "sketch_sha256": "daef5f5f2f5235426fef4465c6d59c2c1ba1ebacbe89eb37bbeca7e1179459f5",
+      "gt_sha256": "a9eec101a8edc683c35e705f7401e1038e3bde46a6a419177ee14d3f8e4406b7"
+    },
+    {
+      "id": "167016315",
+      "category": "pants",
+      "texture_sha256": "cdaa7e1fd63d9830f6cb2b3b5fca7a871fc50f5ae5232c5451c650b93737017b",
+      "sketch_sha256": "07eefcbea42543ecc25abccca54bfa9489870e4e91e0d848e372458d0bc6e4f4",
+      "gt_sha256": "d655a504ecccad102c6d12b69820f7db216f8d3209e508b1e3e45815b3e7eedd"
+    },
+    {
+      "id": "131112707",
+      "category": "pants",
+      "texture_sha256": "801e3d55ea6df35355abdb9285d1a932a2fcb9f12a2b46a0d1a9db005c0ecb58",
+      "sketch_sha256": "f4f66a588a0d9843c996a26440675dcbc51c95607682c25e1a639ec62af8e2bc",
+      "gt_sha256": "2a3270f33631f264b878a4f298d04bc3c8dacbac11f5aa970563a5f7b93d60fb"
+    },
+    {
+      "id": "50552514",
+      "category": "pants",
+      "texture_sha256": "d17e96945f14deafd1e79b52378a45e657c9e5f8cb7ddae51d928ca6b913a3be",
+      "sketch_sha256": "858060d2c28462eb21b0821b3beb99414c74856942f7ca87e60ee61d099640ce",
+      "gt_sha256": "a74058b685aa1413de40cd2a126255094b2660cf9d108df470f3798e5bf3da6f"
+    },
+    {
+      "id": "191901209",
+      "category": "pants",
+      "texture_sha256": "0a615673fdd4eb173af9f1c8c10d1e86c652b39d859a25f6f7e43b6a954ef2de",
+      "sketch_sha256": "5d505468177315a5fb9e32e8772464dca3297448adb5d2dd5a1c509a9809ce5a",
+      "gt_sha256": "5592e6d9b26340ae607458dfc48937600630c22174ee6b34b6a44390e5178e4d"
+    },
+    {
+      "id": "172257524",
+      "category": "pants",
+      "texture_sha256": "47292789cade605a63d923e65fc21641c8af9a987a888b5b5df7182193319e64",
+      "sketch_sha256": "1d1712e7b5f81d63741a1a479271ca4823fc21ca009e823b96733132595421b9",
+      "gt_sha256": "ed0cf9f330fa885c15a4f360b99c8d1f3a119fcab34ed150abbb644f84833f45"
+    },
+    {
+      "id": "149166288",
+      "category": "pants",
+      "texture_sha256": "84a958be9788a10c37f35184df96ab2802683ea624667fab716d35c47eb35c98",
+      "sketch_sha256": "c349afa704cbb96df4c9136f637f8aa08e8a54e7534859e1f9492b0f0a7b7972",
+      "gt_sha256": "ffd288620213af68371d13410ffeed894ac88811bd7b4fd16d45bbff293e985a"
+    },
+    {
+      "id": "157959409",
+      "category": "pants",
+      "texture_sha256": "7e2ec6f112cd0c7b5b88861f11488c3a7bddb0c6eb79fbf98a9fbbb564b589bd",
+      "sketch_sha256": "6478a7f688860e1ef39ac3d8203a6f99c733454f1224f3941eaf88bda10e7557",
+      "gt_sha256": "1ebfae8aaed267c7b4f0259f6b96963adef9c1139d79915516cb2b10c8aff397"
+    },
+    {
+      "id": "173729650",
+      "category": "dress",
+      "texture_sha256": "2622ace8db63d761012a7adc7ad78a55ca0f31ab4ecdf975881b0e0ad3405858",
+      "sketch_sha256": "2e69055dde78e75ba1acc5488b56d3b017a131007c791f30255d4e0211a4e85e",
+      "gt_sha256": "5c4c6b884a7df6c42c6cc324130fd6aa4e9717e74aaea98ae4d8bb2368ca8662"
+    },
+    {
+      "id": "126827417",
+      "category": "dress",
+      "texture_sha256": "77c3b166254ddb888388fdc08c24e0d9cf83d85bca98cf68cff2567eb3ed61a3",
+      "sketch_sha256": "6315e4aa4ef9e9034507b6c5ab0da77f6943d5fd080987685c9c3c0b3770c0d1",
+      "gt_sha256": "8c250f227d4c738cafaa1f54e2cc91eaf742e96fa3a6e9c5fc6cbfe796d52aef"
+    },
+    {
+      "id": "177504469",
+      "category": "dress",
+      "texture_sha256": "c08bb6c7c49a0e484498a3f52e21afecc95dc341d1dbb798c11423dcfc769dd1",
+      "sketch_sha256": "17e2812e178a57ef6dc369d0982ece0f5888d4a114cec1785b28fe47de7ed1aa",
+      "gt_sha256": "c3856e119ad1057b1842b395f53cf3b4c7566da2dd7ed3325f2f8fbd5e5faa15"
+    },
+    {
+      "id": "86432598",
+      "category": "dress",
+      "texture_sha256": "15871625e264af5f459893f4a7033a1c673e8048e0b8a041b5eceab568283b4e",
+      "sketch_sha256": "826156d658a3fef212a331b1efbd1781377297f416ed4d33f8d187baf44b437f",
+      "gt_sha256": "5c526e266f3df87f8405fb7469a69c926c3a12af683ba2cf38f728d741ea0e1d"
+    },
+    {
+      "id": "198100235",
+      "category": "dress",
+      "texture_sha256": "78729c034a6eb5de27cd127a1728b1ba135e5e43edcadae5434c375bbb800a8b",
+      "sketch_sha256": "d65ac4c3984a0252a1901f207d493454db6e77ffbb1abc69837b5d17fecc119b",
+      "gt_sha256": "ff66542307a0582ae7d8c51fb4a016369a63a9c422af7ccfbffda7f669b7656f"
+    },
+    {
+      "id": "186229725",
+      "category": "dress",
+      "texture_sha256": "2f369d496ffb5763fb3f080a3a12dd6d60f9090ed2c096ce84588d9143d0d6c6",
+      "sketch_sha256": "43ff7cc11b8e1907962ba3dea3ee3b350f6c41770ee63f0164ac4437ff99ee82",
+      "gt_sha256": "305ec200c21b8702689c8e8716c3558dd85aee79ed1524ecf9390c27492d5dcf"
+    },
+    {
+      "id": "192550810",
+      "category": "dress",
+      "texture_sha256": "9760d72af36d218c38b3e72f8960606a57e1fe70015e845d481b6564ef1301f7",
+      "sketch_sha256": "97d6dd59374eecad30d5067900dc34699a2c4a92134f7b7331a99b72e323aa13",
+      "gt_sha256": "e38a970103ea2c6312a870d665e9de99355f26e1329427fa64312593c26b7413"
+    },
+    {
+      "id": "162776380",
+      "category": "dress",
+      "texture_sha256": "91e6d6daa8121ad630e23fcba7a687ef72202cc6f006aee9742da9a62aa976ee",
+      "sketch_sha256": "1d3dbf534fa51564e835a26e3672f6e0ebe9fc9326341d130f4a246dc8679355",
+      "gt_sha256": "9e4106c787d67e6f4ea70e85e3ad1a049d2a6aa5706860e3adb347d5f68ef57e"
+    },
+    {
+      "id": "195516628",
+      "category": "dress",
+      "texture_sha256": "1a841e8a13c4f73080baab98ef71c503dd6d7b603a9241ebb87609fc324d8af2",
+      "sketch_sha256": "0cadd924b094538f5f982c933a8cf50d1773004b2a3f0ac6f68755585a37edc9",
+      "gt_sha256": "8296d0e08cbcebb0dd083dd2c538a89c29ca8ff8222303282650453784a16170"
+    },
+    {
+      "id": "179052617",
+      "category": "dress",
+      "texture_sha256": "39f773b8aa99bd73ab86af23d1edfc9170fdf9c3db8d10fabe4f5d8e3980be07",
+      "sketch_sha256": "9e82d6919a0452c1ca54e7ebe113004b2ca710b0bfd78b0b02b4e1fc12f273d0",
+      "gt_sha256": "558ff86e71feb986e6ac5b46007786389aa065d5fde001391abddf42f2701f48"
+    },
+    {
+      "id": "206505938",
+      "category": "dress",
+      "texture_sha256": "f93fec448521146a49e3556928b0b127f21da00b243ee44888a59e7af692be21",
+      "sketch_sha256": "81d63c7a1f073a8e6bf52033bd1a53b5210313678ce906194cdfba8a4491a6aa",
+      "gt_sha256": "a3099d0beb01fee3bf3a84fe32899d698c6a1ddd8e7d57e62a4a7dbd709135f7"
+    },
+    {
+      "id": "189506646",
+      "category": "dress",
+      "texture_sha256": "3d7a68014c0cf13b32d92491ad04633da8810fb0056f0d42bf80008b976c823e",
+      "sketch_sha256": "9e2d511631036e473c7d033ad49238b79eb853561059145ba58653a4dae9880d",
+      "gt_sha256": "082b5fcba28c6948282dbb405ba1f0568ac41f5f2c9c5b4c97c5ad971c1cbf8f"
+    },
+    {
+      "id": "149243296",
+      "category": "dress",
+      "texture_sha256": "fd1e38cf24d58ff56dbecbb83ddd0979ca8c4c72db10b63587c7cc44ad9273d4",
+      "sketch_sha256": "5c56dfd2156d6cd795c7c16aa358b4a7cd69e33bf78a900be8c0ba059d77c4ce",
+      "gt_sha256": "1dc985a4768667b687e6b70f3694856e6c29a86bb0bc8eeda919f693c7c2b427"
+    },
+    {
+      "id": "211853492",
+      "category": "dress",
+      "texture_sha256": "3be5654238e3e9aff33585b5081e3832c0e4b30a5eb3287cb81e02407cafc7aa",
+      "sketch_sha256": "acab174ce30616c61420324c55bfbec1ee8f31ed0f982efdb80c0ac7ece27f3e",
+      "gt_sha256": "68bbdb357ec1b6b4cb93c39ecedd070a79a59a91e8dabd78619069ba78029c32"
+    },
+    {
+      "id": "206994288",
+      "category": "dress",
+      "texture_sha256": "21a722b6a5b01fcc01c2bf746bb9355c2fc480e548b5bb7b6420a3e939efbcb1",
+      "sketch_sha256": "466cfdbb978962a285c5a6e0a650cf82fbb8cbdb7d99a684de0fc425053f4999",
+      "gt_sha256": "53550157f53c96dbbca30c6e851bfdb0c9a1d714442fc0b86ed5020a57fd1015"
+    },
+    {
+      "id": "212790668",
+      "category": "dress",
+      "texture_sha256": "835c813fe9e203b659c86e114abc8bb4817df79958b4ce9da9bab6e588572a5c",
+      "sketch_sha256": "c86167e75169ca6a2ddf3ec0e78ce901b487da957cd7361a7b00177fc6adddbb",
+      "gt_sha256": "c61f77d8070da3bf33de30ed774f75c9cd440be0525e73cb71830d60a2811663"
+    },
+    {
+      "id": "195714159",
+      "category": "dress",
+      "texture_sha256": "5d669bf248421c57dd6ff2076f5d689ca26027bc88c610acdf12c419d7569ad0",
+      "sketch_sha256": "d43d1bf845efa7f351181f8e668d64f1fb8fd29f999450f7c3ac2b0bd3f6a60c",
+      "gt_sha256": "9d41cf5f962dc4bf109bd04dea56a9690410953236f6271af35c6962f807df72"
+    },
+    {
+      "id": "171831333",
+      "category": "dress",
+      "texture_sha256": "ce9446e6db8803d3633bc5351083e1fe62a454993601030277339bd8f595c579",
+      "sketch_sha256": "1d27498f48a7912f38bcc0663c573b76b309778431191f05ac4423cab31af424",
+      "gt_sha256": "b37cbb042f5449cd39d653137c7c62affd2e9ab3f9d049bbe6f5a20a37dd4f9c"
+    },
+    {
+      "id": "139846192",
+      "category": "dress",
+      "texture_sha256": "aa7b4409311203b61a4b6a8150f2840b4bfbdf3e5ea66c4c60277855cfb3718c",
+      "sketch_sha256": "be24567b8dbfb4743eee02c75699df27799b9e471ef6f540298b12664f8eae56",
+      "gt_sha256": "82a381ac369bf9774314ede5854c87b2c4380f29a4f72718385cde95632a9e70"
+    },
+    {
+      "id": "182346989",
+      "category": "dress",
+      "texture_sha256": "1a78b2c34db75e389f74574c3a10d148e593c97bc637deb9d067c299eabf577a",
+      "sketch_sha256": "fff6c862397f56b6b94e7f38f89894a7e1204bfc9b5a118029f9de2fa7d55ee4",
+      "gt_sha256": "1dc31b11c118f6d129b31c55112c37d409f393d50c81773746fadd71d6af77e3"
+    },
+    {
+      "id": "204811634",
+      "category": "dress",
+      "texture_sha256": "1cda6e00e302c2f429269609e9250fea353d58686ac947292b8154b1155f4ccb",
+      "sketch_sha256": "bbfbb41cc58be77a1deac2497f602c81c5238a011786fb0017a0427ec6a04d5c",
+      "gt_sha256": "ed54f8acf3d89af254f23bc3267deb5f1fc2d45fa1d076f47904bc9dfe6295d0"
+    },
+    {
+      "id": "168963471",
+      "category": "dress",
+      "texture_sha256": "fd2b5f7473ac92c04a577493cc542d1376e730b01b072ebc17bec881dd5094c8",
+      "sketch_sha256": "59c679d101f27afe11b5d8635d89586c2bfde1ac501a8582c0f6c00e1a16b9af",
+      "gt_sha256": "e05d79ca2f52b15c9c16d5e39c1228f3a2abcb3a11dc646e9b4ddfd16f01d303"
+    },
+    {
+      "id": "158796507",
+      "category": "dress",
+      "texture_sha256": "bd81f8cc10c021c4310e9f77c0ced6668b208c90f040a490a97b2ae956c65b0b",
+      "sketch_sha256": "8d3110fe8a48cb73bd5d884bfdad248a1787857186fb406a32bbc77b42e61b85",
+      "gt_sha256": "7b8325c83fb90fe06f17a1f0c365580533de5960dea2e698ae05cd41412f39a5"
+    },
+    {
+      "id": "192410120",
+      "category": "dress",
+      "texture_sha256": "27810bfc9855857cf02d2687dba988c54abf1176f617ef3a4a16fab1b5b637e3",
+      "sketch_sha256": "238df23ca6e22ec49b7f62ad44da543815b0ef8c33819ee4be609ff6d581d7c4",
+      "gt_sha256": "410269f3c01593adacfd02de82317641e9a07a443223e1a8922dd19d3994e59c"
+    },
+    {
+      "id": "206295167",
+      "category": "dress",
+      "texture_sha256": "fbd3fd2e70bebdffd647225a9185c20c4cd5067d8e9e4894a844ff77b79db816",
+      "sketch_sha256": "681f3b6ca066154898fcc728e5cacfe607046c0fda6b08250a607bb7c4fa718a",
+      "gt_sha256": "24fa67781535affac8cdb57c3c9a0539c887145dfd8661704e754e8ee31f36bf"
+    },
+    {
+      "id": "167054962",
+      "category": "dress",
+      "texture_sha256": "7e6171f450e212e5799fb901a632c4104495b6c391de6af5d78077330423b71b",
+      "sketch_sha256": "d53d7213c0cdd2574636cd5ed3e1edad30057b9374c0fc4011188b68b2612eb6",
+      "gt_sha256": "04d65db1d5f7767b237d7df35722a58c1f70310e9d43feb2c1d18b878355836e"
+    },
+    {
+      "id": "158500644",
+      "category": "dress",
+      "texture_sha256": "03ac8930133dbb3c37a7559209355ebd725dd5f95d0a0a21d9165a4761f17414",
+      "sketch_sha256": "c0bb62f8f400a7b44a7c831ddba2206e13ac2c7378fb2915b20651ac63f9a800",
+      "gt_sha256": "4967876abfabeb0c910f527c0fdd7a5beda8d96318d3dca1c02d8ccf793b72f2"
+    },
+    {
+      "id": "29575430",
+      "category": "dress",
+      "texture_sha256": "cb94bbbb438bac201627d1d6e1d93bc4cbb1bdd22c13d9d881122ff4d3af1f24",
+      "sketch_sha256": "852f3ad396c58a8f5ea928c3b5682d8f3394a30fd2a4f0d30abc8ba6364b9cc1",
+      "gt_sha256": "0150d49cd24af5cfd5019ef2d3fcc55a0c3e8bb4d0f360f0801acb4ef28f5887"
+    },
+    {
+      "id": "6243345",
+      "category": "dress",
+      "texture_sha256": "b457cf44713aba88d5bca63fcdae920efece123c114c2bd77e058ce68c12fc05",
+      "sketch_sha256": "cf91d9eb47e4f73054359500115cf326546719f24c91a308e1c3c85736098e94",
+      "gt_sha256": "e0fc2d932cff09c246719387314f0cb7c2da2e4bca3be5706ff4d3fc61bead22"
+    },
+    {
+      "id": "202429701",
+      "category": "dress",
+      "texture_sha256": "5d64ed02d96c87c9b59ffab9db6a4abc2772df2ddcb00d704bc3e1f669155ac1",
+      "sketch_sha256": "5b8c5c71ce67586a7df970bea9789a13c8bd94aaf67e15dba677da45e9cc29d6",
+      "gt_sha256": "2bfc14115af9d303b1d0893adb189ae134cd2984ce3e3704538edca665c2cdf0"
+    },
+    {
+      "id": "106574616",
+      "category": "dress",
+      "texture_sha256": "2e175a2c6b41e1cdb5ee5c600b0a905f6e57a33f7778126700fa00c92b11c613",
+      "sketch_sha256": "4d0caeb14acc1bf61935445faeb1f212fcb9784a57b4e579e8dcb7162ca2a1df",
+      "gt_sha256": "2ec62a07dfec4086b19ef5a5a19d31b4fd1ed2e09e11ca37ba5e01d530251784"
+    },
+    {
+      "id": "145495637",
+      "category": "dress",
+      "texture_sha256": "b9d1c41259e497dc63573c0c5237ee465a623fdc61b7e1ebdaa51bfd226c85d2",
+      "sketch_sha256": "580ffa70713c7dd6493efa113117e96a7b5cfefbbdb2ae16fd495e66df93c97b",
+      "gt_sha256": "e92255a214bb770e0351e3ad6333b27a4a9ca33f0f6eb30e9b4c1e3fbadccd48"
+    }
+  ]
+}
