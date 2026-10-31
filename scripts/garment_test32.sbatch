@@ -12,5 +12,6 @@ elif [[ "$1" == generate && "${2:-}" == SGDiff ]]; then
   PYTHON=/share/home/u2515283058/.conda/envs/sgdiff/bin/python
 elif [[ "$1" == generate && "${2:-}" == LOTS ]]; then
   PYTHON=/share/home/u2515283058/LOTS/.venv/bin/python
+  export HF_HOME=/share/home/u2515283058/LOTS/cache/huggingface
 fi
 exec "$PYTHON" -m tools.garment_test32 "$@"
