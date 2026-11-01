@@ -286,6 +286,21 @@ def audit():
     print('PREFLIGHT_PASSED',flush=True)
 
 
+def restore_training_state(branch, optimizer, rng, path, expected_update):
+    """恢复专用训练随机流和AdamW；同时核对状态与已加载支路权重一致。"""
+    import torch
+    state = torch.load(path, map_location='cpu')
+    assert state['total_updates'] == expected_update
+    current = branch.state_dict()
+    assert current.keys() == state['branch'].keys()
+    assert all(torch.equal(value.detach().cpu(),state['branch'][name]) for name,value in current.items())
+    optimizer.load_state_dict(state['optimizer'])
+    rng.set_state(state['rng'].cpu())
+    return dict(total_updates=expected_update,optimizer_restored=True,random_stream_restored=True,
+                optimizer_steps=sorted({int(s['step']) for s in optimizer.state.values()}),
+                rng_sha256=hashlib.sha256(state['rng'].cpu().numpy().tobytes()).hexdigest())
+
+
 def train(arm):
     import torch
     import torch.nn.functional as F
@@ -316,11 +331,18 @@ def train(arm):
     scheduler = DDIMScheduler(beta_start=.00085,beta_end=.012,beta_schedule='scaled_linear',num_train_timesteps=1000)
     rng = torch.Generator(device='cuda').manual_seed(config['seed'])
     order = np.random.default_rng(config['seed']).permutation(len(cached)).tolist()
-    # 旧试验未保存AdamW状态：权重续训、优化器重建；随机流跳过已完成的400步。
-    for micro in range(start*config['accumulation']):
-        latent = cached[order[micro%len(order)]]['latent']
-        torch.randn(latent.shape,generator=rng,device='cuda',dtype=latent.dtype)
-        torch.randint(30,250,(1,),generator=rng,device='cuda')
+    resume_audit = None
+    if config.get('resume_state_sha256'):
+        resume_path = Path(config['initial_training_root'])/arm/'resume_state.pt'
+        assert sha(resume_path) == config['resume_state_sha256'][arm]
+        resume_audit = restore_training_state(branch,optimizer,rng,resume_path,start)
+        write(folder/'resume_audit.json',dict(checkpoint_sha256=sha(resume_path),**resume_audit))
+    else:
+        # 首轮400步未保存AdamW状态时，沿用权重续训并跳过已使用的随机数。
+        for micro in range(start*config['accumulation']):
+            latent = cached[order[micro%len(order)]]['latent']
+            torch.randn(latent.shape,generator=rng,device='cuda',dtype=latent.dtype)
+            torch.randint(30,250,(1,),generator=rng,device='cuda')
     rows = []
     begin = time.monotonic()
     torch.cuda.reset_peak_memory_stats()
@@ -369,6 +391,9 @@ def train(arm):
             print('TRAIN',arm,json.dumps(record),flush=True)
         if (step+1)%200 == 0:
             torch.save(branch.state_dict(),folder/('branch_%04d.pt'%(step+1)))
+        if step+1 in config.get('save_resume_updates',[]):
+            torch.save(dict(branch=branch.state_dict(),optimizer=optimizer.state_dict(),rng=rng.get_state(),
+                            total_updates=step+1),folder/('resume_%04d.pt'%(step+1)))
         assert time.monotonic()-begin < 1650, '单臂超过27.5分钟软上限'
     branch.unbind()
     after = freeze_digest(pipe)
@@ -382,7 +407,8 @@ def train(arm):
         frozen_unchanged=True,branch_sha256=sha(folder/'branch.pt'),seconds=time.monotonic()-begin,
         peak_gib=torch.cuda.max_memory_allocated()/2**30,
         stream_sha256=stable([r['stream'] for r in rows]),initial_update=start,
-        total_updates=config['updates'],optimizer_restarted=bool(start),
+        total_updates=config['updates'],optimizer_restarted=bool(start) and resume_audit is None,
+        resume_audit=resume_audit,
         initial_branch_sha256=sha(initial) if initial else None))
     print('TRAIN_COMPLETE',arm,flush=True)
 
@@ -437,6 +463,8 @@ def package():
             'tools/t3_local_pilot_report.py','scripts/t3_local_pilot.sbatch','tests/test_t3_local_texture.py']
     if (ROOT/'continuation_protocol.json').exists():
         code += ['tools/t3_local_continue.py','scripts/t3_local_continue.sbatch']
+    if read(ROOT/'protocol.json').get('updates') == 1600:
+        code += ['scripts/t3_local_extend1600.sbatch']
     for name in code:
         target=ROOT/'code'/name
         target.parent.mkdir(parents=True,exist_ok=True)
@@ -445,7 +473,7 @@ def package():
         ['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip(),files={name:sha(SOURCE/name) for name in code}))
     resource=subprocess.check_output(['sacct','-S','2026-11-01','-u','u2515283058','-X','-n','-P',
         '-o','JobIDRaw,JobName,State,ExitCode,ElapsedRaw,AllocCPUS,AllocTRES,NodeList,Start,End'],text=True)
-    prefix = '|t3local_c800' if (ROOT/'continuation_protocol.json').exists() else '|t3local_'
+    prefix = '|'+read(ROOT/'protocol.json').get('job_prefix','t3local_c800' if (ROOT/'continuation_protocol.json').exists() else 't3local_')
     resource='\n'.join(line for line in resource.splitlines() if prefix in line)+'\n'
     (ROOT/'audit/resource_sacct.psv').write_text(resource,encoding='utf-8')
     paths = [p for p in ROOT.rglob('*') if p.is_file() and not any(x in p.parts for x in ['source','cache'])

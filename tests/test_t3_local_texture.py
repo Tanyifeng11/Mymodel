@@ -68,3 +68,31 @@ def test_synthetic_measure_has_valid_period_and_orientation():
             pixels=np.repeat(gray[...,None],3,-1)
             result=pattern_measure(pixels,dict(patches=[(0,0)],expected_angle=angle,expected_period=period))
             assert result['orientation_correct'] and result['period_relative_error']<.1
+
+
+def test_optimizer_and_random_stream_resume_matches_next_update(tmp_path):
+    from tools.t3_local_pilot import restore_training_state
+    torch.manual_seed(12)
+    model = torch.nn.Linear(3,2)
+    optimizer = torch.optim.AdamW(model.parameters(),lr=.01)
+    rng = torch.Generator().manual_seed(7)
+    def update(net,opt,generator):
+        opt.zero_grad()
+        x = torch.randn((4,3),generator=generator)
+        target = torch.randn((4,2),generator=generator)
+        (net(x)-target).square().mean().backward()
+        opt.step()
+    for _ in range(4):
+        update(model,optimizer,rng)
+    path = tmp_path/'resume.pt'
+    torch.save(dict(branch=model.state_dict(),optimizer=optimizer.state_dict(),rng=rng.get_state(),total_updates=800),path)
+    resumed = torch.nn.Linear(3,2)
+    resumed.load_state_dict(model.state_dict())
+    resumed_optimizer = torch.optim.AdamW(resumed.parameters(),lr=.01)
+    resumed_rng = torch.Generator().manual_seed(999)
+    audit = restore_training_state(resumed,resumed_optimizer,resumed_rng,path,800)
+    assert audit['optimizer_steps'] == [4]
+    update(model,optimizer,rng)
+    update(resumed,resumed_optimizer,resumed_rng)
+    assert all(torch.equal(a,b) for a,b in zip(model.parameters(),resumed.parameters()))
+    assert torch.equal(rng.get_state(),resumed_rng.get_state())
