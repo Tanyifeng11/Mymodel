@@ -15,7 +15,7 @@ from PIL import Image
 
 SOURCE = Path(__file__).resolve().parents[1]
 PROJECT = Path(os.environ.get('T3_PROJECT', '/share/home/u2515283058/Mymodel'))
-NAME = 't3_local_texture_pilot_20261101'
+NAME = os.environ.get('T3_RUN_NAME', 't3_local_texture_pilot_20261101')
 ROOT = PROJECT / 'output_eval' / NAME
 BASE = PROJECT / 'output_eval/e2a_sup_comp_01_20261021/training/formal/T3/checkpoint-final/joint_model.pt'
 BASE_SHA = '25f95844696ba5c07eb9223e3bdd4d68c78ba4f1a36d561569c35cc90186d259'
@@ -292,6 +292,7 @@ def train(arm):
     from diffusers import DDIMScheduler
     from models.t3_local_texture import LocalTextureBranch,reference_consistency
     assert read(ROOT/'audit/preflight.json')['vae_controls_pass']
+    assert sha(BASE) == BASE_SHA
     config = read(ROOT/'protocol.json')
     folder = ROOT/'training'/arm
     assert not (folder/'complete.json').exists()
@@ -300,18 +301,30 @@ def train(arm):
     pipe.set_scale(1.)
     pipe.set_ipa_scale(1.)
     before = freeze_digest(pipe)
+    assert before == read(ROOT/'audit/preflight.json')['frozen_digest_before']
     cached = build_cache(pipe)
     torch.manual_seed(config['seed'])
     branch = LocalTextureBranch().cuda()
+    start = config.get('initial_update', 0)
+    initial = None
+    if start:
+        initial = Path(config['initial_training_root'])/arm/'branch.pt'
+        assert sha(initial) == config['initial_branch_sha256'][arm]
+        branch.load_state_dict(torch.load(initial, map_location='cuda'))
     branch.bind(pipe.unet)
     optimizer = torch.optim.AdamW(branch.parameters(),lr=config['learning_rate'])
     scheduler = DDIMScheduler(beta_start=.00085,beta_end=.012,beta_schedule='scaled_linear',num_train_timesteps=1000)
     rng = torch.Generator(device='cuda').manual_seed(config['seed'])
     order = np.random.default_rng(config['seed']).permutation(len(cached)).tolist()
+    # 旧试验未保存AdamW状态：权重续训、优化器重建；随机流跳过已完成的400步。
+    for micro in range(start*config['accumulation']):
+        latent = cached[order[micro%len(order)]]['latent']
+        torch.randn(latent.shape,generator=rng,device='cuda',dtype=latent.dtype)
+        torch.randint(30,250,(1,),generator=rng,device='cuda')
     rows = []
     begin = time.monotonic()
     torch.cuda.reset_peak_memory_stats()
-    for step in range(config['updates']):
+    for step in range(start,config['updates']):
         optimizer.zero_grad(set_to_none=True)
         logs = []
         for micro in range(config['accumulation']):
@@ -361,11 +374,16 @@ def train(arm):
     after = freeze_digest(pipe)
     assert before == after
     torch.save(branch.state_dict(),folder/'branch.pt')
+    if start:
+        torch.save(dict(branch=branch.state_dict(),optimizer=optimizer.state_dict(),rng=rng.get_state(),
+                        total_updates=config['updates']),folder/'resume_state.pt')
     write(folder/'log.json',rows)
     write(folder/'complete.json',dict(arm=arm,updates=len(rows),frozen_before=before,frozen_after=after,
         frozen_unchanged=True,branch_sha256=sha(folder/'branch.pt'),seconds=time.monotonic()-begin,
         peak_gib=torch.cuda.max_memory_allocated()/2**30,
-        stream_sha256=stable([r['stream'] for r in rows])))
+        stream_sha256=stable([r['stream'] for r in rows]),initial_update=start,
+        total_updates=config['updates'],optimizer_restarted=bool(start),
+        initial_branch_sha256=sha(initial) if initial else None))
     print('TRAIN_COMPLETE',arm,flush=True)
 
 
@@ -417,6 +435,8 @@ def package():
     assert (ROOT/'decision.json').exists()
     code = ['models/t3_local_texture.py','tools/t3_local_pilot.py',
             'tools/t3_local_pilot_report.py','scripts/t3_local_pilot.sbatch','tests/test_t3_local_texture.py']
+    if (ROOT/'continuation_protocol.json').exists():
+        code += ['tools/t3_local_continue.py','scripts/t3_local_continue.sbatch']
     for name in code:
         target=ROOT/'code'/name
         target.parent.mkdir(parents=True,exist_ok=True)
@@ -425,7 +445,8 @@ def package():
         ['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip(),files={name:sha(SOURCE/name) for name in code}))
     resource=subprocess.check_output(['sacct','-S','2026-11-01','-u','u2515283058','-X','-n','-P',
         '-o','JobIDRaw,JobName,State,ExitCode,ElapsedRaw,AllocCPUS,AllocTRES,NodeList,Start,End'],text=True)
-    resource='\n'.join(line for line in resource.splitlines() if '|t3local_' in line)+'\n'
+    prefix = '|t3local_c800' if (ROOT/'continuation_protocol.json').exists() else '|t3local_'
+    resource='\n'.join(line for line in resource.splitlines() if prefix in line)+'\n'
     (ROOT/'audit/resource_sacct.psv').write_text(resource,encoding='utf-8')
     paths = [p for p in ROOT.rglob('*') if p.is_file() and not any(x in p.parts for x in ['source','cache'])
              and p.suffix not in ['.pt','.bin','.tar','.gz']]
