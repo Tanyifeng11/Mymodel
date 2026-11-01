@@ -412,8 +412,21 @@ def generate(arm):
 
 
 def package():
+    import shutil
     import tarfile
     assert (ROOT/'decision.json').exists()
+    code = ['models/t3_local_texture.py','tools/t3_local_pilot.py',
+            'tools/t3_local_pilot_report.py','scripts/t3_local_pilot.sbatch','tests/test_t3_local_texture.py']
+    for name in code:
+        target=ROOT/'code'/name
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(SOURCE/name,target)
+    write(ROOT/'audit/package_code.json',dict(commit=subprocess.check_output(
+        ['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip(),files={name:sha(SOURCE/name) for name in code}))
+    resource=subprocess.check_output(['sacct','-S','2026-11-01','-u','u2515283058','-X','-n','-P',
+        '-o','JobIDRaw,JobName,State,ExitCode,ElapsedRaw,AllocCPUS,AllocTRES,NodeList,Start,End'],text=True)
+    resource='\n'.join(line for line in resource.splitlines() if '|t3local_' in line)+'\n'
+    (ROOT/'audit/resource_sacct.psv').write_text(resource,encoding='utf-8')
     paths = [p for p in ROOT.rglob('*') if p.is_file() and not any(x in p.parts for x in ['source','cache'])
              and p.suffix not in ['.pt','.bin','.tar','.gz']]
     write(ROOT/'checksums.json',{str(p.relative_to(ROOT)):sha(p) for p in paths})
