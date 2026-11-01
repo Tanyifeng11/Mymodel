@@ -228,7 +228,8 @@ def train(arm, preflight=False):
     accumulation = 8//world
     acc = Accelerator(mixed_precision='bf16',gradient_accumulation_steps=accumulation,
                       kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)])
-    torch.cuda.set_device(acc.device)
+    # 单进程 Accelerator.device 可能是无编号的 cuda；set_device 需要显式本地编号。
+    torch.cuda.set_device(acc.local_process_index)
     torch.backends.cuda.matmul.allow_tf32=False
     torch.backends.cudnn.allow_tf32=False
     pipe,network = load_network(acc.device)
