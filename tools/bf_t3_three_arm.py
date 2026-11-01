@@ -349,6 +349,7 @@ def train(arm, preflight=False):
 def generate(arm,smoke=False):
     import torch
     checkpoint=ROOT/'training'/arm/'step28365.pt'
+    checkpoint_sha=sha(checkpoint)
     pipe,network=load_network('cuda',checkpoint)
     network.eval().requires_grad_(False)
     pipe.unet.half(); pipe.vae.half(); network.adapter.half()
@@ -374,7 +375,7 @@ def generate(arm,smoke=False):
             image.save(dest)
             write(dest.with_suffix('.json'),dict(id=row['id'],arm=arm,condition=row['condition'],split=row['split'],
                 seed=row['seed'],initial_latent_sha256=before,output_sha256=sha(dest),
-                checkpoint=str(checkpoint),checkpoint_sha256=sha(checkpoint),text_used=True,
+                checkpoint=str(checkpoint),checkpoint_sha256=checkpoint_sha,text_used=True,
                 GT_used_in_inference=False,input_sketch_sha256=row['sketch_sha256'],
                 input_reference_sha256=row['reference_sha256'],steps=50,cfg=7.,native_size=[384,512]))
             network.adapter.clear()
@@ -392,7 +393,8 @@ def package():
     files=[]
     for folder in ['audit','generation','metrics','figures','outputs','inputs']:
         files.extend(p for p in (ROOT/folder).rglob('*') if p.is_file())
-    files += [ROOT/'protocol.json',ROOT/'evaluation.json']
+    files.extend(p for p in (ROOT/'training').rglob('*') if p.is_file() and p.suffix in ['.json','.csv'])
+    files += [ROOT/'protocol.json',ROOT/'evaluation.json',ROOT/'submitted_jobs.json',ROOT/'evaluation_complete.json']
     manifest={str(p.relative_to(ROOT)):dict(bytes=p.stat().st_size,sha256=sha(p)) for p in files}
     write(ROOT/'bundle_manifest.json',manifest)
     with tarfile.open(ROOT/'review_results.tar.gz','w:gz') as tar:
