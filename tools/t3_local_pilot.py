@@ -99,7 +99,10 @@ def prepare():
     old = read(PROJECT/'output_eval/t3_p0_p1_20261028/protocol/input_manifest.json')
     originals = {r['id']: r for r in old if r['condition'] == 'original'}
     swapped = {r['id']: r for r in old if r['condition'] == 'swapped'}
-    ids = sorted(swapped, key=stable)[:16]
+    eligibility = [make_mask(dict(originals[i],identity=i)) for i in sorted(swapped,key=stable)]
+    ids = [r['id'] for r in eligibility if len(r['patches'])>=2][:16]
+    assert len(ids)==16, '现有开发输入不足16件可测衣身；停止，不放宽窗口标准'
+    write(ROOT/'inputs/eligibility.json',[dict(id=r['id'],patch_n=len(r['patches']),selected=r['id'] in ids) for r in eligibility])
     evaluation = []
     for identity in ids:
         for condition, rows in [('original', originals), ('swapped', swapped)]:
@@ -150,6 +153,7 @@ def prepare():
         decision='must beat T3 and residual-only on gray DISTS plus structure and synthetic gates; otherwise stop',
         budget='two single-GPU training arms, 30min each maximum; no automatic larger training',
         independent_confirmation=False,scope='exploratory mechanism pilot; previously viewed real development identities',
+        input_eligibility='input-hash order, at least two fully-interior128 patches; no generated output used for selection',
         source_commit=subprocess.check_output(['git','-C',str(SOURCE),'rev-parse','HEAD'],text=True).strip())
     write(ROOT/'protocol.json', protocol)
     print('PREPARED', len(training), len(evaluation), flush=True)

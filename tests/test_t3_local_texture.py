@@ -56,3 +56,15 @@ def test_hooks_disable_unconditional_and_early_timesteps():
     assert torch.equal(net(value,torch.tensor([900]),cross_attention_kwargs={'sa_hidden_states':{}}),value)
     assert net(value,torch.tensor([100]),cross_attention_kwargs={'sa_hidden_states':{}}).abs().sum()>0
     branch.unbind()
+
+
+def test_synthetic_measure_has_valid_period_and_orientation():
+    import numpy as np
+    from tools.t3_local_pilot_report import pattern_measure
+    yy,xx=np.mgrid[:128,:128]
+    for angle in [0,90]:
+        for period in [12,16,20,24]:
+            gray=127+80*np.sin(2*np.pi*(xx if angle==90 else yy)/period)
+            pixels=np.repeat(gray[...,None],3,-1)
+            result=pattern_measure(pixels,dict(patches=[(0,0)],expected_angle=angle,expected_period=period))
+            assert result['orientation_correct'] and result['period_relative_error']<.1

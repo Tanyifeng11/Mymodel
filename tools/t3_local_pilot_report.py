@@ -6,7 +6,6 @@ from tools.t3_local_pilot import ROOT, PROJECT, ARMS, read, write, sha, coordina
 
 
 def pattern_measure(pixels, row):
-    from scipy.signal import find_peaks
     angles, periods = [], []
     for x,y in row['patches']:
         patch = pixels[y:y+128,x:x+128].astype(float).mean(-1)/255
@@ -17,8 +16,7 @@ def pattern_measure(pixels, row):
         ac = np.correlate(profile,profile,'full')[len(profile)-1:]
         ac /= np.arange(len(profile),0,-1)
         ac /= max(ac[0],1e-10)
-        peaks,_ = find_peaks(ac[5:42],height=.25,prominence=.1)
-        peaks += 5
+        peaks=np.flatnonzero((ac[6:41]>ac[5:40]) & (ac[6:41]>=ac[7:42]) & (ac[6:41]>=.25))+6
         if len(peaks):
             best = ac[peaks].max()
             periods.append(int(min(p for p in peaks if ac[p]>=.85*best)))
