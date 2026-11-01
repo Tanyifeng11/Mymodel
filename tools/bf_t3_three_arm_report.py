@@ -129,6 +129,7 @@ def evaluate():
     a,b=training.values()
     assert a['updates']==b['updates']==28365 and a['initial_sha256']==b['initial_sha256']
     assert a['stream_hashes']==b['stream_hashes'] and a['world']==b['world']
+    assert a['source_sha256']==b['source_sha256']
     write(ROOT/'audit/final_comparability.json',dict(passed=True,same_initialization=True,same_training_stream=True,
         updates=28365,world=a['world'],lpips_assets=assets,training=training,
         interpretation='T3 effect is only BF-SD-T3 versus BF-SD; native BF comparison remains descriptive'))

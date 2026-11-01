@@ -242,6 +242,8 @@ def train(arm, preflight=False):
     style = VGGGramStyleLoss().to(acc.device).eval().requires_grad_(False)
     folder = ROOT/('audit/preflight_training' if preflight else 'training/'+arm)
     folder.mkdir(parents=True,exist_ok=True)
+    source_hashes={p:sha(SOURCE/p) for p in ['models/bf_original_fusion.py','models/bf_sd_skip.py',
+                   'tools/bf_t3_three_arm.py','train_GAM_texture_joint.py','adapter/attention_processor.py']}
     initial = hashlib.sha256()
     for name,value in network.trainable_state().items(): initial.update(name.encode()+value.numpy().tobytes())
     initial_sha = initial.hexdigest()
@@ -291,6 +293,7 @@ def train(arm, preflight=False):
                 loss=raw['base']+(aux if arm=='BF-SD-T3' else 0)
                 assert torch.isfinite(loss).item(),token
                 if preflight and step==2 and micro%accumulation==0:
+                    assert acc.unwrap_model(network).adapter.injection_counts==[3,2,2,3]
                     probe=acc.unwrap_model(network).adapter.projections[0].weight
                     gradients={k:float(torch.autograd.grad(raw[k],probe,retain_graph=True)[0].float().norm()) for k in ['body','rest']}
                     assert all(np.isfinite(v) and v>0 for v in gradients.values()),gradients
@@ -333,6 +336,7 @@ def train(arm, preflight=False):
     if acc.is_main_process:
         write(folder/'complete.json',dict(arm=arm,updates=step,initial_sha256=initial_sha,
               trainable_parameters=sum(p.numel() for p in params),stream_hashes=stream_values,
+              source_sha256=source_hashes,
               seconds=time.monotonic()-start,world=world,effective_batch=8,logs=logs[-10:],
               checkpoint_sha256=sha(folder/('step%05d.pt'%step))))
         if preflight:
