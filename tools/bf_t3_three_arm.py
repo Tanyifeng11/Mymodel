@@ -70,7 +70,8 @@ def prepare():
     adapter = BFSkipFusion()
     adapter.fusion.load_state_dict(fusion, strict=True)
     del state, adapter
-    (ROOT/'initialization').mkdir(parents=True)
+    (ROOT/'initialization').mkdir(parents=True,exist_ok=True)
+    (ROOT/'inputs').mkdir(parents=True,exist_ok=True)
     torch.save(fusion, ROOT/'initialization/bf_fusion.pt')
     train_path = PROJECT/'data/train_bf_texture.json'
     train = read(train_path)
