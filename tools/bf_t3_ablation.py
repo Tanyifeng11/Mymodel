@@ -274,6 +274,13 @@ def generate(arm):
     pipe, network = core.load_network('cuda', checkpoint)
     network.eval().requires_grad_(False)
     pipe.unet.half(); pipe.vae.half(); network.adapter.half()
+    # Diffusers.device可能先读取未启用的CPU条件模块；推理统一注册模块的设备。
+    # 不启用旧纹理分支，不改变训练、权重、文本、采样器或随机噪声。
+    pipe.image_encoder.to('cuda')
+    pipe.bf_texture_conditioner.to('cuda')
+    assert pipe._execution_device == next(pipe.text_encoder.parameters()).device
+    assert pipe._execution_device == next(pipe.unet.parameters()).device
+    print('INFERENCE_DEVICE', pipe._execution_device, flush=True)
     rows = read(ROOT / 'evaluation.json')
     with torch.inference_mode():
         for row in rows:
