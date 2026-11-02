@@ -394,7 +394,8 @@ def package():
     import tarfile
     files=[]
     for folder in ['audit','generation','metrics','figures','outputs','inputs']:
-        files.extend(p for p in (ROOT/folder).rglob('*') if p.is_file())
+        # 预检权重和优化器状态保留在服务器，交付归档只包含评价和审计数据。
+        files.extend(p for p in (ROOT/folder).rglob('*') if p.is_file() and p.suffix not in {'.pt','.tmp'})
     files.extend(p for p in (ROOT/'training').rglob('*') if p.is_file() and p.suffix in ['.json','.csv'])
     files += [ROOT/'protocol.json',ROOT/'evaluation.json',ROOT/'submitted_jobs.json',ROOT/'evaluation_complete.json']
     manifest={str(p.relative_to(ROOT)):dict(bytes=p.stat().st_size,sha256=sha(p)) for p in files}
