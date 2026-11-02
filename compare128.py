@@ -145,6 +145,13 @@ def prepare(args):
 @torch.inference_mode()
 def generate(args):
     sys.path.insert(0, str(args.source))
+    import platform
+    import skimage
+    import cv2
+    write(args.root/'audit/environment.json', dict(python=sys.version, platform=platform.platform(),
+        torch=torch.__version__, numpy=np.__version__, skimage=skimage.__version__, opencv=cv2.__version__,
+        cuda=torch.version.cuda, device=args.device, git_commit=subprocess.check_output(
+            ['git', '-C', str(HERE), 'rev-parse', 'HEAD'], text=True).strip()))
     torch.set_num_threads(2)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.allow_tf32 = False
@@ -177,6 +184,12 @@ def generate(args):
         image.save(native)
         image.resize((384, 512), Image.Resampling.BILINEAR).save(output)
         Image.fromarray(np.rint(np.clip((tensor[0, 0].numpy()+1)*.5, 0, 1)*255).astype(np.uint8)).save(native.with_name(row['id']+'_sketch.png'))
+        hint_lab = tensor[0, 1:4].numpy().transpose(1, 2, 0)*np.array([50, 128, 128])+np.array([50, 0, 0])
+        hint_rgb = np.clip(lab2rgb(hint_lab), 0, 1)
+        hint_view = np.repeat(np.clip((tensor[0, 0].numpy()+1)*.5, 0, 1)[:, :, None], 3, axis=2)
+        hint_mask = tensor[0, 4].numpy() > 0
+        hint_view[hint_mask] = hint_rgb[hint_mask]
+        Image.fromarray(np.rint(hint_view*255).astype(np.uint8)).save(native.with_name(row['id']+'_hints.png'))
         write(meta_path, dict(id=row['id'], arm='TextureGAN', seed=row['seed'],
             checkpoint_sha256=WEIGHT_SHA, checkpoint_metadata=state_meta, parameters=sum(p.numel() for p in model.parameters()),
             input_sketch_sha256=row['sketch_sha256'], input_reference_sha256=row['reference_sha256'],
@@ -209,6 +222,8 @@ def resources(args):
         assert line is not None, raw
         state, elapsed, tres = line[1], int(line[2]), line[3]
         gpu = next((int(x.split('=')[1]) for x in tres.split(',') if x.startswith('gres/gpu=')), 0)
+        if elapsed and state != 'PENDING':
+            assert gpu == job['gpus'], '无法核实GPU分配量: '+raw
         used = elapsed*gpu
         total += used if state in ['COMPLETED', 'FAILED', 'TIMEOUT', 'OUT_OF_MEMORY'] or state.startswith('CANCELLED') else job['limit_seconds']
         records.append(dict(job=job['id'], state=state, elapsed_seconds=elapsed, gpu_count=gpu, actual_gpu_seconds=used))
