@@ -24,10 +24,10 @@ raw.freezePanes.freezeColumns(2);
 raw.showGridLines=false;
 
 main.showGridLines=false;
-main.getRange('A1:H75').format={font:{name:'Arial',size:11},rowHeight:23};
-main.getRange('A1:A75').format.columnWidth=29;
-main.getRange('B1:B75').format.columnWidth=31;
-main.getRange('C1:H75').format.columnWidth=17;
+main.getRange('A1:H80').format={font:{name:'Arial',size:11},rowHeight:23};
+main.getRange('A1:A80').format.columnWidth=29;
+main.getRange('B1:B80').format.columnWidth=31;
+main.getRange('C1:H80').format.columnWidth=17;
 main.getRange('C6:H29').format.horizontalAlignment='right';
 main.getRange('A2').values=[['新增128件纯服装 · 12模型指标对比']];
 main.getRange('A2').format.font={name:'Arial',size:17,bold:true,color:'#17364e'};
@@ -59,7 +59,7 @@ data.original.forEach((r,i)=>{
   });
 });
 main.getRange('A31:H32').merge();
-main.getRange('A31').values=[['GPU累计用量（含失败）：'+(data.resources.jobs.reduce((s,j)=>s+j.actual_gpu_seconds,0)/3600).toFixed(4)+' GPU小时；本次TextureGAN硬上限1 GPU小时；此前11方法用量另见原实验账单。']];
+main.getRange('A31').values=[['本次GPU用量（含取消/失败）：'+(data.resources.jobs.reduce((s,j)=>s+j.actual_gpu_seconds,0)/3600).toFixed(4)+' GPU小时；本次CPU推理与评价，已通过16例GPU指标回放。GPU预算上限1小时；旧11方法账单单列。']];
 main.getRange('A31:H32').format={wrapText:true,verticalAlignment:'center',font:{size:10,color:'#536c7d'}};
 data.notes.forEach((note,i)=>{
   const y=36+i*3;
@@ -90,7 +90,7 @@ await fs.writeFile(path.join(root,'audit/workbook_error_scan.ndjson'),errorScan)
 console.log(errorScan);
 for(const [sheet,range,file] of [['指标对比','A2:H32','metrics_preview.png'],
   ['模型参数','A1:D4','parameters_preview.png'],['模型参数','A9:F13','parameters_tail_preview.png'],
-  ['指标对比','A36:H73','notes_preview.png'],['逐图数据','A1:K8','raw_preview.png']]){
+  ['指标对比','A36:H78','notes_preview.png'],['逐图数据','A1:K8','raw_preview.png']]){
   const png=await wb.render({sheetName:sheet,range,scale:1.4,format:'png'});
   await fs.writeFile(path.join(root,'audit',file),new Uint8Array(await png.arrayBuffer()));
 }

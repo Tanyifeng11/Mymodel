@@ -54,6 +54,14 @@ def main(root, previous):
         assert all(a[k] == b[k] for k in ['seed', 'caption', 'reference_sha256', 'sketch_sha256', 'gt_sha256'])
     meta = read(server/'metrics/TextureGAN/complete.json')
     assert meta['n'] == 128 and meta['complete'] and meta['missing_generation'] == 0
+    hint_fallbacks = 0
+    for row in rows:
+        generation = read(server/'outputs/TextureGAN/original'/(row['id']+'.json'))
+        assert generation['seed'] == row['seed'] and not generation['GT_used_in_inference']
+        assert generation['input_sketch_sha256'] == row['sketch_sha256']
+        assert generation['input_reference_sha256'] == row['reference_sha256']
+        assert not generation['text_used'] and len(generation['hint_patches']) == 2
+        hint_fallbacks += int('hint_only_fallback' in generation['mask_info'])
     raw = []
     for model in MODELS:
         base = server if model == 'TextureGAN' else previous/'server_results'
@@ -98,16 +106,20 @@ def main(root, previous):
         training_seed='unknown', training_steps='checkpoint epoch86 iteration1300; not total training steps',
         initialization_checkpoint='historical pretrained cloth model; no new training', checkpoint='/share/home/u2515283058/TextureGAN/weights/final_cloth_finetune.pth',
         checkpoint_sha256=prov['sha256'], dataset_split='same BF/test 128 garment identities, original only',
-        inference_config='256x256; 2 reference-native patches,20..40px; fixed identity seed; float32 eval(); align_corners=True; 8,001,641 parameters',
-        metric_protocol_version='same frozen original128 six metrics at384x512', result_source=str(server/'metrics/TextureGAN/per_image.csv'),
+        inference_config='CPU 256x256; 2 reference-native patches,20..40px; fixed identity seed; float32 eval(); align_corners=True; 8,001,641 parameters',
+        metric_protocol_version='same frozen original128 six metrics at384x512; CPU with16-case GPU replay', result_source=str(server/'metrics/TextureGAN/per_image.csv'),
         status='128 generated/evaluated; pretrained inference reproduction',
-        comparability_notes='mirrored checkpoint; official S3 deleted; original byte identity unverified; pretraining overlap unknown; no text; automatic hint placement'))
+        comparability_notes='mirror: https://github.com/spuliz/masterproject ; source: https://github.com/janesjanes/Pytorch-TextureGAN ; official S3 deleted, original byte identity unverified; pretraining overlap unknown; no text; automatic hint placement'))
     csv_write(root/'model_parameters.csv', params)
     resources = read(server/'audit/resources.json')
     notes = old['notes'] + [
         '本次只新增TextureGAN，复用已有11方法冻结结果；12方法各128张，总1536条指标。',
         'TextureGAN使用可追溯应用项目镜像的服装权重；与已失效官方文件无法逐字节核对。未从头训练，不称完整训练复现。',
-        'TextureGAN仅接收草图和参考面料局部块，不接收文本。两块20—40像素，固定seed放置；18件使用草图墨迹凸包作为提示位置后备，评价mask保持原协议。']
+        f'TextureGAN仅接收草图和参考面料局部块，不接收文本。两块20—40像素，固定seed放置；{hint_fallbacks}件使用草图墨迹凸包作为提示位置后备，评价mask保持原协议。']
+    if (server/'audit/CPU_GPU_metric_replay.json').exists():
+        replay = read(server/'audit/CPU_GPU_metric_replay.json')
+        assert replay['passed'] and replay['n'] == 16
+        notes.append('本次TextureGAN使用CPU推理和评价；同环境16例六指标GPU历史回放最大绝对差：'+str(max(replay['maximum_absolute_difference'].values()))+'。')
     notes[0] = '同批128件纯服装：上装、外套、裤装、连衣裙各32；仅原参考；12模型各128张，共1536条记录。'
     write(root/'workbook_data.json', dict(original=summary, raw=raw, parameters=params, notes=notes, pairwise=paired, resources=resources))
     def asset(row, key):
