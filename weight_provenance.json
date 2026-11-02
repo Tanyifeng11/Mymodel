@@ -1,0 +1,25 @@
+{
+  "model": "TextureGAN clothes",
+  "download_url": "https://raw.githubusercontent.com/spuliz/masterproject/1197f18a5235aebc722dcbeff641dd2caccb10a5/final_cloth_finetune.pth",
+  "mirror_repository": "https://github.com/spuliz/masterproject",
+  "mirror_commit": "1197f18a5235aebc722dcbeff641dd2caccb10a5",
+  "mirror_git_blob_sha1": "d676b363f68f940124ca8b2af3e22c091c7450fc",
+  "bytes": 32077388,
+  "sha256": "37a10d847feb1f1516a9ff9606162eed0e41bfce974b05121edcd27ff96f2d64",
+  "original_url": "https://s3-us-west-2.amazonaws.com/texturegan/final_cloth_finetune.pth",
+  "original_status": "404 NoSuchBucket",
+  "original_byte_identity": "unverifiable; upstream does not provide a surviving file/checksum",
+  "provenance_evidence": "https://boutiqueai.medium.com/artificial-intelligence-system-for-fashion-design-image-generation-d9eca8f54c76",
+  "upstream_code_commit": "8b20e678c482c216a816569087aaea247b2c2ebb",
+  "checkpoint_metadata": {
+    "color_space": "lab",
+    "epoch": 86,
+    "image_size": 256,
+    "iteration": 1300,
+    "model": "texturegan",
+    "batch_size": 6,
+    "dataset": ""
+  },
+  "strict_load": "all keys matched with upstream TextureGAN(5,3,32); legacy BatchNorm counters filled by PyTorch",
+  "parameters": 8001641
+}

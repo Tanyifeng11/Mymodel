@@ -1,3 +1,6 @@
 *.pyc
 .idea
 venv
+weights/
+output_eval/
+__pycache__/

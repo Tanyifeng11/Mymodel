@@ -128,7 +128,8 @@ class UpsamplingBlock(nn.Module):
 
         block = nn.Sequential()
         block.add_module('conv_1', conv(input_nc, output_nc, kernel, stride, pad))
-        block.add_module('upsample_2', biup(scale_factor=2, mode='bilinear'))
+        # PyTorch 0.2 bilinear used corner-aligned coordinates (see its 2x2 example).
+        block.add_module('upsample_2', biup(scale_factor=2, mode='bilinear', align_corners=True))
 
         self.biup_block = block
 
