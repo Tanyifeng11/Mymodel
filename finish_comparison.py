@@ -121,6 +121,7 @@ def main(root, previous):
         assert replay['passed'] and replay['n'] == 16
         notes.append('本次TextureGAN使用CPU推理和评价；同环境16例六指标GPU历史回放最大绝对差：'+str(max(replay['maximum_absolute_difference'].values()))+'。')
     notes[0] = '同批128件纯服装：上装、外套、裤装、连衣裙各32；仅原参考；12模型各128张，共1536条记录。'
+    notes[7] = '本次10组展示沿用用户指定编号和原顺序，不另外挑选胜出样本；其中原有条纹/波点案例也保留。完整128件始终计入指标，展示不代表总体胜率。'
     write(root/'workbook_data.json', dict(original=summary, raw=raw, parameters=params, notes=notes, pairwise=paired, resources=resources))
     def asset(row, key):
         if key in ['reference', 'sketch', 'gt']:
@@ -147,9 +148,16 @@ def main(root, previous):
     for row in summary:
         metrics += '<tr><th>'+row['model']+'</th>'+''.join('<td>'+('N/A' if row[k] is None else f'{row[k]:.6f}')+'<small>n='+str(row[k+'_n'])+'</small></td>' for k in KEYS)+'</tr>'
     metrics += '</tbody></table>'
-    nav = '<p><a href="original128_wide.csv">12模型指标CSV</a> · <a href="model_parameters.csv">模型与推理参数CSV</a> · <a href="selected10.html">指定10组对比</a> · <a href="全部12模型对比_指定10组.png">高清总图</a></p>'
+    nav = '<p><a href="outputs/texturegan_comparison_20261102/12模型指标与参数.xlsx">12模型指标与参数Excel</a> · <a href="original128_wide.csv">12模型指标CSV</a> · <a href="model_parameters.csv">模型与推理参数CSV</a> · <a href="selected10.html">指定10组对比</a> · <a href="全部12模型对比_指定10组.png">高清总图</a></p>'
     (root/'index.html').write_text(prefix+nav+metrics+'<h2>完整128件</h2>'+table(rows)+'</html>', encoding='utf-8')
     (root/'selected10.html').write_text(prefix+nav+'<h2>用户指定10组，原顺序</h2>'+table(selected)+'</html>', encoding='utf-8')
+    # 原11方法页面和原图保留，追加新版入口。
+    for page, relative in [(previous/'index.html', '../texturegan_comparison_20261102/index.html'),
+                           (previous/'selected10_all_models/index.html', '../../texturegan_comparison_20261102/selected10.html')]:
+        original_html = page.read_text(encoding='utf-8')
+        if relative not in original_html:
+            link = '<p><a href="'+relative+'">新增TextureGAN：12模型完整指标和对比图</a></p>'
+            page.write_text(original_html.replace('</h1>', '</h1>'+link, 1), encoding='utf-8')
     cell, top, rh, margin = 272, 130, 340, 24
     canvas = Image.new('RGB', (margin*2+len(cols)*cell, top+len(selected)*rh+margin), 'white')
     d = ImageDraw.Draw(canvas)

@@ -76,6 +76,7 @@ params.getRange('A1').write([headers,...data.parameters.map(r=>[r.model_id,
   (r.checkpoint??'')+'\nSHA256: '+(r.checkpoint_sha256??''),r.comparability_notes??r.limitations??''])]);
 params.getRange('A1:F13').format={font:{name:'Arial',size:10},rowHeight:90,wrapText:true,verticalAlignment:'center'};
 params.getRange('A1:F1').format={fill:'#28465d',font:{bold:true,color:'#ffffff'},rowHeight:27};
+params.getRange('A13:F13').format.rowHeight=120;
 for(const [col,width] of [['A',28],['B',28],['C',24],['D',65],['E',88],['F',65]]) params.getRange(`${col}1:${col}13`).format.columnWidth=width;
 params.freezePanes.freezeRows(1);
 params.showGridLines=false;
