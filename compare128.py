@@ -211,6 +211,70 @@ def evaluate(args):
     legacy.evaluate('TextureGAN', include_swap=True)
 
 
+@torch.inference_mode()
+def evaluate_cpu(args, replay_only=False):
+    """相同指标算子及冻结权重；先与历史GPU结果做16例数值回放。"""
+    sys.path.insert(0, str(args.source))
+    from eval.eval_utils import prepare_evaluation_masks, json_safe
+    from eval.metrics import compute_structure_preservation, compute_texture_leakage, compute_texture_color_fidelity
+    from tools.t3_p0p1 import SUP, SOURCE, csv_write
+    import lpips
+    torch.set_num_threads(2)
+    old_protocol = read(SUP/'evaluation/metric_protocol.json')
+    assert all(sha(SOURCE/path) == digest for path, digest in old_protocol['evaluation_code'].items())
+    trunk = Path(torch.hub.get_dir())/'checkpoints/alexnet-owt-4df8aa71.pth'
+    digest = sha(trunk)
+    assert digest.startswith('4df8aa71')
+    model = lpips.LPIPS(net='alex', pnet_rand=True)
+    pretrained = torch.load(trunk, map_location='cpu', weights_only=True)
+    model.net.load_state_dict({k: pretrained['features.'+k.split('.', 1)[1]] for k in model.net.state_dict()}, strict=True)
+    model.eval().requires_grad_(False)
+    tensor = lambda im: torch.from_numpy(np.asarray(im, np.float32).transpose(2, 0, 1).copy()/127.5-1)[None]
+    def metric(row, path, arm):
+        bundle = prepare_evaluation_masks((384, 512), sketch_path=row['sketch'], mask_policy='sketch_only')
+        kw = dict(gen_path=str(path), sketch_path=row['sketch'], target_path=row['gt'], mask_bundle=bundle)
+        structure = compute_structure_preservation(**kw)
+        leak = compute_texture_leakage(**kw)
+        gt = Image.open(row['gt']).convert('RGB').resize((384, 512), Image.Resampling.BILINEAR)
+        return json_safe(dict(id=row['id'], arm=arm, condition='original', valid_generation=True,
+            output_sha256=sha(path), edge_f1=structure.get('edge_f1'), iou=structure.get('sketch_iou'),
+            edge_l1=structure.get('edge_l1'), leak=leak.get('leak_colored_frac'), leak_is_legacy_background_proxy=True,
+            lpips=float(model(tensor(Image.open(path).convert('RGB')), tensor(gt)).mean()),
+            tcf_lab=compute_texture_color_fidelity(texture_path=row['reference'], **kw).get('tcf_lab_delta'),
+            input_reference_sha256=row['reference_sha256'], input_sketch_sha256=row['sketch_sha256'],
+            evaluation_device='cpu', dists_margin=None, color_margin=None))
+    rows = read(args.root/'protocol/input_manifest.json')
+    keys = ['edge_f1', 'iou', 'edge_l1', 'leak', 'lpips', 'tcf_lab']
+    replay = []
+    for cat in ['top', 'outwear', 'pants', 'dress']:
+        for row in [r for r in rows if r['category'] == cat][:2]:
+            for arm in ['T3', 'BF-Fashion']:
+                original = read(args.previous/'metrics'/arm/'original'/(row['id']+'.json'))
+                actual = metric(row, args.previous/'outputs'/arm/'original'/(row['id']+'.png'), arm)
+                assert actual['output_sha256'] == original['output_sha256']
+                differences = {k: abs(actual[k]-original[k]) for k in keys if original.get(k) is not None}
+                assert all(np.isfinite(v) and v <= 1e-5 for v in differences.values()), (row['id'], differences)
+                replay.append(dict(id=row['id'], model=arm, absolute_differences=differences))
+    assert len(replay) == 16
+    replay_data = dict(passed=True, n=16, tolerance=1e-5, records=replay,
+        maximum_absolute_difference={k: max(r['absolute_differences'].get(k, 0) for r in replay) for k in keys})
+    write(args.root/'audit/CPU_GPU_metric_replay.json', replay_data)
+    print('CPU_GPU_REPLAY_PASSED', replay_data['maximum_absolute_difference'], flush=True)
+    if replay_only:
+        return
+    result = []
+    for row in rows:
+        record = metric(row, args.root/'outputs/TextureGAN/original'/(row['id']+'.png'), 'TextureGAN')
+        write(args.root/'metrics/TextureGAN/original'/(row['id']+'.json'), record)
+        result.append(record)
+        print('CPU_METRIC', row['id'], len(result), flush=True)
+    csv_write(args.root/'metrics/TextureGAN/per_image.csv', result)
+    write(args.root/'metrics/TextureGAN/complete.json', dict(n=len(result), planned_n=128,
+        missing_generation=0, complete=True, evaluation_device='cpu', lpips_assets=dict(
+            name='LPIPS v0.1 AlexNet', trunk_sha256=digest, calibration='installed lpips package pretrained v0.1/alex.pth'),
+        source_metric_protocol_sha256=sha(SUP/'evaluation/metric_protocol.json')))
+
+
 def resources(args):
     ledger = read(args.root/'audit/jobs.json') if (args.root/'audit/jobs.json').exists() else []
     total = 0
@@ -225,7 +289,7 @@ def resources(args):
         if elapsed and state != 'PENDING':
             assert gpu == job['gpus'], '无法核实GPU分配量: '+raw
         used = elapsed*gpu
-        total += used if state in ['COMPLETED', 'FAILED', 'TIMEOUT', 'OUT_OF_MEMORY'] or state.startswith('CANCELLED') else job['limit_seconds']
+        total += used if state in ['COMPLETED', 'FAILED', 'TIMEOUT', 'OUT_OF_MEMORY'] or state.startswith('CANCELLED') else job['limit_seconds']*job['gpus']
         records.append(dict(job=job['id'], state=state, elapsed_seconds=elapsed, gpu_count=gpu, actual_gpu_seconds=used))
     result = dict(jobs=records, maximum_accounted_gpu_seconds=total, limit_gpu_seconds=3600)
     write(args.root/'audit/resources.json', result)
@@ -247,9 +311,41 @@ def submit(args):
     print('SUBMITTED', ident, flush=True)
 
 
+def submit_cpu(args):
+    # 仅替换本次尚未分配资源的GPU等待作业；保留取消记录，防止重复运行。
+    ledger = read(args.root/'audit/jobs.json')
+    assert len(ledger) == 1 and ledger[0]['gpus'] == 1
+    ident = ledger[0]['id']
+    status = subprocess.check_output(['squeue', '-j', str(ident), '-h', '-o', '%T'], text=True).strip()
+    if status == 'PENDING':
+        subprocess.check_call(['scancel', str(ident)])
+    else:
+        assert status == '', 'GPU已开始运行，不与CPU重复计算: '+status
+    resource = resources(args)
+    assert resource['jobs'][0]['state'].startswith('CANCELLED') and resource['jobs'][0]['actual_gpu_seconds'] == 0
+    freeze(args.root/'protocol/evaluation_device_amendment.json', dict(
+        reason='GPU backfill estimate 2026-11-03 02:52:49; CPU cores currently free',
+        inference_device='cpu', evaluation_device='cpu', metric_core_code_unchanged=True,
+        precondition='16 first-two/category T3/BF frozen outputs replay; each metric absolute difference<=1e-5',
+        does_not_change_inputs_or_weights=True, gpu_limit_seconds=3600))
+    command = ['sbatch', '--parsable', '-N1', '--ntasks=1', '--partition=cpu',
+        '--cpus-per-task=4', '--mem=16G', '--time=00:30:00', '--job-name=texturegan128_cpu',
+        '--output='+str(args.root/'logs/cpu_%j.out'), str(HERE/'run128_cpu.sbatch')]
+    job = int(subprocess.check_output(command, text=True).strip().split(';')[0])
+    ledger.append(dict(id=job, gpus=0, limit_seconds=1800, command=command))
+    write(args.root/'audit/jobs.json', ledger)
+    pack_cmd = ['sbatch', '--parsable', '-N1', '--ntasks=1', '--partition=cpu', '--cpus-per-task=1',
+        '--mem=4G', '--time=00:05:00', '--dependency=afterok:'+str(job), '--job-name=texturegan_pack',
+        '--output='+str(args.root/'logs/package_%j.out'), '--wrap='+
+        'cd '+str(HERE)+' && /share/home/u2515283058/.conda/envs/Mymodel/bin/python compare128.py package']
+    pack = int(subprocess.check_output(pack_cmd, text=True).strip().split(';')[0])
+    write(args.root/'audit/package_job.json', dict(id=pack, gpus=0, dependency=job, command=pack_cmd))
+    print('CPU_SUBMITTED', job, 'PACKAGE', pack, flush=True)
+
+
 def package(args):
     resource = resources(args)
-    assert all(j['state'] == 'COMPLETED' for j in resource['jobs'])
+    assert all(j['state'] == 'COMPLETED' or (j['state'].startswith('CANCELLED') and j['actual_gpu_seconds'] == 0) for j in resource['jobs'])
     complete = read(args.root/'metrics/TextureGAN/complete.json')
     assert complete['n'] == 128 and complete['missing_generation'] == 0
     for row in read(args.root/'protocol/input_manifest.json'):
@@ -262,7 +358,7 @@ def package(args):
             target.parent.mkdir(exist_ok=True)
             if not target.exists():
                 shutil.copy2(row[key], target)
-    for name in ['compare128.py', 'run128.sbatch', 'weight_provenance.json', 'models/texturegan.py']:
+    for name in ['compare128.py', 'run128.sbatch', 'run128_cpu.sbatch', 'weight_provenance.json', 'models/texturegan.py']:
         p = args.root/'code'/name
         p.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(HERE/name, p)
@@ -279,7 +375,7 @@ def package(args):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('action', choices=['prepare', 'generate', 'evaluate', 'submit', 'resources', 'package'])
+    p.add_argument('action', choices=['prepare', 'generate', 'evaluate', 'evaluate_cpu', 'replay_cpu', 'submit', 'submit_cpu', 'resources', 'package'])
     p.add_argument('--source', type=Path, default=HOME/'Mymodel/output_eval/t3_p0_p1_20261028/source')
     p.add_argument('--previous', type=Path, default=HOME/'Mymodel/output_eval/garment_test128_20261031')
     p.add_argument('--root', type=Path, default=HOME/'Mymodel/output_eval/texturegan_comparison_20261102')
@@ -287,6 +383,6 @@ if __name__ == '__main__':
     p.add_argument('--device', choices=['cuda', 'cpu'], default='cuda')
     p.add_argument('--smoke', action='store_true')
     args = p.parse_args()
-    result = globals()[args.action](args)
+    result = evaluate_cpu(args, replay_only=True) if args.action == 'replay_cpu' else globals()[args.action](args)
     if result is not None:
         print(json.dumps(result), flush=True)

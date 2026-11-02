@@ -57,7 +57,7 @@ def main(root, previous):
     raw = []
     for model in MODELS:
         base = server if model == 'TextureGAN' else previous/'server_results'
-        part = [dict(read(p), category=next(r['category'] for r in rows if r['id'] == p.stem))
+        part = [dict(read(p), source_file=str(p), category=next(r['category'] for r in rows if r['id'] == p.stem))
             for p in sorted((base/'metrics'/model/'original').glob('*.json'))]
         assert len(part) == 128 and {r['id'] for r in part} == {r['id'] for r in rows}
         assert all(r['valid_generation'] for r in part)
@@ -108,6 +108,7 @@ def main(root, previous):
         '本次只新增TextureGAN，复用已有11方法冻结结果；12方法各128张，总1536条指标。',
         'TextureGAN使用可追溯应用项目镜像的服装权重；与已失效官方文件无法逐字节核对。未从头训练，不称完整训练复现。',
         'TextureGAN仅接收草图和参考面料局部块，不接收文本。两块20—40像素，固定seed放置；18件使用草图墨迹凸包作为提示位置后备，评价mask保持原协议。']
+    notes[0] = '同批128件纯服装：上装、外套、裤装、连衣裙各32；仅原参考；12模型各128张，共1536条记录。'
     write(root/'workbook_data.json', dict(original=summary, raw=raw, parameters=params, notes=notes, pairwise=paired, resources=resources))
     def asset(row, key):
         if key in ['reference', 'sketch', 'gt']:
