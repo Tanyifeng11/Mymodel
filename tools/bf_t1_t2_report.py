@@ -114,7 +114,7 @@ def evaluate():
                 assert sha(path)==meta['output_sha256'] and meta['seed']==row['seed'] and meta['caption']==row['caption']
                 assert meta['cfg']==7 and meta['steps']==50 and not meta['GT_used_in_inference']
                 for key in ['sketch','reference']:assert meta['input_'+key+'_sha256']==row[key+'_sha256']
-                raw_arm=arm.removesuffix('_LAB')
+                raw_arm=arm[:-4] if arm.endswith('_LAB') else arm
                 expected=read(ROOT/'training'/raw_arm/'complete.json')['checkpoint_sha256'] if raw_arm in NEW else read(ROOT/'audit/parent_training.json')[raw_arm]['checkpoint_sha256']
                 assert meta['checkpoint_sha256']==expected;latents.append(meta['initial_latent_sha256'])
                 rec=index[arm,row['condition'],row['id']];rec.update(lpips=None,gray_dists=None,gray_margin=None,dists_margin=None,patch_n=len(coords))

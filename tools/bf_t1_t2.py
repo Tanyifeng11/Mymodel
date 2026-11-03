@@ -2,6 +2,7 @@
 import argparse
 import ast
 import csv
+import copy
 from contextlib import nullcontext
 import hashlib
 import inspect
@@ -44,10 +45,10 @@ def captured_losses():
     fn=changed.body[0];assert isinstance(fn.body[-1],ast.Return) and len(fn.body[-1].value.elts)==2
     cache=ast.parse("dict(decoded=decoded,predicted=predicted,x0=x0,reference=reference,mask=mask,t=t,keep=keep,gt=batch['vae_cloth'])",mode='eval').body
     fn.body[-1].value.elts.append(cache)
-    normalized=ast.parse(ast.unparse(changed));normalized.body[0].body[-1].value.elts.pop()
+    normalized=copy.deepcopy(changed);normalized.body[0].body[-1].value.elts.pop()
     assert ast.dump(normalized,include_attributes=False)==ast.dump(original,include_attributes=False)
     namespace=dict(core.__dict__);exec(compile(ast.fix_missing_locations(changed),str(core.__file__),'exec'),namespace)
-    return namespace['losses'],hashlib.sha256(ast.unparse(changed).encode()).hexdigest()
+    return namespace['losses'],hashlib.sha256(ast.dump(changed,include_attributes=False).encode()).hexdigest()
 
 
 def prepare():
