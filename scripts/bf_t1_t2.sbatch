@@ -11,8 +11,12 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled
 if [[ "$1" == calibration ]]; then
   test "$(python -c 'import torch;print(torch.cuda.device_count())')" = 2
   for arm in BF-SD-T1 BF-SD-T2; do
-    python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 -m tools.bf_t1_t2 calibrate --arm "$arm"
-    python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 -m tools.bf_t1_t2 preflight --arm "$arm"
+    if [[ ! -f "$RUN/calibration/$arm/complete.json" ]]; then
+      python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 -m tools.bf_t1_t2 calibrate --arm "$arm"
+    fi
+    if [[ ! -f "$RUN/preflight/$arm/complete.json" ]]; then
+      python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 -m tools.bf_t1_t2 preflight --arm "$arm"
+    fi
   done
 elif [[ "$1" == train ]]; then
   test "$(python -c 'import torch;print(torch.cuda.device_count())')" = 2
