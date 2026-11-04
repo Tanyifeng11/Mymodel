@@ -107,23 +107,87 @@ def preflight():
 def audit_training():
     protocol = read(ROOT / 'protocol.json')
     complete = {arm: read(ROOT / 'training' / arm / 'complete.json') for arm in ARMS}
-    runs = [value['run'] for value in complete.values()]
+    fresh = [arm for arm in ARMS if not complete[arm].get('training_reused')]
+    runs = [complete[arm]['run'] for arm in fresh]
     assert all(run == runs[0] for run in runs)
     assert runs[0]['world'] == protocol['gpus_per_arm']
     assert runs[0]['world'] * runs[0]['accumulation'] == 8
     assert all(value['updates'] == 28365 for value in complete.values())
-    assert all(value['stream_hashes'] == complete['bf']['stream_hashes'] for value in complete.values())
+    assert all(complete[arm]['stream_hashes'] == complete[fresh[0]]['stream_hashes'] for arm in fresh)
     lr = []
     for arm in ARMS:
-        checkpoint = ROOT / 'training' / arm / 'step28365.pt'
+        checkpoint = Path(complete[arm].get('checkpoint_source', ROOT / 'training' / arm / 'step28365.pt'))
         assert sha(checkpoint) == complete[arm]['checkpoint_sha256']
-        rows = list(csv.DictReader((checkpoint.parent / 'training_log.csv').open()))
+        rows = list(csv.DictReader((ROOT / 'training' / arm / 'training_log.csv').open()))
         assert [int(row['step']) for row in rows] == list(range(1, 28366))
         assert all(np.isfinite(float(value)) for row in rows for value in row.values())
         lr.append([float(row['lr']) for row in rows])
     assert lr[0] == lr[1] == lr[2]
     write(ROOT / 'audit/training_comparability.json', dict(passed=True,
-        same_common_initialization=True, same_training_stream=True, same_lr=True, arms=complete))
+        same_initialization_inputs=True, new_arms_same_initial_tensors=True,
+        new_arms_same_training_stream=True, same_lr=True, arms=complete,
+        historical_stream_note='Historical hash uses key t; new hash uses timestep. Raw historical and new stream digests are not directly comparable. Same data/order, seed, dropout and noise schedule are checked as protocol inputs.'))
+
+
+def reuse():
+    """复用已训练的 BF-SD-T3 及同输入输出；不再次训练或生成该基线。"""
+    folder = ROOT / 'training/bf'
+    if (folder / 'complete.json').exists() and read(folder / 'complete.json').get('training_reused'):
+        return
+    previous = read(HISTORY / 'training/BF-SD-T3/complete.json')
+    historical_protocol = read(HISTORY / 'protocol.json')
+    checkpoint = HISTORY / 'training/BF-SD-T3/step28365.pt'
+    assert previous['updates'] == 28365 and previous['world'] == 2 and previous['effective_batch'] == 8
+    assert sha(checkpoint) == previous['checkpoint_sha256']
+    assert read(ROOT / 'training_manifest.json') == read(HISTORY / 'training_manifest.json')
+    assert sha(core.E1) == historical_protocol['e1_sha256']
+    assert sha(ROOT / 'initialization/bf_fusion.pt') == historical_protocol['fusion_sha256']
+    source_checks = {name: sha(core.SOURCE / name) == previous['source_sha256'][name]
+                     for name in ('models/bf_original_fusion.py', 'models/bf_sd_skip.py',
+                                  'train_GAM_texture_joint.py', 'adapter/attention_processor.py')}
+    assert all(source_checks.values()), source_checks
+    # 原入口的噪声、Gram、RGB、边缘和两区域项在本次回归测试中保持相同。
+    assert historical_protocol['objectives']['T3'] == 'base + .1 reference RGB body + .03816244801608925 GT L1 rest'
+    cancelled = ROOT / 'training/bf_cancelled_122614'
+    if folder.exists() and not cancelled.exists():
+        folder.rename(cancelled)
+    folder.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(HISTORY / 'training/BF-SD-T3/training_log.csv', folder / 'training_log.csv')
+    old_rows = {(row['id'], row['condition']): row for row in read(PARENT / 'evaluation.json')}
+    rows = read(ROOT / 'evaluation.json')
+    sources = []
+    for row in rows:
+        old = old_rows[row['id'], row['condition']]
+        for key in ('sketch_sha256', 'reference_sha256', 'gt_sha256', 'caption', 'seed'):
+            assert old[key] == row[key], (row['id'], key)
+        source = PARENT / 'outputs/BF-SD-T3' / row['condition'] / (row['id'] + '.png')
+        meta = read(source.with_suffix('.json'))
+        assert sha(source) == meta['output_sha256']
+        assert meta['checkpoint_sha256'] == previous['checkpoint_sha256']
+        assert meta['input_sketch_sha256'] == row['sketch_sha256']
+        assert meta['input_reference_sha256'] == row['reference_sha256']
+        assert meta['seed'] == row['seed'] and not meta['GT_used_in_inference']
+        if 'caption' in meta:
+            assert meta['caption'] == row['caption']
+        destination = folder / 'outputs' / row['condition'] / source.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        write(destination.with_suffix('.json'), dict(meta, caption=row['caption'],
+            reused_from=str(source), caption_source='frozen parent evaluation manifest'))
+        sources.append(dict(id=row['id'], condition=row['condition'], source=str(source),
+                            output_sha256=meta['output_sha256']))
+    assert len(sources) == 192
+    write(folder / 'complete.json', dict(previous, training_reused=True, outputs_reused=True,
+        checkpoint_source=str(checkpoint), variant='bf', source_experiment=str(HISTORY)))
+    write(ROOT / 'audit/reused_baseline.json', dict(passed=True, outputs=192, source_checks=source_checks,
+        checkpoint=str(checkpoint), checkpoint_sha256=sha(checkpoint), sources=sources,
+        cancelled_duplicate_job=122614, training_updates_added=0, generated_images_added=0))
+    protocol = read(ROOT / 'protocol.json')
+    write(ROOT / 'audit/protocol_before_baseline_reuse.json', protocol)
+    protocol.update(new_training_arms=['concat', 'region'], baseline_training_reused=True,
+                    baseline_source=str(checkpoint), baseline_outputs_reused=True)
+    write(ROOT / 'protocol.json', protocol)
+    print('REUSED_BASELINE', len(sources), flush=True)
 
 
 def evaluate():
@@ -275,7 +339,7 @@ def package():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'preflight', 'evaluate', 'package'])
+    parser.add_argument('action', choices=['prepare', 'preflight', 'reuse', 'evaluate', 'package'])
     parser.add_argument('--gpus-per-arm', type=int, default=2)
     args = parser.parse_args()
     if args.action == 'prepare':

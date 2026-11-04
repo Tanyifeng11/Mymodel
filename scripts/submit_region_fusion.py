@@ -53,7 +53,7 @@ def submit(stage, arm=None, gpus=0, dependency=None, retry=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=['initial', 'train', 'generate', 'evaluate', 'package'])
+    parser.add_argument('stage', choices=['initial', 'reuse', 'train', 'generate', 'evaluate', 'package'])
     parser.add_argument('--arm', choices=ARMS)
     parser.add_argument('--gpus-per-arm', type=int, choices=[1, 2, 4, 8], default=2)
     parser.add_argument('--retry', action='store_true')
@@ -61,14 +61,23 @@ if __name__ == '__main__':
     if options.stage == 'initial':
         preparation = submit('prepare', retry=options.retry)
         submit('preflight', gpus=1, dependency=preparation, retry=options.retry)
+    elif options.stage == 'reuse':
+        submit('reuse', retry=options.retry)
     elif options.stage == 'train':
         assert read(ROOT / 'audit/preflight_complete.json')['passed']
         gpus = read(ROOT / 'protocol.json')['gpus_per_arm']
-        for arm in [options.arm] if options.arm else ARMS:
+        selected = [options.arm] if options.arm else ['concat', 'region']
+        for arm in selected:
+            if arm == 'bf':
+                raise ValueError('原 BF-SD-T3 基线已训练，必须使用 reuse，禁止重复训练')
             submit('train', arm=arm, gpus=gpus, retry=options.retry)
     elif options.stage == 'generate':
         assert options.arm, '生成时指定已完成训练的 --arm'
-        assert read(ROOT / 'training' / options.arm / 'complete.json')['updates'] == 28365
+        complete = read(ROOT / 'training' / options.arm / 'complete.json')
+        assert complete['updates'] == 28365
+        if complete.get('outputs_reused'):
+            print('REUSED_OUTPUTS', options.arm, flush=True)
+            sys.exit(0)
         submit('generate', arm=options.arm, gpus=1, retry=options.retry)
     elif options.stage == 'evaluate':
         submit('evaluate', gpus=1, retry=options.retry)
