@@ -32,7 +32,20 @@ def evaluate_screen():
         assert value['stream_hashes']==first['stream_hashes']
     write(ROOT/'audit/screen_comparability.json',dict(passed=True,training=completes))
     lpips,assets=frozen_lpips()
-    clip=CLIPModel.from_pretrained(PROJECT/'models/clip',local_files_only=True).cuda().eval()
+    clip,loading=CLIPModel.from_pretrained(PROJECT/'models/clip',local_files_only=True,
+                                         output_loading_info=True)
+    # 完整CLIP评价不能悄悄使用由vision-only权重随机补出的文本编码器或投影。
+    parameters=set(dict(clip.named_parameters()))
+    missing=[name for name in loading['missing_keys'] if name in parameters]
+    if missing or loading.get('mismatched_keys') or loading.get('error_msgs'):
+        raise ValueError('CLIP评价权重不完整：%s' % loading)
+    clip=clip.cuda().eval().requires_grad_(False)
+    clip_root=PROJECT/'models/clip'
+    weights=sorted(list(clip_root.glob('*.bin'))+list(clip_root.glob('*.safetensors')))
+    write(ROOT/'audit/clip_assets.json',dict(loading_info=loading,
+        weight_sha256={path.name:sha(path) for path in weights},
+        config_sha256=sha(clip_root/'config.json'),
+        evaluation_source_sha256=sha(core.SOURCE/'tools/tg_tfm_report.py')))
     processor=CLIPProcessor.from_pretrained(PROJECT/'models/clip',local_files_only=True)
     material=['silk','satin','velvet','denim','leather','cotton','linen','wool','knitted','lace','chiffon']
     texts=['a photograph of a '+label+' garment.' for label in material]
