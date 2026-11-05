@@ -1,12 +1,11 @@
 """A未晋级后的诊断收尾；沿用1000步权重，不能称为28365步正式比较。"""
 import argparse
-import json
 import subprocess
 import sys
 from collections import Counter
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from tools.tg_tfm_experiment import ROOT, read, write, sha
 from tools.bf_t3_three_arm_report import gray, paired, table
@@ -32,7 +31,9 @@ def prepare():
         limitation='single-seed 1000-update screening; absence of evidence is not proof of universal ineffectiveness'))
     rows = read(ROOT / 'evaluation.json')
     assert Counter((r['split'], r['condition']) for r in rows) == {
-        ('heldout128', 'original'): 128, ('swap32', 'original'): 32, ('swap32', 'swapped'): 32}
+        ('heldout128', 'original'): 128,
+        ('neutral32', 'neutral_original'): 32, ('neutral32', 'neutral_swapped'): 32}
+    assert len({r['id'] for r in rows}) == 128
     write(OUT / 'evaluation.json', rows)
     dev = {r['id']: r for r in read(ROOT / 'dev_evaluation.json') if r['condition'] == 'original'}
     conflicts = []
@@ -80,7 +81,7 @@ def evaluate():
     dists = response.load_dists('cuda')
     lpips, assets = frozen_lpips()
     rows = read(OUT / 'evaluation.json')
-    original = {r['id']: r for r in rows if r['condition'] == 'original'}
+    original = {r['id']: r for r in rows if r['condition'] == 'neutral_original'}
     cache, noise, records = {}, {}, []
 
     def features(parts):
@@ -124,9 +125,10 @@ def evaluate():
                     lpips=None, tcf_lab=None, dists_margin=None, gray_margin=None, gray_dists=None, patch_n=len(coords))
                 if row['condition'] == 'original':
                     record['lpips'] = float(lpips(core.tensor(path).cuda(), core.tensor(row['gt']).cuda()).mean())
-                if row['condition'] != 'swapped':
+                if row['condition'] != 'neutral_swapped':
                     record['tcf_lab'] = compute_texture_color_fidelity(texture_path=row['reference'], **kwargs).get('tcf_lab_delta')
-                if row['condition'] == 'swapped' and len(coords) >= 4:
+                if row['condition'] == 'neutral_swapped' and len(coords) >= 4:
+                    assert row['caption'] == original[row['id']]['caption']
                     image = np.asarray(Image.open(path).convert('RGB'))
                     parts = [image[y:y+64, x:x+64] for x, y in coords]
                     for is_gray in (False, True):
@@ -144,7 +146,7 @@ def evaluate():
     table(OUT / 'metrics/per_image.csv', safe)
     metrics = ['edge_f1', 'iou', 'edge_l1', 'leak', 'lpips', 'tcf_lab', 'dists_margin', 'gray_margin', 'gray_dists']
     summaries, comparisons = [], []
-    conditions = [('heldout128', 'original'), ('swap32', 'original'), ('swap32', 'swapped'),
+    conditions = [('heldout128', 'original'), ('neutral32', 'neutral_original'), ('neutral32', 'neutral_swapped'),
                   ('color_conflict4', 'color_match'), ('color_conflict4', 'color_conflict')]
     for split, condition in conditions:
         for metric in metrics:
