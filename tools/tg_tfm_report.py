@@ -1,6 +1,7 @@
 """开发集配对评价；CLIP 只是辅助证据，不能替代属性人工评审。"""
 from collections import defaultdict
 import csv
+import sys
 import numpy as np
 from PIL import Image,ImageDraw
 from tools.tg_tfm_experiment import PROJECT,ROOT,ARMS,read,write,sha
@@ -18,12 +19,13 @@ def table(path,rows):
 def evaluate_screen():
     import torch
     import torch.nn.functional as F
-    from transformers import CLIPModel,CLIPProcessor
     from eval.eval_utils import prepare_evaluation_masks
     from eval.metrics import compute_structure_preservation,compute_texture_color_fidelity,compute_texture_leakage
     from tools.e2a_attr_eval import frozen_lpips
     from tools import bf_t3_frozen_core as core
     torch.set_num_threads(2)
+    torch.backends.cuda.matmul.allow_tf32=False
+    torch.backends.cudnn.allow_tf32=False
     rows=read(ROOT/'dev_evaluation.json')
     completes={arm:read(ROOT/'screen'/arm/'complete.json') for arm in ARMS}
     first=completes['T0']
@@ -32,25 +34,26 @@ def evaluate_screen():
         assert value['stream_hashes']==first['stream_hashes']
     write(ROOT/'audit/screen_comparability.json',dict(passed=True,training=completes))
     lpips,assets=frozen_lpips()
-    clip,loading=CLIPModel.from_pretrained(PROJECT/'models/clip',local_files_only=True,
-                                         output_loading_info=True)
-    # 完整CLIP评价不能悄悄使用由vision-only权重随机补出的文本编码器或投影。
-    parameters=set(dict(clip.named_parameters()))
-    missing=[name for name in loading['missing_keys'] if name in parameters]
-    if missing or loading.get('mismatched_keys') or loading.get('error_msgs'):
-        raise ValueError('CLIP评价权重不完整：%s' % loading)
-    clip=clip.cuda().eval().requires_grad_(False)
-    clip_root=PROJECT/'models/clip'
-    weights=sorted(list(clip_root.glob('*.bin'))+list(clip_root.glob('*.safetensors')))
-    write(ROOT/'audit/clip_assets.json',dict(loading_info=loading,
-        weight_sha256={path.name:sha(path) for path in weights},
-        config_sha256=sha(clip_root/'config.json'),
+    # 服务器models/clip仅含嵌套的vision-only模型，不能据此随机补齐文本侧。
+    # 统一复用已缓存的官方完整ViT-B/32；这只是辅助评价网络，未改变生成模型。
+    clip_root=PROJECT/'models/CLIP'
+    sys.path.insert(0,str(clip_root))
+    import clip as clip_api
+    weights=PROJECT.parent/'.cache/clip/ViT-B-32.pt'
+    expected='40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af'
+    actual=sha(weights)
+    if actual!=expected:
+        raise ValueError('CLIP缓存权重与官方SHA256不一致')
+    clip,processor=clip_api.load(str(weights),device='cuda',jit=False)
+    clip=clip.float().eval().requires_grad_(False)
+    write(ROOT/'audit/clip_assets.json',dict(backend='OpenAI native CLIP',model='ViT-B/32',
+        weight_path=str(weights),weight_sha256=actual,official_sha256=expected,precision='float32; TF32 off',
+        source_sha256={name:sha(clip_root/'clip'/name) for name in ('clip.py','model.py','simple_tokenizer.py')},
         evaluation_source_sha256=sha(core.SOURCE/'tools/tg_tfm_report.py')))
-    processor=CLIPProcessor.from_pretrained(PROJECT/'models/clip',local_files_only=True)
     material=['silk','satin','velvet','denim','leather','cotton','linen','wool','knitted','lace','chiffon']
     texts=['a photograph of a '+label+' garment.' for label in material]
     with torch.inference_mode():
-        text_features=F.normalize(clip.get_text_features(**processor(text=texts,padding=True,return_tensors='pt').to('cuda')),dim=-1)
+        text_features=F.normalize(clip.encode_text(clip_api.tokenize(texts).cuda()).float(),dim=-1)
     records=[]
     with torch.inference_mode():
         for row in rows:
@@ -67,7 +70,7 @@ def evaluate_screen():
                 kwargs=dict(gen_path=str(path),sketch_path=row['sketch'],target_path=row['gt'],mask_bundle=masks)
                 structure=compute_structure_preservation(**kwargs)
                 image=Image.open(path).convert('RGB')
-                image_features=F.normalize(clip.get_image_features(**processor(images=image,return_tensors='pt').to('cuda')),dim=-1)
+                image_features=F.normalize(clip.encode_image(processor(image).unsqueeze(0).cuda()).float(),dim=-1)
                 scores=(image_features@text_features.T)[0]
                 wrong=[i for i in range(len(material)) if i not in positive]
                 attr_margin=float(scores[positive].max()-scores[wrong].max()) if positive else None
