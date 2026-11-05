@@ -196,7 +196,8 @@ def evaluate():
 
 def package():
     paths=[p for p in ROOT.rglob('*') if p.is_file() and p.suffix in ('.json','.csv','.png')
-           and 'source' not in p.relative_to(ROOT).parts and 'preflight' not in p.relative_to(ROOT).parts]
+           and 'source' not in p.relative_to(ROOT).parts and 'preflight' not in p.relative_to(ROOT).parts
+           and p not in (ROOT/'delivery_manifest.json',ROOT/'bundle_info.json')]
     paths += [p for p in (ROOT/'inputs').glob('*') if p.is_file()]
     manifest=[dict(path=str(p.relative_to(ROOT)),size=p.stat().st_size,sha256=sha(p)) for p in paths]
     write(ROOT/'delivery_manifest.json',manifest)
