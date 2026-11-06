@@ -68,11 +68,11 @@ def train(stage, device, rank, world, short=False):
     if world > 1:
         from torch.distributed.optim import ZeroRedundancyOptimizer
         optimizer = ZeroRedundancyOptimizer(list(parameters.values()), optimizer_class=torch.optim.AdamW,
-                    lr=lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=CONFIG['weight_decay'], foreach=False)
+                    lr=lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=CONFIG['weight_decay'], fused=True)
         wrapped = DistributedDataParallel(model, device_ids=[device.index], broadcast_buffers=False,
                                            find_unused_parameters=(stage == 'gam'))
     else:
-        optimizer = torch.optim.AdamW(parameters.values(), lr=lr, weight_decay=CONFIG['weight_decay'], foreach=False)
+        optimizer = torch.optim.AdamW(parameters.values(), lr=lr, weight_decay=CONFIG['weight_decay'], fused=True)
         wrapped = model
     cached = CachedDataset(short=short)
     noise_scheduler = scheduler(stage)
@@ -136,17 +136,17 @@ def train(stage, device, rank, world, short=False):
                 (loss / len(local)).backward()
             losses.append(float(loss.detach()))
             model.clear_cache()
-        groups = {'reference_unet': [], 'sketch_adapter': [], 'fabric_adapter': []}
-        for name, value in parameters.items():
-            if value.grad is not None:
-                assert torch.isfinite(value.grad).all(), name
-                group = ('reference_unet' if name.startswith('reference_unet.') else
-                         'sketch_adapter' if '_ref.' in name else 'fabric_adapter')
-                groups[group].append(value.grad.detach().float().square().sum())
-        last_gradients = {key: float(torch.stack(values).sum().sqrt()) if values else 0.
-                          for key, values in groups.items()}
-        norm = torch.nn.utils.clip_grad_norm_(list(parameters.values()), 1.0)
-        assert torch.isfinite(norm)
+        # 分模块审计只在短测/里程碑执行，避免每步逐参数同步 GPU。
+        if short or step % 1000 == 0 or step + 1 == target_steps:
+            groups = {'reference_unet': [], 'sketch_adapter': [], 'fabric_adapter': []}
+            for name, value in parameters.items():
+                if value.grad is not None:
+                    group = ('reference_unet' if name.startswith('reference_unet.') else
+                             'sketch_adapter' if '_ref.' in name else 'fabric_adapter')
+                    groups[group].append(value.grad.detach().float().square().sum())
+            last_gradients = {key: float(torch.stack(values).sum().sqrt()) if values else 0.
+                              for key, values in groups.items()}
+        norm = torch.nn.utils.clip_grad_norm_(list(parameters.values()), 1.0, foreach=True, error_if_nonfinite=True)
         optimizer.step()
         step += 1
         seconds = previous_seconds + time.time() - started
@@ -165,7 +165,7 @@ def train(stage, device, rank, world, short=False):
                         source_sha256={str(p.relative_to(HERE)): sha(p) for p in HERE.glob('*.py')},
                         last_gradients=last_gradients, peak_gib=row['peak_gib'],
                         noise_offset=.05 if stage == 'gam' else 0.,
-                        zero_terminal_snr=(stage == 'gam'), objective='epsilon MSE only')
+                        zero_terminal_snr=(stage == 'gam'), objective='epsilon MSE only', optimizer='AdamW fused')
             save(folder, model, optimizer, step, rng, rank, world, info)
     log.close()
     assert last_gradients['fabric_adapter'] > 0 if stage == 'color' else (
