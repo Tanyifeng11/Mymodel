@@ -298,6 +298,7 @@ def smoke(args):
     results = {}
     for arm in ['E2', 'E2_FFT']:
         load_trainable_strict(network, before)
+        torch.cuda.reset_peak_memory_stats()
         config = dict(arm=arm, fft=arm == 'E2_FFT', fft_weight=calibration['weight'] if arm == 'E2_FFT' else 0.,
                       learning_rate=5e-5, updates=4, warmup=0, workers=0)
         run = TrainingRun(args, core, pipe, network, data, style, config, indices, acc)
@@ -321,10 +322,13 @@ def smoke(args):
             assert sum(row['patch_counts']['valid_n'] for row in logs) > 0, '冒烟没有激活FFT'
         run.save(folder / 'latest.pt')
         results[arm] = dict(passed=True, updates=run.step, effective_batch=8, logs=logs,
+            executed_update_calls=5, resume_replay_updates=1,
             changes_l2=changes, frozen_unchanged=True, resume_exact=True,
             checkpoint_sha256=sha(folder / 'latest.pt'), final_hash=tensor_hash(network.trainable_state().items()))
         write(folder / 'result.json', results[arm])
+        network = acc.unwrap_model(run.network, keep_fp32_wrapper=False)
         del run
+        acc.free_memory()
         print('SMOKE_PASS', arm, changes, flush=True)
     assert [r['tokens'] for r in results['E2']['logs']] == [r['tokens'] for r in results['E2_FFT']['logs']], '两臂旧训练随机流不同'
     write(out / 'smoke/result.json', dict(passed=True, same_legacy_stream=True, arms=results,
@@ -352,7 +356,8 @@ def prepare_comparison(args):
                                                        fft_weight=weight if arm == 'E2_FFT' else 0.))
     write(out / 'comparison/status.json', dict(status='prepared_not_run',
         actual_long_training_updates=0, smoke_updates_per_arm=4, fft_weight=weight,
-        identical_fields_except=['arm', 'fft', 'fft_weight'], resources='choose same world1/2/4/8; accumulation=8/world'))
+        identical_fields_except=['arm', 'fft', 'fft_weight'],
+        resources='prepared_world1_accumulation8; change both configs together for world2/4/8'))
     print('COMPARISON_PREPARED_NOT_RUN', flush=True)
 
 

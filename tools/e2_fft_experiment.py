@@ -55,7 +55,9 @@ def environment():
                 source={str(p.relative_to(SOURCE)): sha(p) for p in [
                     SOURCE / 'models/bf_original_fusion.py', SOURCE / 'models/bf_sd_skip.py',
                     SOURCE / 'tools/bf_t3_frozen_core.py', SOURCE / 'train_GAM_texture_joint.py',
-                    SOURCE / 'models/e2_compat.py', Path(__file__)]})
+                    SOURCE / 'models/e2_compat.py', SOURCE / 'models/e2_geometry.py',
+                    SOURCE / 'models/e2_local_fft.py', SOURCE / 'tools/e2_fft_training.py',
+                    SOURCE / 'tools/e2_fft_evaluation.py', Path(__file__)] if p.exists()})
 
 
 def setup(args):
@@ -207,16 +209,20 @@ def generate_regression(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['prepare', 'regression', 'generate-regression',
-        'prepare-protocol', 'calibrate', 'smoke', 'prepare-comparison', 'train'])
+        'prepare-protocol', 'calibrate', 'smoke', 'prepare-comparison', 'train', 'generate', 'evaluate', 'bundle'])
     parser.add_argument('--project', default='/share/home/u2515283058/Mymodel')
     parser.add_argument('--out', default='/share/home/u2515283058/Mymodel/output_eval/e2_fft_20261106')
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--config')
+    parser.add_argument('--arm', choices=['E2', 'E2_FFT'])
     args = parser.parse_args()
     name = args.action.replace('-', '_')
     if name in ['prepare_protocol', 'calibrate', 'smoke', 'prepare_comparison', 'train']:
         from tools import e2_fft_training
         getattr(e2_fft_training, name)(args)
+    elif name in ['generate', 'evaluate', 'bundle']:
+        from tools import e2_fft_evaluation
+        getattr(e2_fft_evaluation, name)(args)
     else:
         globals()[name](args)
 
