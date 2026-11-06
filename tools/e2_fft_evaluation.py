@@ -158,6 +158,7 @@ def bundle(args):
     _, out = setup(args)
     files = [p for p in out.rglob('*') if p.is_file()
              and p.parts[len(out.parts)] not in ['source', 'geometry_cache']
+             and not p.parts[len(out.parts)].startswith('probe_source_')
              and p.name != 'bundle_manifest.json'
              and p.suffix in ['.json', '.jsonl', '.png', '.txt', '.out', '.err', '.csv']]
     manifest = {str(p.relative_to(out)): dict(bytes=p.stat().st_size, sha256=sha(p)) for p in files}

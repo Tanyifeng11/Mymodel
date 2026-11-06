@@ -52,6 +52,7 @@ def environment():
                 cudnn=torch.backends.cudnn.version(), diffusers=diffusers.__version__,
                 deterministic_algorithms=torch.are_deterministic_algorithms_enabled(),
                 cublas_workspace=os.environ.get('CUBLAS_WORKSPACE_CONFIG'),
+                cudnn_v8_api_disabled=os.environ.get('TORCH_CUDNN_V8_API_DISABLED', '0'),
                 sdp_backends=dict(flash=torch.backends.cuda.flash_sdp_enabled(),
                     efficient=torch.backends.cuda.mem_efficient_sdp_enabled(),
                     math=torch.backends.cuda.math_sdp_enabled(),
@@ -78,11 +79,13 @@ def setup(args):
     training = getattr(args, 'action', '') in ['calibrate', 'smoke', 'train', 'backward-probe']
     torch.use_deterministic_algorithms(training)
     if training:
+        # 本环境v8 API下普通重复反传也不复现；v7+efficient已用零学习率探针验证。
+        os.environ['TORCH_CUDNN_V8_API_DISABLED'] = '1'
         # 两臂共同固定SDPA后端，避免默认后端选择影响续训恢复。
-        # 使用math后端检查反传复现，不改变注意力公式。
+        # efficient不支持的形状保留math回退，不改变注意力公式。
         torch.backends.cuda.enable_cudnn_sdp(False)
         torch.backends.cuda.enable_flash_sdp(False)
-        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
     core = configure(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
