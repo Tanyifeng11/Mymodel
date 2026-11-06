@@ -38,10 +38,30 @@ def copy_public(source, target):
     return records
 
 
+def verify_public_weights():
+    destination = ROOT / 'audit/public_pretrain_verified.json'
+    if destination.exists():
+        assert read(destination)['passed']
+        return
+    expected = read(HERE / 'public_weights.json')
+    actual = {}
+    for component in ['unet', 'vae', 'text_encoder']:
+        stem = 'model' if component == 'text_encoder' else 'diffusion_pytorch_model'
+        names = [f'sd15/{component}/{stem}.safetensors',
+                 f'sd15/{component}/' + ('pytorch_model.bin' if component == 'text_encoder' else stem + '.bin')]
+        selected = next(name for name in names if (ROOT / 'initialization' / name).is_file())
+        actual[selected] = sha(ROOT / 'initialization' / selected)
+    for name in ['image_encoder/model.safetensors', 'ip-adapter_sd15.bin']:
+        actual[name] = sha(ROOT / 'initialization' / name)
+    assert all(value == expected['sha256'][name] for name, value in actual.items()), actual
+    write(destination, dict(passed=True, actual=actual, public_sources=expected))
+
+
 def main():
     import torch
     started = time.time()
     if (ROOT / 'audit/prepare_complete.json').exists():
+        verify_public_weights()
         print('PREPARE_ALREADY_COMPLETE', flush=True)
         return
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -96,6 +116,7 @@ def main():
     assert tuple(ip['image_proj']['proj.weight'].shape) == (3072, 1024)
     assert not any('bf' in k.lower() or 't3' in k.lower() for k in ip)
     write(ROOT / 'audit/initialization_assets.json', assets)
+    verify_public_weights()
     source = {str(p.relative_to(HERE)): sha(p) for p in HERE.rglob('*') if p.is_file() and p.suffix in {'.py', '.json'} and '__pycache__' not in p.parts}
     protocol = dict(CONFIG, official_commit=provenance['commit'], samples=len(train), validation_samples=len(validation),
                     cases=counts, source_sha256=source,

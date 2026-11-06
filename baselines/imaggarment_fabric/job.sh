@@ -12,6 +12,7 @@ export HF_HOME="$RUN/cache/huggingface"
 if [[ "$1" == prepare ]]; then
   python -m baselines.imaggarment_fabric.prepare
 elif [[ "$1" == check ]]; then
+  python -m baselines.imaggarment_fabric.prepare
   python -m unittest baselines.imaggarment_fabric.test_contract baselines.imaggarment_fabric.test_official_processors -v
 else
   N="${SLURM_GPUS_ON_NODE:-1}"
