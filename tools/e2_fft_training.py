@@ -217,6 +217,7 @@ class TrainingRun:
     def update(self):
         started = time.monotonic()
         values, tokens, counts = {}, [], dict(active_n=0, valid_n=0)
+        diagnostics = []
         accumulation = 8 // self.acc.num_processes
         for _ in range(accumulation):
             batch = {k: v.to(self.acc.device) for k, v in self.stream.next().items()}
@@ -226,6 +227,14 @@ class TrainingRun:
                         self.rng, self.style, self.core, self.fft, self.config['fft_weight'])
                 assert torch.isfinite(loss)
                 self.acc.backward(loss)
+                if self.config.get('diagnostics'):
+                    watched = [(n, p) for n, p in bare_network(self.network).named_parameters()
+                               if n in ['adapter.fusion.downconv1.0.weight', 'adapter.projections.0.weight']]
+                    diagnostics.append(dict(
+                        forward=tensor_hash((k, captured[k]) for k in ['epsilon', 'vae_input', 'decoded']),
+                        features=tensor_hash((str(i), v) for i, v in enumerate(captured['features'])),
+                        gradients={n: dict(sha256=tensor_hash([(n, p.grad)]), norm=float(p.grad.float().norm()))
+                                   for n, p in watched if p.grad is not None}))
                 if self.acc.sync_gradients:
                     norm = self.acc.clip_grad_norm_(self.params, 1.)
                     assert torch.isfinite(norm)
@@ -244,6 +253,7 @@ class TrainingRun:
         assert self.acc.sync_gradients and not self.acc.optimizer_step_was_skipped
         self.step += 1
         return dict(step=self.step, seconds=time.monotonic() - started, losses=values, patch_counts=counts,
+                    diagnostics=diagnostics,
                     grad_norm=float(norm), lr=self.scheduler.get_last_lr()[0], tokens=tokens,
                     chain=self.chain, peak_gib=torch.cuda.max_memory_allocated() / 2**30)
 
@@ -309,7 +319,7 @@ def smoke(args):
         load_trainable_strict(network, before)
         torch.cuda.reset_peak_memory_stats()
         config = dict(arm=arm, fft=arm == 'E2_FFT', fft_weight=calibration['weight'] if arm == 'E2_FFT' else 0.,
-                      learning_rate=5e-5, updates=4, warmup=0, workers=0)
+                      learning_rate=5e-5, updates=4, warmup=0, workers=0, diagnostics=True)
         run = TrainingRun(args, core, pipe, network, data, style, config, indices, acc)
         folder = out / 'smoke' / arm
         folder.mkdir(parents=True, exist_ok=True)
