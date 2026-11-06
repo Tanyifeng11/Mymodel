@@ -50,6 +50,8 @@ def environment():
     import diffusers
     return dict(python=platform.python_version(), torch=torch.__version__, cuda=torch.version.cuda,
                 cudnn=torch.backends.cudnn.version(), diffusers=diffusers.__version__,
+                deterministic_algorithms=torch.are_deterministic_algorithms_enabled(),
+                cublas_workspace=os.environ.get('CUBLAS_WORKSPACE_CONFIG'),
                 gpu=torch.cuda.get_device_name() if torch.cuda.is_available() else None,
                 commit=subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip(),
                 source={str(p.relative_to(SOURCE)): sha(p) for p in [
@@ -61,11 +63,15 @@ def environment():
 
 
 def setup(args):
+    os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
     torch.set_num_threads(2)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+    # 两臂续训共同使用确定性算子；保留默认前向/历史推理的回归检查。
+    # 仅设置cudnn.deterministic不足以约束SDPA反传等CUDA算子。
+    torch.use_deterministic_algorithms(getattr(args, 'action', '') in ['calibrate', 'smoke', 'train'])
     core = configure(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
