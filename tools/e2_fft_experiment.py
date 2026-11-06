@@ -52,6 +52,10 @@ def environment():
                 cudnn=torch.backends.cudnn.version(), diffusers=diffusers.__version__,
                 deterministic_algorithms=torch.are_deterministic_algorithms_enabled(),
                 cublas_workspace=os.environ.get('CUBLAS_WORKSPACE_CONFIG'),
+                sdp_backends=dict(flash=torch.backends.cuda.flash_sdp_enabled(),
+                    efficient=torch.backends.cuda.mem_efficient_sdp_enabled(),
+                    math=torch.backends.cuda.math_sdp_enabled(),
+                    cudnn=torch.backends.cuda.cudnn_sdp_enabled()),
                 gpu=torch.cuda.get_device_name() if torch.cuda.is_available() else None,
                 commit=subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip(),
                 source={str(p.relative_to(SOURCE)): sha(p) for p in [
@@ -71,7 +75,13 @@ def setup(args):
     torch.backends.cudnn.deterministic = True
     # 两臂续训共同使用确定性算子；保留默认前向/历史推理的回归检查。
     # 仅设置cudnn.deterministic不足以约束SDPA反传等CUDA算子。
-    torch.use_deterministic_algorithms(getattr(args, 'action', '') in ['calibrate', 'smoke', 'train'])
+    training = getattr(args, 'action', '') in ['calibrate', 'smoke', 'train']
+    torch.use_deterministic_algorithms(training)
+    if training:
+        # 两臂共同固定SDPA后端，避免默认后端选择影响续训恢复。
+        # Flash不支持的形状保留math回退，不改变注意力公式。
+        torch.backends.cuda.enable_cudnn_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
     core = configure(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
