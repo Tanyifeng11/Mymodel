@@ -226,6 +226,9 @@ class TrainingRun:
                     loss, raw, token, captured, stats = compute_losses(self.pipe, self.network, batch,
                         self.rng, self.style, self.core, self.fft, self.config['fft_weight'])
                 assert torch.isfinite(loss)
+                if self.config.get('diagnostics'):
+                    for key in ['epsilon', 'vae_input', 'decoded']:
+                        captured[key].retain_grad()
                 self.acc.backward(loss)
                 if self.config.get('diagnostics'):
                     watched = [(n, p) for n, p in bare_network(self.network).named_parameters()
@@ -233,6 +236,8 @@ class TrainingRun:
                     diagnostics.append(dict(
                         forward=tensor_hash((k, captured[k]) for k in ['epsilon', 'vae_input', 'decoded']),
                         features=tensor_hash((str(i), v) for i, v in enumerate(captured['features'])),
+                        image_gradients={k: tensor_hash([(k, captured[k].grad)])
+                                         for k in ['epsilon', 'vae_input', 'decoded']},
                         gradients={n: dict(sha256=tensor_hash([(n, p.grad)]), norm=float(p.grad.float().norm()))
                                    for n, p in watched if p.grad is not None}))
                 if self.acc.sync_gradients:
