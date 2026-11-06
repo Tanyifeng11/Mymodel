@@ -42,6 +42,13 @@ class GarmentModel(nn.Module):
         self.stage = stage
         base = ROOT / 'initialization/sd15'
         self.unet = UNet2DConditionModel.from_pretrained(base, subfolder='unet', local_files_only=True)
+        ref_initial = {}
+        if stage != 'color':
+            for name in self.unet.attn_processors:
+                if name.endswith('attn1.processor'):
+                    layer = self.unet.get_submodule(name.removesuffix('.processor'))
+                    ref_initial[name] = {'to_k_ref.weight': layer.to_k.weight.detach().float().clone(),
+                                         'to_v_ref.weight': layer.to_v.weight.detach().float().clone()}
         self.unet.requires_grad_(False).to(device=device, dtype=torch.bfloat16)
         processors = {}
         for name in self.unet.attn_processors:
@@ -49,9 +56,8 @@ class GarmentModel(nn.Module):
             if name.endswith('attn1.processor'):
                 proc = LogoRefSAttnProcessor2_0(name, size) if stage != 'color' else AttnProcessor2_0()
                 if stage != 'color':
-                    layer = self.unet.get_submodule(name.removesuffix('.processor'))
-                    proc.load_state_dict({'to_k_ref.weight': layer.to_k.weight.detach().float(),
-                                          'to_v_ref.weight': layer.to_v.weight.detach().float()}, strict=True)
+                    # 草图 K/V 从公共 float32 原值初始化，不从已量化的冻结骨干复制。
+                    proc.load_state_dict(ref_initial.pop(name), strict=True)
             elif stage == 'gam':
                 proc = CAttnProcessor2_0(name, size, cross_attention_dim=self.unet.config.cross_attention_dim)
             else:

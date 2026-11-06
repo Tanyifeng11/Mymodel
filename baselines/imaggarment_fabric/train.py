@@ -165,7 +165,8 @@ def train(stage, device, rank, world, short=False):
                         source_sha256={str(p.relative_to(HERE)): sha(p) for p in HERE.glob('*.py')},
                         last_gradients=last_gradients, peak_gib=row['peak_gib'],
                         noise_offset=.05 if stage == 'gam' else 0.,
-                        zero_terminal_snr=(stage == 'gam'), objective='epsilon MSE only', optimizer='AdamW fused')
+                        zero_terminal_snr=(stage == 'gam'), objective='epsilon MSE only', optimizer='AdamW fused',
+                        frozen_unet_storage_dtype='bfloat16', trainable_storage_dtype='float32')
             save(folder, model, optimizer, step, rng, rank, world, info)
     log.close()
     assert last_gradients['fabric_adapter'] > 0 if stage == 'color' else (
