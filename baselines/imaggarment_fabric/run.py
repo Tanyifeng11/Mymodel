@@ -27,6 +27,11 @@ def main():
         frozen = read(ROOT / 'protocol.json')
         assert all(frozen[key] == value for key, value in CONFIG.items()), '已锁定实验配置发生变化'
         if rank == 0:
+            from .prepare import verify_public_weights
+            verify_public_weights()
+        if world > 1:
+            dist.barrier()
+        if rank == 0:
             commit = subprocess.check_output(['git', '-C', str(HERE), 'rev-parse', 'HEAD'], text=True).strip()
             write(ROOT / 'audit' / ('source_%s_%s_%s_%s.json' % (args.command, args.stage, args.short, commit[:8])),
                   dict(commit=commit, command=vars(args),

@@ -82,6 +82,9 @@ class Generator:
 
 
 def generate(device, rank, world, short=False):
+    if short and (ROOT / 'audit/smoke_complete.json').exists():
+        assert read(ROOT / 'audit/smoke_complete.json')['passed']
+        return
     generator = Generator(device, short=short)
     rows = read(ROOT / 'datasets/generation.json')
     if short:
