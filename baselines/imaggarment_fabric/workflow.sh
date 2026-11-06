@@ -10,7 +10,7 @@ export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled
 export HF_HOME="$RUN/cache/huggingface"
 N=$(python -c 'import torch; print(torch.cuda.device_count())')
-python -m unittest baselines.imaggarment_fabric.test_contract -v
+python -m unittest baselines.imaggarment_fabric.test_contract baselines.imaggarment_fabric.test_official_processors -v
 python -m torch.distributed.run --standalone --nproc_per_node="$N" -m baselines.imaggarment_fabric.run cache --short
 python -m torch.distributed.run --standalone --nproc_per_node="$N" -m baselines.imaggarment_fabric.run train --stage color --short
 python -m torch.distributed.run --standalone --nproc_per_node="$N" -m baselines.imaggarment_fabric.run train --stage gam --short

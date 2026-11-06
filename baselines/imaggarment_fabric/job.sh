@@ -11,6 +11,8 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled
 export HF_HOME="$RUN/cache/huggingface"
 if [[ "$1" == prepare ]]; then
   python -m baselines.imaggarment_fabric.prepare
+elif [[ "$1" == check ]]; then
+  python -m unittest baselines.imaggarment_fabric.test_contract baselines.imaggarment_fabric.test_official_processors -v
 else
   N="${SLURM_GPUS_ON_NODE:-1}"
   python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node="$N" -m baselines.imaggarment_fabric.run "$@"
