@@ -75,7 +75,7 @@ def setup(args):
     torch.backends.cudnn.deterministic = True
     # 两臂续训共同使用确定性算子；保留默认前向/历史推理的回归检查。
     # 仅设置cudnn.deterministic不足以约束SDPA反传等CUDA算子。
-    training = getattr(args, 'action', '') in ['calibrate', 'smoke', 'train']
+    training = getattr(args, 'action', '') in ['calibrate', 'smoke', 'train', 'backward-probe']
     torch.use_deterministic_algorithms(training)
     if training:
         # 两臂共同固定SDPA后端，避免默认后端选择影响续训恢复。
@@ -226,7 +226,7 @@ def generate_regression(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['prepare', 'regression', 'generate-regression',
-        'prepare-protocol', 'calibrate', 'smoke', 'prepare-comparison', 'train', 'generate', 'evaluate', 'bundle'])
+        'prepare-protocol', 'calibrate', 'smoke', 'prepare-comparison', 'train', 'backward-probe', 'generate', 'evaluate', 'bundle'])
     parser.add_argument('--project', default='/share/home/u2515283058/Mymodel')
     parser.add_argument('--out', default='/share/home/u2515283058/Mymodel/output_eval/e2_fft_20261106')
     parser.add_argument('--device', default='cuda:0')
@@ -234,7 +234,7 @@ def main():
     parser.add_argument('--arm', choices=['E2', 'E2_FFT'])
     args = parser.parse_args()
     name = args.action.replace('-', '_')
-    if name in ['prepare_protocol', 'calibrate', 'smoke', 'prepare_comparison', 'train']:
+    if name in ['prepare_protocol', 'calibrate', 'smoke', 'prepare_comparison', 'train', 'backward_probe']:
         from tools import e2_fft_training
         getattr(e2_fft_training, name)(args)
     elif name in ['generate', 'evaluate', 'bundle']:

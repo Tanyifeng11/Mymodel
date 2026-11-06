@@ -308,6 +308,42 @@ def parameter_changes(before, network):
     return {k: v ** .5 for k, v in changes.items()}
 
 
+def backward_probe(args):
+    """零学习率重复同一批，区分反传不复现与checkpoint加载问题。"""
+    from accelerate import Accelerator
+    from train_GAM_texture_joint import VGGGramStyleLoss
+    core, out = setup(args)
+    acc = Accelerator(mixed_precision='bf16', gradient_accumulation_steps=8)
+    args.device = str(acc.device)
+    pipe, network, _ = load(args, core)
+    style = VGGGramStyleLoss().to(args.device).eval().requires_grad_(False)
+    indices = [c['index'] for c in read(out / 'split.json')['smoke']] * 2
+    run = TrainingRun(args, core, pipe, network, dataset(pipe, core), style,
+        dict(fft=False, fft_weight=0., learning_rate=0., updates=8, warmup=0,
+             workers=0, diagnostics=True), indices, acc)
+    initial = run.local_state()
+    weights = network.trainable_state()
+    records = []
+    for mutation in ['none_first', 'none_repeat', 'load_same_weights', 'load_optimizer']:
+        if mutation == 'load_same_weights':
+            load_trainable_strict(network, weights)
+        if mutation == 'load_optimizer':
+            state = torch.load(out / 'tests/backward_probe.pt', map_location='cpu', weights_only=False)
+            run.optimizer.load_state_dict(state['optimizer'])
+            del state
+        run.rng.set_state(initial['rng']); run.stream.load_state_dict(initial['stream'])
+        run.chain = initial['chain']
+        random.setstate(initial['python']); np.random.set_state(initial['numpy'])
+        torch.set_rng_state(initial['torch_cpu']); torch.cuda.set_rng_state(initial['torch_cuda'], acc.device)
+        row = run.update()
+        assert tensor_hash(network.trainable_state().items()) == tensor_hash(weights.items())
+        records.append(dict(mutation=mutation, **row))
+        if mutation == 'none_first':
+            run.save(out / 'tests/backward_probe.pt')
+        write(out / 'tests/backward_probe.json', dict(records=records, environment=environment()))
+        print('BACKWARD_PROBE', mutation, row['grad_norm'], flush=True)
+
+
 def smoke(args):
     from accelerate import Accelerator
     from train_GAM_texture_joint import VGGGramStyleLoss
