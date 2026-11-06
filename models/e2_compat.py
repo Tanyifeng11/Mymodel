@@ -82,6 +82,7 @@ def cpu_snapshot(raw, token, captured, total, rng):
 def compare_snapshots(first, second, atol=1e-6, rtol=1e-5):
     assert first['token'] == second['token'], '旧噪声/t/dropout/数据索引改变'
     assert torch.equal(first['rng'], second['rng']), '旧训练RNG改变'
+    assert len(first['features']) == len(second['features']), '尺度数量改变'
     errors = {}
     pairs = [('total', first['total'], second['total'])]
     for key in first['raw']:

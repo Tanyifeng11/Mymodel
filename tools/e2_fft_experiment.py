@@ -206,12 +206,19 @@ def generate_regression(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'regression', 'generate-regression'])
+    parser.add_argument('action', choices=['prepare', 'regression', 'generate-regression',
+        'prepare-protocol', 'calibrate', 'smoke', 'prepare-comparison', 'train'])
     parser.add_argument('--project', default='/share/home/u2515283058/Mymodel')
     parser.add_argument('--out', default='/share/home/u2515283058/Mymodel/output_eval/e2_fft_20261106')
     parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--config')
     args = parser.parse_args()
-    globals()[args.action.replace('-', '_')](args)
+    name = args.action.replace('-', '_')
+    if name in ['prepare_protocol', 'calibrate', 'smoke', 'prepare_comparison', 'train']:
+        from tools import e2_fft_training
+        getattr(e2_fft_training, name)(args)
+    else:
+        globals()[name](args)
 
 
 if __name__ == '__main__':

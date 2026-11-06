@@ -12,6 +12,21 @@ if [[ "$1" == baseline ]]; then
   python -m tools.e2_fft_experiment prepare
   python -m tools.e2_fft_experiment regression
   python -m tools.e2_fft_experiment generate-regression
+elif [[ "$1" == components ]]; then
+  mkdir -p "$RUN/tests"
+  python -m pytest tests/test_e2_compat.py tests/test_e2_geometry_fft.py -q
+  python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 \
+    -m tools.e2_fft_ddp_probe --out "$RUN/tests/ddp_result.json"
+  python -m tools.e2_fft_experiment prepare-protocol
+elif [[ "$1" == pilot ]]; then
+  python -m tools.e2_fft_experiment calibrate
+  python -m tools.e2_fft_experiment smoke
+  python -m tools.e2_fft_experiment prepare-comparison
+elif [[ "$1" == train ]]; then
+  ARM="$2"
+  GPUS="$3"
+  python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node="$GPUS" \
+    -m tools.e2_fft_experiment train --config "$RUN/comparison/$ARM.json"
 else
   python -m tools.e2_fft_experiment "$@"
 fi
