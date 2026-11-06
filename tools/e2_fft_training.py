@@ -431,7 +431,7 @@ def prepare_comparison(args):
         train_seed=42, sampler_seed=42, noise_seed_per_rank='42000+rank', patch_seed_per_rank='110642+rank',
         precision='bf16', prediction='epsilon', old_losses='unchanged_all_timesteps',
         deterministic_algorithms=True, cublas_workspace=':4096:8',
-        sdp_backends=dict(flash=False, efficient=True, math=True, cudnn=False),
+        sdp_backends=dict(flash=False, efficient=False, math=True, cudnn=False),
         fft_sizes=[32, 64], fft_count=4, fft_t_max=249, fft_std_min=.02,
         inference=dict(width=384, height=512, ddim_steps=50, cfg=7., sketch_scale=.6),
         validation_pretraining_exposure=True, metrics_version='legacy_v1_keep_and_recompute_both_arms',

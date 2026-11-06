@@ -79,10 +79,10 @@ def setup(args):
     torch.use_deterministic_algorithms(training)
     if training:
         # 两臂共同固定SDPA后端，避免默认后端选择影响续训恢复。
-        # 使用efficient后端；不支持的形状保留math回退，不改变注意力公式。
+        # 使用math后端检查反传复现，不改变注意力公式。
         torch.backends.cuda.enable_cudnn_sdp(False)
         torch.backends.cuda.enable_flash_sdp(False)
-        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
     core = configure(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
