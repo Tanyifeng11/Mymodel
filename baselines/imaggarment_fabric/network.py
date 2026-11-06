@@ -46,7 +46,7 @@ class GarmentModel(nn.Module):
         if stage != 'color':
             for name in self.unet.attn_processors:
                 if name.endswith('attn1.processor'):
-                    layer = self.unet.get_submodule(name.removesuffix('.processor'))
+                    layer = self.unet.get_submodule(name[:-len('.processor')])
                     ref_initial[name] = {'to_k_ref.weight': layer.to_k.weight.detach().float().clone(),
                                          'to_v_ref.weight': layer.to_v.weight.detach().float().clone()}
         self.unet.requires_grad_(False).to(device=device, dtype=torch.bfloat16)
