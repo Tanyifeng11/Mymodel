@@ -229,6 +229,8 @@ class TrainingRun:
                 if self.config.get('diagnostics'):
                     for key in ['epsilon', 'vae_input', 'decoded']:
                         captured[key].retain_grad()
+                    for value in captured['features']:
+                        value.retain_grad()
                 self.acc.backward(loss)
                 if self.config.get('diagnostics'):
                     watched = [(n, p) for n, p in bare_network(self.network).named_parameters()
@@ -236,9 +238,12 @@ class TrainingRun:
                     diagnostics.append(dict(
                         forward=tensor_hash((k, captured[k]) for k in ['epsilon', 'vae_input', 'decoded']),
                         features=tensor_hash((str(i), v) for i, v in enumerate(captured['features'])),
+                        feature_gradients=[tensor_hash([(str(i), v.grad)])
+                                           for i, v in enumerate(captured['features'])],
                         image_gradients={k: tensor_hash([(k, captured[k].grad)])
                                          for k in ['epsilon', 'vae_input', 'decoded']},
-                        gradients={n: dict(sha256=tensor_hash([(n, p.grad)]), norm=float(p.grad.float().norm()))
+                        gradients={n: dict(sha256=tensor_hash([(n, p.grad)]), norm=float(p.grad.float().norm()),
+                                           stride=list(p.grad.stride()))
                                    for n, p in watched if p.grad is not None}))
                 if self.acc.sync_gradients:
                     norm = self.acc.clip_grad_norm_(self.params, 1.)
