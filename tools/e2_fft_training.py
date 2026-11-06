@@ -145,6 +145,13 @@ def tensor_hash(items):
     return digest.hexdigest()
 
 
+def optimizer_hash(optimizer):
+    state = optimizer.state_dict()
+    return tensor_hash(('%s/%s' % (index, key), value)
+                       for index, values in sorted(state['state'].items())
+                       for key, value in sorted(values.items()) if isinstance(value, torch.Tensor))
+
+
 def frozen_hash(pipe, network):
     modules = [('unet', network.unet), ('reference', pipe.reference_unet), ('vae', pipe.vae),
                ('text', pipe.text_encoder), ('image', pipe.image_encoder), ('old_texture', pipe.bf_texture_conditioner)]
@@ -202,7 +209,9 @@ class TrainingRun:
         self.network.train()
         self.stream = DataStream(data, indices, accelerator.process_index, accelerator.num_processes, config.get('workers', 0))
         self.rng = torch.Generator(device=accelerator.device).manual_seed(42000 + accelerator.process_index)
-        self.fft = LocalFFTLoss(seed=110642 + accelerator.process_index) if config['fft'] else None
+        self.fft = LocalFFTLoss(sizes=config.get('fft_sizes', (32, 64)), count=config.get('fft_count', 4),
+            t_max=config.get('fft_t_max', 249), std_min=config.get('fft_std_min', .02),
+            seed=110642 + accelerator.process_index) if config['fft'] else None
         self.step, self.chain = 0, '0' * 64
 
     def update(self):
@@ -305,15 +314,33 @@ def smoke(args):
         folder = out / 'smoke' / arm
         folder.mkdir(parents=True, exist_ok=True)
         logs = [run.update(), run.update()]
+        state2_hash = tensor_hash(network.trainable_state().items())
+        optimizer2_hash = optimizer_hash(run.optimizer)
+        scheduler2_state = run.scheduler.state_dict()
         run.save(folder / 'resume_test.pt')
         expected = run.update()
-        expected_hash = tensor_hash(acc.unwrap_model(run.network).trainable_state().items())
+        expected_state = acc.unwrap_model(run.network).trainable_state()
+        expected_hash = tensor_hash(expected_state.items())
         run.restore(folder / 'resume_test.pt')
+        assert tensor_hash(network.trainable_state().items()) == state2_hash, 'checkpoint参数未完整恢复'
+        assert optimizer_hash(run.optimizer) == optimizer2_hash, 'optimizer状态未完整恢复'
+        assert scheduler2_state == run.scheduler.state_dict(), 'scheduler状态未完整恢复'
         replay = run.update()
-        actual_hash = tensor_hash(acc.unwrap_model(run.network).trainable_state().items())
-        assert expected_hash == actual_hash, '恢复后参数更新不一致'
+        actual_state = acc.unwrap_model(run.network).trainable_state()
+        actual_hash = tensor_hash(actual_state.items())
+        difference = {name: float((value - actual_state[name]).abs().max()) for name, value in expected_state.items()}
+        failed = [name for name, value in expected_state.items()
+                  if not torch.allclose(value, actual_state[name], atol=1e-7, rtol=1e-5)]
+        resume_result = dict(bitwise_equal=expected_hash == actual_hash,
+            parameter_max_abs=max(difference.values()), per_parameter_max_abs=difference,
+            outside_tolerance=failed, atol=1e-7, rtol=1e-5,
+            expected=expected, replay=replay, checkpoint_parameters_exact=True,
+            optimizer_exact=True, scheduler_exact=True)
+        write(folder / 'resume_comparison.json', resume_result)
+        assert not failed, '恢复后参数更新超出FP32容差；见resume_comparison.json'
         assert expected['tokens'] == replay['tokens'] and expected['chain'] == replay['chain']
         assert expected['losses'] == replay['losses']
+        del expected_state, actual_state
         logs += [replay, run.update()]
         changes = parameter_changes(before, acc.unwrap_model(run.network))
         assert all(v > 0 and np.isfinite(v) for v in changes.values())
@@ -323,7 +350,8 @@ def smoke(args):
         run.save(folder / 'latest.pt')
         results[arm] = dict(passed=True, updates=run.step, effective_batch=8, logs=logs,
             executed_update_calls=5, resume_replay_updates=1,
-            changes_l2=changes, frozen_unchanged=True, resume_exact=True,
+            changes_l2=changes, frozen_unchanged=True, resume_exact=expected_hash == actual_hash,
+            resume_within_tolerance=True, resume_parameter_max_abs=resume_result['parameter_max_abs'],
             checkpoint_sha256=sha(folder / 'latest.pt'), final_hash=tensor_hash(network.trainable_state().items()))
         write(folder / 'result.json', results[arm])
         network = acc.unwrap_model(run.network, keep_fp32_wrapper=False)
@@ -369,6 +397,9 @@ def train(args):
     assert read(out / 'smoke/result.json')['passed']
     config = read(args.config)
     assert sha(config['split']) == config['split_sha256']
+    source = read(SOURCE / 'configs/e2_fft_regression.json')
+    assert config['initialization'] == source['checkpoint'] and config['initialization_sha256'] == source['checkpoint_sha256']
+    assert config['effective_batch'] == 8 and config['code_commit'] == environment()['commit']
     world = int(os.environ.get('WORLD_SIZE', '1'))
     assert world in [1, 2, 4, 8] and world == config['world_size'], '两臂必须按共同配置使用相同world'
     acc = Accelerator(mixed_precision='bf16', gradient_accumulation_steps=8 // world,
