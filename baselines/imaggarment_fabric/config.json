@@ -1,0 +1,23 @@
+{
+  "name": "IMAGGarment-Fabric-GAM",
+  "project": "/share/home/u2515283058/Mymodel",
+  "run": "/share/home/u2515283058/Mymodel/output_eval/imaggarment_fabric_gam_20261106",
+  "comparison": "/share/home/u2515283058/Mymodel/output_eval/bf_fusion_t3_three_arm_20261101",
+  "public_ip_assets": "/share/home/u2515283058/cn_ipa_repro_20261022/pretrained",
+  "width": 384,
+  "height": 512,
+  "seed": 42,
+  "effective_batch": 8,
+  "color_epochs": 5,
+  "gam_epochs": 5,
+  "color_lr": 0.0001,
+  "gam_lr": 0.00001,
+  "weight_decay": 0.01,
+  "steps": 50,
+  "cfg": 7.0,
+  "sketch_scale": 0.6,
+  "ipa_scale": 1.0,
+  "checkpoint_selection": "fixed final epoch; no test-set selection",
+  "precision": "bf16 autocast; trainable weights float32",
+  "lem": false
+}

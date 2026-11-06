@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/muzishen/IMAGGarment",
+  "commit": "d58da9838a8afe683199d79b4f06f96524d1d2eb",
+  "license": "Apache-2.0",
+  "files": {
+    "adapter/attention_processor.py": {
+      "file": "adapter__attention_processor.py",
+      "sha256": "115e60aafce79ea3077af8c9ad53d827f9930ed8aa6945e932c6c1a885acc159"
+    },
+    "train_GAM.py": {
+      "file": "train_GAM.py",
+      "sha256": "cc39093ddbb1dea192f545589196717993223bc06979110e7795dbc9c05d631c"
+    },
+    "train_color_adapter.py": {
+      "file": "train_color_adapter.py",
+      "sha256": "aeb2a5e71a83c69c99a4bb1853709b3d13bc85ba345ddf2bd2334c68d2aceb80"
+    },
+    "pipelines/IMAGGarment_pipeline.py": {
+      "file": "pipelines__IMAGGarment_pipeline.py",
+      "sha256": "7c9b7607214b8facc357872253880b2ac20e76b5486b9625c845274fd4412c04"
+    },
+    "LICENSE": {
+      "file": "LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  }
+}
