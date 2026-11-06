@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "parent_commit": "f8819899d9b1ead6d0329e1e71262afd7608bcef",
+  "checkpoint": "output_eval/bf_fusion_t3_three_arm_20261101/training/BF-SD-T3/step28365.pt",
+  "checkpoint_sha256": "06b9994862ec2cb0be5254c4d30acec2f459ec359e9c53856bc5413255f3fa74",
+  "evaluation_manifest": "output_eval/bf_t3_ablation_20261102/evaluation.json",
+  "evaluation_sha256": "37ce550d4372b41a41abfaa7bcb4fb9beacf0b0865659d7cf0ba5d94a1aaca67",
+  "cases": [
+    {"id": "101313763", "seed": 1452917427},
+    {"id": "104898516_10", "seed": 1886311026},
+    {"id": "106574616", "seed": 939983022},
+    {"id": "109620447", "seed": 750221078}
+  ]
+}
