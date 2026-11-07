@@ -579,5 +579,28 @@
     "reference_pool_3.png"
   ],
   "reference_pool_expanded_before_model_outputs": true,
-  "original_dev64_pair_count_at_fixed_thresholds": 0
+  "original_dev64_pair_count_at_fixed_thresholds": 0,
+  "server_re_review": {
+    "reviewed_at": "2026-11-08T01:38:08.476263+08:00",
+    "before_model_outputs": true,
+    "reviewed_input_records": 112,
+    "reviewed_input_hash_map_sha256": "bbf169e8100d446aa854fe19aff2699e9def04431557cd34b84f5115144eb68e",
+    "pages_sha256": {
+      "dev64_1.png": "77a89b382e53d2eeacdb659d5629bf95e362ad5e85bb13aa15e80e706b431862",
+      "dev64_2.png": "86a095a1d264beb64b3ee8856164a42e37310a5884c348c2f0929995a2164004",
+      "dev64_3.png": "cfd40641c58d6633fd4fb5bab6d36859cafa0e118505d046c4ee13d78837d511",
+      "dev64_4.png": "e858c7f5b0d5be770ac6c9cb879b497f3af410a426a32120b5ea13bc1186e16d",
+      "reference_pool_1.png": "53418309ee6197c57d8b8d37481265a5ea2303a1f4f94587638518e27ceac562",
+      "reference_pool_2.png": "3b719b138d92985dd069c714abb721915d42dcbc34089177f93f67d48a27af8f",
+      "reference_pool_3.png": "4a5e4ec911197e7729b0fc8e68fba02a9506f4aba4339b312b22c965c80df9cf"
+    },
+    "input_version_difference": {
+      "sketch_raw_files": 111,
+      "texture_raw_files": 1,
+      "gt_raw_files": 0,
+      "changed_texture_index": 34009
+    },
+    "qualification_changes": false,
+    "notes": "All seven server input sheets visually re-reviewed. Index34009 is still a clean repeated dot reference. Frozen real6 and derived11 use the same reference images as local review. Target sketches use actual server versions. No generated model outputs have been used to select inputs."
+  }
 }
