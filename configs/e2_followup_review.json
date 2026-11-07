@@ -1,0 +1,583 @@
+{
+  "review_type": "AI_visual_input_only",
+  "reviewer": "Codex",
+  "reviewed_pages": [
+    "dev64_1.png",
+    "dev64_2.png",
+    "dev64_3.png",
+    "dev64_4.png"
+  ],
+  "all_64_inputs_reviewed": true,
+  "human_annotation": false,
+  "model_outputs_seen_for_selection": false,
+  "records": {
+    "82": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "643": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Small lilac/white repeated dots; visibly present reference pattern."
+    },
+    "1105": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "1578": {
+      "pattern": "irregular",
+      "clean": true,
+      "note": "Heart motifs; not regular dot ground truth."
+    },
+    "2260": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "2320": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "3096": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "4140": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "5169": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "White dots on black; no visible garment outline in reference."
+    },
+    "5396": {
+      "pattern": "irregular",
+      "clean": true,
+      "note": "Red floral motifs."
+    },
+    "5553": {
+      "pattern": "irregular",
+      "clean": false,
+      "note": "Cropped lace/detail and border."
+    },
+    "5930": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "5940": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "6143": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "7119": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "7351": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "7564": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "7637": {
+      "pattern": "irregular",
+      "clean": false,
+      "note": "Broad abstract waves; too little periodic support in reference crop."
+    },
+    "9434": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "9576": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "10035": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "13181": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "13273": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "15117": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "15418": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "16067": {
+      "pattern": "irregular",
+      "clean": true,
+      "note": "Hearts/envelopes; not regular motif target."
+    },
+    "16774": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Dark red/black plaid."
+    },
+    "17056": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "17916": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "18221": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "18836": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "19524": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "19852": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Low-contrast crop; pattern and folds difficult to separate."
+    },
+    "22686": {
+      "pattern": "stripes",
+      "clean": true,
+      "note": "Several black/white repeated horizontal bands."
+    },
+    "23421": {
+      "pattern": "mesh",
+      "clean": false,
+      "note": "Mesh/openwork rather than printed dots."
+    },
+    "24084": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "26432": {
+      "pattern": "irregular",
+      "clean": false,
+      "note": "Lace; periodic assignment uncertain."
+    },
+    "26648": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "26738": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "28063": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "28199": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "28799": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Reference has too few visible bands to establish periodic pattern."
+    },
+    "29212": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "30436": {
+      "pattern": "text_logo",
+      "clean": false,
+      "note": "Cartoon and text."
+    },
+    "31158": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "32591": {
+      "pattern": "irregular",
+      "clean": false,
+      "note": "Strong trim/border and abstract crop."
+    },
+    "33689": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "35811": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "36704": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "37869": {
+      "pattern": "irregular",
+      "clean": true,
+      "note": "Black/white figurative motif."
+    },
+    "38811": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated grey/light diamond or lattice motif."
+    },
+    "38878": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "39008": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "40693": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Single dominant navy band; insufficient repeated cycles in crop."
+    },
+    "40858": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "41347": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "41619": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "43679": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "43959": {
+      "pattern": "stripes",
+      "clean": true,
+      "note": "Repeated narrow black/white bands."
+    },
+    "44066": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "44212": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "44852": {
+      "pattern": "stripes",
+      "clean": true,
+      "note": "Repeated narrow pale-blue/white vertical bands."
+    },
+    "44983": {
+      "pattern": "other_or_solid",
+      "clean": false,
+      "note": "Not admitted as a clean regular-pattern candidate in this fixed-pool review."
+    },
+    "45312": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated black/white rectangular grid."
+    },
+    "276": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated black/white grid."
+    },
+    "1549": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated red/grey plaid; color matching must independently qualify."
+    },
+    "2037": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Too few broad bands in reference crop."
+    },
+    "3061": {
+      "pattern": "other",
+      "clean": false,
+      "note": "Large red garment panel/trim mixed with knit."
+    },
+    "4093": {
+      "pattern": "dots",
+      "clean": false,
+      "note": "Single dominant partial large dot; insufficient repeated cycles."
+    },
+    "4101": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Repeated dark dots on pale background."
+    },
+    "4558": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated black/white checks."
+    },
+    "5047": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Several repeated white dots on black."
+    },
+    "9482": {
+      "pattern": "other",
+      "clean": false,
+      "note": "Cuff decoration in GT; reference is near solid."
+    },
+    "10683": {
+      "pattern": "dots",
+      "clean": false,
+      "note": "Reference has a single tiny dark mark; periodicity unsupported."
+    },
+    "11424": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Reference crop misses most stripes."
+    },
+    "13055": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Vertical zip/seam intersects repeated bands."
+    },
+    "13325": {
+      "pattern": "text_logo",
+      "clean": false,
+      "note": "Printed cartoon and lettering."
+    },
+    "13701": {
+      "pattern": "checks",
+      "clean": false,
+      "note": "Possible button/hardware and strong local fold in crop."
+    },
+    "15452": {
+      "pattern": "dots",
+      "clean": false,
+      "note": "Neckline/border occupies top of crop."
+    },
+    "15785": {
+      "pattern": "dots",
+      "clean": false,
+      "note": "Black bow/ribbon contaminates reference."
+    },
+    "16017": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated diamond/lattice pattern."
+    },
+    "17191": {
+      "pattern": "irregular",
+      "clean": false,
+      "note": "Knitted composite pattern, not a simple periodic target."
+    },
+    "17984": {
+      "pattern": "other",
+      "clean": false,
+      "note": "Reference is mostly solid, stripes occur at cuffs."
+    },
+    "18724": {
+      "pattern": "dots",
+      "clean": false,
+      "note": "Only one complete large dot in reference crop."
+    },
+    "22632": {
+      "pattern": "stripes",
+      "clean": true,
+      "note": "Repeated vertical black/white stripes."
+    },
+    "23311": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated pale grid on dark field."
+    },
+    "23664": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Fine repeated grid."
+    },
+    "24049": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated plaid with folds but no clear garment edge."
+    },
+    "25569": {
+      "pattern": "dots",
+      "clean": false,
+      "note": "Reference includes a white external garment boundary."
+    },
+    "25597": {
+      "pattern": "stripes",
+      "clean": true,
+      "note": "Repeated brown/light vertical stripes; color filter still required."
+    },
+    "27029": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Fine repeated woven grid in actual reference, irrespective of caption label."
+    },
+    "28713": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Repeated small dark dots on light field."
+    },
+    "29978": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated houndstooth-like checks."
+    },
+    "30213": {
+      "pattern": "other",
+      "clean": false,
+      "note": "Solid reference; no relevant periodic motif."
+    },
+    "30967": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Only one dominant black band in crop."
+    },
+    "31367": {
+      "pattern": "other",
+      "clean": false,
+      "note": "White side trim on black pants rather than a fabric pattern."
+    },
+    "32982": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated black/white checks."
+    },
+    "33123": {
+      "pattern": "text_logo",
+      "clean": false,
+      "note": "Text print and very faint local lines."
+    },
+    "33330": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated small houndstooth/lattice."
+    },
+    "33660": {
+      "pattern": "checks",
+      "clean": false,
+      "note": "Reference includes pale garment boundary at right."
+    },
+    "33758": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated navy/white grid."
+    },
+    "33984": {
+      "pattern": "stripes",
+      "clean": true,
+      "note": "Repeated black/white horizontal bands."
+    },
+    "34009": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Repeated small white dots on black."
+    },
+    "35601": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated dark/light plaid."
+    },
+    "37683": {
+      "pattern": "checks",
+      "clean": true,
+      "note": "Repeated narrow dark/light grid."
+    },
+    "38139": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Repeated white dots on dark background."
+    },
+    "38549": {
+      "pattern": "irregular",
+      "clean": false,
+      "note": "Multiple mixed motifs."
+    },
+    "38703": {
+      "pattern": "dots",
+      "clean": false,
+      "note": "Black waistband/border dominates crop."
+    },
+    "39738": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Too few complete stripe cycles."
+    },
+    "41839": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Repeated dark dots on pale background."
+    },
+    "42046": {
+      "pattern": "stripes",
+      "clean": false,
+      "note": "Low contrast and too few complete cycles in crop."
+    },
+    "42478": {
+      "pattern": "dots",
+      "clean": true,
+      "note": "Repeated dark polka dots on pale background."
+    }
+  },
+  "all_112_inputs_reviewed": true,
+  "reference_pool_review_pages": [
+    "reference_pool_1.png",
+    "reference_pool_2.png",
+    "reference_pool_3.png"
+  ],
+  "reference_pool_expanded_before_model_outputs": true,
+  "original_dev64_pair_count_at_fixed_thresholds": 0
+}

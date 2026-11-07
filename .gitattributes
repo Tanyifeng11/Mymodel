@@ -1,0 +1,2 @@
+# 冻结的第三方资产按实际字节存储，跨Windows/Linux校验一致。
+vendor/pidinet_followup/** -text

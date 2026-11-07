@@ -1,0 +1,27 @@
+{
+  "source": "https://github.com/hellozhuo/pidinet",
+  "commit": "d21aa881ed9c628571636fad39acfe1fad517ebd",
+  "files": {
+    "pidinet.py": {
+      "upstream": "models/pidinet.py",
+      "sha256": "ee4243d1537f95a8a9ab795e47380115886e4984415c1586c2abcd913bfb8c7b"
+    },
+    "ops.py": {
+      "upstream": "models/ops.py",
+      "sha256": "b71294df26463b3caf075f1cc596e9849b2859f35db230346ed7f02f35a4ba34"
+    },
+    "config.py": {
+      "upstream": "models/config.py",
+      "sha256": "5790cb9469694f7c3f2e690b8f9964b0fbc5f8e82ac3e18b9d28ad208f01a752"
+    },
+    "LICENSE": {
+      "upstream": "LICENSE",
+      "sha256": "81ae4ff9ec8a220b015473aba1adbe1ee1c2e9cae844f8dc57fd5848023ba2c1"
+    },
+    "table5_pidinet.pth": {
+      "upstream": "trained_models/table5_pidinet.pth",
+      "sha256": "80860ac267258b5f27486e0ef152a211d0b08120f62aeb185a050acc30da486c"
+    }
+  },
+  "research_use": true
+}
