@@ -67,7 +67,9 @@ def compute_losses(pipe, network, batch, rng, style, core, fft=None, fft_weight=
     keep = not (.2 <= token['drop'] < .3)
     extra, stats = fft(captured['decoded'], batch['texture_image'], batch['garment_mask'],
                        captured['timesteps'], batch['dataset_index'], reference_keep=keep)
-    return old + fft_weight * extra, dict(raw, fft=extra), token, captured, stats
+    components = stats.pop('_component_tensors', None)
+    extra_raw = dict(auxiliary_total=extra, **components) if components is not None else dict(fft=extra)
+    return old + fft_weight * extra, dict(raw, **extra_raw), token, captured, stats
 
 
 def cpu_snapshot(raw, token, captured, total, rng):

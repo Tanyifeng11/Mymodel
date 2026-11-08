@@ -64,7 +64,10 @@ def environment():
                     SOURCE / 'tools/bf_t3_frozen_core.py', SOURCE / 'train_GAM_texture_joint.py',
                     SOURCE / 'models/e2_compat.py', SOURCE / 'models/e2_geometry.py',
                     SOURCE / 'models/e2_local_fft.py', SOURCE / 'tools/e2_fft_training.py',
-                    SOURCE / 'tools/e2_fft_evaluation.py', Path(__file__)] if p.exists()})
+                    SOURCE / 'tools/e2_fft_evaluation.py', SOURCE / 'models/e2_local_texture.py',
+                    SOURCE / 'tools/e2_b_screen.py', SOURCE / 'tools/e2_b_screen_data.py',
+                    SOURCE / 'tools/e2_b_screen_training.py', SOURCE / 'tools/e2_b_screen_evaluation.py',
+                    Path(__file__)] if p.exists()})
 
 
 def setup(args):

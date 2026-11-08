@@ -1,0 +1,3550 @@
+{
+  "review_type": "AI_visual_input_only",
+  "human_annotation": false,
+  "model_outputs_seen_for_selection": false,
+  "reviewed_pages": [
+    "inputs/review_01.png",
+    "inputs/review_02.png",
+    "inputs/review_03.png",
+    "inputs/review_04.png",
+    "inputs/review_05.png",
+    "inputs/review_06.png",
+    "inputs/review_07.png",
+    "inputs/review_08.png",
+    "inputs/review_09.png",
+    "inputs/review_10.png",
+    "inputs/review_11.png",
+    "inputs/review_12.png",
+    "inputs/review_13.png",
+    "inputs/review_14.png",
+    "inputs/review_15.png",
+    "inputs/review_16.png",
+    "inputs/review_17.png",
+    "inputs/review_18.png",
+    "inputs/review_19.png",
+    "inputs/review_20.png"
+  ],
+  "records": {
+    "8284": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "abe381e93d6877b97f3284c128d75e5b52135b861450ee79e0b115e94d2dd466",
+        "gt": "c825cc1d1582dbd3ec6f6410903f6d674f299084ed93ad5a0375067bd20cb8b9",
+        "texture": "64f8b898fc13c6210c9000fc759dfeb491573ab850798ca8bd9d91c61b4f3e91"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5038": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "43149349b66c18edf95ad04f27df7e91ca9b24b83befc1fb91052d79c57fbf86",
+        "gt": "8e861c55ab7ae9bc7b31f5cb40e5ad15ff85f9aae7426eb6eb3def5de4f5fc6d",
+        "texture": "d285d7fefa8106e505e53f8491f1988633c52f9bca0aa3bcfeeb6a17d99029e1"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6728": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "8724ca5dba0dbb5b19d5fd9b9e2323eb7ed6e82008978e804dae44958ef210a1",
+        "gt": "a939d4caf245a3026032d01d2a87c106207ead5ab576fc0fe2daf589fe6b7510",
+        "texture": "01841efaf92df3b4f084b1e2aa09a548721bc957b3d2de4d7ae6b6edc58dd38b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1455": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "d84b829fac79232b97a9be44f0ee90a798ce2c95005e15785e33e8c8a3dd8d42",
+        "gt": "73eafad12cb399d4d3f6e04abd7a356b501c3115a307b242be0b860a5c3a0907",
+        "texture": "9edec9952f5d7a4a7ddd4b89c1ddd60cc61158408f22268ac28730edae6a4577"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6857": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "bbb3df9564f4f63bab74baa5ab4be53680fddfcf77141abb9a83d8ef404947db",
+        "gt": "513e82e7a960777150bea3d1c37951405d88d5314aef93e61b48289f8bebf33e",
+        "texture": "3fcb4b4c3c58f12f55148465848605e4a4893b855c501a6fce8ed596901cf3d6"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2063": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "d61cd2f6b7b27da43c38d213054a67d4ac28f1db9c9ea416f9a3e61346736cdc",
+        "gt": "b6edccbecc28585f0e07301dbb57a645d11e7d7a7624995bb2c0908ffabedc25",
+        "texture": "d1cb3f16698009a14fd65be0a8bd4f490c1a3406ae92718c81736caeab3cfd17"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5079": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ab25b82fc6ab9a7b1ea6143517312a26d647f33b62f09f3e641de0ecf720734f",
+        "gt": "74395fcdfd5e66f5610ec5bc158ec241a5521b1e986cb3d3ce529f9732db2b45",
+        "texture": "ce50ef4157bda1eb8ed4948d12fe519a77b1292e95f47f78294f436e559248a6"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7445": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "fe110e1dc2906bc27ab0a77efac4a2bea664b9fa8943bd1783d19cd0a8d6dc74",
+        "gt": "9d5fe30250e2c8c5cad8f0651fe60ce15b85572804055c0479c1cf9a29d5af15",
+        "texture": "9c303de0a0ecb7945caa4c8cbae7c130bb7dbf5889295b23f10a8887b467be7d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3501": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e2eb844d66ff153722f3419b7ba485a231ea35349298f6d612ceeb146c530899",
+        "gt": "bb44476dc143b923d9b08b2bd7c5ac600ee15d6c4a8cc238830fa32a8ac3b772",
+        "texture": "a65101c3085d671c0c2e44c3545bae1fd0cd4d67529560202f483cb828dd25d1"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3271": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "efc23c1a950b87d3625f602c6f5bbca052ec417c9bb043dda23c9f148ddad485",
+        "gt": "6bbd36712d2cb072ceb9259b86336af6f12385a90342acde97c58fd73ff05cd3",
+        "texture": "8f78c21e736ac419ff8bf7a803f040f5b88a39937ffed12824ab90e63e24a4ff"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5530": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "29b6b0c20320c3bcc872572610f93cd1719fa2216a3f2eb0d9ab75f7749b1686",
+        "gt": "ade7e8354edac75edd26a2b4dbcc84d320c76ba3a939bd53c096e0b0c0e8704d",
+        "texture": "8df814dc5c97bd9b46250e2c4c19847d8c7cdd8a93449d8f624c6d4c58cda237"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3775": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "689929c0abfac6e0b444958aedc7c27f5d4988d695760f26c3c13575f40b5e8e",
+        "gt": "24932d54498ab6b6bf499ade1ae3c58426c33d1b7afff940b5658d297a2df760",
+        "texture": "2b189b5644d9862d53c33159b75293381d9a3167e252a0e62019bdd1b3bdefb3"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7470": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "6d6562fd1c5b7f9b67c6aba500adc99badacf5a1f9dfafb355125fc6929723d3",
+        "gt": "0c624c58d2b9bf19083bcf100ba4225ab44ff13e0f82f3b7b5d8016c1cda7c1a",
+        "texture": "8240053dc6fe3827d0dc5d84c9e9c4ada0356e805e42a53087078bc5eb3e5bdd"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5236": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "03aa9f07603319f0da14f5a4f80b6e01dcdc8a22e3bc83393431034d82577786",
+        "gt": "e506ec511bf29f39e7ea4ed1dcb560b336f467c59e2694888433b66743ed692f",
+        "texture": "403319ec18930964f5716e24a1a8c9db36305e03f69bf63c06f1c8f82eb135d3"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1116": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "aee15af590f0b90cb60b9a5bf527ff547b5a74632609c85c36bb6cb0b2eac339",
+        "gt": "e2bcb22fa3f1818f7d25bb3be17499f8f60506ebb2d99e4a0a4f3d3570dfe6d9",
+        "texture": "2038d26d73a37228c04bc4e7356b23ba854c2575a747a4b641a978d8656ecbe2"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5774": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "4e44143bb865f0de3f9a76274512e93fecedfd24d601be0861ecf74b185d9f39",
+        "gt": "60931bd2f621fbd9e2cbe1ca3fb79a5fb2ab8b54cc9f929cdea81de1457fb156",
+        "texture": "0217c0ea68506b7495a043254f7511022f6d276ce160aa6e70e1344f1ddf5a57"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3330": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e5cd7f1383a95d33fdbdd6b57a602533c0f7a41657ac2379a174d5e6d2878a47",
+        "gt": "9b2beaa304167ae5f707b1e0ec45b84c6ad5d019c9496987d98ed6a535dc036b",
+        "texture": "ca9e5c5494b9164f7208ab7f0ea15ca7cebfba2b51399660fd9ea5de6c9d0a24"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6442": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "63cca3ab717e03572de3fd1777172381665e3d0edd35dbe2b0f0e64338b30501",
+        "gt": "f96be910d86b0647dcaeee0aafc056798483dbf20a24ca7c8cfdbaf2f6b2a2ce",
+        "texture": "ce2ba1d3caae51d3b4749456c6aa1349facad289703c061739b30d8a6ed8e46a"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2399": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "26e9e3941ba684718c23de8ee23dd559b4d02c61a634e2296b5c778b6ae53566",
+        "gt": "538fbaede915b9111074d64ae10d2b45ca6e7a990f45fe090d2e6edc878faf33",
+        "texture": "df215c651226d208efeed06ec71edf9eeb895f682787aa29ce8f577dcf61403d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4894": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "39f9b506f3aa9e286b9d9471900c846b43998013ed252b0571d262a5fa612005",
+        "gt": "1076916cf475990b9e0e85940615d931780574fb3d0da444c9a2c85205073268",
+        "texture": "52d703d1f4a7ee62969c44a8ab33cded75ebfdc11e9322955dad820851e7245f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4426": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "ee35d857b144dfbf93e32492536336a3c81210e1839a963689d51e556c995905",
+        "gt": "e92602595e453d5a5e33bf07786195c1362f401ea0163d94cf18cbbd71cd6709",
+        "texture": "dd1b26accc0c91b13b58f7f368dba66cdaefaeef353e0bb088ae9b2a414bfbbf"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5005": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "26981de8607b71d12c74a9d5c9b36d5f9cbb9974fd98094ef66f740906324f91",
+        "gt": "7b86177f2bafd842011afe257bf9cbce5ca221163e2654d5176d57ce5cc6c647",
+        "texture": "34eaba2e674743eba4b0f3a105cad70bc72f72e8fa0ead221421b259b7861817"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5474": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3f177112ff8e1ea5008bee6574a71649c602eedd59c25d707836ad668ea8cd08",
+        "gt": "899e1ffbf5063a2a50e16822deced360431f8e9e938284248f7a3b3957c195ab",
+        "texture": "a51cd7f21b5f78637d2a667f95323a07de00343a52fc03adf994c99624779f1e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6653": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ad7d32f618d2c5ab1c029bbce0b6a9f660ada103b951f8662240a371c64ab60d",
+        "gt": "d9c1d2300066ac061daa14daa5ae351bdc09adc03caf5858fd50905fde3becc1",
+        "texture": "7fe693a8251ff2f80d7998625d1488dfe90b73abf084a61ffcb9c368a791d4c3"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1890": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3797682ee8936c73141342dfb68655d6fbbab9da32dd82ba8a4e67cf7aeb4816",
+        "gt": "2c687bf11263c37e9cce95a79fc4348807b526308e514029b7d5b69823788da0",
+        "texture": "2ed9ee5ba3f1b260450f996be5c6e8be622aa8c307b16162177fe1c491e07a7c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4420": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "34e10c5c86385412631f0efd2165dda716000c999c7c288575aaf58c9be46ec5",
+        "gt": "a9bddf0012122d0a1319c3928ed29ba7df3029ed93c9a804055ed6f54969e09d",
+        "texture": "59dc6296ea5f7c9088814c9bd58af0f184e3c045a36dda69363e217a0873dd7c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4172": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b49f795a9b7c5537eae9ff7d555af6a812549b2555f8ca9f1b2ba0490a5cbdd9",
+        "gt": "ece89d2a034dcc9100d0b42214da362aa7db78fcb74b413d9eec2d9854ce5b9a",
+        "texture": "82d7efbcf2dba5bd8787e7c5979266ea068fda0bdebe24c3ec9ccd35bed3ece9"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1301": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "2abf341a89d571bc3b1fd644d82e28a5668cbc46deb7b8f9f1aa82704caf501c",
+        "gt": "84d691a972478abc58f3965694d66e25803bedee1d44696698ae00538d8b18b5",
+        "texture": "8cdfe8adab9e93c20565c2bca50b10bfbd45a8910ec2d8d67608e2a8a0e4db5d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1324": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "41febc5f52397d88ecf1160cb0804b11efc0730af4330ede09b72a0b832e966f",
+        "gt": "9762cb046e1dd53476c84f0af942b4188adc9146aa443320580fbf2488f86007",
+        "texture": "e568322c5906346e1f95de6c1c58bb7bccf13a1bb8e61612ea1f2ebb23e9e0ec"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2472": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "dbbc8d1ccd09897bd99d340cec000e63980f2e34e1869033b780e3392a656256",
+        "gt": "260933b4c6a4d9e4a5e405ed8a5494f0ef780f908fbd6eaacf3dcbc788bc72b4",
+        "texture": "ceaca3460be6dbe1d070043c32db62a6fc1a964c0ce961a6aa46c7b4b9d77f2f"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3475": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "6e0ad585dc63ba635453efe962a3f292f33cfea17c1dc3413aca84f3f2656c61",
+        "gt": "8cf1176be55ca002c61b2c89e9be3c4c9f428b6770ba4208ab9210f3dcb1c588",
+        "texture": "b74d95c9ef44f84ac712071c58b66fa600887ec8839447ea06338d0c8bb5ce37"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3889": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "4392176bfd55bd27de7a64d3ac582c5c798e0daa96ab699f6254c28397cc86e4",
+        "gt": "761b58818488d0361039a10c5e35f0d1ef0f759112aebdb30173627261398064",
+        "texture": "9be61e2fea63469d239b99966c1dea59594446807fec3e1641cdd752c2c29462"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6094": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "1f05be827cd2e3d57f45c557c345f625adac13e2898d2c41d7a22175b7513766",
+        "gt": "94daf0bacfb36c6ee117d0a22bc33a6085bdab3e45157a46ad0299b91efb4167",
+        "texture": "1f60138ba2461b69020705e6ef30bf486f000150129d967ba53166164162b74d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6646": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3b60588a4b190bfa1c0275eff2d08b00c99a0ac51f308e30278b0568962a8923",
+        "gt": "e06d4a7da72fa5d62818679caf960e8c08f8780fdfbd450d0ec1a2a7e725a25d",
+        "texture": "db6505ac4b944ca3d5cfcc56a021c51e9c7d3bd53eb0784781b77d96068aac3f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5532": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "59a8b559f01f09c52de4e0ae77e34553b798defe4b6b2ad11c36f4bdce2cf520",
+        "gt": "a36d7e4c6d8d083ed58d4ab9e8980ed91a6e55b2e7889e4db4ed9f4bc1d435a3",
+        "texture": "7a3c4f0efe285c3308ceebd153063797172decb99fb8bedf5d31a248d49e34e0"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6348": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "2b4ec165ee6ad9edd95dfd55bc8262f18177e62790a4d7dfbcd6135327fa7db0",
+        "gt": "78d2fbee65b2d2aeea405841c490f80fed4f9e847e9fa4a14aae9f72d889f6a0",
+        "texture": "d8f3d9a28ddcdd5342963494dd1d2c5df0430e01bfbf46cc4feffd293f432ec7"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4595": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "e65a64726eee7adad1b3e5560b43d21ddb36b3337209ae79f10310feb9568aa0",
+        "gt": "24a6f0e15a1c40277334f41e8079fb63bde8e2b39181454f560d53e7cb6c8cec",
+        "texture": "b444bd03f1e92569c661de666fc42424eca4a9e5086760aedd1127901fbd4819"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2296": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "2a45b8bf4beedcdf4db6773f0639245638b6789490e7b5935c1b95bf3339c9d0",
+        "gt": "9cbda7ecad15ce7026d4e2dcfcfc362e44099a52af4e7864ae9a4728cd4b4f1e",
+        "texture": "960dc5f4882f6beca398ff7962cc0dcb5825980698546e5d057df0917df4c84b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3311": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "bacdcb08c59f1aa3474b29c4128db0441325f3a6e0ab83a317078d1fc28ac6a7",
+        "gt": "c6a05975906d3093c800f78b3ef4bef53cf35254806b777a100fa33856b0e3eb",
+        "texture": "49b88589076336a550505fc3cdf8346a875853ab12e257ead3e1399c50c2d5f9"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4374": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "90f5715ab26095f94d1356a37a171e245aa7d65a798e6c594a99b69de86c80e1",
+        "gt": "4cd92cd21a73f54d7696f6fae17b5aae52c2671df3ccc7801528701459de23ca",
+        "texture": "47db6db6c51d7cd81b60023c06a2aab71bbb7d07e123046cb430ce9177783242"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6456": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a75dbf724615dd966c58a9a6026a313e1a28f4187746cdea4fc6b568e9e3db8a",
+        "gt": "0521176fed83740f4fd7c170b62957dcb907e3a42f6e57906a31f7c5d1f5e8ea",
+        "texture": "5e35c5300f8267288662542ea749a4a0017934f78734723800e07ecd1da2709b"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6248": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "7f7a7fc19ca1e5f89357e5a208e50a73aab9f544cf96111029f7cc620a7b593b",
+        "gt": "8c34823556d6f9929b1112fc6b3bb5038a2edc0aed7bcaa11ab7096b5ee5e286",
+        "texture": "391c3b44a5664ce5b4f8c6964bd7587c3c510f198b858e965964bce9b9bb9a7e"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2605": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "2105551fef449d646a5d5f3905d84e5d30a5527b72e2f21c988e683433167eaa",
+        "gt": "e3bf6b9e652250a97c26f286fda686e041ea03bb34c9b4249208a9ef3a69ce20",
+        "texture": "459ed33d79396707374fc37f24ceed5c02331e36b6e59e3303017c64aa8ed7a3"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3020": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "cc348752285ed1543ca24b0115495720ca946ecf4c5d19bddba2075869669c0a",
+        "gt": "fa3d08e17b942197abfdb974a34ca702d54598c43f699112b93917c7f41f741e",
+        "texture": "3c8210366a70fb6d65dcddbbcbd64b2acf4aa529b349058021bca93d14060950"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3228": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "bd5fc85cc92561a0fe21715683322394f28c4140ead31b8926e0c58898ccc3b3",
+        "gt": "7fd93e3378b1b484a9db8bd3d7233c94286d2c041af293b50d479a4b8e31079a",
+        "texture": "3e260b04dd8edf7495ec75b7503938461faa0c5f44083b9a07ce74307e1cf40b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7990": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "fd0208be47c6717d2189d2baff2a3ccb43db94dda2d4ae119fb148dcec3980ab",
+        "gt": "4ec5d15bf36255e3f6155622e26644013daaa5a2b5d3d8f4908f31b0014c6732",
+        "texture": "a10a38afee50a3538b387fad2e6eca907a4926b87db3861daf34b92fbdd2f96c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1570": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b4796ba5ed52988c47ad6cac9a8c20e968ddd99157b2f56f3c2b94350cd1c9d8",
+        "gt": "9263464291f73f0dd5b2c2389e018acb04d7ee680de7528734609c0b22eec36e",
+        "texture": "c9b0452bdcd1ea3c855b7b87aa9ee706b8dd6d8960da5e322fb7a7cd5be29aa5"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8184": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "5a07d853c8962c1c6f1f11db45f95b90d8c559368ee6cb1bddfacceaee25e5f1",
+        "gt": "7050f6e935612b91e9f59553fe36826517d8a3fffbb3faed471a0ce6be70d448",
+        "texture": "1a759fcef25b93b044ac7e5fcd728aff94260e8887e2849d1d03e275c70c514a"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6659": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "49cfa1c7b87278cf79a3be0c334dd97dc037362087b971638de7d0403551be32",
+        "gt": "d5dfaa4e298c55b64b737be07b9e9ccb82b67d08bbb9dd13de358a84927e3314",
+        "texture": "a11efd9e9bddb93a84ab79ebc42e44a37787a5bd471d0ce7f22573b579579c6a"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5640": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "fbe618a53d635a4951a465fa44ef4d6f8b76775e45859bf658b9473cb8b3e6e6",
+        "gt": "8617399590cd740656bfef0e58f0c4ec736d6523948dc1590d44f435978affd0",
+        "texture": "9cd1b592eec8cfe637f903ed32aebd0a095c49d5b1b0d24ef71e318844c1814e"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "814": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "620bcc5c95489c6ae92635c3a8d232448d98a7e0e7d166e15d2bf3eacd2243e6",
+        "gt": "7e2343cc07da094cdb51465bf863a22ef0c46c5e476f12c5d3589b8b2fe4e542",
+        "texture": "ef24c36f043f494a0fcfe6fb15747f01188f8ee8d238f56541c904b6e52f88d3"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7398": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "053c8fae2cdd043ca1a4b7145e292374b7907668c645d4b118a4db15f80168ff",
+        "gt": "950739b7aa7595532cf074beeb04fcf53ee5008614db823d6de4cad73b904c3a",
+        "texture": "24b70d9f86abfa58cb940a161747adedaa89a1ad36d7353eace4ff84e2a75213"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3227": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d9f5c331ce5fc400563aabd003524f10abf024c7809ab39eebedf200ef46a194",
+        "gt": "79cc27699da64e33f94adf44c9afed3a8d58a1aa491db2a816ca4c92006c2c08",
+        "texture": "012b9f7f287ea2bab40409dee186d31b111aebef34e797870bd44b53d1fded54"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7765": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e0b4dbb031255d62895967d2823401c2bf19bd60a982898d9732818b2b5fac8b",
+        "gt": "5894ba4ef7eb22e4e6e8bca7ef9265cbb7addabfb6a5bbe4655e42ac629cc646",
+        "texture": "a012f3b752299b3e546638cfe5ad2500061e986cb08415cbc8af2b679d8859af"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1104": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "cb83edaeaf2e2bfa72f7e2f48d22ce397de74c1580f8c19cc2881c3211b0b273",
+        "gt": "cfe665d1dc7872bba75e0aca22ecc923adb21c25eb90d43f252e8b69e5650042",
+        "texture": "270eb208109468d68ee97a0f190e086b3769bd6cffcfbdb80f48db4bc98087cb"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7639": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c37320af85009bf977823a277102efd84bf54f6aacda6f7e2f375bbcf568e6c7",
+        "gt": "ee735fe3ddf203bc21b44bf441a809e8be0fcda93f06c61f708d13c25f87811d",
+        "texture": "ea62481a037e3298a109cf977049664b46c31d3c28c257033358e9a3079812bd"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4306": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ac8c6463b79569f4b8ad1a25ac0dfe2c18a15fc3db5c7df12dc40fdf27d8f8fd",
+        "gt": "4c2e67758eda47b77aa151e76a2530d5245cdb81ef734ac3b96e281e4393b7a8",
+        "texture": "bb6ddc962e1fe90250aa68c2a166a3c9cc378983496f87e21023df8737e76447"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1030": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "9a3af1811fac4a2ad5202879764409141b772808e72b3c82311e5f25e8d5539a",
+        "gt": "3d3f370848a6fe58d30d3b4167643a0e7b5fcb01e8a3f4c9c785457b882b436d",
+        "texture": "0d8301459ed165c5621d719a4cb26a8054c9340359044a8a010c9d21c24ad550"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2575": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "5e2894d0574397966a3264c7c1bc4df409d9d0c0ba6aef0d595ec82840de9070",
+        "gt": "86e5d85e05754b7571cad77cbeec78a1818b861d061995eeb40dee04b841384e",
+        "texture": "a6bd3aa59503d808f7ad3ff486cc862748cd35a013d9d25c249d013e52752cee"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7688": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "8dd33f5d41760c753acd91639ffa2fde1d09fe3959ca5488fb82b33d659bf3d1",
+        "gt": "fae0f27fdf3b8cb2da58b94eb77fd1acc08b22677466ef7627c2810f1e3518f1",
+        "texture": "40bc5c7eaad033f3d76498bf05f31ff62da850fdf30cc71612ce97917d7dc4a9"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7991": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "5b48d109b9d83eb19587cc87186496f72513be21c3e8a5bc8ff74367e0fd71c6",
+        "gt": "8e8a0c90acf55b2c7d30acb161446cc9b0096cf6ec684d8f97946a6e1f0cc984",
+        "texture": "d745ed261644cff88be38febbde8a333aa010e03ea4bdfb7570b7bf7c6b9a5cc"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5735": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "97f5d79d1b6e98c4121090760354edace7a7d2a926bd4d7f4c58b2b86c3bb812",
+        "gt": "079998f98d346b0dad1a159016203dfbc429088f403238a5d3b601146bd1e4d8",
+        "texture": "3ebf0cbf408d558920fcd5c489f903ba1179239d8a248a0c24baddd7f9f37beb"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4863": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "171368e24a43970248ea72afacf9b54718e2c7f346ae3d7bd887c89aa6fa6a46",
+        "gt": "f33eb5dbcf181beba96380d625dec53e16a416b91c619de60c25e04a9e9c83e0",
+        "texture": "f881d4edb6d9d26f187b42862247e177bbff37e038a34617d47c3dca8122258b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5331": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "fbce6a583e1692bdbdcd6ceb6b4fa343230886f5bfc618148e33b50f2dc8224b",
+        "gt": "e6482d9eac66ad88575e90ee05426b4782dbc868a8cb9fe115659676d18dfefe",
+        "texture": "95c32d64b2116cdc4c2ecc90a982566bdde9d4ebb3cbe4e8c9db8cf0cf20f4ae"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2809": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "458bb4a99cdfb9dd5c47c9744bfec7ebcf9a8155968b1bbec32d6a26ef36cf16",
+        "gt": "1c4db9cba8462e7ac5cab898a35efda7c57cda1320b36f6135d2b386652c2822",
+        "texture": "0520eedbd084ea4bf8107049da51c3db8b02454df5a5caa4b2943fe592d5c440"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3023": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "2538c5e4295df38f3a5e9411a3acc1d88646a070c257d97621136905c1f7c56c",
+        "gt": "bc088037cd1081a183a1de848fc2311b6d2869a04bdd0d7bccca17b2e529b8f1",
+        "texture": "bc98c20eb25576e3816c7e3ef7fa97afac23760eb9e39dd59bb12fcdd4d26977"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7600": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "47aabc6cacaacec7c67ace4107d9374579186306281a4450e322baf2f15ea8c3",
+        "gt": "b68827ad3d4556a0ae313ab77252a7a8432a66c1f0b8d2f4797e961e6f7086ea",
+        "texture": "91cc0d1d5da5ab2dc7423678ed32655189563362af6d56149357daed08c4dc6c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "621": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "669d49f97b7736a3e7970d96289556f92fc6f155cf4a9a9fbb0dea8f9f58957f",
+        "gt": "f50838462faf43b7acfebea69eed375526615f52524de12eca73532f1ee1180f",
+        "texture": "89f4c83287e064d53482cde4dec86994b3f505516e352548b8a45aab4e91f1b7"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1011": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "4e771e1ecd7704e48be505649e9d8c9c37b38a67838d92c8f9ee0f1d9e256273",
+        "gt": "fec4f1a0b38979ec7c139a091fb0e186ecff08df9875bf752b1caaab1c1ca02b",
+        "texture": "1688fc2a22abfa2f592862b3822dab3f4b35eb11073faa66278b718625270276"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2427": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "552bdd287601d10912bbb9a946d99df71beede00efb51994bf55421cd0d2ac6c",
+        "gt": "09d36d86449306cefc5da867ba4154a05afef6d8e987261c7de13c37586da0ad",
+        "texture": "5746e69dbbd97938e593a085d1df8bd2c7bf76de19fc263cae1d0d77550e8f1f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5256": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "571afbdaeddccaced5560e32589403c573ff811e782892e68eadf9134d46c3ac",
+        "gt": "e1aefd9be5ad4357bcf9f6e98d7e7f4d20d0c40a0b528178846c6dbb41a4bb43",
+        "texture": "ce8d8ef497430898f5c172dc4a48fefa317a29297e304a359639ceaf708e4cf4"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4232": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "47ba7514d2e0830f8d1a8a282004216f410b3a0025cbb2c1f370f49051d11976",
+        "gt": "7bca9343d7fd63e4372b66915231c921ddfea6b288edb8be1fe22ca5b73e98a1",
+        "texture": "5bf163d148b72436121c8c5406c0eb8e68be73855f6b798acdc4a1f280c9ff41"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7871": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "439a6fd816b8cb6178fa7643ee054d107ceb3d9081ee7748ea06391c8bb20fc8",
+        "gt": "e12ef698aee8470bebd3380744846fc66519d3633455d5055a5156c08b1044dd",
+        "texture": "35c9e1d3f7c059842b30f58c77d8dc676b1849357d7f03176006075384e5fd82"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8984": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "eba4595749afbdd5f87a2c53a34fc43dd308f84d59b29926f1de11c48777fa87",
+        "gt": "420694d458fe0a0560ea1cbdd2afe6e3e5cf6261d3139a70ec730928dfb1f17e",
+        "texture": "bc6bae851f705fd42996cb8f1f68595ec123de2c45e01bb7ccbf40c35cf4d257"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2454": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "6f9e54515fdd7b6a4f20ff5f7443d8acbe0013e5a9c38f586e2e838a1666f5fb",
+        "gt": "df478d0ae778c1ff62cc2293daedce699456e70e7779abab5fd740ce745389f4",
+        "texture": "c7aa122266c15334917a259a08242af1d0fd27829a827edfe86c2d6406345e67"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5896": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "8abf9edb22698306b69eff6e122bab1d66372d1b5633cb150654501a58138217",
+        "gt": "a1364314b74fd1ffdc8adcd906e40fd24bb62b0576651247ba5d1e54f7569efe",
+        "texture": "8ecee049a70f8a898c96ec6de3c90e3b6a0759f1c6cf330e3c411b630aaf18b2"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2781": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "411634a511bfa487a804c983ea39429951f8624ba6c21d382d1ecceac046bcce",
+        "gt": "cf76f0b3523afb2c95d57450eccf9a69083022cdda5866de1b2c317ae9351e87",
+        "texture": "e17b9fcbf37131526288c8d59ffc470223d95bb2cfbcbe35ace05845e236df9c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5913": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "dc46558abad404d2a6781965c1b489d25b21d61ac3a36a018d8904c42735325a",
+        "gt": "24a020224d020024306b9013b99942b5701508a1dbc3db4ec7eef7cc4f7c2c35",
+        "texture": "2729ce5f9c021f0f9276aa512908fcb3e47877f0be721a9dd2a8ea91e92b4cc7"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1557": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "319cf65980509957f4590fa6a67b73c859f7e91a4950e73de8a3387e5a6ab335",
+        "gt": "769e217f259b02710513cc4113579892026e588acca13bc88e35527190508f17",
+        "texture": "958ac307919e3f36a777e5d103996a2dfbacc0a6a3cfbfbb7174ded758d581ac"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6934": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "b1c01bd1b3853276d8ac77a3ba905967b00e385bf3e533dbf8586e362e50e4b4",
+        "gt": "f51a7ee37671bc26d06106e329d37cc3a0e797a5e4ff001a5cb1de0ccb425166",
+        "texture": "54c14f0f583bedbc4d2da25ce67ae5ed69f10e0982465e5c69f006439226af76"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "906": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "5797ab2b3b6c91e0908a5294e978ee42d3e8d39224f970b7e6b6bb4f290fd9cf",
+        "gt": "9d147f277007ff792300e077ed453f39941e480ad028ba577d290648d730eee6",
+        "texture": "726ce9137b238e9497ed3dd6e644374c751891ca54717da55c1ef28937296859"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5366": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "b70cdd3fcbb545066b0b3cfb35cf9dcc87805e168c16e2e6c79a31fa6697d419",
+        "gt": "9bbc5e4d658462ebeed6b9e056000d9a400147b90c53ddce658ccaac7cb52e3d",
+        "texture": "4d74a2075fcfb51932a156a52ee6ef07e67a5e2cd8e5701d04ed3350ead95b33"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6372": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "ebdf153f4b508ae5e112406d9f8817c90c734724af125b8dfdfd876e3936b092",
+        "gt": "c2686c41b71284d2b54e2a903387d400672029db15b94802c0585c28fda29a19",
+        "texture": "5d905fb5c0f14502cf2ac4598eeeff4d144f9d0ad1863d070b4c7131d7a9ae88"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5088": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "3468201afceb97be4350ba38e11cc112ae44e077ee2091e5f026e5ecc1deb23a",
+        "gt": "418ac3e0cac40e8abca78167eb7a9c2893305c0d096cdfe206fdcf0c23dec92f",
+        "texture": "0c5b1fbbc5b51fed455ba2329234f6603a6e62f51aa8be62aa7fec3ac176f00c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7730": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "19d4dd0ab8195152bbb4f6dcd25c649f9df019315e4c84e58c7ba573adf18fa5",
+        "gt": "589895fbd4b621ec32dc43b4df02ede321b55c2e8046bec5061c5d389110fa19",
+        "texture": "2fe4586938265c47c87b577499a0ad859b07af20c323a5e2ff303b32d5afb09a"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "957": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "147f8b67df01267ad44cb41b15cea62862a681ea27cb09bccc9977aec45ebab0",
+        "gt": "c2c3cc3089eda7035a79b84cf529cac4c320fede5e71354728fae3f0fa20cb95",
+        "texture": "2c668d4ffdf97d222c5b8f4b3094b46a68ecc0c365e92fb1dee5a0a94678c968"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3192": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "2ea19378b5b9230e2b15a1476562585b6b2451e86e791c39f9ac122b0d0e2dcf",
+        "gt": "b5c663c55a28006971fecd6be994eb8b8c63730ac04513aea78c5548481cafd6",
+        "texture": "9dc9198adf0a7ca2f0ae3118602af604941253934cbb5b2b6c9eda111d26de3b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4486": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "37d21e6a2ec044424c4968bbf7e3ef14727a1134c086fbb7bac200e112f1d0c3",
+        "gt": "2fda1d97aff4a971fe64266f069c77c7b4948121388209449ab48607a24ad342",
+        "texture": "015b27c36381df3b7ff1667526cd1515bad5adec6f9f29886e4deace9aac9d97"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2330": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "621145770de8069b61cb3cb35352f19b3f9dcfcff815116a1edb6df1fbf66e69",
+        "gt": "085647bacb367660503fa30707263d7844aa9e8eab36490b77f1ad0dcd13e122",
+        "texture": "4da84e911d8c57689fce0fcb942d222806705116410da79fb22337b337435cf0"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7937": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3d6900a445b8e0712c64a5e5e1b3c26e004b601947e24566a1f30841adc2cb30",
+        "gt": "dc498ab0cff55301d921224e0533fcbd53608ac952d6bfb887f76f1490634941",
+        "texture": "fc9451949ffb56fbccc9a01a1ef7f469457bc15d4edf8a2f601c175d212d28c4"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6936": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "df38b6a1a0dd157cdeaa19f7742e456360a371dd6b408fc1aca4956bc92662d2",
+        "gt": "5e9c788be68f2ae5b5c76abf1b5bbe971884dce9ea2f81ec7300069f7b592e23",
+        "texture": "f153171313882830cfa0a4f9721f2b8fafd3e8fcc95c706375cc4dcc3e028cf2"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3375": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "6f47d98b0d11d420408dbf03cd8c5edb4dcd5ca2070563eebc56f62e44debdba",
+        "gt": "bf4ba49a8f2897f6416cc301ad56bf7dd84cedf468f070019bc365cc6434dec6",
+        "texture": "c328fd56c719ea34e48153771f235b641ac2d4f56360fd76e375e50f764c4d4e"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4047": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "853940bc96dc7002aa9fc70a600cd806301e0909feccb5837eccc96bc9e4406e",
+        "gt": "23e531551b0fd53bea2653e8701e5c859f00836419d591be975358d13e6164d9",
+        "texture": "b535ec41dc770dadc7b00ca99af3faa531a3e84ebf322e50f6198c2426244a46"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4821": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "6cc841311b3c02d88361632fefb465eefcd9829c43a7c76ec7e1266605b22b99",
+        "gt": "fdfbb52cb340ab0efdba6377db0d5101a7c0da55a8ba1923fe0e6a67c465da56",
+        "texture": "2118958122385e0839739bfed87a26c2c6943050cdf85efecb518d278f36c1fd"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8559": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "1830474731c22ad9323ff68805c8b5bddcda81ca53d67a0105bccd42663a578f",
+        "gt": "2bc8ff3f127be35f63597680ff152602dee3344e65a297ed331e5700e44894bb",
+        "texture": "5f0c6c669ea32906930dd8fa59b510541ea241814e02375da5744f0833b298ea"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8558": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c2d041846244bac5b7507beccd883afd1fdcd7e3b1110c1f44fbb22912d42c92",
+        "gt": "09739fba76e232a9797787a255aedb63e98716b96e1825aabadc191371baccfb",
+        "texture": "9bbba30d05091b5f0bf0b155224989728008e372befe66648ba1cf3ad9c55879"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6550": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "1ecde0c90d0373a7db9aba5e379d57c327784ab4871e65c44c483753ef37e88f",
+        "gt": "8e67f2dbb1ea7d3cb5e8d17b95dfaac10f078f4b3c5b87c8d66ea8be21027504",
+        "texture": "8069fd4f9f6ba08f3166f0d963b0cfac99622d9e661fe558e5cb4c81b2d83cfe"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7138": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b59f4c6f96c131f29b14c725753c3a79547a790fd068d6ac289c141d3bbe12cc",
+        "gt": "7e0fe00be423d12baf4b024a3b16ba259d59ea5df720c5f375ea8c383837605c",
+        "texture": "d06bbeb0866dae71c9ad3e368da4482b9bac421ba43ddf1e5f07a9bbcebef170"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7000": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "18c221463b063bb59837f6db439391cda8cf6721975b914d6137a14f36e76fee",
+        "gt": "fd72d021fa3af8f1a4fdc2f9283e29499136b235b8c656975628400e94ac95f2",
+        "texture": "6c20c12165e66065ef8811f87b9d0db215944d212b61211fefd2a59b58252db7"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6644": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "424d55a6a64ce9a5e78c19298d6fc73901ac84e5876c3f782acc041bc61fec9b",
+        "gt": "d263598a8f6da8887c3e5178174e3dcbb087ec9db9c071f866b94a326a5645ca",
+        "texture": "140e1b93bbc2f5b3f52cd36933e15649a3d8351c90efb862924e234ae1378c7c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4142": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e79e74abf01ad06155b971e141e8ac4b89261d8689ee91362d43a1d10684b2c1",
+        "gt": "8607fa57467279c80d6738e4320784fc4993cfcaed2d1b455b8a95e524e56b5c",
+        "texture": "7e92931652c0baeb87df186210d681fd124e4f241cf0b6935f2cba55fbf5709d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8902": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "134271c32666b0087c7ea893b1928b961a975492f6c7079db8403fda3a5125bd",
+        "gt": "1b8707a017542ab6c3c7f86ca8c5a249cfdebde29816cc32cbf0d745fa99245a",
+        "texture": "c78c17e89823806df2862fb97236036031b1da9161412a3ee822af4c53ca2cf0"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4739": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "40575339dc56d36dd469c81bb87d8f111137c34c51d733f259057a48c2bf9953",
+        "gt": "fd292ca15b919fc3078a4492d89ebd685075f9508dcdb3e26717339335270e3c",
+        "texture": "26af7c5ffa06dd494d29cea25a983e865bb80bd1d394c92f1b69e59af504720b"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5562": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "2b59c0568bb091d5f0618f4e697facff4110d031470f348f019701885838848f",
+        "gt": "a2835f74704091eb341fb8a1d9518f5d0566e083eeb672bdaf27db746dea0c81",
+        "texture": "1c39be789264f2ab2dd4de75f14f8e1ec65a446eeaadc6584f7564cccc9a5fe5"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1246": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b7661e9c71e964e84b351a8e8bfa20530684a36db1e5e8b1a227d8b26f0ec8c0",
+        "gt": "39194080735c99d0b293df076c30dd399d907a34c6c0b0f443dc520f094fe68e",
+        "texture": "5b0f3bb6bf744038250e636e87c4582187dfcdcc0eaf08cfee5f820141c86069"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "617": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "9dc17b327ce72f94a7dc0c1a1234c8b1453e1172b49d34249d1c4c6c18d1e835",
+        "gt": "db91625fa87480820eaf77681f1741e41f5a28a7457c7716d3a2797ef8f7c81e",
+        "texture": "7f609183508bd1f331e22f883d26e1fb58b322f2ebcf5aae3dd37cea9a4994a1"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7101": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "e27e1cabbed6afd1be982d62b0f1137ff5a87444e134d8f3b7826ad7c11e9287",
+        "gt": "d89fe895f6a2f6b6d2a2a6d03c49c515b7a68a7d0c2013e6d715dfbad8d4876b",
+        "texture": "be00b27a61e92863e69e91507b3d008e6e70c973d870490f7d5e4e58ddc16a6e"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8189": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "d64eb80b9862aee46bcd7eae7e676eda5835f507caf22833be989f553d7afc10",
+        "gt": "6a1f684a1b6dab547cc3bae01d4a6ea7479fd6cd90958119bfe884dd69888e46",
+        "texture": "0a18193cfcd6e46ca006f100becc700606d6ae74c550713f7d5838b071fee061"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5308": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d2ace30d7cb9bb2b1e241445802015cf026f6c58c04d7a7d4ceed22f87be533d",
+        "gt": "8798d64c602fffc249c726c7415098319edf9af0aff1001ea2aed88f9286aa8b",
+        "texture": "a6e1b5da3cad0995d222d172ffafcd9020ea6f1aa2b05f890bdfbfb710e18ff1"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4169": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "926a6cc15d323b93d4635cdd855519077004e405415cfa2b9e7f9ce11897d4b0",
+        "gt": "326dc1738fed10b939d0bbc05cb334bf7247319601ff5b8a860acc15c8862dcc",
+        "texture": "d089f63c281c2a189842ad19cfc0d3e351cba8b1094d2adbbb69682cd991b419"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1426": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "2af43d7ceead805edfd4477da367bace063fe9e71454dd145ec6a9ca76a26d4e",
+        "gt": "37765b3c9a3954c4909a35acfd41c1555577a661eaa23b929a51eaec3ad0ab2b",
+        "texture": "89ba9568235d80f59b22e44f866875b3ae5ce266f80e5273861a9351eec58fb8"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8778": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "f3a5ad246612970d0d30e66427cb8aaa4c5c8e4a6bae3fbf8fd2ff41d0a5143b",
+        "gt": "695d8bc8ebc08c6b830bb70e473c9bb3bdd9336378486392d80b73eff78538b4",
+        "texture": "4803a9a06a9de4d55fc07a05cd3529822048568c9b48bf74ed9adc4694ed4a7f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1115": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "f9d2f1b8990dc781f92dd1657e21fa8c9ad5ae7acf7291085e110c37560c753d",
+        "gt": "d7f3dd2b36b6145f2fd4fa429182ee74e64d675622ce6480a277ca16fd34deef",
+        "texture": "b413a868281e425f9d3391bbb38f19f27deab4b1a2cfc78fb070d70a7862430d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1184": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "fe439e7dba86edb0cca6246fe62fbd0a445d43d143f0786a76dca2ddf2bfb5a2",
+        "gt": "5800dd0ebbba7421840b759cae4b9bb9ee4b6eb18714546a197cefd0567c6e50",
+        "texture": "62c99455fff0fc1ab1632ed0db72927a6cb9a18fac23d2ef3961376fbb62a9e9"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "708": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "4ece47bf08cb565f8b953f1d2a84d455bee5894c5026dbe4b72143f25e1483f5",
+        "gt": "50b2f9c279bd8c4031497c4f859df6ae9e22d34d57674e13b8841a87d8429e0d",
+        "texture": "e491fe5ba9f7ae19d51c2ed5ec9120082e9572b0baaf92200f5318ae2aa71f17"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1111": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ae56a67ce07dc883925c23ca75b50f6f0ca5655fbf5c135353fdc62eab2b3fbf",
+        "gt": "8dc82606e7be56df0c390aaace207dd31f455babe7ec614eb7c9503816b075bb",
+        "texture": "ce9fec092a7b769bcda6157af346b9807a720a861d2794216d1d37759c9317f3"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4925": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c8a31625956881e80f79e65605a160a6401faa9adcc6f57e319ac316abe8df89",
+        "gt": "7834fac677e7e3a9ec63216658e3b78df763771253d12433713ba990a33b3be5",
+        "texture": "d88efdfdeec600bc12ded5ce440b8a75f5f6deaf5bf60ba0f6d4efe95a101c2e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6600": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "62c324ac29b09506bce8ec34bba3f525dbe513355d317e138a75a9773b9941f7",
+        "gt": "f943ec674758a64cde497b1e8e3c3ff7036b74b4d3fb8b4cc7cdc0b13721fa81",
+        "texture": "39396fbb4dbaab19d4d63cef832815b354b64d921ea11be9dbf00491b34313db"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7038": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d5a36ab546bee16ab904958061f015c7962ebcd2be46c87f50eef65d4f0715eb",
+        "gt": "f6fcf672ad7f324602213c4feaecf649264e2d97b007b2f4649eb16a66d79e1d",
+        "texture": "f238022f95b83b6572cf7500ca0dc0a87151788efce8bee8fe64e941269f7b14"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7213": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "fb5ed384899deed6b3ad52b5d73a2808a9305f8467eeffb2b8444e31cf3eeb84",
+        "gt": "9291d7fbf4c96d27066f09d153f60a420742d4b8bf26f24e8f931f0204ab3d7b",
+        "texture": "f074fa9de11e9fde234611eb41bca0fff1255b1e58a5e4d7776f7f53eebf776d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "366": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "df55dca6a6a65fb97b24693dac91df623975a9e1bf6f9001506296a6c527ed5e",
+        "gt": "76d2e7b5e394841c1fee63f0724f37fb08a4ece8452c68ccc8b7c7fc2a8d12e0",
+        "texture": "1bcdd8dab3f84bbd8e17ce5a9b831c9b44db85ef41a90eea7df132629ded84b6"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1174": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "a714e65a1f46948f01a29d1fb44d90e820859285b51bb9e61a28166e2168f68b",
+        "gt": "8d31eb7b0e41e3bf8ffdd2b437a19067d705903431bd2f2c884a62e48399f432",
+        "texture": "2f771792ccda0066a2a35abc0792dbdbdd28c60d3889094ec87d0910721bc6cf"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5571": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7dca6d61a9b749f522ca413d0afbcde4075d901d0587cb937b3a6526db196f89",
+        "gt": "8e190df8ace88829815493059096a5d35e5e8de716c443fe4472aa64a83765a3",
+        "texture": "104862fbe0fafe6f9f2ebd0d949074f6252d51f128ae49a4b8d4a17993437dab"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6014": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3d968460d1e525c968f69edda1890ae7727e99f105af9601e966d7e220b64550",
+        "gt": "c3d3f4e853e6d77d52b6c988737bad73af16ffa7717acde7686aae47f7394e8f",
+        "texture": "4f8c9af57e4d366d333a992f1d8f072162286653496691bda42a536075d2c50a"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7536": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "14510011a0286aaadfb381fdf324cc36519984c6457202a4dd3c50a696c0580b",
+        "gt": "7b7fd5ba46f9fbffce94fcea0c5c5fff71906e7f6976b8f7203ef666ccd17557",
+        "texture": "8301620b1141341cba7b573d6d26afc2d9ebf38d010173fdfaa1930c6f4cef26"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2162": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "aa3472bc5dacc0785c3a11fa4448d4fa059a41388927c428b81ec3ef7adacae5",
+        "gt": "042716cf244962e37dcb3422e4f0da5ee4cbf4a69c070931aceb8ee9d1a585d2",
+        "texture": "5f52280986148ef5e4c79fe339a0e11c2d9a9e00ab4947e59904fc85971fa68d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7660": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d7a69469d43b1f3227ac83bc0d1546123c9095747a951804778d80a907f939f8",
+        "gt": "be9f176a692d2cf8b6109fbc8471ea727d040019b3268a76fbeff9d93c7f94b0",
+        "texture": "fabb69e769c1f215274166e643f70ae1527f5145f38c7b6d7ebe2c246154a357"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6474": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "2264356050db11e6a4524e052dfe63e0532b82f94cb1d79681ef9bac413f3eec",
+        "gt": "afcc5e55c5cf6b2c76275dba92441263251c3a14876bc5df2a59995b95f7137a",
+        "texture": "7e63753bd76ca64bc0aab848ac8bee994a48b383d8d5da55f5fc174551f54558"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2359": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "e275bbf1f9374c672071a4f00ce1558b0b7e81efa890617b70b8696c935466fa",
+        "gt": "2e404b686fcc5cf302ba54e0b2962fc6f7705cf4a7e066c06a6e7e39b0bfb7fa",
+        "texture": "6061386da71c2d8207c518b0fa8e63f40bc9e56d46f077fccb70788c57157247"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "301": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "41393b9b0bb0be03b36c368cfababe4a285433533311bb919fcad3412e3a3941",
+        "gt": "bc3c28bc1f6c24a5acd4fd3f0fadea8024515a061f509fe1f7b906c0942e83fe",
+        "texture": "a106101206b571727f91a3d5e7a75683605f7f32a494c9b4a3c0fc7b54cba31a"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6365": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c52266d6f78f0748f6909a75bb8669da698a4c2dc26541c59975ab40ee83ad02",
+        "gt": "cbabfbaa24ecbf602dcb3d6d89cc1c7b1a546b48fe5c123bf6e3ecd7b270ce29",
+        "texture": "7d25665873cce45ab966e75eb316bce97717a424f863317ee832bc7e3efc5189"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6732": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "4c1e19134d40a82f8eb4e6a47da640e7af2f436478af99d285289f2758b2e650",
+        "gt": "0b28ab602560515f9272cf6d22581deb4d316839c6ae31d1f2ff5105a4ccdacc",
+        "texture": "35d56084d9a4787fc9b1a13d802833b32724b5f8b6e159657bfb8ca31197e7c9"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6480": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "829a2061228c75b87be3b72e96730a2695c283fa7b0dcd5f112ed9ca7b8fadab",
+        "gt": "c0e019e0abd081a9fbeb5c3f2619a65cc3e494840e007108a52d7a7e88b2841d",
+        "texture": "1345ecfd04fc79ace1542ef426e1f7bb41e47d91392e112b6b32aedae2eecb01"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6170": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a8c25f9977c681101dcc4016e805643bde1864e309cfcf3f86e2f751ea2913b2",
+        "gt": "605c55a6f743f3f4b7a179fc89c38cdde682f8c674c2fc6f83583d8966a5c7dc",
+        "texture": "1a109a44fa43507ea80ad94e0485b04554a99ca9abeb8811f8bb868277c86a69"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6774": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "eb96b73a31df887cacb09f95335a060e0552bb0d16537170032cacc577479143",
+        "gt": "dec39ebd4c5868ff5e86839163d5afba2311df5710987c485e378db673551aae",
+        "texture": "19840f4790c323be53ec108512c2ec193154d8553aad73b3ddf4246b18a807c4"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7659": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "fe14e39221fc3430f477629c949522a5284e3d7659497201f09f0b4e30836620",
+        "gt": "668196f7669a15f84dcebb9d06282c07cfc408c53618369983446df70a702382",
+        "texture": "01775659deefd9e9d6c616bd2d5d4b0f21bf1ec2429eb90ba05472e5758369a1"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6722": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "30b843d3c832bb110c8064d61fb09bc3f966d64fbebfd5e277e908a8a7353264",
+        "gt": "38c9298a448255b61ffa66a9f2571e0c7a7b097c7b8bc847c304d282eb31e29e",
+        "texture": "953884df92d351da543c092657d15d88fa0c28177d46d73925ebfc6fdae8473d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6128": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "d9d6bcf19b409067fa8fefab01130c1f38a143da23fe4ac42ff07cc87709b196",
+        "gt": "bb5623f595d93cc8bfd22fab4097d51704c0a44d8628d9d34db6126a3ea2a924",
+        "texture": "6c20d84687c39c2f2926cb42f663b55dc2515fa9c885c2969d190ec493cdeede"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6760": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "1bdb220126b7998e1f6277510d36032229f6a549495ee004530d2b968b43bdaa",
+        "gt": "11c478d55e8c4ef1f7b3f7ec7d66f9c0e07a165035a4b38daa0f8f89c4688ba4",
+        "texture": "0edb417b8c877ed2c84b3a60d85eca644f2f3578b275425b13d7b07e100d07d2"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "138": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "50da9d741e9027a64fd4ab709f6a2d0b9c4da2befe6e2a87667457264012f749",
+        "gt": "d3b9cfeee800b8ebfc772f45ea4154f7fc7742d29ee676daf07076ccad560f09",
+        "texture": "19078dba820748de2f8ae8b41b00ebd54ca249501851b86122f4c8f56867fd47"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1654": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "5cb09467734b5b0b7810721df4eb705b2413a3de66521f3daa0f47a2195f44b3",
+        "gt": "6724108154a82b0df8ce70778145af3b3b47c06b64a024650eb74999ec7d1550",
+        "texture": "89e2576ac9cf1cca596141e47c4fd2a85a435a5793fdaef266e13162b46e8906"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1091": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "6ee63f23e565d5dd1a4259b65bbc4c26df65c8bf632fd9edc4607c4a1339b8ae",
+        "gt": "f2d514ed9e09d7e9b665fa6d8d4d42c9d9570d96c65eb1ae92be2b0b79b7aeb0",
+        "texture": "c921a1335de9470cc8dd9601aac6d3b67e2f4bae8669297a32e1ddc730ed2f15"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "538": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "11ea654bb0c0e179bc7fd9ced9cdd971b0a1b9daa95584cb8461fe770feef662",
+        "gt": "881fac94a9b085898490be52d270193a68377f39e6de1a2cac5941425b3cd04f",
+        "texture": "8fc887fe099606f569fbbc8d2fea74906872e55f92bf76119343a6fd8cdac26b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "624": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "f019cb4b5dbb37dcf7bb96bac9a846afdbd6aa7046bca507c1bcbe869164acdf",
+        "gt": "53baf72ad7fbe1fd12d8bc76398c79a65ca51cd2ab93616a66a22ff6950d22be",
+        "texture": "ee9c6c9b9f16d71087825f8343466a5f90ef64977e277d48fbf4b97ddeee6371"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2942": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "4e7a52ed671238ce77ba46b8d9b1a2eabd95f178edc3a1f5160122a0f8b7a108",
+        "gt": "f4ed170a1949ac4a76af4923d5178f6eaacf841f525fa5c80b42882afaa8f4f7",
+        "texture": "4e50eb84c8fa4aea76ca5820868173622b86236a329e781cb968f158889728c3"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4994": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "1d40c39c90ca1b289b2122f5308154dc81d20c9dc4a969a28b7a062698d66666",
+        "gt": "9589fa6644d72cf8f5bb76e50104762a6b561aba81b0f142ea966a4494ca8d20",
+        "texture": "007d61affea0389dd24bb346c801e57c17d28624d5eeab4b971c7c0ab10f7708"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2539": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "aca78d1a85822c22d385a9ac9ca63e96c0e0700ed2bfd61ab09b485bddf76cb6",
+        "gt": "6d243d17718d41f03947b8edbc68aaa8e20c506ad60c63ce0e2d89751e12a7d5",
+        "texture": "89b83dd4a5b16b40e2f21e346b1e530a7ae5cf605fb1df882fa20c7fc93b193f"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "534": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d59c4ca40c1c0263545e2418b4de2b32e691827ec477d7035fc05966ef2cd53f",
+        "gt": "a8abe7d7bcccfaafaf7c38c093af52b6c64844c330512ef3155fb2345c432ab5",
+        "texture": "0b44d99e7c5de5ac66d6fe645f2484dc6777a0298594a3dcc25b7a4b5d9000c3"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2244": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "47683dd6c5843dba4d2bc6652ff0ef7a1ed2fc4f921465fe553d4b12bc190dd1",
+        "gt": "f7c255854e675aeba1ebadc9aa74a8932b55cdce8a17432908dcb876123e4676",
+        "texture": "3df800b721032f461715dc42af377e9993197332bff251a6f9ee3d8a2e5a2514"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8046": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "0145b18f8660a99c5480fec51201c7c0b9ba0b751d6ffe273d4f55390809ceab",
+        "gt": "0d20a54263df3a57f2ed7430d8abbb7c476ab19fc0c97de51fcabb39383c84ee",
+        "texture": "2a1294268dd00210c9ec0045f9cdad8134c5482f1938236662abc5bbfce96924"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3520": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "de1174fbfdbc000af78db7976bf69852dc7c3b672aa510155b71e5d6c7a0a1a8",
+        "gt": "cf37bb47623a188ce902edb1de0f98d7d4a9ec8fa21c7b0091bb6d03370330a3",
+        "texture": "2e732d8b0bbedf80259a57b55f03e6c5a58326659485f9cf7b144be649afc475"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8343": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "59ee3ea361d32685c783f8fd55b7708a0972b806980ad3843845473f861d6e07",
+        "gt": "9748cf118055dc101b2a95d98c7c9b398a1fba527892a51721c08a344b8ebeca",
+        "texture": "4e0889b3b9675938874007484d6dc4771f085cb9fd04ac053d4b7f4c0af590a1"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4589": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "daeca0f74e60da4e04420a6f17ef8557e6875a338267782bdf43f89687645776",
+        "gt": "cefe5d775cb35adcf9adddfab380ed1de2a80f87df1f4211d6cb8d5abd4c49a5",
+        "texture": "a0c40df180efe699831a772e449ae1f8ca18964de588626979036e69caef376c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6965": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "993b6ef62ef855b242ff7073222edeff229a848b03afd5b2af7f0c19edbdc46e",
+        "gt": "e5dc16306e9f4a2e7922036af3f7268c79092208bcdee0ca9b12b903d3e2457f",
+        "texture": "74b6ce8dbeef130d0c2e26fd7d6bfe6bda6c3211cfca13f4d4e40d162b2d1ba5"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3949": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d029b2614c7f33080d2db9bb0e13dcc2d22fc39439af6dd3ce6787ab1a77f5e1",
+        "gt": "4c6b3a6323e0038d89f6b2229cd896481cc37572538acb3f0f719f0bd0dc346f",
+        "texture": "da0668995fa16c222c41f687c1ba66900929d64295bfa062ab1f6cb200249d1c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8983": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "06ed9cdf067257e7fbd2e23c289b28c273b938cef8ef0d310174075f59a2a648",
+        "gt": "86807680ddb009f7c62a9cb4681cb9b6299b1e567fabf98eb1733f8f058df838",
+        "texture": "7dfd13c2354ed63ef5dafe4764ad1a1e1b314b6d59d7fa18f52df7460cfedc47"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1526": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "097b72a06afc4be6e88b235ab38e16ec439148ee4831fdc55ea547e3d5ed22a7",
+        "gt": "ae397d2141575287d5879fcbc72401e863ac704b90b31c48d130e9e6d6b35ddc",
+        "texture": "036963637dc6dd09f310390bd6008c5960a69681140fe834f9ee7194e9ff134d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5077": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "fde5b42584d2c43817d39526ac6fcb06671390f3ba0c1630d1caeadd38dabe19",
+        "gt": "424924d1e049762da904ef6fedd0665274e824d9448829f496e4fda3752cc296",
+        "texture": "3bba9465fb83097482fb7cfd5b296842f2c44847ae895658d4b3d0b4e900ff25"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2298": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "319dfa3dcb3707a771d53e9a4271173803e2cec24d7fa6a41757cb13b2866def",
+        "gt": "fa5c28e9b5b63e366a3cf4da2a3a7af8b98fd5952482b2617e6a82cd79fcb332",
+        "texture": "da79dfc1535967c02582b69e148cf44b59c022fe4c41feb798a46d060f3c1c09"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1004": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "bd4001c3158fa85ecf66504ed159cbf0f3229217c531d7c6ee894a07dc1f89ea",
+        "gt": "0a305223aa058eb84514dcc953434298336fd02c38d611ffec19c19c8f8a3f77",
+        "texture": "7c339e5de17b69d7a080c5605ffa98c244cc3b46498f4e16557d0a1acd07d458"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6297": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "4feec6105bd185b01667f39d0589b9fced82b5dd147396a39a02bcf835a2e5cd",
+        "gt": "5812b9354ac3ca4313c002881020078a28aa16e373047afed99c9d3d76f0c010",
+        "texture": "8874f0ada011970e9afb8cee3db3622949b2b501516738e380ade46ddbc3459c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "735": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e77a649d70fe77b1f87114098d90c5be58558b2cde95ecf3879453c02bfa69a7",
+        "gt": "73e7cabc497ea4105987d8e251ae15112ccab615790c8929082ee6a71c2064e7",
+        "texture": "a8beafe132b39c7281abdcf72f73f1beacd9363e71407d38b9e79ba7ffd72246"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1339": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "6c13e1f84d28348968d555a1dd556d9f47dfa18dfb7181647b3ad940db853c1e",
+        "gt": "c76fd2ec74385d59c4a969c732b11ec850c0411d8c43eb486a4ee11967c498af",
+        "texture": "2e02e093dd0e7ac9b693a3d4dfc2212d9798cf3e911be6d6a1e159a0eaced3d1"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6482": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "257e8d11e0cbd16fc701312d18a081489ab1f727f9a0ce1ccfae07f0db4bba4c",
+        "gt": "1052f6036f1cce6fa987c447ee642194b4258c8f58ad16d871649145f988f547",
+        "texture": "f941f0a5817955133059fb05f3e55f6720e0dd2a4cb5c6b6b29f5a90e055a6cc"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2489": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ccf88ce8ba88eaafcc9a927067bf0e76f5334cd4f533436e3cda24615d2f1d42",
+        "gt": "43ee1dfa715baa5ca3bbfbafe3f990a4fcb4e54388b7a1bece00203933ea92db",
+        "texture": "f6d5d65391ccb585606d0c5e68230d27a6f1df77fa0261d4908409bf78edf7f7"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4912": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "47a8ee746d58a2c8a6a2e1d43d84d7aab4de35db599f61d1c178a0bd2b1ffd92",
+        "gt": "93d187c78991339a56b8e443f9d0f7075eefc70b81052f378cf0807722813c58",
+        "texture": "9be9532137fa1e08e9936ce1d867a0a8277ec8ce8f8596c771bd670bc7cc3891"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "594": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7d10b8a45be2aa9fff44e0365a0b0585ba2ae7370588b5647580411e18f12a51",
+        "gt": "0b7b4e997f021c9adf9fa7ddb43090912662b76bddbbaca5f72bdeb682ebaddb",
+        "texture": "b53b0f29a7eabe85f9b932f9d1723527938844da10ff0fcee686071cc9129e8e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8527": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "abe850daf061d591d654de54a621c8f262cf89b82d295b3283d1fafabc7a4ad7",
+        "gt": "9802111f596dd32cf1ee096c2b2e0676bd522a03a3f132a73f20fcc2d579a841",
+        "texture": "23b11c3cb9f8d72e935e44992a893166bb9b3ae0ef5197fcde9cc69ca0f85e8d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4342": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7a18a6923feb1808051f2b694d53179a1165b2aea0f72bd38825d8bddc846253",
+        "gt": "e81eac26f46dd56e5f90d1e785152558545376fe433b7f2a8d0a729e44270742",
+        "texture": "62d35b07762fa5967c47d7b6ee847cf1af63a1c81111e54dbd36d9a613aee765"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7934": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "03069c6a554e3bac165a1724f0fbdc702844e85fe1d7ecfd075be4ab6137af90",
+        "gt": "8569fe662a17cbc907abff6126e5bf25ec218f6e2359d1279c91e0e7a5769451",
+        "texture": "1b8f73fd7a8e48a078d2a1c4dbc919ca5358aa2233db8d88e28451d2b4cec4af"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7310": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ecfae4747bd50cdef1adf5400b6a3911f21767442bb7a37a0cd64f2f7e406df5",
+        "gt": "42656bf37f1fbb4f6788684fedf0a93eb768b67bf10ddfedd283875df6a1b018",
+        "texture": "c27989c564902c79c3175b2f9e1a2d9c45bb170c752cec906c9b60354d40cd76"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1314": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "1fb1caa4fc6a9bc8d4510fe6af1beca155b007d3b6f5cbbe492e99fcaf3b8849",
+        "gt": "e50f0e2f462e78f8c2f4f5bc59bf64c572df54ec105841b648803f0c99588168",
+        "texture": "f394c8e46b82650a8705589c371f6be3ba475a84951b03aaed85036dabf24e75"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4255": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "24b4def4e5d79c764eaa1f13e684249c70cbc17c46e73e854d8b78f3a99472ba",
+        "gt": "cab5aebe2bd45569ce68bd57a4b58c05b593d5d2b0a83d8f32a6bae10fe4750f",
+        "texture": "0fbaa6b021b8d8daad83de9ab15008038f6248a78c67a2b4f9db1a101a0a1f81"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7119": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "768cc4a311d99304dbf1d30a268defdaf96c52293ebe4862c43ae381b5cd30e3",
+        "gt": "ebc0946105bc82b1554bb2bbae471bee42dff1dd0d54ce3b7eb4190605ce49fe",
+        "texture": "bb6be6586d47a8ab2fd3925ba70f56775293fa80339a4382bf5279d18e747b49"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4796": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "49fa61abc4fb61a20e8f47b33158c28d596c1c5aed890aed926ec1cd9df225a5",
+        "gt": "3094626010b0b119d608abbc67b95ad6a05f4c381e5d29d9c5128a967648acba",
+        "texture": "fe3459cfce7d91bedd3eb0d56823550042c984feeefa61f9a8f2d14548b05c09"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1757": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "87fbdc1f5e732eee49c55ac2da3977813513f7973e7200d3f048e779f7d9a5ed",
+        "gt": "144d78cff7d18d985be471b42b6c674f380ad327a9d68295944e5cc094179f65",
+        "texture": "0d17a4edf590d24ec30238fb934714bbc55e4fa1fe19454cd0a62458a022866d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4872": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "48b5dbabfbd7cd96dbd506373cc3a83a712dc0b27e5c7275b27599610a36bf76",
+        "gt": "98dc0e5e020a0af387cf7024e33128d087ce4c6050165a8e6aa765267a28539e",
+        "texture": "29f1cb50525e7e5f4eac9435c92b6a57c436fa8e49e4ea98916721201d3c7a28"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8281": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e28684868a50af4d474f205faf65d16133d93c6a80d42b98371c3130e12ef7d0",
+        "gt": "ace0f63f035976ea2dc383bb4af7e2b7913298c8441d07caaa0f2d814151096b",
+        "texture": "69777117d262cb1abdeebaf00382e6605511039c64895a543b26f1441a240b0d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5888": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "0f029a4716d7516160ec7ee0a056cf1f7e851e1b6afbc363fbafaee4f8f8f29e",
+        "gt": "096474c61b32a4f435e8484d1e54ce4f77cfee0db21db9f5c5a69aa07ecfaee6",
+        "texture": "18ecee83b19117479975cba33f2275ecc694345c921c3ba69c3af7c88b648709"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4099": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b7826507289d9c3479bf57d447b88d83bf0df20a703038edd4c322665bb156fd",
+        "gt": "727d45d1ed24d561017dcbd48d1122b2c9edd18d2e1fc06d6ad3538d2e991e1a",
+        "texture": "8023be3ae10ac222734026d1d94837c4000a54d3b6752396fe8907957bed37ee"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "287": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "a6039f35cf4c07783db2c7fa121219ccb9dae2ce0ae1e4b8ab2c9d5f1def4b83",
+        "gt": "71b2f2c196aa89c8fb3667514e5e2221e2ec006780d545e4b83c4935d5009919",
+        "texture": "e7fe2a1589d876bed0cd4a5904ff71ca97686067f4e8ad120575b8eff7755406"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1432": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "81bb9a9ec3cc987bc14eb09b173b8b6de4e51388e6ed8e6608b55b6ed0dea753",
+        "gt": "b3babcf30095222921aab09de90a67939bf2c15b636475db8ca3bccc35daa2a5",
+        "texture": "db2a72f8ac270a47dc9371b849798aa3d15efdbd842b1c5e2037792a3c9db208"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3648": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "366c3014a61c4c223cd7fa62d9fbfa7f42c20c240be6a3a62422413e86d7eeed",
+        "gt": "4bc3fbce4c81c931d59df8dbdeb002b62fc19d6acf15338347ee8517cfd547e5",
+        "texture": "a787b20b508dbb2320e4e83195390500ff60a143cf301169e5a39ecee8c7deff"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5680": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "2a70da20c2f2b4490de4b858788a83ee4ea7dfe1139012801b266a8154135e97",
+        "gt": "610d3915b91b82a7cc04166812433196e8329aa73f78360c9df20c1acf8121d6",
+        "texture": "92d13abb44df4f61a3dcbe28abd71ce1ec1bc6687ecf3fd44581774ba4c3cbba"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "694": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "be9a559d8b2b87d0b2b367cc489d9c3c5c4d254fa7ca556b78085bb8c3a04196",
+        "gt": "bb03ef97a06abbf89f6c23b8c35ef2a1d540415a79de47d81fb1a0d4553f2ffd",
+        "texture": "ce4248f52f6d71c79b37535d85354bedf699417c2d596e2e5db715bdc11a23d2"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5622": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "514a65522b6140d6a455058cf9feeee0dafa1e5460c7bc2a47ff9f54c8e47897",
+        "gt": "36dc6a882040e74343f08a3507ce7d572f96eec7802fb671bd33fbf7b76a21d5",
+        "texture": "5c8bc74949b7505a88c2b736a5d2b5d9276fdb8b6390b2c98ddc9ec3494ed4e2"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2871": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b10cba9cf28ee2473d92978312b2f2d7f0b6ca9eae6697a08407c2e572eb65f2",
+        "gt": "b2060879a4aa9c2b5f67a58e3ceff924969e68577905bb7ca386f2441be22129",
+        "texture": "146d537ee07e682e5f0a4bffbedaac54c04d8860a79b41a5e0c2bdc3143166fb"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7685": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "006dea7450b9097952430e7e77628eaef9f21bc227806cb39a99434049268d38",
+        "gt": "b36f9a2ee03647b683ecc61aad0d665f37be069840cf62071f4a530a8aed7243",
+        "texture": "b043e967bea07ab87166192e6bf722d9bf8bcfa2663f92e6eda3dde32ff4a758"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2860": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "f7cc9cd8070fc10a11d23ca2d454b67025ef746d248cf70f78c9ac8358c5cd84",
+        "gt": "5125cceed4e0fb3eb766db980bf4f939f4e9c904cb01cd1149b5f379ba65b317",
+        "texture": "6804ccb1e803bc9c7377782ec9233fbd44f969b2fbdbbd0753756a8374752e62"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4660": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "80266083f4044d8db68fb0f277d70f7de0526406f1857c776ea955550f7a5191",
+        "gt": "540a44a9a577d9d64d26a5f604d8680fba526b3639ac3494b63aeefc73a39545",
+        "texture": "48a825fc989a3b6cb89808b7547ea79e4ba4052401e5017761812bd475f14816"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7491": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "97bcbfa5631fa3cfca099f20497369a4deab6187e5aac8bc9d513103af5e6b05",
+        "gt": "1c234005c51610f5ef647070a2fb6e4a8065c81522bcbd7713f20f1025900528",
+        "texture": "f5fd7efb10b9245ad36cf9033c13bfb1c234744d85354e0a5ef951c892961447"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8365": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "8f3387de22353b04aa929b58c18af3cdd7e0768622de8560d64c2ea7c2b300c6",
+        "gt": "fb0617a81f6ab4dcf0fad03c0ad5e0bf4cd77496e5f6cbd0a98652d60de7f5ae",
+        "texture": "c8304aab65bd8bfbe59e8c955e8f8bd46f5cd2a03553eb5b7c219c0a1bcdf2f0"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6368": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "dbd2f41fb294f5b3b9c050d856b568800ae79e0933cc04ea48b5a0bea6817195",
+        "gt": "5a3717512c8c1fa22488d2c7d5cfeb1d68984ad31c8e7f74aed157d7fade9430",
+        "texture": "ed88ca47f32ee8794a0ddfbb671ba1880e7749d1bebfb3061092248ebee02f41"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8026": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "87c0ac25acecb7fb5ab9c76bd59d3f3db0055a43e3ac53322b9b7284f1882b75",
+        "gt": "5708ce7b88a606d7412aaba0df0ad0c507489d5174c56429114bbb86010384a3",
+        "texture": "17745a484d70cdec1e3687d6847fca5dafc2ea027d3e97168179dc6b17cd159e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7185": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "f1bf4b73f01fdfecc142eaf54180caec26e37bd89fa4e10be0d2ffb92debf684",
+        "gt": "3b69e336f4762c7a1dc069bdd1046b380c8e1d4477605019740044a9ba68dc3d",
+        "texture": "5f86b0c4f3b40a94bfbcfe5f5e6daddeee66f19ddc1a8e3798a6bee56726d33d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7940": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c2ad13587adfe92ba82198a1e8c92e36ecb644224e1b80b89f147d112f7ced92",
+        "gt": "02e1df308821e383586429729ea16b8ae9e58479ff5acd772803a89bf19f6f0b",
+        "texture": "4b73fc74e70940748678114967c391f0709f61eb5966b4dd5b02f2d4b3199ff0"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1142": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c67709ad8a12a6d1afc9a8d34d51782001d309880b6438bc34bde4991eba6278",
+        "gt": "e5a143e7f93305fe43ff66d7ea5491fa1b5629c7596c722a19bdce795feabaf4",
+        "texture": "0bc0d10a4e34da9597512e5f650d10909e0c19f80533770c12a076666105d78d"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8756": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d55782db26d7cd7bd48359d0ec9d66187e2fef5e0a6c15fa977d8d8b3b561987",
+        "gt": "754420c6699e2591455be6c6880fa1af92fb849970c4c962fe3e6c00eb9f7ca5",
+        "texture": "10a5ebb7b14707b9f0c6067a5555673727ab0ed1e8a0165f367ea31d9f9a7eed"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8199": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "f567238006093df41cf8dfd5f264bba91308e12a4f06a5e7b7d5f69e977cba52",
+        "gt": "e0323016d5d283c1d6c62b7c6104b9490ff146c882875a101142d896a2e867e5",
+        "texture": "8329d3711d17b7757bbe96877e7b23c2e81ff0bfbd9e330a614c98b7856c1848"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2170": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7f4fd2cb67175a632c470811c2065c52243785467a9b2bfcf3ea66dd1fe1fcaf",
+        "gt": "21c0e283a483ef03993dd2ef09c91deda239b8ada73a557ed8cc331323bd6594",
+        "texture": "381c4b17eebc4f91c1a0d19bb7e9a6a8f8a37d8fa9eee36d01246f5ca87663e0"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5121": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "fffee32b3581875acbdd2ca2ffc2881b8392cf8ca439fd6daf92dc2ae2d5bbb6",
+        "gt": "ce0ac93c837489ec74564466ebe641733b0ccb065751a44a23e1db049f2e66e1",
+        "texture": "f8c8154fcf71f7c0e603e125ea0db223bf2063c84c0575b3511142d1e6530a71"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6597": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "0cb19013b66da9b78da933b9e71abe82e20237883e229dc9ef2991488b4b0b55",
+        "gt": "5c41bb90ac07de9d82c3dbcecf214dc4dc921a8fca2fbe0d0675189ec4ad93f1",
+        "texture": "e148ac73adfce42c46d6797285a4912a1974ac824a6b9508b9aa474471ce664e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "461": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "8d153d67a2ddedfda3472bf65e2f0a02caa33b3bf35c119c138f5316d0fac07b",
+        "gt": "16933792d4cef41f4c58d0fca983f7868ddae1e6124d3032eb7f51957d71a93c",
+        "texture": "38fea05050fb1770ef690e9c35a21a183f23be86bfd733318a5c2a6a0692989f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7814": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "0466fa04da9bf86fb705663a2240f21e7b0e0e92e124b593bd094612b4383283",
+        "gt": "e2d8ef68e7066eaf7b3d09b4f6a3315b66fba5f63f4ad376f0d2a49add7d6738",
+        "texture": "1228a389ed03913ddd7a6c793a5ecb28d2de0a6152caacbf8debe5b6eee6a5ad"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "974": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "6f5ce73405fa8b4fb9b01b9377978ac90a70c7e46152e5a1cb42efac975d53d2",
+        "gt": "445c30d47dcf51a64a37ee20ed32b2c137c853cd74c9f5a5d21add3052a50df5",
+        "texture": "4fc965a03aa32714c96076b7330f48313aa6db7a634d204420993af172bccf68"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7269": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b559b91e13ef131c18f7fe439d084b40c408fc13480d1e25a0906edd766d3447",
+        "gt": "3d4085cc409b6887401f00a135d0e19369151b13313e8cbb1a309e5806028642",
+        "texture": "d8a117aaefe2a5fec14741896ed1004270432e42ddce808fc24cfcb64c52d7da"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4410": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "97dabdb13c0d1c149e7960d621a8353413f56811609ef8a5bc39c7ddc2eeb3d7",
+        "gt": "e317ed69f64add20186fddc5643c85220f6c953a3b0fca55b9c9d2d60a9c5cb4",
+        "texture": "ec2dd10a0ec8e99bbae14442a3a7a3d7365f68c6cf090663990302a2ef8d5cfc"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4952": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ac909fcbc5d1cc672b0b6d1e3b972d13f6c7c55c39faa220a560ac4b831a7590",
+        "gt": "9cd905a35f46395c3854bdbba45e13990be85112dd352cf0151b5f672bf992c1",
+        "texture": "3d45e577675c9b58c0462bade75e6ac2fd82d0de811bdc3d9b6d9f8c2563e056"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7516": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "cfb75ead7452a04d81ad226ba10b4ab0839cc81f915fbcc9bfda35e1088f8811",
+        "gt": "788cc92a2032a0b32d60e1791775ce3cff66c007314b2fc0cdd4d88aa9d7c3ae",
+        "texture": "3c1d340704b645ff44980f92f36c2ae57271871147aab9245d06ceae9a6f9395"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8446": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "45380f65b515899f467c85348ea41d6a8056d9401533fd6adbccd90c64df435b",
+        "gt": "7a0b85cdddaa98b21c3fa328e3732adfdb85611e900f00258e8f79a5cdb11784",
+        "texture": "5e75b33d25b0b941e912d72cf52f9529adfc55c8661c9112d70f2bcbd8bc11bd"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3052": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c635b34bab088f306c44c90680286acaab504019724838972dffe2648a320d24",
+        "gt": "b8501ceb593e7c6266a684dc098fd913048c3309b8aa4aa1d7be43068eb13142",
+        "texture": "5d255bc9fad0d8229568249d18f5f2b0df0e7c56549ba1edc4c39851c29a116c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6156": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "0cf6cf932d17a5af78ec141ab9fb5aab400c890d37fec3cb8b6fecd964fc772c",
+        "gt": "03b8f3b7e77ca116f1a31d6061335a0066b4f46d8cd9e3a2227af01a529213d3",
+        "texture": "278d18e20c84928ca74ed570290fd8c453f34bca3434b4855f7d24bc4f2bbb0d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5170": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c4a37c12cbb248b52546a253121e56f0809c9861a03cc26f22d3905c6cdf38c5",
+        "gt": "6d3c6beacc443cac79c125345ec49e45ffe67f6d568cb116ada22bcef017dde2",
+        "texture": "49c1ad7ecead83847ea4f7373ab9c69038725a6d60ab3dc35b5ce94435aa23e9"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4607": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "964d1e1bee7fdbfcfbcb1f09eddf54c14da525239a02783edecfe50d4254fc7d",
+        "gt": "4987e5b839c5f416aabddc56c2174ca2d4b6a5c61ece3f3befb0ab9cf29c3c5e",
+        "texture": "6b62ebdd944fc79b1b796a059d6b5f0c987c1706c8e11881c8095af55e509c5e"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5017": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "056781ac1beb91fffa9e19bd49edd51ceea510998af64472989829dec8300bce",
+        "gt": "daa7bab68475a3f81688ecf52b4605c89e0baccf1d09bdb5c8b559d3714b7547",
+        "texture": "fd9450eceac01f38d220d6281239340cf23543946cbe33ad613c3511a68cee45"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2763": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "69ba491b730ab69dc7c3e39790250e5c033f0793c0cf6d555c63de0ebd43ec18",
+        "gt": "312f2aa5f041d8dfad50d5da1391355067c65b8b83bc17fdc556a5578f98f4f9",
+        "texture": "44234f3d9280a25efcb934834d5ee4caf60030c7cfad62e6af7c89aa79e0715e"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4867": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "d674c29cc9a32f82e67ca2868d0e98b7908b8be55461cb6346a3811cb23bed04",
+        "gt": "74944d200becfe63ca4ffb7fec7dc9e1267affd20e7f6031cf781548990f8c66",
+        "texture": "9cc2976ec6f251bd9cde1a93c5776d3304fbca55fc2bfc90b3a782d9dda3461b"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7177": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "22215cee91ad71be0b0a2b4cadcf5efac4f80fe1efdb59e503d35dbb5824a2ca",
+        "gt": "5fb2a73a5fac573fd87adabbb6738567693ca823ab6beeaacabda1801ef56044",
+        "texture": "fb1c47b9678754cdaab9d58075fd6ef3d9e95648dc364a10d15bdcc973d5b9fb"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3918": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "921bdd622e04cfca1aa9a8618dea9331615da7fa4a624bf5824b04bdd15a1ec7",
+        "gt": "f45d36c4032bf4ea54b9b0c270a3cc89d6f6cee2db3935b27292b1e323ce0045",
+        "texture": "69ca41adea4445e26819176ebc450661e20f6008ae4e0fe223c486393b00060f"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4553": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3cf60aa2a60a469058d4acaed0a09dee4c96177116551daa6232c9b1d9825bc3",
+        "gt": "14c201e88d1ef9f7f5adfc8759b7287b66d99545996e9af1f336f97e91393721",
+        "texture": "3458a7d6b5b9e5969b0837c8f99f3ff7e7d517d751d1db44b19e029e0db65287"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "576": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "d4cc14ea7244c65f7fcf37fb7522191aaee3f8a53b2616bdd16e24bf7f25a106",
+        "gt": "e9b82acc2fae81ddf7ecd3e608557464e1ab60201554d961ae5d43b63ecf775b",
+        "texture": "b9254660492035594a49566c883126c4c7a2698f400c307595c7c42a3f65fc4d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6036": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d0480719e0be89261f1d64a1882d6400c756108f783e4ccdad736d65ec371262",
+        "gt": "b71872b0a451db549e6a5e805f977f7d2e58e6df414b101edd8af841839aa486",
+        "texture": "1ea70a5fa236c3916a71fb98b2c3b38b89428dff5fc7c9f426e39e708c2b7ddc"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "4652": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3c042321e55406a20dcb3e643b13c8a5a6fe07d10b04a987e4e20e53e8d31f73",
+        "gt": "82ee713e4a4c5d5fd72de47cc08cc260366af0b5cfaa5e72b6d7e0af9df29c58",
+        "texture": "940763a4a296c114d88ecca8b9632588ecd679099fc6b333389f4cb774bc26c8"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6298": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e3b5780d8c5c599f264a8ac2f52c431570717da943d1d5aa071234a654f88cbd",
+        "gt": "a7db9f2866a22a9a7e29efddaf47581ded50b28741223f96dc5441a96eb36cb5",
+        "texture": "bf17449da769058e1c69ead985aab7cc5a0ed00484532ccb789073b285dabc1d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1072": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "9aededfd81b2c14760dd16f82840bf070020f5a95ea0cdfea397b0ccbe0021f2",
+        "gt": "30a38d555c817a0db06c5612d78c8468ab95e28aefc3da429556d6c9cab9e45f",
+        "texture": "86cfd12a3e75d8d350acf18f5641d4d282d102260da74038859d9a7c3dcb4853"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2744": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "70131df932a58507acda8d90534ef732bd359b2272626f7b5552332fc45c7bab",
+        "gt": "b44f2a0440c97f6e6b31da17dc3b76f97b7c0d5181739c2abcae242742f0bd7a",
+        "texture": "d1307b955f52f361217f1de3d6942c007f47c94198f43a2e588ac228b32dde7a"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1917": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "fd212e1a9e4bafea242e588187aad14a455c7e9b04fe31f5d592d3a546406d55",
+        "gt": "d20bcd3c0299f11be17f627d33255ca9b58b24be39a67015af4775d5b0857fdc",
+        "texture": "90006b3869538489d1a0c3281551117bbf95c7f7cef972a542d2af4056bebd5f"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8272": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b523392dfa0bc293ba50b7aab5a31684fe38b90d9c0d3808b57d7db197d5dd1d",
+        "gt": "d75ea0cf0ce68f9e92be2d3ac48bd217b1e5a961e849588d901bb501d553238b",
+        "texture": "763f8f532326bebb8f0fad07980f867344afd80840b8ffa096f8d8df28c5809b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8504": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "7afb01b2682a1a3c916ce5869d7771c90c1643742536567d2bf32d07b0356652",
+        "gt": "3fb1575ef783292e9653fd6a52cd984a22a4efd87030ad40718364c87378f2cd",
+        "texture": "5ea0fd24c3511abc2e0d1d619739516ac8a8fa5aed6d8cf239c51304941426cd"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6510": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "2f198787b3efbccb07f0ca7f4ce90a49277f1a28179655d6172ce57574b0a790",
+        "gt": "464646ac14455bec121df310a0f22e77f789e59d187ccbe0af4186a86408145b",
+        "texture": "77316ce90dc2cb0cbb7dbb91f64258a5adddff9bfcc93109ec4346cebb6b8fba"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6978": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "89677b8fa4ded4e1bc83aaed207564ffaec146dea5e930403540d1fb03e01efb",
+        "gt": "f302600ad08bec91bfdfdcf73ad33967445bea722423385139f95a8628233784",
+        "texture": "9aa0ab0111c18cd88ce98a6604d2650e43ed52475a210134a035ba75f7ed3981"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1015": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "ecddd2ad3fd4bb800808deaa38453fa607a0817c90a4d0f4412dff4cf1c06dce",
+        "gt": "073598cebd5e8ab542de1010828a861f2be4959fa898ae738f85ee86bf752068",
+        "texture": "05ded81d28f604cc7f1bd65d9bd33c4eec9ce6e328a13a66ded81778b331facc"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2910": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "10cdbedc3cd24453265704cabd92464a442b06317765384bd648de6280a833b1",
+        "gt": "8da1e4887fc2e9be088bf25b04cd612ea914fba40150da7c64fbfe73eecd5691",
+        "texture": "caff7431a72b353c396502ca347300d54d81d4c8da5780cf1cfbb8087afafa28"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "338": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "26801d238a8ac686a15784b9b5532a41fbe584b9ce74f97a69da784540b6bc8a",
+        "gt": "8b5e681231a2b9497f3690ae22596ff7e409500b3e8b9c90793f3d923e7fe714",
+        "texture": "3cc7ee385326b75f6ed0411701dced28e72630711f51aa9ef5e109addf67923c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7919": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "5d8f8b7f02947653a2a3f06d008dcc75b7a9dc99af1da6fbe514aed0f2e3972d",
+        "gt": "731099c0e474c6602786c8b74a0542afff28d3b874a85003cf14be9e4fc7e41d",
+        "texture": "c4c8bf97458dac4a9a42a6490e0ef0a3da5b30422817f874b42890e96b50aa1c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1610": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e055dd7db95d3c5b1a051c7890aa12962afa54f77508ef99048cf2abc499ae9a",
+        "gt": "1b9a5b69bf8c9461fae941625064927fd6672f8b7961f119f5ef1914e641c6de",
+        "texture": "df28bace37b92f1b21ded1d7a36318e9f02b6c7abef92ceb9034af5203b8ac79"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3225": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d6fa0df41e4c8e2da5ab91645566809c5e6177a1a645279c582793689c1464bd",
+        "gt": "3603eaa1828d4ab0814f850c01b29e30890f2aa4b2e0e37da97f8b7407fc44da",
+        "texture": "ed60789fb683274cf8c74e047514f7995de1426e0ba1d44c5488e7f9fecda1f9"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2377": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "ac3f288b5b7ccff84e3ce1e487aaa01e6577c866a0987c4b69de797291f0dba3",
+        "gt": "dd0909c2ffecd14d11bc6a599ef51971e1ffe44e337b0eee6bd51f961bc86bae",
+        "texture": "b3823eb34bed50bf1c4e0e4470a57e0db2caae6239d28839ad45ec67e7fab39d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7896": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "080158e5c3d395270abf40728e271db4c675645d38d36e4913eec33fcae4e902",
+        "gt": "2f74842f1ef9f503978542dcadc3728278f0441f3d8065c329a82ae871eed6a7",
+        "texture": "3a01032ce7c127d10d0f65b0a77cf62452f1ae2789cfccd7f05d24f9ac3bae62"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1033": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a2b2849f1d7c2d698cd301e6afa89fcf5844a30b8a34d431a1f19c0899175b91",
+        "gt": "efa572bfb1e677a543b2059aa1c47544e28bad91c2789a92f48eb2c04f13e779",
+        "texture": "758431cabb40df80e127d9103dc6264344fcd59738db2e583a318285ccf0fb30"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "752": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "1cd5eff49be35a08bb9cbd017561c4c0e357001383c39cac616d3761255b8c89",
+        "gt": "0d10af592f607b44e3162fb51e36085454eeeb77556f07756c1a4d232ec0fd09",
+        "texture": "031d7c90804fa9cb7abb429391aa5683d28adabe295751e9b45f48e76c4a56db"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8981": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "0c76e458bf412f9ad44f40b372f4ead5e71981441641a1f53afabc2a9b4c7348",
+        "gt": "4f77a99325bc1678f22eb1bb50ec3940486b120b457d627b3032a855fb145a7c",
+        "texture": "5aa887e4fd7fb25ba8592844e8ff644e05c913a7a366233f90875439c3b93c46"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "870": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "cdcabc2bfe8421fbb0da6a0ae8ee3131f84dd3945416c5177c6026add761e793",
+        "gt": "68b27820429dd4295a562d54c7828695e5c3b3dd4ee517089072b34949cddeaf",
+        "texture": "8a0af87b1d3d88b9a6789baf47992dfc33997bc357de92862b4983bd916ccfdc"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6280": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "63c6d8cf724e1cf9ad42ee25dd169e8cf102756bf92488fb443aff9f61d35b38",
+        "gt": "d52c776feb2f794f587b8b4109ca2edec5906fe05a5aaf020b3538877e868579",
+        "texture": "f978cef757442c35d4131286d2fc483c827c59e5c20667bf7d92328d5ec23005"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1019": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "1237f3d1d4cfe95c69beed696c12ad29a49a51ef1ddf8d68a92e10e685056fb3",
+        "gt": "187f530e8ac952fe6eb407d16095b3435786ef4a2cd8c1bcbcfc53ce3e99955f",
+        "texture": "438bfd9add91928676d0c5b4342ff790aebaeeab40dfdec0d3f390e7650e263b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8603": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a6ba23314c457400dd95ccea29d4da59cf379dc5a9bfcd250eee8c6cb89a5c87",
+        "gt": "49eb0783b9447e3a34c20f325d5accdc0876f3daeedbd934530c9ff186b3cf02",
+        "texture": "457cf18f6c6a88a6e7577185ef46171673f34b2556d178ba1b39d50391a4f76f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8872": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "9951b051b7a95497012925adc6b1cea02f844431d86fa8bb0f91406f7f3083f2",
+        "gt": "069d2f6342e69ad167f636f35b8b658b3f30d312f2f90207e0412f98359e7f1e",
+        "texture": "83a0671bf1bc090d48d8e43d401213a42bc995ce6911945aa793b29ad1879191"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3988": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d60d3d7be80a51af55943abbc1c65cb3790d55110f5fc33cfa6088aa1144485c",
+        "gt": "7d9a4ccc2a91ac5520a4349e046c3688ddac89d7cb411672cf11279334d3950d",
+        "texture": "dec32c576dc8534399bf7f61d93a0bb305c3e3d0c05089cc2c163aa4b817d422"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7050": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "8fbde55fa34055011b064a1e310ada2569432bf95442f735147f92d62d63ec32",
+        "gt": "e561ea00ce3549a612548874873d4e20b020c3fd3d91474d748994d445b4ea37",
+        "texture": "1b850cf74acaf0d2d775f749e93280169507634ff920ee1c6af43ac06aed8301"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7854": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "520ba086a46346039450c6dd4a83de0f45ad1d656bac89ad3b4378ef247314e1",
+        "gt": "503850041314c5158e049b4322dff8d1a52562b7547b10ddb6a51102019c6e69",
+        "texture": "df38541c4a66ecfefdf9ad6e3fdd42a51be947ed31393b6e0b12de921048100d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3821": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "0160bcf3fdee2b4febc3bcba9ec1e6ce50007a0f0afc7eab79d256ecb9b5cc70",
+        "gt": "213c523ac003a78b71bdbcff1149754a4522af74247ed35ed99cf0a46ad79f91",
+        "texture": "afe20ed9056697425267d2968320537215878ef466103abaecf74a61df77d373"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1525": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "4238e7903a766483dd5963f3e11a9f7172104294e11b4896435553c2fb01b5fe",
+        "gt": "c15b881a81de00b09c9514e1b8e9efb64b96f535d989ce41a1467eddfc4d9649",
+        "texture": "61ec9fc8980862396bed0e58d31ba25aadb62fd1bc6e4b107464f1434e8e5483"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4318": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "42e5d711ccd0763d5599ea14f4a4336393486730b6910974f99ce7fd61072e07",
+        "gt": "b11c977091558018353ce8dc680ca14a0e648b781bd86cb208535f4224c0a109",
+        "texture": "896f534837d402171144804ccd1c36576569fb338f1bcabff4ff8691c7dbab14"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7892": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7977badb26ccbcc517dafa21ad6b8d927006cf7ded1932074491951fbfc8f820",
+        "gt": "1a095d3bee851b6070ea5adbe4193b50e7a4eafb258109ea851f8894482aca34",
+        "texture": "6ebed30ba39aedf9540055614937b068d75b4d389bc8cfa028155896157c38d0"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7107": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "9401b9b36a22bb148450e79091bde0c84e04d838b8e566f657ba3a893d3f28f3",
+        "gt": "820d6a761e877703a4552f77ed7d6cd38d5390022b2f7d3ec8d342361dc9f6d2",
+        "texture": "8a477e958ce0d3129c0ab8ce2ca5bcc6ef16ab88699737e1b77c7faa1b8cee2f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7465": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3c919e82534f3ac4dde4361f69b29a3c845d63af00ed4b8552fe25449e1ba9c6",
+        "gt": "c7151557c71f67e4f57c017ea4fc47c98f14c4a55d1140b23cf46fa8fed770e4",
+        "texture": "5f4c46cd4f0def6aa217f748e0867517e7749836f34fd241a9f4b6c497903b7f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1220": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "6deb4ee4630b546f62faccbc1253b9b672a127ce79aa4c3efba751e339ba49fd",
+        "gt": "e7f51eb8ff447884ea11993fee537552d7011ae6b8f77f242f9a0e9fa6b7527c",
+        "texture": "a01899e2f73f5f9ac78781637b2f08b21173728b9f9e01a45cd7f5fa7dc3ab4f"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1258": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "23899f53e097c6ae07ba0fe49371b2a342a753ed8af9bcd0d6dd1856dfde07a0",
+        "gt": "e9162bb3d16f1121c10df44f17e0a1b1d18332890aeb9cdc755a0e0490cafbec",
+        "texture": "6b60bc59980b6ac17ca0bd2b342fddd0cde7bd5486ba5d493b7934f45e152b4d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1230": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a3b488858b8d64c04991f4d98ba35be3dc0b43111d62dde0a0135d44fdb28fc7",
+        "gt": "a934cb7d60640f4ab9b746544aeb29399d08b0d9586435260f915513a8040155",
+        "texture": "b4fb8d70756e6c3c8f0f25f9306cfb54acc92747b28aafa1b451877257270aba"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6547": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "912434709b53a09f7756d299771d71273f5c4cf23406e00e0f65d9476c637af9",
+        "gt": "f78632fb928c69f1df8fda564afba86276932bfccc6e30c65dbc417e90a60767",
+        "texture": "5ea6d7a9c3e4cce6458868c0fc735263945bdf74f80e7ed9860fa751eab1bd2f"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7576": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "7d0bc42ccb6d18d7c8fb4d0998e18e31cc364c95b88dc8a9a98086894b3387f6",
+        "gt": "5ab4f461716c8269538bcb22945cf45bb5ec73b236218514007df40adfbc750d",
+        "texture": "b2c0a5105859313064e6447adb7f4c4eb9b323e947992817fb70040ef6430bf9"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8167": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "3dfe2152b29cf8b96ce9b71a2f25d371dd8e0a957624e8a1987b6e19125eb895",
+        "gt": "2eedbbffdd83acc3876f9662868cc2517b5442da5db929ecf15d894b4606cb85",
+        "texture": "c62b0ce87c1ac408f14c0a539952a8aaf1a73d2c28b2879d0ae636a9e6611b38"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7217": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "72a9bcdd32f7c5a6bb5507159c465bb22d1ea8d45e5207a6be0f5376ac7d819f",
+        "gt": "22f331d3e69779e99664e3b0b78b84f2cfa4e0d0b027d93fdbd655e00965ff68",
+        "texture": "3cc89462fbd301b096efcfda5f15fc6d8261f8fc58213f8b3f67118366fbd9f8"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "989": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "9562873f2690f757bc9ef0a82ddfc5d2ef7514d84f27d1534a4b5d3f4a2569d5",
+        "gt": "8d237b336bfb9e1cccf9e2cd42a4b3d3678ae28adbe226a77c78a8ed3a17db56",
+        "texture": "af6369eaf6d5dfc01840dc6e5cb58ba336d657ee0b0dbfa054431d93cd58512b"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4027": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "43b3bca1ac15c775659fc435ba9248884ffee95af1acee4b6444e29a35413d68",
+        "gt": "19c0b0bc8a383772187376bc73425792e953081b2280736f05f6e664468d5c93",
+        "texture": "70c5231a0787c743bddb1e67bb81fe2c78127de844f53da7cfa295a607c02a6f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8054": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7c5307595bba0a1cd6a98b546c23e66a4a205c374d6e654a16a24b0a379c7697",
+        "gt": "d8035089724fb036e89a4cf7379e8a10c4effd791bd064fefd3d088d0409bb4d",
+        "texture": "3bd9e91ebcd45a0220e7c3e1ab78cfb02bae7f35902992d0514c353b1440661c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1182": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "099a9396a7f98c71c7b9de91b1fe17b0f857aadccc915341d8eb8497e7a29928",
+        "gt": "3f321b1c25d85a71f1ea26be454c11fe3226e710a2c79e900dadc2e0af347247",
+        "texture": "52f02743d90ea370607790f18d433a6eff708778e42d42711d99259b3f84f844"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "546": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "1a38eff933db77ca0a1bcdfe598d82c611ba45a328216ce225df43798939a01c",
+        "gt": "29b70d54b7ea997a99f1f5a9af32d7e45ef4125ca81515d80e5d1c421abb3548",
+        "texture": "9ca339e81a42d889310bf93bb969d58165684d2922c014284b8d444277f9759b"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "54": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a55aa1b0b84419980736c49799a590ed77af959812cc0de7ae594014831b3fe7",
+        "gt": "8b73d05206cf5f45ae76d7c3b5f2577a0693d0220a3c9faa20f63034fcb3c280",
+        "texture": "c4e2ecab3bfe885ee501c0356f4e001136fc2ea44c2344b5c6d95f46f3cd3073"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6311": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "d64152e6da56ac2a4dd2c55f3281b532b1cd08882eaec62edede2ff39f58bafd",
+        "gt": "7442d1dcc0a0d37cddacadd2d42fc50b227ab3244dcd1b1f7c5e795e53b887e8",
+        "texture": "d778233ca941ad2919b6ea06d776b1877bf9633801a22d57274947690e02b069"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6181": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c1fec972c05db6a3c15c486cc09f99b65906aace3b7e462c48a18f593724b8d2",
+        "gt": "5ece1b5c86377348ceffa73ec0837e382b2f3a7e53eccc9d09189ef3247a7d79",
+        "texture": "ec2712800f5474f0d7350487217d038e1eb57b35b60ea0d7f7efcd77b25eff65"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "794": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "552399b20a4e8ec93265673b76205b8cedc8105d88f77e354b838052d8df2a1e",
+        "gt": "0b4f6c23b9a5611a3341a0f2723e414e0fb20afc55cb428dd91b211eb4b5b6d1",
+        "texture": "5b9402b9c4d9a6e75b6193f1513191f55057464a5ad5eb00a7f40356188eefee"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7292": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "67603f11d7901b9426da4c7e841c1f2cb3dcf87c0ba23732791ef05123600622",
+        "gt": "2f8a2533b8a01626c75c1c96411547ac3b5699ec43a83df23f6a68b2b4422cdd",
+        "texture": "6dfe99d742f06fee9761ccdf83771f22184aa409db8004a10828424acaff30ab"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8299": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7b401e7e8857dd88045bbb7a8cca6dd4eae5bf81648f9a135bc13ab26643a165",
+        "gt": "36b2b9ec7da668834b758bb1756e8fa9b94e9c83c708dd900c27e75ffe2ced63",
+        "texture": "057aa881b8222b46414af2f789a14fb8d6df527357337b1a71340aa37002187c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4604": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "dfc201c3bf7f031b87a6df5ed0242843bfbe6e183b97f842eceb51e448c02150",
+        "gt": "3bfb9acbfe8b838a7b193930b8cef8330f4b1f31a8f05d7009747e98acc6af35",
+        "texture": "39ca48140d034d4fca6d622aef01fd0499117e899570aeea007ff6d3b4e313a8"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5887": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "ebacabd222ae55a626710b75e55cceb07a0387876755fb560c54efc8482a1d96",
+        "gt": "e2d8c0ab67bdcb008e82f29989a47f414127f2a9d269246101ce8b0ba86f43f4",
+        "texture": "180b70394b38d1e86373c8225dd631cc464c5b374873a998624d4dd2b24b6572"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2603": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "cdc5434f4c21020a69db4bb4217a85e5575ed2f21f197c0621e6913bbe014691",
+        "gt": "17425d4f9510b7a9f712e6bca992cdbab9f7f79617ee5a600944a681535eaddb",
+        "texture": "fb022e35fbcd5b940860b05d2a2f7bf66403f9f8c8cc80fef5e48e30c756e046"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "969": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "dbb4d02f5c671fea19c6fed1a3d8cc9686548154bd336f0ea149254e7c9fa12c",
+        "gt": "19c20f99f10f4e806b6b80a9d316daff3c30b8e583cabacbcef92ebf2f816c17",
+        "texture": "f6b2f62236473f26c1e60d542694b65aee2a7cfd2343dd4e46f7b8f3e7f4c85d"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2974": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "00fc0f93b984056d4fbf05dd4c2ae1c183791174e347746952d1d7197df2738b",
+        "gt": "4109327c2d3b0bee4d15312776c7a504270c2bebaa9c8feb4f47200bbdcfeaed",
+        "texture": "22aefbe711376d5d7ff74fd83384e1a74407731cb0337cdf4562852bcc833e8c"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7725": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "8cfe7975be3bba7e943bf370064901d296facc9a91c3c6cc859ab285b2152699",
+        "gt": "ef7312c6046368e41e946f4fcce5d97da1734cc1be86a727a2d516571a1518f9",
+        "texture": "a6b1809cefd6ec1610718d5bb877ddbba3f861576d2de55746dfd2728ed8d9e7"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1450": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "0ff5257987fc2d80cd0eda936d84dcd98a514ed48ddbaf883feac3a0096606a8",
+        "gt": "6c5537c33a303d1f1d8435d63f849c814ef8706940adf59d52d10b260cf1797b",
+        "texture": "1d28ad5e9910268b1190f71da11bc5d012c5ad1555b135f7d4a74e837dd29fe5"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2259": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a02bc40edfc473a15e648f8d056e9755608c408d94cad02e3d5ee6b8ae9fa442",
+        "gt": "686941bbb363b33d9dcf195569dbe997515f52b5dc5ab11c463b7b621e4d47db",
+        "texture": "b9690585cbe522668194b7ebb9e2dc80589153b0767296306a47c8ad1f5af532"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7093": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "81cc9338c4912b4fc04d49b24dc9c75afba42ec6cd5780bc52c329d983025b16",
+        "gt": "c797532c576340365be06dac71854452bc87184676143a334da4b5fd4bcd3158",
+        "texture": "957f3001ebc7b65724577cfda8191b41c40f04175b58210905b868a1ff5c042e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2338": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7f6359de37abf6ee2d806c8035801729f9573a0b63d980e23ef880b147b5d4b2",
+        "gt": "8feff16b5ec585e8985013f13e1dc1dfaff304a403fb1b51828aafc4a868c247",
+        "texture": "c4b59d0fdbd3639215f2f57caaa89bfea5f751e35bbf35d3e810181b93f17d59"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5393": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "67a1cc07615d085ae9132a9ba9762e3627da34ff97690474679547ce8977736e",
+        "gt": "ac06a9f5b09273803de5ee2f48ee685b05cb8d996e41badca238dd49939e5b17",
+        "texture": "09c2058f45497611b74e2ee5b4a0a4861d128a2efd34a0ccd979f3ff0a08be40"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3735": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "132ef26dbb38cd2fb180ad7898c0391443b102d937c994f89dc05832e2d9ac8b",
+        "gt": "0479a60855c8f392355402a291df3489dda3ffc216cc940b6bafadcb839f4cf3",
+        "texture": "433f1e4ee1c393b683a46b9d30cf7e39349cc4865eb75c70908d324d7e899b79"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7716": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "f6347a30a1cba64371f45bbe9e72ff7ed3f43d302fd6449991070541b29ccf1f",
+        "gt": "84e148e5661889482c238b200f20c9f71ed7dd89142b1dbe904116402ff1760b",
+        "texture": "f075c1cefd360fcac16047dfa2ba7e3a662ea9add6078ccb9cc8d73c87c79aa4"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "8802": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "0986ed668cbaa53750d6feec17a2c1ee4ecac6f868178551a579bacfe7b3f147",
+        "gt": "c01a310d28ffec08f83d4b809a730624e4e0de23c821d957898104b5a8588342",
+        "texture": "f6b03bbf5cd77718b5454f1f78f7168e354e9c34903cf7eff0c91a3bd84d27f4"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "8032": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "f7461b596f5397d8b352c376fa920c89e79587ba3af6bcb16383d9a05743e98d",
+        "gt": "8ce7483d6ee9fbb0abe513a4bf3c184462c1ae31c785150e744ba5c7b3cc9b28",
+        "texture": "05864c0c9555420694cbad4c35a7f88d085ddc7d3451ecfb7ac5c0e4574f5e8c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5684": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "41ff18d729c216e0ee1c2b2500a63d5fbc0dfec0fd4cf68b38322a61b52dd2ac",
+        "gt": "2db2ed328a3bc8d2368d3db3d338dd5d33a86094aa15dd324d680a944b5963b0",
+        "texture": "8b8b910564aa642367c22bb374bc38a6986657efae2a5c8c5666895d38873f1c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2728": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b7b0f7dd139d7ba1041bc0d1df0133ae21afc108250950bfc4381905096eb83e",
+        "gt": "28ac495bbe8e84bb72e653c6b6d39049c8339953e9e88f1f018c00917d4ac9d8",
+        "texture": "ba8bfaf7d6fa140d7af1a02e21db2d6b9ee5ec69ae84188b77a43787a05f056f"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2917": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7afa07248631d87b098a690821e0f9b54be5bb6b2f25b6a1c9a385007b071b0f",
+        "gt": "a6712696e634d82e0b1803c663023d7a23ec2bb57cd28e06fc0d474ea6b394cb",
+        "texture": "0f227d81bb65eb1e46b33366bbfd67f45afb24a47be21ff0749d5d076c38cfe2"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "3438": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "7c60abafd24e180972230621fdc02c16eff3902608d316552738251fc0a9557e",
+        "gt": "c20c9027d87938ba150bde1502ec9f7cfa0c6646e1269e1d241e8a1aa833e534",
+        "texture": "f8fd7cd9ac1e8cb76259283d1c1439438a4b9abf31b3632da203eafdf8b739a4"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "237": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "02267c9c8e97c8d87d4cc98861673c63f0699ae581cbfccbaad652080fd968f7",
+        "gt": "64b344fd7d8f12825ea0779cda1e187cd46facd03135b213e913967891f1e513",
+        "texture": "1ffb2b1c7ef16ccc5cbf3e3f5e3ccf0682ff88e95ebc29470d38f5f5712994c1"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6055": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "c2c5bec8a5faff254d188ffb9e21be38421f0fe1910c310e718b8868156a0ecc",
+        "gt": "47fab07857a94993d65577803ee1e7d63459268888534b340c849e290cd170e8",
+        "texture": "7a309e71b81dbffc51972d26a7ac68052d6831248acfcb547c00dc8f0f452cb6"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3907": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "7ee6680caadbf6a6a6a7049e57944e320431357df8dba90f87ab75fcdf703e3a",
+        "gt": "0c6a4f916cc9d5b90a75da0dcfeaec614fafaca3f5a6577bb07c79eaef45c22b",
+        "texture": "797da2b9521735fa3677bd7496cb8b06c8be87aa45a841f9d7dddf1a7ea6fdea"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "6441": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "48c4426d108a7f0cabfef58d047efac7d06f9ea6b5ab05fc178ef7b5e976cd35",
+        "gt": "6fb54d5f0d785dc2bc0d4357016573e97188b8a4e84b82472827ae18f90f055c",
+        "texture": "676cc0c083a970ae520e8197627d7c27eeffda620eb8881beb2e364dcf4effeb"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7653": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "7e949443228ff8bcc9406f47e728194aaadd916340c77dc124e65a84df151947",
+        "gt": "dee2160746ecdeee72b9b95039b69e6c5cf730baad64516fc92d9319de8c266b",
+        "texture": "4860e3f1bab907650bdc5e88ea8104d2879fbefa696b3669d318a810e665fb6b"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "4022": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "07ed130bd4257191f9d92a3b2d2ddcd1d6ee1ee264c30b9f6d24884addc6e120",
+        "gt": "e2eb34fc796d553ef0b034d86e55efcb397294ed24e7f2fdfc78fadb8b43e41f",
+        "texture": "7cb09da16837c4b1b394bede5dbe83a22107b332abc73bccde2b4c32004fb311"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2009": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "0663bf7dec915182800f88a53041a8c0b94be6d694a68d2f9062839760932062",
+        "gt": "cb92201eb652f0bac3c1dd82bbe11c5cab5317eedd05778de48b387dc8489570",
+        "texture": "517c0bffe760d65ebd87e2b894f79ee28b2d9dc4bb75f3277b4eeda17fe5ee3b"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2511": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "b172722995247d63b8060ef34c497c9548f7766fcac7bbfdb2b690223ea975a3",
+        "gt": "ffeb02ff073824ac80801b1fb63ee3f86e517c99adb77259b4227d835e73a643",
+        "texture": "e163efb9d8f516fff3a4ca8b3a429f46d69bfe52d9b7f6973117ddb823bdfc34"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "2779": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "96eb14d37a926a6504928cf8e84b6216dbc7ae836840230393e86994d917c0c9",
+        "gt": "b4e3d359fd6a79d36742338e4c053443e14fe47927a651284f3b6275279422d7",
+        "texture": "c603a4418c54a0d817513cd317be4c78d3fd8e3da38009bf142c2eeba16e6730"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2834": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "05910180e24d39f65b3b256a048f41b2cddad07880a6e6503cc722b1196dd20a",
+        "gt": "b144c89b78b8e3a8a1e1d9dc7519ce6b7bd43237d1c0f5d77a77d8a94b8ef516",
+        "texture": "08218d314864d9b332bbb1ba64f27c030a817f301dc99f18f74d1da19edb587e"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3890": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "de924fb59cd2e63969a91146a7a55139520c6dc1868e1f5b8f71ce1017c1cb5b",
+        "gt": "80da53fbc1472fc73d774958802a140d0f68b74d6cb5e4307c03e93014d8681c",
+        "texture": "b41a49248fd33d78a118705c775699b3b4391acc1a3bb755803d2ec4356b8ef8"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "1641": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "cb145a375604f79c3f45492b4278202ea9b9edbd792f2bed422b51bfd71a92c5",
+        "gt": "fffb68e9d477f926b038b9714db35730c07055e3d705274d437efb88ef2e8597",
+        "texture": "6fdc272c42940320bf178a94eff3127fd87cbd704b68bd81195135d1f841a358"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5634": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e7eeaee36f2651aac08eb48824477309b5ed1ec50726cbd017808982e947e4c4",
+        "gt": "fcbe1a49c16189b364e72dc27613c1f8ff1081d954965c994f89e7ad90827ae0",
+        "texture": "85320bee81169dcb4868078d31eacde21f32d408a435d83ec52e31563a0fe9f0"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "5904": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "d54d8ffa0e24094bc520e6ac80c7f8bbbb7dbea31eb24522e7b34ca13279dce0",
+        "gt": "ecab17e5fa582edae90ceb8b69aecd80289e9fbd4161c65e4ce34f571a5e3ff5",
+        "texture": "f4bde9be6f8093e3206a92fc4a9e7a1128d44e0cd74c101fb37f52217cb10a7e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "6315": {
+      "clean": true,
+      "pattern": "checks",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "7e1331e2ec26fdc00c1d5bbbdfc8ae39d1766e85d8928698e1efce89f989ff7f",
+        "gt": "43025401a2e62786057b7bf6eaf4221e65e1999431e118dc2b73e82bb4e0c6f6",
+        "texture": "21c0d509b7d3014d0934cda090274d2d59dfaca3b49558994c5cc388df550c6f"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "2025": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "6b3609a2a0f1801fb4c10c34e74a16efea6a96e0452e268ebe260d4aa8bdbbca",
+        "gt": "845a7e7770b4ca5ab2c935a8545d567d7ccf34cd7750583157c5f806f0a454f4",
+        "texture": "47908935b9c3d5b34159e3815306d4c41c78019555804bd46df448190b659579"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3132": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "8331278ae655d689f6d9e1a624af1a328f7537fd9528924478c8f3d7504fe9b6",
+        "gt": "323eaaf6b9abfd098f96b1e139e14babb36535d4ee17675c239b69233c60c85e",
+        "texture": "d4396c551a23d59b718003516a084635b78fdafc3f86229f125eac3d34c2d3a9"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7891": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "f97797ee9a0f2e0482470c4ab129943bedea3129badbb029a7714a85f17750dc",
+        "gt": "1456de1889d5a7e06773831abe93c7901554764d2fde72203644e539d86e6914",
+        "texture": "b5054a49cb6cf11489d790ffdda6d363e1b725aa0378c89fee113875d6337963"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3731": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "a8fb7a81587056668fe05bb4806ac865c13b19f40796f2f2d8e1a6e5b2eccec5",
+        "gt": "1f3b9dbd938506d58eb0c784f64182c1dd207ad956f868c7b9e2bdbdd2989163",
+        "texture": "7b6edaa54359a01aaf3a96eca6612d92908b9cc036730054cf975b21d28bfb1a"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "1675": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "50fd69dcf34ddad25df28c490236ea427e33a71ef7d11dfe9ffb02cdce4148b0",
+        "gt": "5ec58ad7ed94aa2b49cd0e621708493e02ed38b6ac7a5d427ec3402469ea92b3",
+        "texture": "5637d69ff9205fd4bdbb80f5c7099a1db9984d249d24062cfd9cdc31af27462c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "5076": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "0b5e5a8bdc82f9521b0241be72f4ead050260a26486af408b37591a606cfc367",
+        "gt": "b92e559031de8970aa92809ddfceaa8f5a20ca3faf9ec2ae095d60735380d9c2",
+        "texture": "01ef0539901f9d04052d3078483995293423c8ef62475219888e363b8519686e"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "7862": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e4fb6356513b8b784e1e453a5a712948238d97903572992425111377d11566af",
+        "gt": "68c64b4911de10d488ccd993f8cbe876338d439310bbd8ac4ee79fdbf6e40714",
+        "texture": "9d1fdd1a6316a893683b4a2f49d01d7cb4e970fbcc93b349382aea8872317131"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7409": {
+      "clean": true,
+      "pattern": "dots",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "bbc48e6a966055e252366ac28310263d671eb5388d505bff9fa3bffcfb383751",
+        "gt": "c2fd608ceb5427e90ee2cc417400a83c01f20946c1b139e5d248fc62156e71be",
+        "texture": "9b753f620392c4d59c6a05a99f9f718d99a4c6fffd827f74fb4095cbf7be14c8"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3244": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "e5daa621a8064c2bda09ac38b6cb7e5469e1adcc239e490fd8e39edee8e5bf65",
+        "gt": "824c2f62b9719a8468b443216dbf236fbf8d86d6e0e6cf2af5022698e2d6be43",
+        "texture": "76e44abc644c21c5723bb8133c3f648594a7c6217c52514739b2a2c44c1c1a4c"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "3314": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "69726f3567f8b899353c9fd49df94f5d34f77bdee50f665e2b0d7705a59f7d9c",
+        "gt": "8298fa8c11ca998c5d0264da2ee179287a38c84f8cedb26ea0d4f1e39187b3e8",
+        "texture": "db7ac5b0de9b9660fd2efc3f78a5d5dc9c43bd2b2cf490294c20963bab969514"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    },
+    "7784": {
+      "clean": false,
+      "pattern": "uncertain_or_unsuitable",
+      "target_eligible": false,
+      "hashes": {
+        "sketch": "db367b3cdd57ab5db6bb7bc5e94067d52f13501b9ed48f0d2f7eec5d0b4bb745",
+        "gt": "b88963d8790378c685c189cb1e3d68e55ddf2e7469b708d6fc5b2d9666444b9d",
+        "texture": "a25ffc4776af5e2cf72fb7b5dc65cda4f5efa1c7d50605f3e15d47be2bb85b31"
+      },
+      "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
+    },
+    "183": {
+      "clean": true,
+      "pattern": "stripes",
+      "target_eligible": true,
+      "hashes": {
+        "sketch": "cc0da714667645970e68643d9b26da49e75bef6553467fa4ef06cc742297603f",
+        "gt": "8d4fbad9852a2bba69f52d932bee044c19f862fd1b3b3238e81da6f94a61501d",
+        "texture": "2ffcb1efa45befe23d23dec1e18679dcd5fefb496fb1a474f2f241eed05cb1e4"
+      },
+      "note": "AI input review: visible regular texture; target eligibility checked separately"
+    }
+  },
+  "bound_input_map_sha256": "a1562f4ce10204f8e3b9dcf460ff576990dfe4c89f19537a5d8213e55487a40e"
+}
