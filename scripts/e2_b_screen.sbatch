@@ -21,10 +21,17 @@ elif [[ "$1" == pilot ]]; then
   python -m tools.e2_b_screen smoke
 elif [[ "$1" == train ]]; then
   python -m tools.e2_b_screen train --arm "$2"
+elif [[ "$1" == train-array ]]; then
+  ARMS=(B0 B1 B2 B4 B5)
+  python -m tools.e2_b_screen train --arm "${ARMS[$SLURM_ARRAY_TASK_ID]}"
 elif [[ "$1" == generate ]]; then
   python -m tools.e2_b_screen generate --arm "$2"
-elif [[ "$1" == evaluate ]]; then
+elif [[ "$1" == generate-array ]]; then
+  ARMS=(B0 B1 B2 B4 B5)
+  python -m tools.e2_b_screen generate --arm "${ARMS[$SLURM_ARRAY_TASK_ID]}"
+elif [[ "$1" == audit-final ]]; then
   python -m tools.e2_b_screen audit-training-final
+elif [[ "$1" == evaluate ]]; then
   python -m tools.e2_b_screen evaluate
   python -m tools.e2_b_screen bundle
 else

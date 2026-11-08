@@ -1,5 +1,6 @@
 """B0/B1/B2/B4/B5同预算筛选；每臂单卡，可使用多张空闲卡并行不同臂。"""
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import json
 from pathlib import Path
 
@@ -16,6 +17,18 @@ from tools.e2_fft_training import TrainingRun, dataset, tensor_hash, optimizer_h
 ARMS = ['B0', 'B1', 'B2', 'B4', 'B5']
 
 
+def image_fingerprint(path):
+    import cv2
+    from PIL import Image
+    with Image.open(path) as image:
+        rgb=np.asarray(image.convert('RGB'));gray=np.asarray(image.convert('L'))
+        pixel=hashlib.sha256(str(image.size).encode()+rgb.tobytes()).hexdigest()
+        small=cv2.resize(gray.astype('float32'),(32,32),interpolation=cv2.INTER_AREA)
+        frequency=cv2.dct(small)[:8,:8].flatten()[1:]
+        phash=format(sum(int(v>np.median(frequency))<<i for i,v in enumerate(frequency)),'016x')
+    return dict(pixel_sha256=pixel,phash=phash)
+
+
 def audit_training(args, final=False):
     core,out=setup(args)
     source=core.ROOT/'training_manifest.json'
@@ -24,10 +37,32 @@ def audit_training(args, final=False):
     names=sorted({r[k] for r in rows for k in ['cloth','sketch','texture']})
     def inspect(name):
         p=data/name;s=p.stat()
-        return name,dict(bytes=s.st_size,mtime_ns=s.st_mtime_ns,sha256=sha(p))
+        result=dict(bytes=s.st_size,mtime_ns=s.st_mtime_ns,sha256=sha(p))
+        if name.startswith('cloth/'):
+            result.update(image_fingerprint(p))
+        return name,result
     with ThreadPoolExecutor(max_workers=4) as pool:
         files=dict(pool.map(inspect,names))
     value=dict(source_manifest_sha256=sha(source),training_rows=len(rows),files=files)
+    # 用当前实际训练GT再核对一次，不把历史去重清单自动当作当前版本真值。
+    targets=[r for n,r in files.items() if n.startswith('cloth/')]
+    pixels={r['pixel_sha256'] for r in targets}
+    phashes=np.asarray([int(r['phash'],16) for r in targets],dtype=np.uint64)
+    bitcount=np.asarray([bin(i).count('1') for i in range(256)],dtype=np.uint8)
+    overlaps=[]
+    candidates=read(args.candidates)['records']
+    for candidate in candidates:
+        path=Path(args.data)/candidate['gt']
+        assert sha(path)==candidate['audited_gt_file_sha256']
+        fingerprint=image_fingerprint(path)
+        xor=(phashes ^ np.uint64(int(fingerprint['phash'],16))).view(np.uint8).reshape(-1,8)
+        minimum=int(bitcount[xor].sum(1).min())
+        if fingerprint['pixel_sha256'] in pixels or minimum<=4:
+            overlaps.append(dict(sample_id=candidate['sample_id'],minimum_phash_distance=minimum,
+                                 exact_pixel=fingerprint['pixel_sha256'] in pixels))
+    write(out/'audit/train_validation_overlap.json',dict(passed=not overlaps,overlaps=overlaps,
+        validation_candidates=len(candidates),actual_training_targets=len(targets),near_threshold=4))
+    assert not overlaps,'实际训练版本与验证候选出现像素/近重复重叠，先修正候选池'
     path=out/'audit/training_inputs.json'
     if final:
         previous=read(path)
