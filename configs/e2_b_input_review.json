@@ -2368,17 +2368,6 @@
       },
       "note": "Not admitted: clean regular-pattern eligibility not sufficiently established; no generated output used"
     },
-    "4607": {
-      "clean": true,
-      "pattern": "dots",
-      "target_eligible": true,
-      "hashes": {
-        "sketch": "964d1e1bee7fdbfcfbcb1f09eddf54c14da525239a02783edecfe50d4254fc7d",
-        "gt": "4987e5b839c5f416aabddc56c2174ca2d4b6a5c61ece3f3befb0ab9cf29c3c5e",
-        "texture": "6b62ebdd944fc79b1b796a059d6b5f0c987c1706c8e11881c8095af55e509c5e"
-      },
-      "note": "AI input review: visible regular texture; target eligibility checked separately"
-    },
     "5017": {
       "clean": false,
       "pattern": "uncertain_or_unsuitable",
@@ -3546,5 +3535,8 @@
       "note": "AI input review: visible regular texture; target eligibility checked separately"
     }
   },
-  "bound_input_map_sha256": "a1562f4ce10204f8e3b9dcf460ff576990dfe4c89f19537a5d8213e55487a40e"
+  "bound_input_map_sha256": "75fa2655af9210d394889b018aa933d565d0ad3d44bb25aac13dc704cec65287",
+  "actual_training_overlap_exclusions": [
+    "validation/184196142"
+  ]
 }

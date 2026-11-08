@@ -24,6 +24,9 @@ def main(args):
     training=json.loads((repo/'data/train_bf_texture.json').read_text(encoding='utf-8-sig'))
     stems={Path(r['cloth']).stem.split('_')[0] for r in training}
     training_ids={'training/'+s for s in stems}
+    actual_audit=json.loads(Path(args.actual_overlap_audit).read_text(encoding='utf-8-sig')) if args.actual_overlap_audit else None
+    actual_excluded={r['sample_id'] for r in actual_audit['overlaps']} if actual_audit else set()
+    if actual_audit:assert actual_audit['near_threshold']==4
     training_pixels=set();validation_pixels={};validation_hashes={}
     with (source/'audit.jsonl').open(encoding='utf-8') as stream:
         for line in stream:
@@ -49,7 +52,8 @@ def main(args):
         if pixel and identity in groups:
             if pixel in pixels:union(identity,pixels[pixel])
             else:pixels[pixel]=identity
-    exclusions={'identity_overlap':[],'exact_pixel_overlap':[],'near_duplicate_candidate':[]}
+    exclusions={'identity_overlap':[],'exact_pixel_overlap':[],'near_duplicate_candidate':[],
+                'actual_training_input_overlap':[]}
     records=[]
     for index,row in enumerate(validation):
         caption=row['caption'].lower()
@@ -59,7 +63,8 @@ def main(args):
         identity=row['sample_id']
         reason=('identity_overlap' if Path(row['cloth']).stem.split('_')[0] in stems else
                 'exact_pixel_overlap' if validation_pixels.get(identity) in training_pixels else
-                'near_duplicate_candidate' if identity in near else None)
+                'near_duplicate_candidate' if identity in near else
+                'actual_training_input_overlap' if identity in actual_excluded else None)
         if reason:
             exclusions[reason].append(identity);continue
         records.append(dict(index=index,sample_id=identity,caption=row['caption'],pattern_candidate=pattern,
@@ -72,6 +77,9 @@ def main(args):
         exclusions=exclusions,records=records,
         near_duplicates='conservative pHash distance<=4 exclusion; not human duplicate certification',
         upstream_pretraining_exposure='unknown')
+    if actual_audit:
+        value['source_hashes']['actual_overlap_audit']=sha(args.actual_overlap_audit)
+        value['actual_overlap_audit']=actual_audit
     Path(args.out).write_text(json.dumps(value,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     print('CANDIDATES',len(records),'EXCLUSIONS',{k:len(v) for k,v in exclusions.items()})
 
@@ -80,4 +88,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--metadata-project',required=True)
     p.add_argument('--out',required=True)
+    p.add_argument('--actual-overlap-audit',help='实际服务器训练输入审计；在任何模型输出生成前补充排除')
     main(p.parse_args())

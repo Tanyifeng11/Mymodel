@@ -44,6 +44,8 @@ def audit_training(args, final=False):
     with ThreadPoolExecutor(max_workers=4) as pool:
         files=dict(pool.map(inspect,names))
     value=dict(source_manifest_sha256=sha(source),training_rows=len(rows),files=files)
+    # 先保存实际输入证据，候选池审计失败时也保留本次完整观察。
+    write(out/'audit/training_inputs_observed.json',value)
     # 用当前实际训练GT再核对一次，不把历史去重清单自动当作当前版本真值。
     targets=[r for n,r in files.items() if n.startswith('cloth/')]
     pixels={r['pixel_sha256'] for r in targets}

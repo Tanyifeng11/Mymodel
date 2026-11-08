@@ -1,0 +1,13 @@
+{
+  "passed": false,
+  "overlaps": [
+    {
+      "sample_id": "validation/184196142",
+      "minimum_phash_distance": 4,
+      "exact_pixel": false
+    }
+  ],
+  "validation_candidates": 740,
+  "actual_training_targets": 45384,
+  "near_threshold": 4
+}

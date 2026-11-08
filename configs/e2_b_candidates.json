@@ -4,7 +4,8 @@
   "source_hashes": {
     "validation_clean": "a63790ee10e2b6c511fd0ec1f788281933f3d1774d33172106cb27533be171f7",
     "training_manifest": "70fe50d723c966f1c0a0cb6f633075147bde96a12e764d1624499b2cbc3c5269",
-    "near_pairs": "c564e76d167f80042e68f38b79d31c4f418d4e9e550478ce11990c08e4f44719"
+    "near_pairs": "c564e76d167f80042e68f38b79d31c4f418d4e9e550478ce11990c08e4f44719",
+    "actual_overlap_audit": "7bda115702fa6e1e7cac1476c2109727f116fa8f7295cf36d61ecea33e66054d"
   },
   "exclusions": {
     "identity_overlap": [],
@@ -41,6 +42,9 @@
       "validation/54616106",
       "validation/64370195",
       "validation/98821393"
+    ],
+    "actual_training_input_overlap": [
+      "validation/184196142"
     ]
   },
   "records": [
@@ -4471,18 +4475,6 @@
       "texture": "validation/texture/184169257.jpg",
       "audited_gt_file_sha256": "3bfb9acbfe8b838a7b193930b8cef8330f4b1f31a8f05d7009747e98acc6af35",
       "audited_gt_pixel_sha256": "324e2a0360ae5fac06ad23a627388d0636669619ea3ff6b47dfc1eaeb91d8e26"
-    },
-    {
-      "index": 4607,
-      "sample_id": "validation/184196142",
-      "caption": "A black long-sleeved shirt with a collar, chest pocket, and snap buttons, featuring a white polka dot pattern and a small logo on the left chest.",
-      "pattern_candidate": "dots",
-      "identity_group": "validation/184196142",
-      "sketch": "validation/sketch/184196142.jpg",
-      "gt": "validation/gt/184196142.jpg",
-      "texture": "validation/texture/184196142.jpg",
-      "audited_gt_file_sha256": "4987e5b839c5f416aabddc56c2174ca2d4b6a5c61ece3f3befb0ab9cf29c3c5e",
-      "audited_gt_pixel_sha256": "7b95724a86b512c90503f931163edfd8d0bd299e4cd5cc633cf13155028c63b3"
     },
     {
       "index": 4614,
@@ -8926,5 +8918,18 @@
     }
   ],
   "near_duplicates": "conservative pHash distance<=4 exclusion; not human duplicate certification",
-  "upstream_pretraining_exposure": "unknown"
+  "upstream_pretraining_exposure": "unknown",
+  "actual_overlap_audit": {
+    "passed": false,
+    "overlaps": [
+      {
+        "sample_id": "validation/184196142",
+        "minimum_phash_distance": 4,
+        "exact_pixel": false
+      }
+    ],
+    "validation_candidates": 740,
+    "actual_training_targets": 45384,
+    "near_threshold": 4
+  }
 }
