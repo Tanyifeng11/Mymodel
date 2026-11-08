@@ -124,6 +124,8 @@ def evaluate(args):
                     ref_key='original_reference' if condition=='old' else 'swapped_reference'
                     assert meta['output_sha256']==sha(path) and meta['checkpoint_sha256']==complete['checkpoint_sha256']
                     assert meta['manifest_sha256']==sha(out/'strict_pairs.json') and not meta['GT_used_in_inference']
+                    assert (meta['arm'],meta['condition'],meta['case_id'],meta['index'],meta['seed'],meta['caption'])==(
+                        arm,condition,pair['case_id'],pair['index'],pair['seed'],pair['caption'])
                     assert meta['input_sketch_sha256']==pair['hashes']['sketch'] and meta['input_reference_sha256']==pair['hashes'][ref_key]
                     latent_hashes.append(meta['initial_latent_sha256'])
                     kwargs=dict(gen_path=str(path),sketch_path=str(Path(args.data)/pair['sketch']),
