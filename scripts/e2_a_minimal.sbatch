@@ -18,7 +18,6 @@ elif [[ "$1" == pilot ]]; then
 elif [[ "$1" == train ]]; then
   python -m tools.e2_a_minimal train
 elif [[ "$1" == finish ]]; then
-  python -m tools.e2_a_minimal audit-final
   python -m tools.e2_a_minimal generate
   python -m tools.e2_a_minimal evaluate
   python -m tools.e2_a_minimal bundle

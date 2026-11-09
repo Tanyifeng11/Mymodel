@@ -56,6 +56,8 @@ def training_audit(out):
 def generate(args):
     from tools import e2_b_screen_evaluation as legacy
     from tools.e2_a_minimal import load_a,a_environment
+    assert read(Path(args.out)/'audit/training_inputs_final.json')['passed']
+    assert read(Path(args.out)/'audit/mask_inputs_final.json')['passed']
     # 复用已验收生成函数，替换的只是加载器；不改旧B源码及生成定义。
     with patch.object(legacy,'load',load_a):
         legacy.generate(args)
