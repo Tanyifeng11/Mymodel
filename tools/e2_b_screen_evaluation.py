@@ -100,14 +100,18 @@ def response_comparisons(responses, pairs, arms):
     return comparisons
 
 
-def evaluate(args):
+def checkpoint_record(out, arm):
+    return read(out/'training'/arm/'complete.json')
+
+
+def evaluate(args, input_audit_name='training_inputs_final.json'):
     from eval.eval_utils import prepare_evaluation_masks
     from eval.metrics import compute_structure_preservation, compute_texture_leakage, compute_texture_color_fidelity
     from tools.e2a_attr_eval import frozen_lpips
     from tools.bf_t3_three_arm_report import gray
     from tools import t3_response_run as response
     core,out=setup(args);training_audit(out)
-    assert read(out/'audit/training_inputs_final.json')['passed']
+    assert read(out/'audit'/input_audit_name)['passed']
     spec=read(out/'strict_pairs.json');pairs=spec['pairs']
     assert len(pairs)==32 and len({p['identity_group'] for p in pairs})==32
     response.ROOT=out;dists=response.load_dists(args.device);lpips,lpips_assets=frozen_lpips()
@@ -134,7 +138,7 @@ def evaluate(args):
             coords=pair['patch_coordinates'];assert len(coords)>=4
             latent_hashes=[]
             for arm in ARMS:
-                complete=read(out/'training'/arm/'complete.json')
+                complete=checkpoint_record(out,arm)
                 for condition in ['old','new']:
                     path=out/'outputs'/arm/pair['case_id']/(condition+'.png');meta=read(path.with_suffix('.json'))
                     ref_key='original_reference' if condition=='old' else 'swapped_reference'
