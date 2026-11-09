@@ -83,12 +83,28 @@ def training_audit(out):
     write(out/'audit/training_completion.json',dict(passed=True,same_legacy_stream=True,arms=records))
 
 
+def response_comparisons(responses, pairs, arms):
+    """首臂是已审计基线；A0/A5复用时不再依赖B0这个名称。"""
+    from tools.bf_t3_three_arm_report import paired
+    from tools.bf_t3_ablation_report import holm
+    values={(r['arm'],r['index']):r for r in responses};comparisons=[]
+    baseline=arms[0]
+    for arm in arms[1:]:
+        for mode in ['gray','rgb']:
+            for scale in ['strict','tolerant']:
+                metric=mode+'_'+scale+'_response_change'
+                delta=[values[arm,p['index']][metric]-values[baseline,p['index']][metric] for p in pairs]
+                comparisons.append(dict(arm=arm,comparison=arm+'_minus_'+baseline,metric=metric,
+                    family='primary' if metric=='gray_strict_response_change' else 'secondary',**paired(delta)))
+    for family in ['primary','secondary']:holm([r for r in comparisons if r['family']==family])
+    return comparisons
+
+
 def evaluate(args):
     from eval.eval_utils import prepare_evaluation_masks
     from eval.metrics import compute_structure_preservation, compute_texture_leakage, compute_texture_color_fidelity
     from tools.e2a_attr_eval import frozen_lpips
-    from tools.bf_t3_three_arm_report import gray, paired
-    from tools.bf_t3_ablation_report import holm
+    from tools.bf_t3_three_arm_report import gray
     from tools import t3_response_run as response
     core,out=setup(args);training_audit(out)
     assert read(out/'audit/training_inputs_final.json')['passed']
@@ -158,15 +174,7 @@ def evaluate(args):
                 for scale in ['strict','tolerant']:
                     row[mode+'_'+scale+'_response_change']=b['scores'][mode][scale+'_margin']-a['scores'][mode][scale+'_margin']
             responses.append(row)
-    values={(r['arm'],r['index']):r for r in responses};comparisons=[]
-    for arm in ARMS[1:]:
-        for mode in ['gray','rgb']:
-            for scale in ['strict','tolerant']:
-                metric=mode+'_'+scale+'_response_change'
-                delta=[values[arm,p['index']][metric]-values['B0',p['index']][metric] for p in pairs]
-                comparisons.append(dict(arm=arm,comparison=arm+'_minus_B0',metric=metric,
-                    family='primary' if metric=='gray_strict_response_change' else 'secondary',**paired(delta)))
-    for family in ['primary','secondary']:holm([r for r in comparisons if r['family']==family])
+    comparisons=response_comparisons(responses,pairs,ARMS)
     write(out/'metrics/per_image.json',records);write(out/'metrics/responses.json',responses)
     write(out/'metrics/paired_statistics.json',comparisons)
     write(out/'metrics/version.json',dict(protocol=spec['protocol'],outputs=len(records),identities=32,

@@ -21,6 +21,10 @@ elif [[ "$1" == finish ]]; then
   python -m tools.e2_a_minimal generate
   python -m tools.e2_a_minimal evaluate
   python -m tools.e2_a_minimal bundle
+elif [[ "$1" == review ]]; then
+  # 已生成图片的工程恢复只续评测和打包，不加载生成模型。
+  python -m tools.e2_a_minimal evaluate
+  python -m tools.e2_a_minimal bundle
 else
   python -m tools.e2_a_minimal "$@"
 fi
