@@ -61,7 +61,7 @@ def prepare(args):
     inputs, controls, preprocessing = {}, [], []
     for pair in pairs:
         for key in ['sketch', 'gt', 'original_reference', 'swapped_reference']:
-            src = parent / 'inputs/frozen' / pair[key]; assert sha(src) == pair['hashes'][key]
+            src = Path(args.frozen_inputs) / pair[key]; assert sha(src) == pair['hashes'][key]
             dst = out / 'inputs/frozen' / pair[key]; dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst); inputs[pair[key]] = dict(bytes=dst.stat().st_size, sha256=sha(dst))
         for condition, key in [('old','original_reference'), ('new','swapped_reference')]:
@@ -107,6 +107,7 @@ def prepare(args):
     write(out/'audit/reused_evidence.json',reused)
     write(out/'protocol.json',dict(version='E2_texture_bottleneck_v1_frozen_no_generator_training',
         checkpoint=str(parent/'training/B0/latest.pt'),checkpoint_sha256=BASELINE_SHA,manifest_sha256=PAIRS_SHA,
+        input_source=str(args.frozen_inputs),input_identity='previous A frozen archive;all128 original B pair file SHA required equal',
         folds=folds,readout='4fold identity-grouped ridge penalty1;global moments and moments+32channels pooled4x4;original/shifted heldout tests',
         readout_labels='four histogram-preserving controlled gratings:vertical/horizontal period16/32;not real-pattern classification',
         readout_eligibility='input graystd>=.02 and all four intended spectral peaks dominant>=.1;no generated output selection',
@@ -356,6 +357,7 @@ def main():
     p.add_argument('--project',default='/share/home/u2515283058/Mymodel')
     p.add_argument('--parent',default='/share/home/u2515283058/Mymodel/output_eval/e2_b_screen_20261108')
     p.add_argument('--followup',default='/share/home/u2515283058/Mymodel/output_eval/e2_fft_20261106/followup_20261108')
+    p.add_argument('--frozen-inputs',default='/share/home/u2515283058/Mymodel/output_eval/e2_a_minimal_20261109/inputs/frozen')
     p.add_argument('--out',default='/share/home/u2515283058/Mymodel/output_eval/e2_texture_bottleneck_20261111')
     p.add_argument('--device',default='cuda:0');p.add_argument('--shard',type=int,default=0);p.add_argument('--shards',type=int,default=2)
     args=p.parse_args()
