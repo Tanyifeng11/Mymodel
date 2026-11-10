@@ -65,7 +65,11 @@ def test_finite_gains_softmax_and_update_gradients(mode):
         opt.step(); opt.zero_grad()
     if mode == 'C3':
         assert all(max(st['variance']) < 1e-12 for st in stats)
-        assert all(torch.equal(g, g[:, :, :1, :1].expand_as(g)) for g in m.gate_maps)
+        # 池化后的logits在空间恒定；CPU softmax的向量/标量路径可能相差一个float32舍入单位。
+        differences = [(g - g[:, :, :1, :1]).abs().max().item() for g in m.gate_maps]
+        print('C3_SPATIAL_GATE_MAX_ABS', differences, 'ATOL', torch.finfo(torch.float32).eps)
+        assert all(torch.allclose(g, g[:, :, :1, :1].expand_as(g), rtol=0,
+                                  atol=torch.finfo(g.dtype).eps) for g in m.gate_maps), differences
 
 
 def test_invalid_geometry_falls_back_and_restore_exact():

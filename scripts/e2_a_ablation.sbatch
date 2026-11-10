@@ -11,7 +11,7 @@ export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 if [[ "$1" == prepare ]]; then
   mkdir -p "$RUN/tests"
-  python -m pytest tests/test_e2_compat.py tests/test_e2_geometry_fft.py tests/test_e2_followup.py tests/test_e2_local_texture.py tests/test_e2_structure.py tests/test_e2_a_metrics.py tests/test_e2_region_router.py tests/test_e2_c_metrics.py tests/test_e2_a_ablation.py -q | tee "$RUN/tests/pytest.txt"
+  python -m pytest tests/test_e2_compat.py tests/test_e2_geometry_fft.py tests/test_e2_followup.py tests/test_e2_local_texture.py tests/test_e2_structure.py tests/test_e2_a_metrics.py tests/test_e2_region_router.py tests/test_e2_c_metrics.py tests/test_e2_a_ablation.py -q -rP | tee "$RUN/tests/pytest.txt"
   python -m tools.e2_a_ablation prepare
 elif [[ "$1" == pilot ]]; then
   python -m tools.e2_a_ablation regression
