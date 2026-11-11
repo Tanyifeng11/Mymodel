@@ -35,7 +35,7 @@ def code_environment():
 
 
 def training_selection(args, core, out):
-    from utils.texture_preprocess import preprocess_texture_image
+    from texture_preprocess import preprocess_texture_image
     parent=Path(args.bparent);snapshot=read(parent/'audit/training_inputs.json')
     manifest=core.ROOT/'training_manifest.json';assert sha(manifest)==snapshot['source_manifest_sha256']
     rows=read(manifest);indices=read(parent/'split.json')['train_indices']
