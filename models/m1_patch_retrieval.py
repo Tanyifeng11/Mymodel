@@ -89,7 +89,8 @@ def attach_m1(network, enabled=True):
     if enabled:
         # 新模块初始化不能扰动旧训练 RNG；共享权重必须逐键完整加载。
         with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(111142)
+            # torch.manual_seed 还会重置 CUDA；这里只初始化 CPU 上的新权重。
+            torch.random.default_generator.manual_seed(111142)
             new = M1Fusion().to(device=next(old.parameters()).device, dtype=next(old.parameters()).dtype)
         state = old.state_dict()
         incompatible = new.load_state_dict(state, strict=False)
