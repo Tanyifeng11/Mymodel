@@ -48,7 +48,7 @@ def generate(args):
     pipe.image_encoder.to(args.device);pipe.bf_texture_conditioner.to(args.device)
     spec=read(out/'strict_pairs.json');records=[]
     with torch.inference_mode():
-        for pair in spec['pairs']:
+        for pair_index,pair in enumerate(spec['pairs']):
             for condition in ['old','new']:
                 key='original_reference' if condition=='old' else 'swapped_reference'
                 sketch=Path(args.data)/pair['sketch'];reference=Path(args.data)/pair[key]
@@ -59,7 +59,23 @@ def generate(args):
                     assert meta['output_sha256']==sha(path) and meta['checkpoint_sha256']==complete['checkpoint_sha256']
                     assert meta['manifest_sha256']==sha(out/'strict_pairs.json')
                     records.append(meta);continue
+                modules=[] if arm=='M0' else [getattr(network.adapter.fusion,'s2t_patch_attn%d'%i) for i in range(2,6)]
+                capture=arm=='M1' and pair_index<4 and condition=='new'
+                for m in modules:m.capture=capture
                 network.adapter.condition(core.tensor(sketch).to(args.device).half(),core.tensor(reference).to(args.device).half())
+                if capture:
+                    from eval.eval_utils import prepare_evaluation_masks
+                    mask=prepare_evaluation_masks((384,512),sketch_path=str(sketch),mask_policy='sketch_only')['garment']
+                    summaries=[];arrays={}
+                    for scale,m in enumerate(modules):
+                        d=dict(m.diagnostic);arrays['scale%d'%scale]=d.pop('attention')
+                        qh,qw=d['query_hw']
+                        d['query_mask_occupancy']=[bool(mask[min(511,int((y+.5)/qh*512)),min(383,int((x+.5)/qw*384))]) for x,y in d['query_xy']]
+                        summaries.append(d);m.capture=False
+                    folder=out/'diagnostics/evaluation'/pair['case_id'];folder.mkdir(parents=True,exist_ok=True)
+                    np.savez_compressed(folder/'attention.npz',**arrays)
+                    write(folder/'result.json',dict(case_id=pair['case_id'],condition=condition,scales=summaries,
+                        mask_analysis_only=True,GT_used_in_condition=False,checkpoint_sha256=complete['checkpoint_sha256']))
                 latent=torch.randn((1,4,64,48),device=args.device,dtype=torch.float16,
                     generator=torch.Generator(device=args.device).manual_seed(pair['seed']))
                 latent_hash=core.digest(latent)
