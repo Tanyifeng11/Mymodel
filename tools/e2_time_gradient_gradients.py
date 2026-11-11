@@ -54,7 +54,7 @@ def old_terms(pipe,captured,batch,style):
     return dict(base=mse+gram+.05*edge+.1*color,body=body_rgb,rest=rest,mse=mse,gram=gram,edge=edge,color=color)
 
 
-def fixed_capture(pipe,network,core,batch,seed,timestep):
+def fixed_capture(pipe,network,core,batch,seed,timestep,empty_text=False):
     from diffusers import DDIMScheduler
     rng=torch.Generator(device=batch['vae_cloth'].device).manual_seed(seed)
     scheduler=DDIMScheduler(beta_start=.00085,beta_end=.012,beta_schedule='scaled_linear',num_train_timesteps=1000)
@@ -64,7 +64,10 @@ def fixed_capture(pipe,network,core,batch,seed,timestep):
         latent=(posterior.mean+posterior.std*torch.randn(posterior.mean.shape,device=device,generator=rng))*pipe.vae.config.scaling_factor
         sketch_latent=pipe.vae.encode(batch['vae_sketch']).latent_dist.mean*pipe.vae.config.scaling_factor
         drawn_drop=float(torch.rand((),device=device,generator=rng))
-        text=pipe.text_encoder(batch['input_ids'])[0]
+        text_ids=batch['input_ids']
+        if empty_text:
+            text_ids=pipe.tokenizer('',padding='max_length',truncation=True,max_length=77,return_tensors='pt').input_ids.to(device)
+        text=pipe.text_encoder(text_ids)[0]
         noise=torch.randn(latent.shape,device=device,dtype=latent.dtype,generator=rng)
         drawn_t=torch.randint(0,1000,(len(latent),),device=device,generator=rng);t=drawn_t.clone().fill_(timestep)
         sa=core.sketch_states(pipe,sketch_latent.to(pipe.reference_unet.dtype),t)
@@ -209,13 +212,16 @@ def legacy_parity(core,pipe,network,batch,style,seed):
     with torch.no_grad(),torch.autocast('cuda',dtype=torch.bfloat16):
         with observe_prediction(pipe,network) as old:
             raw,token=core.losses(pipe,network,batch,torch.Generator(device=batch['vae_cloth'].device).manual_seed(seed),style,True)
-        current=fixed_capture(pipe,network,core,batch,seed,100);new_raw=old_terms(pipe,current,batch,style)
+        # 原audit_mode强制drop=0，按旧代码语义代表空文本、保留参考。
+        # 这里只匹配该回归条件；正式诊断仍使用原配对文本和参考。
+        current=fixed_capture(pipe,network,core,batch,seed,100,empty_text=True);new_raw=old_terms(pipe,current,batch,style)
     errors={k:float((raw[k]-new_raw[k]).abs()) for k in raw}
     errors.update(epsilon=float((old['epsilon']-current['epsilon']).abs().max()),
         decoded=float((old['decoded']-current['decoded']).abs().max()))
     assert token['noise_sha256']==current['noise_sha256'] and max(errors.values())==0
     network.adapter.clear()
-    return dict(passed=True,max_error=max(errors.values()),errors=errors,noise_equal=True)
+    return dict(passed=True,max_error=max(errors.values()),errors=errors,noise_equal=True,
+        scope='original audit_mode:t100,empty text,reference kept;primary diagnosis uses paired text')
 
 
 def pilot(args):
