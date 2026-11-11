@@ -94,3 +94,17 @@ def test_frozen_patch_stream_separates_legacy_gate_from_counterfactual():
     assert a==0 and sa['active_n']==0 and b>0 and sb['valid_n']==1
     zero,stats=new(x,ref,mask,torch.tensor([100]),torch.tensor([4]),reference_keep=False)
     assert zero==0 and stats['active_n']==0
+
+
+def test_gradient_targets_resolve_actual_fusion_convolution_parameters():
+    from models.bf_original_fusion import bFMFusion
+    from tools.e2_time_gradient_gradients import targets_for
+    network=nn.Module();network.adapter=nn.Module()
+    network.adapter.fusion=bFMFusion(1,3,ngf=2,bottleneck_depth=2,num_resblocks=0)
+    network.adapter.projections=nn.ModuleList([nn.Conv2d(1,1,1) for _ in range(4)])
+    network.unet=nn.Linear(1,1)
+    value=torch.ones(1,1,2,2,requires_grad=True)
+    names,targets,metadata=targets_for(network,dict(epsilon=value,decoded=value,features=[value]*4))
+    assert metadata['texture_conv2']['parameter_name']=='adapter.fusion.G_downconv2.1.weight'
+    assert targets[names.index('texture_conv2')] is network.adapter.fusion.G_downconv2[1].weight
+    assert all(t.requires_grad for t in targets)

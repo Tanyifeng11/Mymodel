@@ -86,7 +86,7 @@ def targets_for(network,captured):
     selected=[('projection%d'%i,p.weight) for i,p in enumerate(network.adapter.projections)]
     fusion=network.adapter.fusion
     selected += [('sketch_conv1',fusion.downconv1[0].weight),('texture_conv1',fusion.G_downconv1[0].weight),
-        ('texture_conv2',fusion.G_downconv2[0].weight)]
+        ('texture_conv2',fusion.G_downconv2[1].weight)]
     for label in ['G_bottleneck_alpha_2','G_bottleneck_beta_2','G_bottleneck_alpha_5','G_bottleneck_beta_5']:
         selected.append((label,next(getattr(fusion,label).parameters())))
     gam_name,gam=next((n,p) for n,p in network.unet.named_parameters() if p.requires_grad)
