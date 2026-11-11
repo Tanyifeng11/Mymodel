@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from models.bf_original_fusion import bFMFusion, affine_transformation
-from models.m1_patch_retrieval import M1Fusion, StructureToTexturePatchAttention
+from models.m1_patch_retrieval import M1Fusion, StructureToTexturePatchAttention, attach_m1
 
 
 @pytest.mark.parametrize('c,h,w,stride', [(288,64,48,2),(576,32,24,2),(1152,16,12,1),(1152,8,6,1)])
@@ -51,3 +51,30 @@ def test_reverse_film_uses_pre_fusion_structure_and_shared_keys_strict():
     missing=copy.deepcopy(old.state_dict());missing.pop(next(iter(missing)))
     bad=model.load_state_dict(missing,strict=False)
     assert any(not key.startswith('s2t_patch_attn') for key in bad.missing_keys)
+
+
+def test_m0_freezing_unused_parameters_is_bitwise_invariant():
+    model=torch.nn.Module();model.adapter=torch.nn.Module()
+    model.adapter.fusion=bFMFusion(1,3,ngf=4,bottleneck_depth=3,num_resblocks=0)
+    s,t=torch.randn(1,1,128,96),torch.randn(1,3,128,96)
+    before=[v.detach().clone() for v in model.adapter.fusion(s,t)]
+    attach_m1(model,enabled=False)
+    after=model.adapter.fusion(s,t)
+    assert all(torch.equal(a,b) for a,b in zip(before,after))
+    assert not any(p.requires_grad for p in model.adapter.fusion.bottleneck_alpha_5.parameters())
+
+
+def test_spectral_control_identical_stripes_and_constant_failures():
+    import numpy as np
+    from tools.m1_evaluation import spectral_metrics
+    x=np.indices((512,384))[1]
+    im=np.repeat(np.where(x%12<6,220,30)[...,None],3,2).astype('uint8')
+    coordinates=[(32,32),(96,96),(160,160),(224,224)]
+    value=spectral_metrics(im,im,coordinates,'stripes')
+    assert value['fft_peak_distance']==0
+    assert value['autocorrelation_period_log2_error']==0
+    assert value['orientation_error_degrees']==0
+    value=spectral_metrics(np.full_like(im,127),np.full_like(im,127),coordinates,'stripes')
+    assert value['fft_peak_distance'] is None
+    assert value['autocorrelation_period_log2_error'] is None
+    assert value['orientation_error_degrees'] is None
