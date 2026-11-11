@@ -105,7 +105,7 @@ def checkpoint_record(out, arm):
 
 
 def evaluate(args, input_audit_name='training_inputs_final.json', arms=None,
-             audit=None, compare=response_comparisons):
+             audit=None, compare=response_comparisons, case_ids=None):
     from eval.eval_utils import prepare_evaluation_masks
     from eval.metrics import compute_structure_preservation, compute_texture_leakage, compute_texture_color_fidelity
     from tools.e2a_attr_eval import frozen_lpips
@@ -116,6 +116,9 @@ def evaluate(args, input_audit_name='training_inputs_final.json', arms=None,
     assert read(out/'audit'/input_audit_name)['passed']
     spec=read(out/'strict_pairs.json');pairs=spec['pairs']
     assert len(pairs)==32 and len({p['identity_group'] for p in pairs})==32
+    if case_ids is not None:
+        pairs=[p for p in pairs if p['case_id'] in case_ids]
+        assert len(pairs)==len(case_ids)
     response.ROOT=out;dists=response.load_dists(args.device);lpips,lpips_assets=frozen_lpips()
     references={};records=[]
     def feature(parts):
@@ -183,7 +186,7 @@ def evaluate(args, input_audit_name='training_inputs_final.json', arms=None,
     comparisons=compare(responses,pairs,arms)
     write(out/'metrics/per_image.json',records);write(out/'metrics/responses.json',responses)
     write(out/'metrics/paired_statistics.json',comparisons)
-    write(out/'metrics/version.json',dict(protocol=spec['protocol'],outputs=len(records),identities=32,
+    write(out/'metrics/version.json',dict(protocol=spec['protocol'],outputs=len(records),identities=len(pairs),
         manifest_sha256=sha(out/'strict_pairs.json'),
         primary_comparisons=sum(r['family']=='primary' for r in comparisons),
         secondary_comparisons=sum(r['family']=='secondary' for r in comparisons),

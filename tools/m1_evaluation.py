@@ -45,12 +45,23 @@ def generate(args):
     pipe,network,_=load_m(args,core,arm)
     state=torch.load(out/'training'/arm/'latest.pt',map_location='cpu',weights_only=False)
     load_trainable_strict(network,state['network']);del state
+    pairs=read(out/'strict_pairs.json')['pairs']
+    generate_images(args,core,out,arm,pipe,network,complete['checkpoint_sha256'],pairs)
+
+
+def prepare_inference(args, pipe, network):
     network.eval().requires_grad_(False)
     pipe.unet.half();pipe.vae.half();network.adapter.half()
     pipe.image_encoder.to(args.device);pipe.bf_texture_conditioner.to(args.device)
-    spec=read(out/'strict_pairs.json');records=[]
+
+
+def generate_images(args, core, out, arm, pipe, network, checkpoint_sha, pairs,
+                    condition_adapter=None):
+    prepare_inference(args,pipe,network)
+    records=[]
+    manifest_sha=sha(out/'strict_pairs.json')
     with torch.inference_mode():
-        for pair_index,pair in enumerate(spec['pairs']):
+        for pair_index,pair in enumerate(pairs):
             for condition in ['old','new']:
                 key='original_reference' if condition=='old' else 'swapped_reference'
                 sketch=Path(args.data)/pair['sketch'];reference=Path(args.data)/pair[key]
@@ -58,13 +69,18 @@ def generate(args):
                 path=out/'outputs'/arm/pair['case_id']/(condition+'.png')
                 if path.exists():
                     meta=read(path.with_suffix('.json'))
-                    assert meta['output_sha256']==sha(path) and meta['checkpoint_sha256']==complete['checkpoint_sha256']
-                    assert meta['manifest_sha256']==sha(out/'strict_pairs.json')
+                    assert meta['output_sha256']==sha(path) and meta['checkpoint_sha256']==checkpoint_sha
+                    assert meta['manifest_sha256']==manifest_sha
                     records.append(meta);continue
-                modules=[] if arm=='M0' else [getattr(network.adapter.fusion,'s2t_patch_attn%d'%i) for i in range(2,6)]
                 capture=arm=='M1' and pair_index<4 and condition=='new'
-                for m in modules:m.capture=capture
-                network.adapter.condition(core.tensor(sketch).to(args.device).half(),core.tensor(reference).to(args.device).half())
+                modules=[getattr(network.adapter.fusion,'s2t_patch_attn%d'%i) for i in range(2,6)] if capture else []
+                for m in modules:m.capture=True
+                sketch_tensor=core.tensor(sketch).to(args.device).half()
+                reference_tensor=core.tensor(reference).to(args.device).half()
+                if condition_adapter is None:
+                    network.adapter.condition(sketch_tensor,reference_tensor)
+                else:
+                    condition_adapter(sketch,sketch_tensor,reference_tensor)
                 if capture:
                     from eval.eval_utils import prepare_evaluation_masks
                     mask=prepare_evaluation_masks((384,512),sketch_path=str(sketch),mask_policy='sketch_only')['garment']
@@ -77,19 +93,19 @@ def generate(args):
                     folder=out/'diagnostics/evaluation'/pair['case_id'];folder.mkdir(parents=True,exist_ok=True)
                     np.savez_compressed(folder/'attention.npz',**arrays)
                     write(folder/'result.json',dict(case_id=pair['case_id'],condition=condition,scales=summaries,
-                        mask_analysis_only=True,GT_used_in_condition=False,checkpoint_sha256=complete['checkpoint_sha256']))
+                        mask_analysis_only=True,GT_used_in_condition=False,checkpoint_sha256=checkpoint_sha))
                 latent=torch.randn((1,4,64,48),device=args.device,dtype=torch.float16,
                     generator=torch.Generator(device=args.device).manual_seed(pair['seed']))
                 latent_hash=core.digest(latent)
-                image=pipe(ref_image=core.tensor(sketch).to(args.device).half(),prompt=pair['caption'],
+                image=pipe(ref_image=sketch_tensor,prompt=pair['caption'],
                     texture_clip_image=None,texture_embeds=None,null_prompt='',negative_prompt=' worst quality, low quality',
                     width=384,height=512,num_images_per_prompt=1,guidance_scale=7.,sketch_scale=.6,ipa_scale=0.,
                     generator=torch.Generator(device=args.device).manual_seed(pair['seed']),latents=latent,num_inference_steps=50)[0]
                 path.parent.mkdir(parents=True,exist_ok=True);image.save(path)
                 meta=dict(arm=arm,condition=condition,case_id=pair['case_id'],index=pair['index'],seed=pair['seed'],
                     caption=pair['caption'],initial_latent_sha256=latent_hash,output_sha256=sha(path),
-                    checkpoint_sha256=complete['checkpoint_sha256'],input_sketch_sha256=sha(sketch),
-                    input_reference_sha256=sha(reference),manifest_sha256=sha(out/'strict_pairs.json'),GT_used_in_inference=False)
+                    checkpoint_sha256=checkpoint_sha,input_sketch_sha256=sha(sketch),
+                    input_reference_sha256=sha(reference),manifest_sha256=manifest_sha,GT_used_in_inference=False)
                 write(path.with_suffix('.json'),meta);records.append(meta);network.adapter.clear()
                 print('M_GENERATED',arm,pair['case_id'],condition,flush=True)
     write(out/'generation'/(arm+'.json'),dict(status='completed',outputs=len(records),environment=m_environment()))

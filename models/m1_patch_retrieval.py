@@ -31,6 +31,9 @@ class StructureToTexturePatchAttention(nn.Module):
         return x.reshape(b, n, self.num_heads, self.attn_dim // self.num_heads).transpose(1, 2).contiguous()
 
     def forward(self, structure_feat, texture_feat):
+        return structure_feat + self.residual(structure_feat, texture_feat)
+
+    def residual(self, structure_feat, texture_feat):
         # [B,C,H,W] -> Q:[B,heads,HW,d], K/V:[B,heads,HtWt,d] -> [B,C,H,W]
         b, c, h, w = structure_feat.shape
         if texture_feat.ndim != 4 or texture_feat.shape[:2] != (b, c):
@@ -59,13 +62,16 @@ class StructureToTexturePatchAttention(nn.Module):
                     top5_indices=indices.cpu().tolist(), attention=a.cpu().numpy(),
                     residual_rms=float(delta.float().square().mean().sqrt()),
                     structure_rms=float(structure_feat.float().square().mean().sqrt()))
-        return structure_feat + delta
+        return delta
 
 
 class M1Fusion(bFMFusion):
-    def __init__(self, sketch_nc=1, texture_nc=3, ngf=144, bottleneck_depth=100, num_resblocks=0):
+    def __init__(self, sketch_nc=1, texture_nc=3, ngf=144, bottleneck_depth=100, num_resblocks=0,
+                 preserve_film=False):
         super().__init__(sketch_nc, texture_nc, ngf=ngf, bottleneck_depth=bottleneck_depth,
                          num_resblocks=num_resblocks)
+        self.preserve_film = preserve_film
+        self.residual_mask = None
         for level, channels, stride in zip(range(2,6), [ngf*2,ngf*4,ngf*8,ngf*8], [2,2,1,1]):
             setattr(self, 's2t_patch_attn%d'%level, StructureToTexturePatchAttention(channels, patch_stride=stride))
 
@@ -76,22 +82,34 @@ class M1Fusion(bFMFusion):
         for level in range(2,6):
             s = getattr(self, 'downconv%d'%level)(s)
             t = getattr(self, 'G_downconv%d'%level)(t)
+            if self.preserve_film:
+                g_alpha, g_beta = self.get_FiLM_param_(t, str(level), texture=True)
             # 必须先读取融合前的草图，保持原反向 FiLM 的依赖关系。
             alpha, beta = self.get_FiLM_param_(s, str(level))
-            s = getattr(self, 's2t_patch_attn%d'%level)(s, t)
+            attention = getattr(self, 's2t_patch_attn%d'%level)
+            if not self.preserve_film and self.residual_mask is None:
+                s = attention(s, t)
+            else:
+                delta = attention.residual(s, t)
+                if self.residual_mask is not None:
+                    coverage = F.adaptive_avg_pool2d(self.residual_mask, s.shape[-2:])
+                    delta = delta * coverage.to(delta)
+                base = affine_transformation(s, g_alpha, g_beta) if self.preserve_film else s
+                s = base + delta
             t = affine_transformation(t, alpha, beta)
             result.append(s)
         return result
 
 
-def attach_m1(network, enabled=True):
+def attach_m1(network, enabled=True, preserve_film=False):
     old = network.adapter.fusion
     if enabled:
         # 新模块初始化不能扰动旧训练 RNG；共享权重必须逐键完整加载。
         with torch.random.fork_rng(devices=[]):
             # torch.manual_seed 还会重置 CUDA；这里只初始化 CPU 上的新权重。
             torch.random.default_generator.manual_seed(111142)
-            new = M1Fusion().to(device=next(old.parameters()).device, dtype=next(old.parameters()).dtype)
+            new = M1Fusion(preserve_film=preserve_film).to(
+                device=next(old.parameters()).device, dtype=next(old.parameters()).dtype)
         state = old.state_dict()
         incompatible = new.load_state_dict(state, strict=False)
         expected = {n for n in new.state_dict() if n.startswith('s2t_patch_attn')}
@@ -99,7 +117,7 @@ def attach_m1(network, enabled=True):
         assert all(torch.equal(new.state_dict()[n], value) for n, value in state.items())
         network.adapter.fusion = new
         for name, parameter in new.named_parameters():
-            if name.startswith('G_bottleneck_'):
+            if not preserve_film and name.startswith('G_bottleneck_'):
                 parameter.requires_grad_(False)
     # 原反向第五尺度的输出没有消费者，两臂都冻结这组原无效参数。
     for name in ['bottleneck_alpha_5', 'bottleneck_beta_5']:

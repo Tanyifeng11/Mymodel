@@ -64,6 +64,44 @@ def test_m0_freezing_unused_parameters_is_bitwise_invariant():
     assert not any(p.requires_grad for p in model.adapter.fusion.bottleneck_alpha_5.parameters())
 
 
+def test_residual_keeps_original_film_and_reverse_reads_pre_fusion_sketch():
+    torch.set_num_threads(2)
+    base = bFMFusion(1, 3, ngf=4, bottleneck_depth=3, num_resblocks=0)
+    model = M1Fusion(ngf=4, bottleneck_depth=3, preserve_film=True)
+    model.load_state_dict(base.state_dict(), strict=False)
+    sketch, texture = torch.randn(1, 1, 128, 96), torch.randn(1, 3, 128, 96)
+    expected = base(sketch, texture)
+    assert all(torch.equal(a, b) for a, b in zip(expected, model(sketch, texture)))
+    pre_fusion = []
+    reverse_inputs = []
+    for level in range(2, 6):
+        projection = getattr(model, f's2t_patch_attn{level}').out_proj
+        torch.nn.init.normal_(projection.weight, std=.1)
+        getattr(model, f'downconv{level}').register_forward_hook(
+            lambda _, args, out: pre_fusion.append(out.detach().clone()))
+        getattr(model, f'bottleneck_alpha_{level}').register_forward_pre_hook(
+            lambda _, args: reverse_inputs.append(args[0].detach().clone()))
+    updated = model(sketch, texture)
+    assert all(torch.equal(a, b) for a, b in zip(pre_fusion, reverse_inputs))
+    assert all(not torch.equal(a, b) for a, b in zip(expected, updated))
+    assert all(p.requires_grad for p in model.G_bottleneck_alpha_5.parameters())
+
+
+def test_mask_gates_only_attention_residual():
+    torch.set_num_threads(2)
+    model = M1Fusion(ngf=4, bottleneck_depth=3)
+    sketch, texture = torch.randn(1, 1, 128, 96), torch.randn(1, 3, 128, 96)
+    with torch.no_grad():
+        baseline = model(sketch, texture)
+        for level in range(2, 6):
+            torch.nn.init.normal_(getattr(model, f's2t_patch_attn{level}').out_proj.weight, std=.1)
+        unmasked = model(sketch, texture)
+        model.residual_mask = torch.ones_like(sketch)
+        assert all(torch.equal(a, b) for a, b in zip(unmasked, model(sketch, texture)))
+        model.residual_mask.zero_()
+        assert all(torch.equal(a, b) for a, b in zip(baseline, model(sketch, texture)))
+
+
 def test_spectral_control_identical_stripes_and_constant_failures():
     import numpy as np
     from tools.m1_evaluation import spectral_metrics

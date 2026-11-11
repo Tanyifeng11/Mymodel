@@ -34,9 +34,11 @@ def configuration(args, arm, smoke=False):
         world_size=1,workers=0 if smoke else 2,diagnostics=False,warmup=0 if smoke else 100,
         split=str(out/'split.json'),split_sha256=sha(out/'split.json'),
         training_input_map_sha256=sha(out/'audit/training_inputs.json'),
-        m1=arm=='M1',reverse_film='pre_fusion_structure',attn_dim=128,num_heads=4,
+        m1=arm in ('M1','M1R'),reverse_film='pre_fusion_structure',attn_dim=128,num_heads=4,
         patch_stride=[2,2,1,1],attention_dropout=0.)
     value.pop('auxiliary_weights',None)
+    if arm=='M1R':
+        value.update(protocol='M1_residual_followup_v1',preserve_forward_film=True,residual_mask=False)
     return value
 
 
@@ -84,7 +86,7 @@ def load_m(args,core,arm):
     pipe,network,checked=load(args,core)
     cpu_rng=torch.get_rng_state().clone()
     cuda_rng=torch.cuda.get_rng_state(args.device).clone()
-    counts=attach_m1(network,enabled=arm=='M1')
+    counts=attach_m1(network,enabled=arm in ('M1','M1R'),preserve_film=arm=='M1R')
     assert torch.equal(cpu_rng,torch.get_rng_state())
     assert torch.equal(cuda_rng,torch.cuda.get_rng_state(args.device))
     return pipe,network,dict(parent=checked,parameters=counts,attachment_rng_unchanged=True)
@@ -141,13 +143,13 @@ def feature_calibration(args,core,pipe,network,data):
     print('FEATURE_CALIBRATION',rows,flush=True)
 
 
-def smoke(args):
+def smoke(args, arms=ARMS):
     from accelerate import Accelerator
     from train_GAM_texture_joint import VGGGramStyleLoss
     core,out=setup(args)
     assert read(out/'regression/image_result.json')['passed']
     results={}
-    for arm in ARMS:
+    for arm in arms:
         acc=Accelerator(mixed_precision='bf16',gradient_accumulation_steps=8)
         assert acc.num_processes==1
         args.device=str(acc.device)
@@ -185,7 +187,7 @@ def smoke(args):
         assert m_frozen_hash(pipe,bare)==frozen
         assert before!=tensor_hash(bare.trainable_state().items())
         assert bare.adapter.injection_counts==[3,2,2,3]
-        if arm=='M1':
+        if arm in ('M1','M1R'):
             assert all(v>0 and np.isfinite(v) for v in logs[1]['m1_gradient_norms'].values())
             assert len(logs[1]['m1_gradient_norms'])==16
         run.save(folder/'latest.pt')
@@ -198,7 +200,9 @@ def smoke(args):
         del expected_state,actual,bare,run,network,pipe,data,style
         acc.free_memory();gc.collect();torch.cuda.empty_cache()
         print('M_SMOKE_PASS',arm,flush=True)
-    assert [r['tokens'] for r in results['M0']['logs']]==[r['tokens'] for r in results['M1']['logs']]
+    historical=read(Path(args.previous)/'smoke/result.json')['arms']['M0'] if arms==('M1R',) else results['M0']
+    for result in results.values():
+        assert [r['tokens'] for r in result['logs']]==[r['tokens'] for r in historical['logs']]
     write(out/'smoke/result.json',dict(passed=True,same_random_stream=True,arms=results,environment=m_environment()))
 
 
