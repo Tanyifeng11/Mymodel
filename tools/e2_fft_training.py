@@ -211,7 +211,7 @@ class TrainingRun:
         self.rng = torch.Generator(device=accelerator.device).manual_seed(42000 + accelerator.process_index)
         self.fft = LocalFFTLoss(sizes=config.get('fft_sizes', (32, 64)), count=config.get('fft_count', 4),
             t_max=config.get('fft_t_max', 249), std_min=config.get('fft_std_min', .02),
-            seed=110642 + accelerator.process_index) if config['fft'] else None
+            seed=110642 + accelerator.process_index, t_min=config.get('fft_t_min', 0)) if config['fft'] else None
         if config.get('auxiliary_weights'):
             from models.e2_local_texture import LocalTextureObjective
             self.fft = LocalTextureObjective(config['auxiliary_weights'], style=style,

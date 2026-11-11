@@ -6,11 +6,11 @@ import zipfile
 from tools.e2_fft_experiment import SOURCE, read, write, sha
 
 
-def bundle(args):
+def bundle(args, extra_suffixes=()):
     root=Path(args.out)
     prefixes=['inputs','audit','calibration','smoke','comparison','training','generation','outputs','metrics','logs','tests']
     files=[p for prefix in prefixes for p in (root/prefix).rglob('*') if p.is_file()
-           and p.suffix in ['.json','.jsonl','.png','.txt','.out','.err','.csv']]
+           and p.suffix in ('.json','.jsonl','.png','.txt','.out','.err','.csv',*extra_suffixes)]
     files += [root/n for n in ['strict_pairs.json','split.json'] if (root/n).exists()]
     files=sorted(set(files))
     write(root/'bundle_manifest.json',{p.relative_to(root).as_posix():dict(bytes=p.stat().st_size,sha256=sha(p)) for p in files})

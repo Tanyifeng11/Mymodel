@@ -104,13 +104,15 @@ def checkpoint_record(out, arm):
     return read(out/'training'/arm/'complete.json')
 
 
-def evaluate(args, input_audit_name='training_inputs_final.json'):
+def evaluate(args, input_audit_name='training_inputs_final.json', arms=None,
+             audit=None, compare=response_comparisons):
     from eval.eval_utils import prepare_evaluation_masks
     from eval.metrics import compute_structure_preservation, compute_texture_leakage, compute_texture_color_fidelity
     from tools.e2a_attr_eval import frozen_lpips
     from tools.bf_t3_three_arm_report import gray
     from tools import t3_response_run as response
-    core,out=setup(args);training_audit(out)
+    arms = ARMS if arms is None else arms
+    core,out=setup(args);(training_audit if audit is None else audit)(out)
     assert read(out/'audit'/input_audit_name)['passed']
     spec=read(out/'strict_pairs.json');pairs=spec['pairs']
     assert len(pairs)==32 and len({p['identity_group'] for p in pairs})==32
@@ -137,7 +139,7 @@ def evaluate(args, input_audit_name='training_inputs_final.json'):
             masks=prepare_evaluation_masks((384,512),sketch_path=str(Path(args.data)/pair['sketch']),mask_policy='sketch_only')
             coords=pair['patch_coordinates'];assert len(coords)>=4
             latent_hashes=[]
-            for arm in ARMS:
+            for arm in arms:
                 complete=checkpoint_record(out,arm)
                 for condition in ['old','new']:
                     path=out/'outputs'/arm/pair['case_id']/(condition+'.png');meta=read(path.with_suffix('.json'))
@@ -167,22 +169,24 @@ def evaluate(args, input_audit_name='training_inputs_final.json'):
                             strict_margin=old['1.0']-new['1.0'],tolerant_margin=min(old.values())-min(new.values()),
                             old_best_scale=min(old,key=old.get),new_best_scale=min(new,key=new.get))
                     records.append(row);print('B_EVALUATED',arm,pair['case_id'],condition,flush=True)
-            assert len(set(latent_hashes))==1,'十个条件初始latent不同'
+            assert len(set(latent_hashes))==1,'同组条件初始latent不同'
             write(out/'metrics/per_image_progress.json',records)
     lookup={(r['arm'],r['case_id'],r['condition']):r for r in records};responses=[]
     for pair in pairs:
-        for arm in ARMS:
+        for arm in arms:
             a,b=lookup[arm,pair['case_id'],'old'],lookup[arm,pair['case_id'],'new']
             row=dict(arm=arm,index=pair['index'],identity_group=pair['identity_group'],case_id=pair['case_id'],pattern=pair['qualification']['old_pattern'])
             for mode in ['gray','rgb']:
                 for scale in ['strict','tolerant']:
                     row[mode+'_'+scale+'_response_change']=b['scores'][mode][scale+'_margin']-a['scores'][mode][scale+'_margin']
             responses.append(row)
-    comparisons=response_comparisons(responses,pairs,ARMS)
+    comparisons=compare(responses,pairs,arms)
     write(out/'metrics/per_image.json',records);write(out/'metrics/responses.json',responses)
     write(out/'metrics/paired_statistics.json',comparisons)
     write(out/'metrics/version.json',dict(protocol=spec['protocol'],outputs=len(records),identities=32,
-        manifest_sha256=sha(out/'strict_pairs.json'),primary_comparisons=4,secondary_comparisons=12,
+        manifest_sha256=sha(out/'strict_pairs.json'),
+        primary_comparisons=sum(r['family']=='primary' for r in comparisons),
+        secondary_comparisons=sum(r['family']=='secondary' for r in comparisons),
         gray_preprocess='legacy bounded three-channel contrast normalized proxy; not pure texture ground truth',
         dists_distance='all fixed cross-patch distance mean; distinct v3, no v1/v2 number mixing',
         independent_upstream_pretraining_test=False,lpips_assets=lpips_assets,environment=environment()))

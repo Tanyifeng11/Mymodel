@@ -52,9 +52,12 @@ class PowerSpectrumDescriptor(nn.Module):
 
 
 class LocalFFTLoss(nn.Module):
-    def __init__(self, sizes=(32, 64), count=4, t_max=249, std_min=.02, seed=110642):
+    def __init__(self, sizes=(32, 64), count=4, t_max=249, std_min=.02, seed=110642, t_min=0):
         super().__init__()
         self.sizes, self.count, self.t_max = tuple(sizes), int(count), int(t_max)
+        self.t_min = int(t_min)
+        if not 0 <= self.t_min <= self.t_max:
+            raise ValueError('FFT时间窗下界必须在0和上界之间')
         self.std_min = float(std_min)
         self.sampler = InteriorPatchSampler(seed)
         self.descriptor = PowerSpectrumDescriptor(std_min=std_min)
@@ -71,14 +74,20 @@ class LocalFFTLoss(nn.Module):
         y = (predicted.float() + 1) * .5
         r = (reference.detach().float() + 1) * .5
         terms, records = [], []
-        active = (timesteps >= 0) & (timesteps <= self.t_max) & geometry.valid
-        keep = torch.as_tensor(reference_keep, device=active.device, dtype=torch.bool).expand_as(active)
-        active = active & keep
+        eligible = (timesteps >= 0) & (timesteps <= self.t_max) & geometry.valid
+        keep = torch.as_tensor(reference_keep, device=eligible.device, dtype=torch.bool).expand_as(eligible)
+        eligible = eligible & keep
+        active = eligible & (timesteps >= self.t_min)
         for i in range(len(y)):
             row = dict(sample_id=int(sample_ids[i]), t=int(timesteps[i]), active=bool(active[i]), scales=[])
             if not bool(active[i]):
                 row['reason'] = ('reference_dropout' if not bool(keep[i]) else
-                                 'timestep' if int(timesteps[i]) > self.t_max else 'invalid_mask')
+                                 'timestep' if int(timesteps[i]) > self.t_max or bool(eligible[i]) else 'invalid_mask')
+                if bool(eligible[i]):
+                    # 较低t只推进原B2的独立坐标流，保留两臂共有样本的同一patch。
+                    for size in self.sizes:
+                        self.sampler.coordinates(geometry.body[i], size, self.count)
+                        self.sampler.coordinates(r.new_ones(r.shape[-2:]), size, self.count)
                 terms.append(y[i].sum() * 0)
                 records.append(row)
                 continue
