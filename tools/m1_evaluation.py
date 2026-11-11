@@ -38,8 +38,10 @@ def generate(args):
     core,out=setup(args)
     assert read(out/'audit/training_inputs_final.json')['passed']
     assert read(out/'audit/mask_inputs_final.json')['passed']
-    training_audit(out)
+    audit=read(out/'audit/training_completion.json')
+    assert audit['passed']
     arm=args.arm;complete=read(out/'training'/arm/'complete.json')
+    assert sha(out/'training'/arm/'latest.pt')==complete['checkpoint_sha256']==audit['arms'][arm]['checkpoint_sha256']
     pipe,network,_=load_m(args,core,arm)
     state=torch.load(out/'training'/arm/'latest.pt',map_location='cpu',weights_only=False)
     load_trainable_strict(network,state['network']);del state
@@ -170,8 +172,11 @@ def evaluate(args):
                 valid={a:0 for a in ARMS}
                 for p in chosen:
                     values=[images[a,p['case_id'],condition]['spectral'][metric] for a in ARMS]
-                    for a,v in zip(ARMS,values):valid[a]+=v is not None and np.isfinite(v)
-                    if all(v is not None and np.isfinite(v) for v in values):delta.append(values[1]-values[0])
+                    finite=[v is not None and bool(np.isfinite(v)) for v in values]
+                    for arm,eligible in zip(ARMS,finite):
+                        valid[arm]+=int(eligible)
+                    if all(finite):
+                        delta.append(values[1]-values[0])
                 spectra.append(dict(condition=condition,pattern=pattern,metric=metric,planned_n=len(chosen),
                     valid_by_arm=valid,missing_pairs=len(chosen)-len(delta),**paired(delta)))
     holm(protections)
