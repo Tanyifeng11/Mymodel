@@ -82,8 +82,12 @@ def prepare(args):
 
 def load_m(args,core,arm):
     pipe,network,checked=load(args,core)
+    cpu_rng=torch.get_rng_state().clone()
+    cuda_rng=torch.cuda.get_rng_state(args.device).clone()
     counts=attach_m1(network,enabled=arm=='M1')
-    return pipe,network,dict(parent=checked,parameters=counts)
+    assert torch.equal(cpu_rng,torch.get_rng_state())
+    assert torch.equal(cuda_rng,torch.cuda.get_rng_state(args.device))
+    return pipe,network,dict(parent=checked,parameters=counts,attachment_rng_unchanged=True)
 
 
 def m_frozen_hash(pipe,network):
