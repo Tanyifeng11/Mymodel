@@ -308,16 +308,19 @@ class Objective:
             else:
                 delta = torch.zeros_like(x0)
             predicted = x0 + delta
+            corrected = (epsilon.float() - (a / (1 - a)).sqrt() * delta).to(epsilon.dtype)
+            if index + hop == 49:
+                predicted = self.pipe.scheduler.step(corrected, t, sample_z, return_dict=False)[0].float()
             rgb = self.decode_rgb(predicted)
             losses, residual = image_losses(rgb, goal, weight, self.templates[key], entry['pair']['patch_coordinates'])
             losses['latent'] = pilot.weighted_mean((predicted - zgoal).square(), values['mask'])
             with torch.no_grad():
-                base = self.decode_rgb(x0.detach())
+                base_z = self.pipe.scheduler.step(epsilon, t, sample_z.detach(), return_dict=False)[0] if index + hop == 49 else x0.detach()
+                base = self.decode_rgb(base_z.float())
             losses['protection'] = pilot.weighted_mean((rgb - base).abs(), 1 - weight)
             accumulated.append(losses)
             residuals.append(residual)
             if hop == 0:
-                corrected = (epsilon.float() - (a / (1 - a)).sqrt() * delta).to(epsilon.dtype)
                 sample_z = self.pipe.scheduler.step(corrected, t, sample_z, return_dict=False)[0]
                 epsilon = self.predictor.epsilon(sample_z, t - 20, entry)
         return {k: .5 * (accumulated[0][k] + accumulated[1][k]) for k in accumulated[0]}, residuals
@@ -451,6 +454,8 @@ def generate(args):
                     old = next(r for r in expected['rows'] if r['seed']==pair['seed'] and r['condition']==c)
                     assert digest == old['digest']
                     picture.save(d/f'{c}_s{seed}_b400.png')
+                    goal = Image.open(d/f'{c}_s{seed}_goal.png').convert('RGB')
+                    decode(pipe.vae, encode(pipe.vae, goal, args.device)).save(d/f'{c}_s{seed}_goal_vae.png')
                     rows.append(dict(condition=c, seed=pair['seed'], digest=digest))
                     for arm in ('m0','target','vae'):
                         shutil.copyfile(source/f'{c}_s{seed}_{arm}.png', d/f'{c}_s{seed}_{arm}.png')
@@ -466,6 +471,30 @@ def summarize(args):
     result['repair'] = dict(probe=read(args.out/'probe.json'),calibration=read(args.out/'calibration.json'),
         primary='all original B endpoints use identical original targets and VAE controls for both models',
         target_changes='new training targets stored as *_goal.png; no final image postprocessing')
+    from tools.e2_state_b_color_evaluation import lab_fields
+    from tools.bf_t3_three_arm_report import paired
+    target_comparisons = collections.defaultdict(list)
+    for p in read(args.out/'protocol.json')['pairs']:
+        d = case_dir(args,p)
+        mask = np.asarray(Image.open(d/'mask.png')) > 0
+        scores = collections.defaultdict(list)
+        for seed in range(2):
+            for c in CONDITIONS:
+                key = f'{c}_s{seed}'
+                goal, local_goal = lab_fields(d/(key+'_goal.png'),mask)
+                for arm, path in (
+                    ('first_b',args.baseline/'cases'/p['case_id']/(key+'_b400.png')),
+                    ('repair_b',d/(key+'_b400.png')),('vae_floor',d/(key+'_goal_vae.png'))):
+                    mean, local = lab_fields(path,mask)
+                    scores[arm].append([float(np.linalg.norm(mean-goal)),float(np.linalg.norm((mean-goal)[1:])),
+                                       float(np.linalg.norm(local-local_goal,axis=1).mean())])
+        target_comparisons[p['split']].append({a:np.mean(v,axis=0).tolist() for a,v in scores.items()})
+    result['repaired_target_evaluation'] = {
+        split:dict(columns=['lab','chroma','local_chroma'],
+            arms={a:np.mean([v[a] for v in values],axis=0).tolist() for a in ('first_b','repair_b','vae_floor')},
+            paired_difference={name:paired([v['repair_b'][i]-v['first_b'][i] for v in values])
+                for i,name in enumerate(('lab','chroma','local_chroma'))})
+        for split,values in target_comparisons.items()}
     write(args.out/'summary.json',result)
     # 原比较图保留第一轮目标；补充新目标图供核对训练目标变化。
     for p in read(args.out/'protocol.json')['pairs']:
@@ -488,6 +517,7 @@ def summarize(args):
                 bundle.writestr(name,old.read(name))
         extras=[args.out/'summary.json',args.out/'probe.json',args.out/'calibration.json']
         extras+=list((args.out/'cases').glob('*/*_goal.png'))+list((args.out/'cases').glob('*/goal_s*.json'))
+        extras+=list((args.out/'cases').glob('*/*_goal_vae.png'))
         extras+=list((args.out/'cases').glob('*/repaired_panel.jpg'))+list((args.out/'probe').glob('*/*/*.png'))
         for path in extras:
             bundle.write(path,path.relative_to(args.out))
