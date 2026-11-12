@@ -89,8 +89,7 @@ def load_core(args):
     load_trainable_strict(net, payload['network'])
     del payload
     prepare_inference(args, pipe, net)
-    pipe.image_encoder.cpu()
-    pipe.bf_texture_conditioner.cpu()
+    # Diffusers通过组件推断执行设备，未使用的辅助组件也需与主干同设备。
     return core, pipe, net
 
 
