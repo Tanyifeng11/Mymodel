@@ -264,7 +264,7 @@ def generate(args):
                                   read(out / 'strict_pairs.json')['pairs'])
 
 
-def summarize(args, pairs, comparisons, margins):
+def summarize(args, pairs, comparisons, margins, include_historical_failures=True):
     from PIL import Image
     from eval.eval_utils import prepare_evaluation_masks, estimate_foreground_mask
     from tools.e2_a_evaluation import boundary_f1
@@ -297,8 +297,11 @@ def summarize(args, pairs, comparisons, margins):
             by_response[arm, case_id]['inside_reference_rgb_mae'] = float(difference[inside].mean())
 
     stats = []
+    subsets = [('all', pairs)]
+    if include_historical_failures:
+        subsets.append(('historical_failures', [p for p in pairs if p['case_id'] in FAILURES]))
     for candidate, baseline in comparisons:
-        for subset, selected in [('all', pairs), ('historical_failures', [p for p in pairs if p['case_id'] in FAILURES])]:
+        for subset, selected in subsets:
             for metric in (PRIMARY, 'rgb_strict_response_change', 'gray_tolerant_response_change',
                            'rgb_tolerant_response_change', 'inside_reference_rgb_mae'):
                 values = [(by_response[candidate, p['case_id']][metric], by_response[baseline, p['case_id']][metric])
