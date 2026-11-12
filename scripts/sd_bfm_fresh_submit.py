@@ -1,7 +1,6 @@
 """一个正式训练作业；依赖成功后才执行生成与统一评测。"""
 import json
 from pathlib import Path
-import re
 import subprocess
 
 ROOT = Path('/share/home/u2515283058/Mymodel/output_eval/sd_bfm_fresh_20261113')
@@ -14,8 +13,8 @@ def submit(key, gpu, dependency=None):
     if key in jobs:
         return jobs[key]
     partition = 'gpu' if gpu else 'cpu'
-    info = subprocess.check_output(['scontrol', 'show', 'partition', partition, '-o'], text=True)
-    maximum = re.search(r'\bMaxTime=(\S+)', info).group(1)
+    # 此账户 normal QoS 最长七天，比 CPU 分区的 31 天上限更短。
+    maximum = '7-00:00:00'
     args = ['sbatch', '--parsable', '-p', partition, '-J', 'sdbf_' + key, '-N1', '-n1',
             '-c', '8' if gpu == 2 else '4', '--mem', '128G' if gpu == 2 else '64G',
             '-t', '0' if maximum == 'UNLIMITED' else maximum,
