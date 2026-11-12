@@ -56,7 +56,7 @@ def prepare():
     write(ROOT / 'protocol.json', dict(arm=ARM, seed=42, samples=len(train), updates=UPDATES,
         epochs=5, effective_batch=8, world=2, initialization='original SD1.5; fresh BFM, zero projections and fresh GAM',
         e1_loaded=False, historical_bfm_loaded=False, base_model=str(sd), source_sha256=sha(__file__),
-        source_commit=subprocess.check_output(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], text=True).strip(),
+        source_commit=read(ROOT / 'deployment.json')['source_commit'],
         train_sha256=sha(ROOT / 'training_manifest.json'),
         trainable='generation UNet, original BFM, four projections, GAM; unused IP texture-token parameters excluded',
         frozen='SD VAE, text encoder and original-SD reference UNet',
