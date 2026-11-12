@@ -13,7 +13,7 @@ from scipy.signal import find_peaks
 import torch
 from torch.nn import functional as F
 
-from eval.eval_utils import prepare_evaluation_masks
+from eval.eval_utils import prepare_evaluation_masks, estimate_foreground_mask
 from models.e2_compat import load_trainable_strict
 from models.e2_state_texture_b import StateTextureB
 from models.e2_texture_diagnostics import reference_control
@@ -23,6 +23,7 @@ from tools.e2_oracle_texture import SIZE, ACTIVE, RGB_LUMA, oracle_image, encode
 from tools.e2_oracle_color import calibrate_color, color_metrics
 from tools.m1_evaluation import prepare_inference
 from tools.m1_experiment import load_m
+from tools.e2_a_evaluation import boundary_f1
 
 VARIANTS = ('v16', 'h16', 'v32', 'h32')
 CONDITIONS = tuple(v + suffix for suffix in ('', '_shift') for v in VARIANTS)
@@ -419,13 +420,24 @@ def summarize(args):
                 positive = Image.open(d / (suffix + '_vae.png')).convert('RGB')
                 wanted = c.replace('_shift', '')
                 record = {}
+                m0_pixels = np.asarray(Image.open(d / (suffix + '_m0.png')).convert('RGB'), dtype=np.float32) / 255
+                goal_rgb = np.asarray(goal, dtype=np.float32) / 255
+                goal_lab = cv2.cvtColor(cv2.GaussianBlur(goal_rgb, (0, 0), 12), cv2.COLOR_RGB2LAB)
+                boundary = cv2.dilate(mask.astype(np.uint8), np.ones((5, 5), np.uint8)) != cv2.erode(mask.astype(np.uint8), np.ones((5, 5), np.uint8))
                 for arm in ('m0', 'b400', 'vae', 'target'):
                     pic = Image.open(d / (suffix + '_' + arm + '.png')).convert('RGB')
                     rgb, base = np.asarray(pic, dtype=np.float32) / 255, np.asarray(anchor, dtype=np.float32) / 255
+                    pred_mask = estimate_foreground_mask(pic, SIZE)
+                    local_lab = cv2.cvtColor(cv2.GaussianBlur(rgb, (0, 0), 12), cv2.COLOR_RGB2LAB)
                     record[arm] = dict(texture=texture_metrics(pic, p['patch_coordinates'], wanted),
                         color_to_target=color_metrics(pic, goal, mask)['lab_shift'],
                         color_to_anchor=color_metrics(pic, anchor, mask)['lab_shift'],
+                        lowfreq_lab_error=float(np.linalg.norm(local_lab[mask] - goal_lab[mask], axis=1).mean()),
                         outside_mae=float(np.abs(rgb[~mask] - base[~mask]).mean()),
+                        outside_change_from_m0=float(np.abs(rgb[~mask] - m0_pixels[~mask]).mean()),
+                        boundary_change_from_m0=float(np.abs(rgb[boundary] - m0_pixels[boundary]).mean()),
+                        silhouette_iou=float((pred_mask & mask).sum() / (pred_mask | mask).sum()),
+                        boundary_f1=boundary_f1(pred_mask, mask, 2),
                         **old_pattern(pic, anchor, positive, p['patch_coordinates'], wanted))
                 rows[suffix] = record
             for phase in ('', '_shift'):
@@ -441,7 +453,9 @@ def summarize(args):
         for arm in ('m0', 'b400', 'vae', 'target'):
             values = [r[arm] for r in rows.values()]
             agg[arm] = {k: float(np.mean([r[k] for r in values if r[k] is not None])) for k in (
-                'color_to_target', 'color_to_anchor', 'outside_mae', 'old_projection', 'gray_highpass_mae')}
+                'color_to_target', 'color_to_anchor', 'lowfreq_lab_error', 'outside_mae',
+                'outside_change_from_m0', 'boundary_change_from_m0', 'silhouette_iou', 'boundary_f1',
+                'old_projection', 'gray_highpass_mae')}
             for kind in ('direction', 'period'):
                 for endpoint in ('strict', 'fft'):
                     agg[arm][kind + '_' + endpoint] = float(np.mean([r[arm][endpoint] for k, r in switches.items() if k.startswith(kind)]))
