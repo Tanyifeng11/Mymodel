@@ -339,7 +339,8 @@ def texture_metrics(picture, coords, wanted):
             continue
         profile = gray.mean(axis=0 if wanted[0] == 'v' else 1)
         axis = np.arange(64)
-        profile -= np.polyval(np.polyfit(axis, profile, 1), axis)
+        # 64像素窗只有两个宽条周期，线性去趋势会删掉32像素锯齿的真实峰。
+        profile -= profile.mean()
         corr = [1.]
         for lag in range(1, 42):
             a, b = profile[:-lag], profile[lag:]
@@ -456,7 +457,8 @@ def summarize(args):
         summary[split] = dict(n=len(selected), arms={arm: {k: float(np.mean([p['aggregate'][arm][k] for p in selected])) for k in keys}
             for arm in ('m0', 'b400', 'vae', 'target')}, paired_b_minus_m0={
                 k: paired([p['aggregate']['b400'][k] - p['aggregate']['m0'][k] for p in selected]) for k in keys})
-    write(args.out / 'summary.json', dict(training=complete, results=summary,
+    write(args.out / 'summary.json', dict(training=complete, results=summary, evaluation_source=environment(),
+        period_preflight='before viewing generated results: ideal32 sawtooth failed linear detrending; fixed ACF centering to mean-only, all4 ideal controls pass',
         interpretation='identity-clustered paired descriptive bootstrap; exploratory, multiple endpoints not corrected; all fixed400 outputs included'))
     files = [args.out / 'protocol.json', args.out / 'summary.json', *args.out.glob('shard*.json'),
              *list((args.out / 'training').glob('*.json*')), args.out / 'training/step400.pt']
