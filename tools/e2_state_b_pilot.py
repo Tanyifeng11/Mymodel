@@ -2,6 +2,7 @@
 import argparse
 import copy
 import json
+import shutil
 import time
 import zipfile
 from pathlib import Path
@@ -30,6 +31,7 @@ CONDITIONS = tuple(v + suffix for suffix in ('', '_shift') for v in VARIANTS)
 EXCLUDED = (7814, 5735, 7871, 6550, 4022, 974, 8365, 6722)
 TRAIN = (621, 1641, 870, 1526)
 HOLDOUT = (2063, 6372, 3775, 5038, 1011, 2779, 1917, 8504)
+COLOR_BASELINE = PROJECT / 'output_eval/e2_state_b_pilot_20261112'
 
 
 def directory(args, pair):
@@ -37,6 +39,9 @@ def directory(args, pair):
 
 
 def prepare(args):
+    if args.paired_color:
+        prepare_paired_color(args)
+        return
     assert sha(RUN / 'strict_pairs.json') == PAIRS_SHA
     pairs = read(RUN / 'strict_pairs.json')['pairs']
     chosen = [copy.deepcopy(next(p for p in pairs if p['index'] == i)) for i in TRAIN + HOLDOUT]
@@ -78,6 +83,47 @@ def prepare(args):
             metrics='paired FFT + tensor orientation + ACF period; old-template projection excluding target harmonics; mean Lab to calibrated target and VAE floor; outside MAE',
             decision='exploratory joint improvement on heldout identities, train-fit diagnostic, no checkpoint selection or assumed absolute Lab cutoff')))
     print('PREPARED_SPLIT', [(p['case_id'], p['split']) for p in chosen], flush=True)
+
+
+def prepare_paired_color(args):
+    baseline = args.color_baseline.resolve()
+    assert args.out.resolve() != baseline
+    protocol = read(baseline / 'protocol.json')
+    complete = read(baseline / 'training/complete.json')
+    assert complete['updates'] == 400 and complete['frozen_unchanged']
+    assert sha(baseline / 'training/step400.pt') == complete['checkpoint_sha256']
+    assert tuple(p['index'] for p in protocol['pairs']) == TRAIN + HOLDOUT
+    assert protocol['checkpoint_sha256'] == CHECKPOINT_SHA
+    assert tuple(protocol['evaluation']['conditions']) == CONDITIONS
+    for p in protocol['pairs']:
+        assert sha(args.data / p['sketch']) == p['hashes']['sketch']
+        source = baseline / 'cases' / p['case_id']
+        dest = directory(args, p)
+        dest.mkdir(parents=True, exist_ok=True)
+        files = ['mask.png', 'sketch.png', 'anchor_s0.png', 'anchor_s1.png']
+        files += [c + '_ref.png' for c in CONDITIONS]
+        files += [f'{c}_s{seed}_{arm}.png' for c in CONDITIONS for seed in range(2)
+                  for arm in ('m0', 'target', 'vae')]
+        if p['split'] == 'train':
+            files += ['train_anchor.png'] + [c + '_train_target.png' for c in CONDITIONS]
+        for name in files:
+            shutil.copyfile(source / name, dest / name)
+            assert sha(source / name) == sha(dest / name)
+        assert all(sha(dest / (c + '_ref.png')) == p['reference_hashes'][c] for c in CONDITIONS)
+    protocol['source'] = environment()
+    protocol['paired_color'] = dict(
+        baseline=str(baseline), baseline_checkpoint_sha256=complete['checkpoint_sha256'],
+        baseline_protocol_sha256=sha(baseline / 'protocol.json'),
+        m0_cache_sha256=sha(baseline / 'cache_m0.pt'),
+        loss='old L* loss / 3 + 2 * common-anchor ab MAE + same-colour pair ab MAE',
+        anchor='original per-identity train_anchor.png (M0 v16 phase0); same anchor for both predictions',
+        chroma='Lab ab after 32x32 garment-interior weighted RGB pooling; mean absolute error in Lab/100',
+        pair='same identity, seed, phase, and timestep; alternate orientation and period swaps',
+        budget='400 optimizer updates, original primary stream and batch of four; extra decoded predictions only for colour loss',
+        controls='reuse exact M0 cache, train targets, and evaluation M0/target/VAE images; regenerate B step200 cache',
+        evaluation='compare step400 with original B step400; global and local ab error, pair ab consistency, original texture and protection endpoints')
+    write(args.out / 'protocol.json', protocol)
+    print('PAIRED_COLOR_PREPARED', len(protocol['pairs']), flush=True)
 
 
 def load_core(args):
@@ -152,7 +198,7 @@ def target_images(args, pair, condition, anchor, suffix):
     return target
 
 
-def cache_states(args, core, pipe, net, pairs, module, stage):
+def cache_states(args, core, pipe, net, pairs, module, stage, frozen_targets=None):
     entries = []
     with torch.no_grad():
         for p in pairs:
@@ -160,12 +206,16 @@ def cache_states(args, core, pipe, net, pairs, module, stage):
             if stage == 'm0':
                 anchor, _, _ = sample(args, core, pipe, net, p, 'v16')
                 anchor.save(d / 'train_anchor.png')
-            anchor = Image.open(d / 'train_anchor.png').convert('RGB')
+            if frozen_targets is None:
+                anchor = Image.open(d / 'train_anchor.png').convert('RGB')
             for c in CONDITIONS:
                 picture, digest, states = sample(args, core, pipe, net, p, c, module, True)
                 picture.save(d / (c + '_cache_' + stage + '.png'))
-                target = target_images(args, p, c, anchor, '_train')
-                z = encode(pipe.vae, target, args.device).cpu()
+                if frozen_targets is None:
+                    target = target_images(args, p, c, anchor, '_train')
+                    z = encode(pipe.vae, target, args.device).cpu()
+                else:
+                    z = frozen_targets[p['case_id'], c]
                 entries.append(dict(pair=p, condition=c, target=z, states=states, initial_latent=digest))
             print('CACHE', stage, p['case_id'], flush=True)
     torch.save(entries, args.out / ('cache_' + stage + '.pt'))
@@ -189,6 +239,30 @@ def weighted_mean(value, mask):
     return (value * mask).sum() / (mask.sum() * value.shape[1]).clamp_min(1)
 
 
+def paired_condition(condition, swap_direction):
+    if swap_direction:
+        return ('h' if condition[0] == 'v' else 'v') + condition[1:]
+    period = '32' if condition[1:3] == '16' else '16'
+    return condition[0] + period + condition[3:]
+
+
+def pooled_chroma(rgb, weight, pooled_weight):
+    mean_rgb = F.avg_pool2d(rgb * weight, 32) / pooled_weight.clamp_min(1e-6)
+    return lab_tensor(mean_rgb)[:, 1:]
+
+
+def color_supervision(rgb, companion_rgb, goal, weight, anchor_ab, pooled_weight):
+    # L* 沿用旧监督的贡献，两个参考共用底色；一致性项在两个方向上传递梯度。
+    delta_l = lab_tensor(F.avg_pool2d(rgb, 16))[:, :1] - lab_tensor(F.avg_pool2d(goal, 16))[:, :1]
+    luminance = weighted_mean(delta_l.abs(), F.avg_pool2d(weight, 16))
+    current = pooled_chroma(rgb, weight, pooled_weight)
+    companion = pooled_chroma(companion_rgb, weight, pooled_weight)
+    anchor = .5 * (weighted_mean((current - anchor_ab).abs(), pooled_weight)
+                   + weighted_mean((companion - anchor_ab).abs(), pooled_weight))
+    consistency = weighted_mean((current - companion).abs(), pooled_weight)
+    return luminance / 3 + 2 * anchor + consistency, anchor, consistency
+
+
 def training(args):
     protocol = read(args.out / 'protocol.json')
     assert protocol['source']['commit'] == environment()['commit']
@@ -197,12 +271,26 @@ def training(args):
     torch.manual_seed(20261112)
     b = StateTextureB().to(args.device)
     optimizer = torch.optim.AdamW(b.parameters(), lr=1e-4, weight_decay=.01)
+    color = protocol.get('paired_color')
     train_pairs = [p for p in protocol['pairs'] if p['split'] == 'train']
     with torch.no_grad():
         plain, digest, _ = sample(args, core, pipe, net, train_pairs[0], 'h32')
         zero, digest2, _ = sample(args, core, pipe, net, train_pairs[0], 'h32', b)
     assert digest == digest2 and np.array_equal(np.asarray(plain), np.asarray(zero))
-    cache = cache_states(args, core, pipe, net, train_pairs, None, 'm0')
+    targets = None
+    if color:
+        prior = Path(color['baseline'])
+        assert sha(prior / 'cache_m0.pt') == color['m0_cache_sha256']
+        cache = torch.load(prior / 'cache_m0.pt', map_location='cpu', weights_only=False)
+        assert [e['pair'] for e in cache] == [p for p in train_pairs for _ in CONDITIONS]
+        assert [e['condition'] for e in cache] == list(CONDITIONS) * len(train_pairs)
+        assert frozen_before == read(prior / 'training/complete.json')['frozen_hash']
+        initial = torch.load(prior / 'training/step0.pt', map_location='cpu', weights_only=False)['b']
+        assert all(torch.equal(p.cpu(), initial[k]) for k, p in b.state_dict().items())
+        targets = {(e['pair']['case_id'], e['condition']): e['target'] for e in cache}
+        print('REUSED_EXACT_M0_CACHE_AND_B_INITIALIZATION', flush=True)
+    else:
+        cache = cache_states(args, core, pipe, net, train_pairs, None, 'm0')
     checkpoint_dir = args.out / 'training'
     checkpoint_dir.mkdir(exist_ok=True)
     def save(step):
@@ -211,6 +299,7 @@ def training(args):
     rng = np.random.default_rng(20261112)
     records = []
     prepared = {}
+    anchors = {}
     def tensors(entry):
         key = (entry['pair']['case_id'], entry['condition'])
         if key not in prepared:
@@ -219,38 +308,70 @@ def training(args):
             goal = rgb_tensor(Image.open(d / (entry['condition'] + '_train_target.png')), args.device)
             prepared[key] = values, torch.from_numpy(weight)[None, None].to(args.device), goal
         return prepared[key]
+    def predict(state, values):
+        zt, x0 = state['zt'].to(args.device).float(), state['x0'].to(args.device).float()
+        t = torch.tensor([state['t']], device=args.device)
+        return x0 + b(zt, x0, timestep=t, **values), x0
+
+    def decode_rgb(z):
+        return (pipe.vae.decode(z / pipe.vae.config.scaling_factor).sample.float() / 2 + .5).clamp(0, 1)
+
+    audit = dict()
+    if color:
+        baseline_log = [json.loads(line) for line in (prior / 'training/loss.jsonl').read_text().splitlines()]
+        assert [row['step'] for row in baseline_log] == list(range(1, 401))
+        audit = dict(exact_initial_b=True, exact_m0_cache=True, exact_primary_stream=True)
     pipe.vae.float()
     for step in range(1, 401):
         if step == 201:
             pipe.vae.half()
             b.eval()
-            cache += cache_states(args, core, pipe, net, train_pairs, b, 'b200')
+            cache += cache_states(args, core, pipe, net, train_pairs, b, 'b200', targets)
             pipe.vae.float()
         b.train()
         optimizer.zero_grad(set_to_none=True)
         loss_values = dict.fromkeys(('latent', 'gray', 'low_lab', 'protection'), 0.)
+        color_values = dict.fromkeys(('anchor_ab', 'pair_ab'), 0.)
         tokens = []
+        color_tokens = []
         start = time.monotonic()
         # 每次更新覆盖四个身份；后200步两个M0、两个B200状态，轮换身份。
         for micro, p in enumerate(train_pairs):
             stage = int(step > 200 and (micro + step) % 2 == 0)
             choices = [e for e in cache[stage * 32:(stage + 1) * 32] if e['pair']['case_id'] == p['case_id']]
             entry = choices[int(rng.integers(len(choices)))]
-            state = entry['states'][int(rng.integers(20))]
+            state_index = int(rng.integers(20))
+            state = entry['states'][state_index]
             values, weight, goal = tensors(entry)
-            zt, x0 = state['zt'].to(args.device).float(), state['x0'].to(args.device).float()
-            prediction = x0 + b(zt, x0, timestep=torch.tensor([state['t']], device=args.device), **values)
+            prediction, x0 = predict(state, values)
             zgoal = entry['target'].to(args.device)
             latent = weighted_mean((prediction - zgoal).square(), values['mask'])
-            rgb = (pipe.vae.decode(prediction / pipe.vae.config.scaling_factor).sample.float() / 2 + .5).clamp(0, 1)
+            rgb = decode_rgb(prediction)
             with torch.no_grad():
-                base = (pipe.vae.decode(x0 / pipe.vae.config.scaling_factor).sample.float() / 2 + .5).clamp(0, 1)
-                representable = (pipe.vae.decode(zgoal / pipe.vae.config.scaling_factor).sample.float() / 2 + .5).clamp(0, 1)
+                base = decode_rgb(x0)
+                representable = decode_rgb(zgoal)
             luma = rgb.new_tensor(RGB_LUMA)[None, :, None, None]
             gray, target_gray = (rgb * luma).sum(1, keepdim=True), (representable * luma).sum(1, keepdim=True)
             highpass = lambda x: x - F.avg_pool2d(x, 17, 1, 8)
             gray_loss = weighted_mean((highpass(gray) - highpass(target_gray)).abs(), weight)
-            low_lab = weighted_mean((lab_tensor(F.avg_pool2d(rgb, 16)) - lab_tensor(F.avg_pool2d(goal, 16))).abs(), F.avg_pool2d(weight, 16))
+            if color:
+                companion = paired_condition(entry['condition'], (step + micro) % 2 == 0)
+                other = next(e for e in choices if e['condition'] == companion)
+                other_state = other['states'][state_index]
+                assert other['initial_latent'] == entry['initial_latent'] and other_state['t'] == state['t']
+                other_values, _, _ = tensors(other)
+                other_rgb = decode_rgb(predict(other_state, other_values)[0])
+                case = p['case_id']
+                if case not in anchors:
+                    anchor = rgb_tensor(Image.open(directory(args, p) / 'train_anchor.png'), args.device)
+                    pooled_weight = F.avg_pool2d(weight, 32)
+                    anchors[case] = pooled_chroma(anchor, weight, pooled_weight), pooled_weight
+                low_lab, anchor_loss, pair_loss = color_supervision(rgb, other_rgb, goal, weight, *anchors[case])
+                color_values['anchor_ab'] += float(anchor_loss.detach()) / 4
+                color_values['pair_ab'] += float(pair_loss.detach()) / 4
+                color_tokens.append(companion)
+            else:
+                low_lab = weighted_mean((lab_tensor(F.avg_pool2d(rgb, 16)) - lab_tensor(F.avg_pool2d(goal, 16))).abs(), F.avg_pool2d(weight, 16))
             protection = weighted_mean((rgb - base).abs(), 1 - weight)
             losses = dict(latent=latent, gray=gray_loss, low_lab=low_lab, protection=protection)
             total = sum(protocol['training']['loss_weights'][k] * v for k, v in losses.items())
@@ -264,6 +385,9 @@ def training(args):
         optimizer.step()
         row = dict(step=step, losses=loss_values, grad_norm=float(norm), tokens=tokens,
                    seconds=time.monotonic() - start, peak_gib=torch.cuda.max_memory_allocated() / 2**30)
+        if color:
+            assert tokens == baseline_log[step - 1]['tokens']
+            row.update(color_losses=color_values, color_pairs=color_tokens)
         records.append(row)
         with (checkpoint_dir / 'loss.jsonl').open('a') as stream:
             stream.write(json.dumps(row) + '\n')
@@ -274,6 +398,7 @@ def training(args):
     assert frozen_before == weights_digest(net)
     write(checkpoint_dir / 'complete.json', dict(updates=400, zero_init_bitwise=True, frozen_unchanged=True,
         frozen_hash=frozen_before, parameters=sum(p.numel() for p in b.parameters()),
+        **audit,
         checkpoint_sha256=sha(checkpoint_dir / 'step400.pt'), finite_updates=len(records),
         first20={k: float(np.mean([r['losses'][k] for r in records[:20]])) for k in loss_values},
         last20={k: float(np.mean([r['losses'][k] for r in records[-20:]])) for k in loss_values}))
@@ -289,24 +414,34 @@ def generate(args):
     b = StateTextureB().to(args.device)
     b.load_state_dict(torch.load(args.out / 'training/step400.pt', map_location=args.device, weights_only=False)['b'])
     b.eval()
+    color = protocol.get('paired_color')
     with torch.no_grad():
         for p in protocol['pairs'][args.shard::2]:
             d = directory(args, p)
             audit = []
+            if color:
+                source = Path(color['baseline']) / 'cases' / p['case_id']
+                original = read(source / 'generation.json')
+                assert original['paired_noise']
+                expected = {(r['seed'], r['condition']): r['digest'] for r in original['rows']}
             for seed_index in range(2):
                 pair = dict(p, seed=p['seed'] + seed_index * 100000)
                 suffix = '_s%d' % seed_index
-                anchor, anchor_digest, _ = sample(args, core, pipe, net, pair, 'v16')
-                anchor.save(d / ('anchor' + suffix + '.png'))
+                if not color:
+                    anchor, anchor_digest, _ = sample(args, core, pipe, net, pair, 'v16')
+                    anchor.save(d / ('anchor' + suffix + '.png'))
                 for c in CONDITIONS:
-                    target = target_images(args, pair, c, anchor, suffix)
-                    with torch.no_grad():
+                    if color:
+                        digest = expected[pair['seed'], c]
+                        anchor_digest = expected[pair['seed'], 'v16']
+                    else:
+                        target = target_images(args, pair, c, anchor, suffix)
                         z = encode(pipe.vae, target, args.device)
                         decode(pipe.vae, z).save(d / (c + suffix + '_vae.png'))
-                    m0, digest, _ = sample(args, core, pipe, net, pair, c)
+                        m0, digest, _ = sample(args, core, pipe, net, pair, c)
+                        m0.save(d / (c + suffix + '_m0.png'))
                     current, bdigest, _ = sample(args, core, pipe, net, pair, c, b)
                     assert digest == bdigest == anchor_digest
-                    m0.save(d / (c + suffix + '_m0.png'))
                     current.save(d / (c + suffix + '_b400.png'))
                     audit.append(dict(condition=c, seed=pair['seed'], digest=digest))
                 print('GENERATED', p['case_id'], seed_index, flush=True)
@@ -384,8 +519,21 @@ def old_pattern(picture, anchor, positive, coords, wanted):
                 valid_templates=len(ratios), gray_highpass_mae=float(np.mean(errors)))
 
 
-def panel(args, pair):
+def panel(args, pair, prior=None):
     d = directory(args, pair)
+    if prior is not None:
+        canvas = Image.new('RGB', (4 * 154, 4 * 226), 'white')
+        draw = ImageDraw.Draw(canvas)
+        for row, c in enumerate(VARIANTS):
+            old = prior / 'cases' / pair['case_id']
+            entries = [('M0', d / (c + '_s0_m0.png')), ('target', d / (c + '_s0_target.png')),
+                       ('original B', old / (c + '_s0_b400.png')), ('paired-color B', d / (c + '_s0_b400.png'))]
+            for col, (label, path) in enumerate(entries):
+                x, y = col * 154, row * 226
+                draw.text((x + 3, y + 3), c + ' ' + label, fill='black')
+                canvas.paste(Image.open(path).convert('RGB').resize((150, 200)), (x, y + 22))
+        canvas.save(d / 'panel.jpg', quality=94)
+        return
     tiles = [('sketch', d / 'sketch.png'), ('anchor', d / 'anchor_s0.png')]
     for c in VARIANTS:
         tiles += [(c + ' target', d / (c + '_s0_target.png')), (c + ' VAE', d / (c + '_s0_vae.png')),
@@ -403,6 +551,8 @@ def summarize(args):
     from tools.bf_t3_three_arm_report import paired
     protocol = read(args.out / 'protocol.json')
     complete = read(args.out / 'training/complete.json')
+    color = protocol.get('paired_color')
+    prior = Path(color['baseline']) if color else None
     assert complete['updates'] == 400 and complete['frozen_unchanged']
     for shard in range(2):
         assert read(args.out / ('shard%d.json' % shard))['frozen_unchanged']
@@ -411,6 +561,7 @@ def summarize(args):
         d = directory(args, p)
         rows, switches = {}, {}
         mask = np.asarray(Image.open(d / 'mask.png')) > 0
+        original = read(prior / 'cases' / p['case_id'] / 'result.json') if color else None
         for seed in range(2):
             anchor = Image.open(d / ('anchor_s%d.png' % seed)).convert('RGB')
             for c in CONDITIONS:
@@ -424,6 +575,9 @@ def summarize(args):
                 goal_lab = cv2.cvtColor(cv2.GaussianBlur(goal_rgb, (0, 0), 12), cv2.COLOR_RGB2LAB)
                 boundary = cv2.dilate(mask.astype(np.uint8), np.ones((5, 5), np.uint8)) != cv2.erode(mask.astype(np.uint8), np.ones((5, 5), np.uint8))
                 for arm in ('m0', 'b400', 'vae', 'target'):
+                    if original and arm != 'b400':
+                        record[arm] = original['rows'][suffix][arm]
+                        continue
                     pic = Image.open(d / (suffix + '_' + arm + '.png')).convert('RGB')
                     rgb, base = np.asarray(pic, dtype=np.float32) / 255, np.asarray(anchor, dtype=np.float32) / 255
                     pred_mask = estimate_foreground_mask(pic, SIZE)
@@ -462,7 +616,7 @@ def summarize(args):
         result = dict(case_id=p['case_id'], split=p['split'], rows=rows, switches=switches, aggregate=agg)
         write(d / 'result.json', result)
         identities.append(result)
-        panel(args, p)
+        panel(args, p, prior)
     summary = {}
     for split in ('train', 'holdout'):
         selected = [p for p in identities if p['split'] == split]
@@ -470,13 +624,23 @@ def summarize(args):
         summary[split] = dict(n=len(selected), arms={arm: {k: float(np.mean([p['aggregate'][arm][k] for p in selected])) for k in keys}
             for arm in ('m0', 'b400', 'vae', 'target')}, paired_b_minus_m0={
                 k: paired([p['aggregate']['b400'][k] - p['aggregate']['m0'][k] for p in selected]) for k in keys})
+    comparison = {}
+    if color:
+        from tools.e2_state_b_color_evaluation import compare
+        comparison['paired_color_vs_original_b'] = compare(args.out, prior, identities)
     write(args.out / 'summary.json', dict(training=complete, results=summary, evaluation_source=environment(),
+        **comparison,
         period_preflight='before viewing generated results: ideal32 sawtooth failed linear detrending; fixed ACF centering to mean-only, all4 ideal controls pass',
         interpretation='identity-clustered paired descriptive bootstrap; exploratory, multiple endpoints not corrected; all fixed400 outputs included'))
     files = [args.out / 'protocol.json', args.out / 'summary.json', *args.out.glob('shard*.json'),
              *list((args.out / 'training').glob('*.json*')), args.out / 'training/step400.pt']
-    files += list((args.out / 'cases').glob('*/*'))
-    archive = args.out / 'b400_review.zip'
+    cases = args.out / 'cases'
+    if color:
+        for pattern in ('*_s*_b400.png', 'panel.jpg', 'result.json', 'generation.json', 'paired_color_comparison.json'):
+            files += list(cases.glob('*/' + pattern))
+    else:
+        files += list(cases.glob('*/*'))
+    archive = args.out / ('b400_paired_color_review.zip' if color else 'b400_review.zip')
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
         for path in sorted(files):
             if path.is_file():
@@ -493,6 +657,8 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--shard', type=int, default=0)
+    parser.add_argument('--paired-color', action='store_true', help='准备仅更换颜色监督的复现实验')
+    parser.add_argument('--color-baseline', type=Path, default=COLOR_BASELINE)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     globals()[args.action](args)
