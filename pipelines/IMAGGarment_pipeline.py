@@ -875,6 +875,9 @@ class IMAGGarment(StableDiffusionPipeline):
             self.spatial_injection.disable()
         image = self.vae.decode(latents, return_dict=False)[0]
         image = (image / 2 + 0.5).clamp(0, 1)
+        # 可选的解码后输出约束；默认路径保持历史采样逐位一致。
+        if kwargs.get("decoded_output_transform") is not None:
+            image = kwargs["decoded_output_transform"](image)
         image = image.cpu().permute(0, 2, 3, 1).float().numpy()
         image = self.numpy_to_pil(image)
         return image
