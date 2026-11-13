@@ -1,0 +1,213 @@
+{
+  "references": [
+    {
+      "index": 2779,
+      "family": "stripes",
+      "palette_group": "neutral",
+      "identity_group": "validation/159831735",
+      "gt": "validation/gt/159831735.jpg",
+      "texture": "validation/texture/159831735.jpg",
+      "crop_box": [
+        70,
+        105,
+        183,
+        195
+      ],
+      "crop_sha256": "d067d2ea69c6fbd1c9fd57d9cad553df1f412b87780be0e3f81b1f158c90c540",
+      "hashes": {
+        "sketch": "96eb14d37a926a6504928cf8e84b6216dbc7ae836840230393e86994d917c0c9",
+        "gt": "b4e3d359fd6a79d36742338e4c053443e14fe47927a651284f3b6275279422d7",
+        "texture": "c603a4418c54a0d817513cd317be4c78d3fd8e3da38009bf142c2eeba16e6730"
+      },
+      "nearest_heldout_phash": 20,
+      "crop_pixel_sha256": "fe73e9cb35e826c675d18ae52d35ba36709cc63a0efb42153b0ef84b7c6cde27"
+    },
+    {
+      "index": 6857,
+      "family": "stripes",
+      "palette_group": "pastel",
+      "identity_group": "validation/205539094",
+      "gt": "validation/gt/205539094.jpg",
+      "texture": "validation/texture/205539094.jpg",
+      "crop_box": [
+        91,
+        60,
+        116,
+        185
+      ],
+      "crop_sha256": "d92aed5acb1a7ed72c74b066699f9a58c95ad76b470d9ccec6d74963b6a98981",
+      "hashes": {
+        "sketch": "bbb3df9564f4f63bab74baa5ab4be53680fddfcf77141abb9a83d8ef404947db",
+        "gt": "513e82e7a960777150bea3d1c37951405d88d5314aef93e61b48289f8bebf33e",
+        "texture": "3fcb4b4c3c58f12f55148465848605e4a4893b855c501a6fce8ed596901cf3d6"
+      },
+      "nearest_heldout_phash": 22,
+      "crop_pixel_sha256": "b10d980ddc154d57cb04157a40a7d35b31e04880124867c9f4fdda016850477d"
+    },
+    {
+      "index": 2692,
+      "family": "stripes",
+      "palette_group": "multi",
+      "identity_group": "validation/158358506",
+      "gt": "validation/gt/158358506.jpg",
+      "texture": "validation/texture/158358506.jpg",
+      "crop_box": [
+        80,
+        100,
+        175,
+        180
+      ],
+      "crop_sha256": "e2cb5442a4b3d18e4d6916208872c0a554a6f10d32d6ae463e1d1e265f84a89f",
+      "hashes": {
+        "sketch": "27dc9a466b9d00880698b544544915e64b20f3eb4e417fc7dd1d6a00e188dc56",
+        "gt": "3ece893a32f158e89d4304ad94a6608fe2928c4d525a937f097919428bfabc5e",
+        "texture": "f5a946358d3b5b8d8eff15a3d1a09a141d54c3fe537c3eb28c15897bf2197836"
+      },
+      "nearest_heldout_phash": 18,
+      "crop_pixel_sha256": "ce881042f78e8bf5fac3bb1419cf6f42c19a1718b241225e92aa7ed431320515"
+    },
+    {
+      "index": 1523,
+      "family": "checks",
+      "palette_group": "neutral",
+      "identity_group": "validation/140681032",
+      "gt": "validation/gt/140681032.jpg",
+      "texture": "validation/texture/140681032.jpg",
+      "crop_box": [
+        95,
+        55,
+        160,
+        110
+      ],
+      "crop_sha256": "43c85df8f720d1879aad56c888a589a033fbef59841e8adbef7b65191f282e30",
+      "hashes": {
+        "sketch": "806a20389bec425fac28720d7e092988a96c3e2e46b0cf2a0445858bd5ac552a",
+        "gt": "542696a6926a0fb1b3259e9584a8cc148a51d64ddb29b761c2408978ef29e957",
+        "texture": "327598e492c5231e716c2d0f4ab8302d21f30e31f798e22de21d10b1f9d64964"
+      },
+      "nearest_heldout_phash": 24,
+      "crop_pixel_sha256": "46f6afd84494adf93ec0ef7e6937bd7648d917ebddbfc26824db996959644d53"
+    },
+    {
+      "index": 4157,
+      "family": "checks",
+      "palette_group": "pastel",
+      "identity_group": "validation/179395505",
+      "gt": "validation/gt/179395505.jpg",
+      "texture": "validation/texture/179395505.jpg",
+      "crop_box": [
+        96,
+        90,
+        120,
+        155
+      ],
+      "crop_sha256": "4597897bbdc5c4cadf7740f68e4ab69d616927345469e4ed8a02d9f27d34c55c",
+      "hashes": {
+        "sketch": "9a38499e515d3b76295bf005d499a59ef78e1b08a66150cf9b2f7bf0f5ea9d3d",
+        "gt": "40a82544e322478e7595ee321263abd5d265e9dd4298f29f8c94c3458fa2d89d",
+        "texture": "a4266879acada5f44945f746669d1bc8a273c56c492a08c9947e49ec528cd370"
+      },
+      "nearest_heldout_phash": 26,
+      "crop_pixel_sha256": "05b22ca73ebe014334fabeb2696a8ed5961c9532c5dd4804b8ed200a7cd4f135"
+    },
+    {
+      "index": 7934,
+      "family": "checks",
+      "palette_group": "multi",
+      "identity_group": "validation/215452386",
+      "gt": "validation/gt/215452386.jpg",
+      "texture": "validation/texture/215452386.jpg",
+      "crop_box": [
+        134,
+        145,
+        175,
+        210
+      ],
+      "crop_sha256": "71928efbb2803e4f344f3d2732151176aee8ba7e6bf8cc20aaaec5157ec99c6b",
+      "hashes": {
+        "sketch": "03069c6a554e3bac165a1724f0fbdc702844e85fe1d7ecfd075be4ab6137af90",
+        "gt": "8569fe662a17cbc907abff6126e5bf25ec218f6e2359d1279c91e0e7a5769451",
+        "texture": "1b8f73fd7a8e48a078d2a1c4dbc919ca5358aa2233db8d88e28451d2b4cec4af"
+      },
+      "nearest_heldout_phash": 18,
+      "crop_pixel_sha256": "a4d2ea6fdea9412ad7141daafd4c1e7c1b6cee946beeeab2ff51c88656b6e41c"
+    },
+    {
+      "index": 1033,
+      "family": "dots",
+      "palette_group": "neutral",
+      "identity_group": "validation/130295154",
+      "gt": "validation/gt/130295154.jpg",
+      "texture": "validation/texture/130295154.jpg",
+      "crop_box": [
+        79,
+        85,
+        120,
+        155
+      ],
+      "crop_sha256": "2368adb859535281e2109ac102950487d17d09c5c3a464dc0570183ec8f202e0",
+      "hashes": {
+        "sketch": "a2b2849f1d7c2d698cd301e6afa89fcf5844a30b8a34d431a1f19c0899175b91",
+        "gt": "efa572bfb1e677a543b2059aa1c47544e28bad91c2789a92f48eb2c04f13e779",
+        "texture": "758431cabb40df80e127d9103dc6264344fcd59738db2e583a318285ccf0fb30"
+      },
+      "nearest_heldout_phash": 12,
+      "crop_pixel_sha256": "644d87afbede232a057b08b2902b48f183f6d59c3197f99a39f94c7382686d1f"
+    },
+    {
+      "index": 5121,
+      "family": "dots",
+      "palette_group": "pastel",
+      "identity_group": "validation/183751810",
+      "gt": "validation/gt/190230263.jpg",
+      "texture": "validation/texture/190230263.jpg",
+      "crop_box": [
+        90,
+        140,
+        128,
+        195
+      ],
+      "crop_sha256": "750f79f3c9f6d8111c1ccbc5b2d3592d0c7e314ce522f4b24378d9ca25153f54",
+      "hashes": {
+        "sketch": "fffee32b3581875acbdd2ca2ffc2881b8392cf8ca439fd6daf92dc2ae2d5bbb6",
+        "gt": "ce0ac93c837489ec74564466ebe641733b0ccb065751a44a23e1db049f2e66e1",
+        "texture": "f8c8154fcf71f7c0e603e125ea0db223bf2063c84c0575b3511142d1e6530a71"
+      },
+      "nearest_heldout_phash": 22,
+      "crop_pixel_sha256": "176670c32e7acdeb0e3115b48b423b6a1bacd80bd48a1ffe9b2eedd85d8b2e2f"
+    },
+    {
+      "index": 752,
+      "family": "dots",
+      "palette_group": "multi",
+      "identity_group": "validation/123875508",
+      "gt": "validation/gt/123875508.jpg",
+      "texture": "validation/texture/123875508.jpg",
+      "crop_box": [
+        95,
+        75,
+        160,
+        190
+      ],
+      "crop_sha256": "f1b9b5af5d3360bbdee3c4441551ff0c4a7bec4b338e6ab9ab1e40a59d3669ff",
+      "hashes": {
+        "sketch": "1cd5eff49be35a08bb9cbd017561c4c0e357001383c39cac616d3761255b8c89",
+        "gt": "0d10af592f607b44e3162fb51e36085454eeeb77556f07756c1a4d232ec0fd09",
+        "texture": "031d7c90804fa9cb7abb429391aa5683d28adabe295751e9b45f48e76c4a56db"
+      },
+      "nearest_heldout_phash": 20,
+      "crop_pixel_sha256": "18c4b34478deadba0d575c1624e9f493fa85f8b043d7744b1dc246303cd4cd03"
+    }
+  ],
+  "target_identities": [
+    621,
+    1641,
+    870,
+    1526
+  ],
+  "input_only_review": true,
+  "reference_source": "real crops from registered original garment photographs; no generative editing",
+  "base_checkpoint_sha256": "903e3936dc617f5856e8310137ada0e590e3706895fb4173d1ba998af6243e08",
+  "protected_protocol_sha256": "3f361c9fdd6412e28edb25beda40a868da4e3006052eec97cd5a1de79d5cb519",
+  "updates_per_arm": 400
+}
