@@ -50,7 +50,8 @@ def freeze(args):
             brightness='mean L and masked sigma24 low-frequency L drift versus fixed same-seed M0 anchor',
             interpretation='DISTS margins and old-reference similarity are proxies, not pattern classification or residual ground truth',
             collapse='reference ab 10-90% spread >=12 and output spread <25% reference spread'),
-        scope='16 new target identities, 16 independent real reference donors, 8 low-chroma-spread and 8 multicolour; exploratory',
+        scope='11 new target identities, 11 independent donors: 8 low-chroma-spread and 3 multicolour; '
+              'user-approved input-only reduction from 8+8 because only 3 qualified multicolour pairs remained; exploratory',
         gates='synthetic: retain raw strict switches and old removal, improve anchor colour/L; '
               'real: retain gray response and improve reference palette/L versus raw; both colour strata checked separately')
     for p in spec['pairs']:
@@ -163,7 +164,7 @@ def summarize(args):
     result=aggregate(args,spec)
     for p in spec['pairs']:
         for group in ('synthetic','real'):panel(args,p,group)
-    result.update(protocol=spec,training=audits[0],condition_seed_groups=192,generated_images=576,
+    result.update(protocol=spec,training=audits[0],condition_seed_groups=len(spec['pairs'])*12,generated_images=len(spec['pairs'])*36,
         interpretation='zero-training generalization test; real old-pattern removal has no pixel ground truth; '
             'uniform ab projection may destroy multicolour fabric even when anchor mean colour improves')
     write(args.out/'summary.json',result)

@@ -14,6 +14,8 @@ from PIL import Image, ImageDraw
 from tools.e2_fft_experiment import SOURCE, read, write, sha
 from tools.e2_followup_data import color_distance
 
+COUNTS={'low':8,'multi':3}
+
 
 def stable(value):
     return hashlib.sha256(('B_NEW_REAL_20261113/'+str(value)).encode()).hexdigest()
@@ -155,7 +157,7 @@ def prepare(args):
             pairs.append(pair);count+=1
             used.update(product(r['identity_group']) for r in (target,donor))
             if count==16:break
-    assert all(sum(p['stratum']==s for p in pairs)>=8 for s in ('low','multi'))
+    assert all(sum(p['stratum']==s for p in pairs)>=n for s,n in COUNTS.items())
     folder = args.out/'inputs';folder.mkdir(parents=True,exist_ok=True)
     for page in range((len(pairs)+7)//8):
         canvas=Image.new('RGB',(1200,888),'white');draw=ImageDraw.Draw(canvas)
@@ -197,8 +199,8 @@ def freeze(args):
     chosen = []
     for group in ('low','multi'):
         eligible = [p for p in draft['pairs'] if p['stratum']==group and review['records'][p['candidate_id']]['eligible']]
-        assert len(eligible)>=8,(group,len(eligible))
-        chosen += eligible[:8]
+        assert len(eligible)>=COUNTS[group],(group,len(eligible))
+        chosen += eligible[:COUNTS[group]]
     rows=[]
     for item in chosen:
         p,d=item['target'],item['donor']
@@ -218,6 +220,6 @@ def freeze(args):
             input_review=review['records'][item['candidate_id']],
             source_hashes=dict(target=p['hashes'],donor=d['hashes']),
             reference_hashes={c:sha(folder/(c+'_ref.png')) for c in ('v16','h16','v32','h32','real_a','real_b')}))
-    assert len(rows)==16 and len({product(r['identity_group']) for r in rows}|{product(r['donor_identity_group']) for r in rows})==32
+    assert len(rows)==sum(COUNTS.values()) and len({product(r['identity_group']) for r in rows}|{product(r['donor_identity_group']) for r in rows})==2*len(rows)
     return dict(pairs=rows,input_audit=draft,review_sha256=sha(args.review),source=environment(),
                 training_updates=0,selection_uses_generated_outputs=False)
