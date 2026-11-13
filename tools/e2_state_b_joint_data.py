@@ -73,9 +73,13 @@ def prepare(args, hashes):
         assert distance > 4
         assert all(bin(fingerprint ^ v).count('1') > 4 for v in fingerprints)
         fingerprints.append(fingerprint)
-        source = Image.open(args.data / row['gt']).convert('RGB').crop(entry['crop_box'])
-        source.save(folder / f'r{i}_source.png')
-        assert pixel(folder / f'r{i}_source.png') == entry['crop_pixel_sha256']
+        reviewed = args.out / 'reviewed_crops' / f'{i}_reference.png'
+        assert sha(reviewed) == entry['crop_sha256'] and pixel(reviewed) == entry['crop_pixel_sha256']
+        source = Image.open(reviewed).convert('RGB')
+        server_crop = Image.open(args.data / row['gt']).convert('RGB').crop(entry['crop_box'])
+        difference = np.abs(np.asarray(source, np.int16) - np.asarray(server_crop, np.int16))
+        assert float(difference.mean()) <= 1 and int(difference.max()) <= 8, (i, float(difference.mean()), int(difference.max()))
+        shutil.copyfile(reviewed, folder / f'r{i}_source.png')
         native = source.resize((384, 512), Image.Resampling.BICUBIC)
         lab = cv2.cvtColor(np.asarray(native, np.float32) / 255, cv2.COLOR_RGB2LAB).astype(np.float64)
         ab_mean = lab[..., 1:].mean((0, 1))
@@ -100,7 +104,8 @@ def prepare(args, hashes):
         draw.text((j * 160 + 2, 2), f"{i} {entry['family']} {entry['palette_group']}", fill='black')
         board.paste(native.resize((156, 208)), (j * 160, 24))
         independence.append(dict(index=i, root=row['identity_group'], nearest_heldout_gt_phash=distance,
-                                 gt_sha256=sha(args.data / row['gt']), crop_sha256=sha(folder / f'r{i}_source.png')))
+                                 gt_sha256=sha(args.data / row['gt']), crop_sha256=sha(reviewed),
+                                 decode_mean_abs=float(difference.mean()), decode_max_abs=int(difference.max())))
     assert len(conditions) == 24
     board.save(args.out / 'training_reference_panel.jpg', quality=96)
     train = copy.deepcopy(previous['train'])
