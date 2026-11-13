@@ -96,19 +96,19 @@
       "gt": "validation/gt/179395505.jpg",
       "texture": "validation/texture/179395505.jpg",
       "crop_box": [
-        96,
-        90,
-        120,
-        155
+        98,
+        45,
+        122,
+        81
       ],
-      "crop_sha256": "4597897bbdc5c4cadf7740f68e4ab69d616927345469e4ed8a02d9f27d34c55c",
+      "crop_sha256": "ff61d7c9609e1104ea487a92f26e6bbe536232699d6fb44b9d9208fdfbb88f45",
       "hashes": {
         "sketch": "9a38499e515d3b76295bf005d499a59ef78e1b08a66150cf9b2f7bf0f5ea9d3d",
         "gt": "40a82544e322478e7595ee321263abd5d265e9dd4298f29f8c94c3458fa2d89d",
         "texture": "a4266879acada5f44945f746669d1bc8a273c56c492a08c9947e49ec528cd370"
       },
       "nearest_heldout_phash": 26,
-      "crop_pixel_sha256": "05b22ca73ebe014334fabeb2696a8ed5961c9532c5dd4804b8ed200a7cd4f135"
+      "crop_pixel_sha256": "bc6e5fcbf5b100199712f32ef93c1d643d11e1449c46d8d6b0b926d934d19480"
     },
     {
       "index": 7934,
@@ -184,19 +184,19 @@
       "gt": "validation/gt/123875508.jpg",
       "texture": "validation/texture/123875508.jpg",
       "crop_box": [
-        95,
-        75,
-        160,
+        72,
+        83,
+        128,
         190
       ],
-      "crop_sha256": "f1b9b5af5d3360bbdee3c4441551ff0c4a7bec4b338e6ab9ab1e40a59d3669ff",
+      "crop_sha256": "7f84d5a9a9ece4772b401c733578a16080b955d9d190c715ffca55b57cbbdfeb",
       "hashes": {
         "sketch": "1cd5eff49be35a08bb9cbd017561c4c0e357001383c39cac616d3761255b8c89",
         "gt": "0d10af592f607b44e3162fb51e36085454eeeb77556f07756c1a4d232ec0fd09",
         "texture": "031d7c90804fa9cb7abb429391aa5683d28adabe295751e9b45f48e76c4a56db"
       },
       "nearest_heldout_phash": 20,
-      "crop_pixel_sha256": "18c4b34478deadba0d575c1624e9f493fa85f8b043d7744b1dc246303cd4cd03"
+      "crop_pixel_sha256": "27ee78217348d6ff664d81cfe9fd499251ccf2f5b6933607fd0e7c67b1e27a4e"
     }
   ],
   "target_identities": [
