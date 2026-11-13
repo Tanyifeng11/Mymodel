@@ -86,8 +86,8 @@ def pair_qualification(a,b):
 
 
 def prepare(args):
-    path = args.project/'output_eval/e2_b_screen_20261108/inputs/registry.json'
-    registry = read(path)['records']
+    registry_path = args.project/'output_eval/e2_b_screen_20261108/inputs/registry.json'
+    registry = read(registry_path)['records']
     audit = args.project/'output_eval/e2_b_screen_20261108/audit/training_inputs_final.json'
     assert read(audit)['passed']
     candidates = read(SOURCE/'configs/e2_b_candidates.json')
@@ -102,7 +102,7 @@ def prepare(args):
     near_history=[];distinct=[]
     for row in available:
         fingerprint=perceptual_hash(args.data/row['gt'])
-        distance,name=min(((fingerprint^v).bit_count(),name) for name,v in history)
+        distance,name=min((bin(fingerprint^v).count('1'),name) for name,v in history)
         if distance<=4:near_history.append(dict(sample_id=row['sample_id'],near=name,hamming=distance))
         else:distinct.append(row)
     available=distinct
@@ -144,7 +144,7 @@ def prepare(args):
             for col,path in enumerate(paths):
                 canvas.paste(Image.open(args.data/path).convert('RGB').resize((148,196)),(x+150*col,y+23))
         canvas.save(folder/f'candidate_{page:02d}.jpg',quality=96)
-    draft=dict(pairs=pairs,registry_sha256=sha(path),training_audit_sha256=sha(audit),
+    draft=dict(pairs=pairs,registry_sha256=sha(registry_path),training_audit_sha256=sha(audit),
         exclusions=copy.deepcopy(candidates['exclusions']),exposure_sources=sources,
         excluded_product_roots=len(roots),available=len(available),
         history_near_duplicates=near_history,history_phash_threshold=4,
