@@ -308,12 +308,17 @@ def train(args):
     assert read(args.out/'diagnostics.json')['passed'] and sha(args.out/'diagnostics.json')==spec['diagnostics_sha256']
     core, pipe, net = pilot.load_core(args); before=weights_digest(net)
     assert before==read(args.previous/'training/complete.json')['m0_hash']
+    # 训练进程从磁盘读取轨迹，没有先调用管线来初始化调度器。
+    pipe.scheduler.set_timesteps(spec['sampler']['steps'], device=args.device)
     b = data.initialize(args); folder=args.out/'training'/args.arm;folder.mkdir(parents=True,exist_ok=True)
     save=lambda n:torch.save(dict(step=n,b=b.state_dict()),folder/f'step{n}.pt')
     initial_b_hash=weights_digest(b);save(0)
     diag=read(args.out/'diagnostics.json')
     assert initial_b_hash==diag['initial_b_hash'] and sha(args.out/'m0_cache.pt')==diag['m0_cache_sha256']
     m0=torch.load(args.out/'m0_cache.pt',map_location='cpu',weights_only=False)
+    timesteps = pipe.scheduler.timesteps.tolist()
+    for entry in m0.values():
+        assert all(timesteps[state['index']] == state['t'] for state in entry['states'])
     predictor=repair.FrozenPredictor(args,core,pipe,net,spec['train'],conditions=spec['conditions'])
     objective=Objective(args,spec,pipe,predictor,b,args.arm);pipe.vae.float()
     weights=spec[args.arm+'_weights'];optimizer=torch.optim.AdamW(b.parameters(),lr=1e-4,weight_decay=.01)
