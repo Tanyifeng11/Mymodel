@@ -27,10 +27,13 @@ class BFSkipFusion(nn.Module):
     def clear(self):
         self.features = None
 
+    def conditioning_enabled(self, kwargs):
+        return 'sa_hidden_states' in (kwargs.get('cross_attention_kwargs') or {})
+
     def bind(self, unet):
         assert not self.handles
         def before(_module, args, kwargs):
-            self.conditional = 'sa_hidden_states' in (kwargs.get('cross_attention_kwargs') or {})
+            self.conditional = self.conditioning_enabled(kwargs)
             self.injection_counts = [0] * 4
         self.handles.append(unet.register_forward_pre_hook(before, with_kwargs=True))
         for block_index, block in enumerate(unet.up_blocks):
