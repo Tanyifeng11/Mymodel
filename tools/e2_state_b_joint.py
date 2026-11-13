@@ -61,13 +61,18 @@ def sample(args, core, pipe, net, pair, condition, b=None, mode='raw', capture=F
     return picture, digest, tap
 
 
-def cache(args, spec, core, pipe, net, b=None, mode='raw', original=None):
+def cache(args, spec, core, pipe, net, b=None, mode='raw', original=None, reusable=None):
     entries = {}
+    reusable = {} if reusable is None else reusable
     with torch.no_grad():
         for p in spec['train']:
             for c in spec['conditions']:
+                key = p['case_id'], c
+                if key in reusable:
+                    entries[key] = dict(reusable[key], pair=p)
+                    continue
                 picture, digest, tap = sample(args, core, pipe, net, p, c, b, mode, capture=True)
-                entries[p['case_id'], c] = dict(pair=p, condition=c, digest=digest, states=tap.states)
+                entries[key] = dict(pair=p, condition=c, digest=digest, states=tap.states)
                 assert len(tap.states) == 25
                 if original is None and c == spec['conditions'][0]:
                     picture.save(args.out / 'cases' / p['case_id'] / 'train_anchor.png')
@@ -75,6 +80,30 @@ def cache(args, spec, core, pipe, net, b=None, mode='raw', original=None):
                     assert digest == original[p['case_id'], c]['digest']
             print('JOINT_CACHE', mode, p['case_id'], flush=True)
     return entries
+
+
+def reusable_trajectories(args, spec):
+    if args.reuse_cache_from is None:
+        return {}, None
+    previous = args.reuse_cache_from
+    old = read(previous / 'input_protocol.json')
+    cache_path = previous / 'm0_cache.pt'
+    assert old['sampler'] == spec['sampler'] and old['holdout'] == spec['holdout']
+    assert old['conditions'] == spec['conditions']
+    cached = torch.load(cache_path, map_location='cpu', weights_only=False)
+    keep = {}
+    for p, prior in zip(spec['train'], old['train']):
+        assert {k:v for k,v in p.items() if k!='reference_hashes'} == {
+            k:v for k,v in prior.items() if k!='reference_hashes'}
+        for c in spec['conditions']:
+            if p['reference_hashes'][c] == prior['reference_hashes'][c]:
+                key = p['case_id'], c
+                assert len(cached[key]['states']) == 25
+                keep[key] = cached[key]
+        # 训练锚点取相同的第一项参考，本轮只换了另外两个来源的裁片。
+        assert (p['case_id'], spec['conditions'][0]) in keep
+    return keep, dict(source_protocol_sha256=sha(previous/'input_protocol.json'),
+                      source_cache_sha256=sha(cache_path), reused=len(keep))
 
 
 class Objective(material.Objective):
@@ -158,7 +187,9 @@ def diagnose(args):
     before = weights_digest(net)
     assert before == read(args.previous / 'training/complete.json')['m0_hash']
     b = data.initialize(args).eval()
-    m0 = cache(args, spec, core, pipe, net)
+    reusable, cache_audit = reusable_trajectories(args, spec)
+    m0 = cache(args, spec, core, pipe, net, reusable=reusable)
+    del reusable
     torch.save(m0, args.out / 'm0_cache.pt')
     predictor = repair.FrozenPredictor(args, core, pipe, net, spec['train'], conditions=spec['conditions'])
     with torch.no_grad():
@@ -227,7 +258,7 @@ def diagnose(args):
     four = bool((old_delta and np.median(old_delta)>.001) or np.median(palette_delta)>.25)
     passed = positive_ok and gradient_ok and weights_digest(net)==before
     result = dict(updates=0, passed=passed, positive_controls_pass=positive_ok, gradient_alignment_pass=gradient_ok,
-        m0_hash=before, initial_b_hash=weights_digest(b), m0_cache_sha256=sha(args.out/'m0_cache.pt'),
+        m0_hash=before, initial_b_hash=weights_digest(b), m0_cache_sha256=sha(args.out/'m0_cache.pt'), cache_reuse=cache_audit,
         input_protocol_sha256=sha(args.out/'input_protocol.json'), keys=KEYS, gradients=gradients,
         median_norms=med.tolist(), B_weights=dict(zip(KEYS,weights.tolist())), group_alignment=alignment,
         trajectories=trajectories, old_rebound_median=float(np.median(old_delta)) if old_delta else None,
@@ -315,6 +346,7 @@ def main():
     parser.add_argument('--device',default='cuda:0')
     parser.add_argument('--arm',choices=('A','B'),default='A')
     parser.add_argument('--shard',type=int,default=0)
+    parser.add_argument('--reuse-cache-from',type=Path)
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=True);cv2.setNumThreads(2);torch.set_num_threads(2)
     if args.action=='prepare':data.prepare(args,source_hashes())
     elif args.action in ('diagnose','train'):globals()[args.action](args)
