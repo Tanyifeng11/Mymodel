@@ -219,7 +219,7 @@ def cache(args, core, pipe, net, pairs, module, end, name):
 
 class FrozenPredictor:
     """复用原pipeline条件，短展开保留UNet对latent输入的梯度。"""
-    def __init__(self, args, core, pipe, net, pairs):
+    def __init__(self, args, core, pipe, net, pairs, conditions=CONDITIONS):
         self.pipe, self.net, self.contexts = pipe, net, {}
         pipe.set_scale(.6)
         assert pipe.unet.config.time_cond_proj_dim is None
@@ -229,7 +229,7 @@ class FrozenPredictor:
                 sketch = core.tensor(args.data / p['sketch']).to(args.device).half()
                 z = pipe.vae.encode(sketch).latent_dist.mean * .18215
                 sa = core.sketch_states(pipe, z, torch.tensor(981, device=args.device))
-                for c in CONDITIONS:
+                for c in conditions:
                     features = projected(net, sketch, core.tensor(case_dir(args, p) / (c + '_ref.png')).to(args.device).half())
                     self.contexts[p['case_id'], c] = text, negative, sa, features
 

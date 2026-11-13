@@ -7,9 +7,9 @@ from torch.nn import functional as F
 
 
 class StateTextureB(nn.Module):
-    def __init__(self, width=64, color_channels=0):
+    def __init__(self, width=64, color_channels=0, reference_channels=64):
         super().__init__()
-        self.input = nn.Conv2d(4 + 4 + 64 + 1 + 1 + color_channels, width, 3, padding=1)
+        self.input = nn.Conv2d(4 + 4 + reference_channels + 1 + 1 + color_channels, width, 3, padding=1)
         self.time = nn.Sequential(nn.Linear(32, width), nn.SiLU(), nn.Linear(width, width))
         self.blocks = nn.ModuleList([nn.Sequential(nn.GroupNorm(8, width), nn.SiLU(),
             nn.Conv2d(width, width, 3, padding=1), nn.GroupNorm(8, width), nn.SiLU(),
