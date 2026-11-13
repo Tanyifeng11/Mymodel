@@ -76,7 +76,8 @@ def generate(args,spec):
                         if row and arm in row['output_sha256']:
                             assert sha(path)==row['output_sha256'][arm];hashes[arm]=sha(path);continue
                         b.load_state_dict(states[arm])
-                        picture,digest,_=sample(args,core,pipe,net,pair,c,b,'raw' if arm=='A' else 'outline')
+                        mode=spec.get('arm_modes',{}).get(arm,'raw' if arm=='A' else 'outline')
+                        picture,digest,_=sample(args,core,pipe,net,pair,c,b,mode)
                         assert digest==meta['digest'];picture.save(path);hashes[arm]=sha(path)
                     rows.append(dict(key=key,seed=pair['seed'],digest=meta['digest'],output_sha256=hashes))
                 print('JOINT_GENERATED',p['case_id'],seed,flush=True)
