@@ -3,6 +3,7 @@ import argparse
 import copy
 import gc
 import json
+import shutil
 import time
 from pathlib import Path
 
@@ -92,6 +93,7 @@ def reusable_trajectories(args, spec):
     assert old['conditions'] == spec['conditions']
     cached = torch.load(cache_path, map_location='cpu', weights_only=False)
     keep = {}
+    anchors = {}
     for p, prior in zip(spec['train'], old['train']):
         assert {k:v for k,v in p.items() if k!='reference_hashes'} == {
             k:v for k,v in prior.items() if k!='reference_hashes'}
@@ -102,8 +104,13 @@ def reusable_trajectories(args, spec):
                 keep[key] = cached[key]
         # 训练锚点取相同的第一项参考，本轮只换了另外两个来源的裁片。
         assert (p['case_id'], spec['conditions'][0]) in keep
+        name = p['case_id']
+        source = previous / 'cases' / name / 'train_anchor.png'
+        target = args.out / 'cases' / name / 'train_anchor.png'
+        shutil.copyfile(source, target)
+        anchors[name] = sha(target)
     return keep, dict(source_protocol_sha256=sha(previous/'input_protocol.json'),
-                      source_cache_sha256=sha(cache_path), reused=len(keep))
+                      source_cache_sha256=sha(cache_path), reused=len(keep), anchor_sha256=anchors)
 
 
 class Objective(material.Objective):
