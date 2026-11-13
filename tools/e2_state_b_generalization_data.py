@@ -85,6 +85,24 @@ def pair_qualification(a,b):
                 family_change=family,period_ratio=ratio,orientation_difference=angle)
 
 
+def pool(args,by_stratum):
+    rows=[dict(row,stratum=group) for group,items in by_stratum.items() for row in items]
+    folder=args.out/'input_pool';folder.mkdir(exist_ok=True)
+    write(folder/'pool.json',dict(records=rows,model_outputs_seen=False))
+    for page in range((len(rows)+24)//25):
+        canvas=Image.new('RGB',(1280,1000),'white');draw=ImageDraw.Draw(canvas)
+        for slot,r in enumerate(rows[page*25:(page+1)*25]):
+            x,y=slot%5*256,slot//5*200
+            draw.text((x+2,y+2),str(r['index'])+' '+r['stratum'],fill='black')
+            for col,key in enumerate(('gt','texture')):
+                canvas.paste(Image.open(args.data/r[key]).convert('RGB').resize((126,174)),(x+128*col,y+22))
+        canvas.save(folder/f'pool_{page:02d}.jpg',quality=96)
+    archive=args.out/'input_pool_review.zip'
+    with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
+        for file in folder.iterdir():z.write(file,file.relative_to(args.out))
+    print('INPUT_POOL_ARCHIVE',len(rows),archive.stat().st_size,sha(archive),flush=True)
+
+
 def prepare(args):
     registry_path = args.project/'output_eval/e2_b_screen_20261108/inputs/registry.json'
     registry = read(registry_path)['records']
@@ -106,8 +124,14 @@ def prepare(args):
         if distance<=4:near_history.append(dict(sample_id=row['sample_id'],near=name,hamming=distance))
         else:distinct.append(row)
     available=distinct
+    if getattr(args,'pool_review',None):
+        reviewed=read(args.pool_review)
+        assert reviewed['model_outputs_seen'] is False
+        available=[r for r in available if reviewed['records'][str(r['index'])]['eligible']]
     by_stratum = {s:sorted([r for r in available if stratum(r)[0]==s],key=lambda r:stable(r['sample_id']))
                   for s in ('low','multi')}
+    if getattr(args,'pool_only',False):
+        pool(args,by_stratum);return
     used = set(); pairs = []
     for group in ('low','multi'):
         count = 0
@@ -152,6 +176,7 @@ def prepare(args):
         selection='input-only stable hash; 16 candidate pairs per colour stratum, before generated outputs',
         stratum='reference Lab ab 10%-90% spread <=6 low, >=12 multicolour; middle excluded by design',
         pair_rule='original references, mean Lab <=5, quantile palette <=10; distinct pattern family preferred',
+        pool_review_sha256=sha(args.pool_review) if getattr(args,'pool_review',None) else None,
         upstream_pretraining_exposure='unknown; candidate audit covers current training, not all upstream pretraining')
     write(folder/'candidates.json',draft)
     archive=args.out/'input_review.zip'

@@ -185,6 +185,8 @@ def main():
     parser.add_argument('--repair',type=Path,default=pilot.PROJECT/'output_eval/e2_state_b_repair_20261112')
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--review',type=Path)
+    parser.add_argument('--pool-review',type=Path)
+    parser.add_argument('--pool-only',action='store_true')
     parser.add_argument('--device',default='cuda:0')
     parser.add_argument('--shard',type=int,default=int(os.environ.get('SLURM_ARRAY_TASK_ID','0')))
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=True)
