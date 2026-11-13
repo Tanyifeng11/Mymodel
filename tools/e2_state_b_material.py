@@ -161,6 +161,7 @@ def train(args):
         torch.save(dict(step=step, b=b.state_dict()), d / f'step{step}.pt')
     save(0)
     m0 = cache(args, core, pipe, net, pairs)
+    torch.save(m0, d / 'm0_cache.pt')
     predictor = repair.FrozenPredictor(args, core, pipe, net, pairs, conditions=data.CONDITIONS)
     with torch.no_grad():
         for pair in pairs:

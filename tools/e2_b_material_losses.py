@@ -47,7 +47,7 @@ def material_target(anchor,reference,mask):
 
 
 def highpass(value):
-    return value-F.avg_pool2d(F.pad(value,(8,8,8,8),mode='reflect'),17,1)
+    return value - F.avg_pool2d(value, 17, 1, 8, count_include_pad=False)
 
 
 def weighted(value,weight):
