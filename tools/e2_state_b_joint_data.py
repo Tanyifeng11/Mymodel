@@ -69,9 +69,9 @@ def prepare(args, hashes):
             assert sha(args.data / row[k]) == entry['hashes'][k]
         assert all(pixel(args.data / row[k]) not in held_pixels for k in ('gt', 'texture'))
         fingerprint = perceptual_hash(args.data / row['gt'])
-        distance = min((fingerprint ^ v).bit_count() for v in held_phash)
+        distance = min(bin(fingerprint ^ v).count('1') for v in held_phash)
         assert distance > 4
-        assert all((fingerprint ^ v).bit_count() > 4 for v in fingerprints)
+        assert all(bin(fingerprint ^ v).count('1') > 4 for v in fingerprints)
         fingerprints.append(fingerprint)
         source = Image.open(args.data / row['gt']).convert('RGB').crop(entry['crop_box'])
         source.save(folder / f'r{i}_source.png')
