@@ -36,17 +36,18 @@ def terms(rgb, positive, original, base, weight, template, coords):
         positions = positions[torch.as_tensor(indices, device=rgb.device)]
     error = current - target
     hp = highpass(error)
-    projection = []
-    patches = torch.stack([hp[0, :, y:y+64, x:x+64] for x, y in coords])
-    for size in (64, 32):
-        split = lambda x: x if size == 64 else x.reshape(-1, 3, 2, 32, 2, 32).permute(0, 2, 4, 1, 3, 5).reshape(-1, 3, 32, 32)
-        a, b = split(patches), split(template)
-        energy = b.square().mean((1, 2, 3))
-        valid = energy > 2.5e-5
-        values = (a * b).mean((1, 2, 3)).abs() / energy.clamp_min(1e-8)
-        projection.append((values * valid).sum() / valid.sum().clamp_min(1))
-    # 残留同时约束局部旧模板投影和整个衣身内部的高频/边缘误差。
-    old = sum(projection) / len(projection)
+    old = current.new_zeros(())
+    if template is not None:
+        projection = []
+        patches = torch.stack([hp[0, :, y:y+64, x:x+64] for x, y in coords])
+        for size in (64, 32):
+            split = lambda x: x if size == 64 else x.reshape(-1, 3, 2, 32, 2, 32).permute(0, 2, 4, 1, 3, 5).reshape(-1, 3, 32, 32)
+            a, b = split(patches), split(template)
+            energy = b.square().mean((1, 2, 3))
+            valid = energy > 2.5e-5
+            values = (a * b).mean((1, 2, 3)).abs() / energy.clamp_min(1e-8)
+            projection.append((values * valid).sum() / valid.sum().clamp_min(1))
+        old = sum(projection) / len(projection)
     edge = weighted(gradients(error).abs(), interior)
     high = weighted(hp.abs(), interior)
     scale = mean((target[:, 1:] - mean(target[:, 1:])).square()).mean(1, keepdim=True).sqrt().clamp_min(.02).detach()

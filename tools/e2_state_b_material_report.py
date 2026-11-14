@@ -10,6 +10,7 @@ from tools import e2_state_b_pilot as pilot
 from tools.bf_t3_three_arm_report import gray, paired
 from tools.e2_fft_experiment import read, sha, write
 from tools.e2_state_b_generalization_metrics import palette, pixels
+from tools import e2_b_garment_projection as garment_projection
 
 ARMS = ('m0', 'old_raw', 'old_lab', 'b0', 'b400')
 
@@ -20,15 +21,13 @@ def lab(image):
 
 def aligned(picture, goal, positive, anchor, mask):
     """以已知平面目标和VAE重建衡量纹样、色度和旧模板，指标不是实拍真值。"""
-    inside = cv2.distanceTransform(mask.astype(np.uint8), cv2.DIST_L2, 5) >= 16
+    inside = garment_projection.interior(mask)
     current, target, vae, base = map(lab, (picture, goal, positive, anchor))
-    high = lambda field: field - cv2.blur(field, (17, 17))
+    high = garment_projection.highpass
     a, b, p, old = [high(field)[inside] for field in (current, target, vae, base)]
     # 移除模板中与新纹样共线的分量，避免把共享条纹计成残留。
-    template = old - p
-    template -= p * (np.sum(template * p) / max(float(np.sum(p * p)), 1e-6))
-    energy = float(np.mean(template ** 2))
-    projection = float(abs(np.mean((a - p) * template)) / energy) if energy >= .25 else None
+    template, energy = garment_projection.basis(p, old)
+    projection = garment_projection.projection(a, p, template, energy)
     ref_dist, ref_spread = palette(target[inside, 1:])
     distribution, spread = palette(current[inside, 1:])
     _, positive_spread = palette(vae[inside, 1:])

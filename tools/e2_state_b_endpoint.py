@@ -37,7 +37,7 @@ def linked(source,destination):
     assert sha(source)==sha(destination)
 
 
-def prepare(args):
+def prepare(args, max_attempts=50, checkpoint_steps=(0,10,25,50), source=source_hashes, protocol_fields=None):
     assert not (args.out/'protocol.json').exists()
     spec=read(args.parent/'protocol.json')
     protected=set(spec['protected_product_roots'])
@@ -46,32 +46,33 @@ def prepare(args):
     assert len(spec['train'])==4 and len(spec['references'])==9
     # 不复制、读取或生成任何留出身份/供体的像素。
     for p in spec['train']:
-        source=args.parent/'cases'/p['case_id'];dest=args.out/'cases'/p['case_id']
+        source_case=args.parent/'cases'/p['case_id'];dest=args.out/'cases'/p['case_id']
         for name in ('mask.png','sketch.jpg','train_anchor.png'):
-            linked(source/name,dest/name)
+            linked(source_case/name,dest/name)
         for c in spec['conditions']:
             for suffix in ('ref','goal','positive','baseline'):
-                linked(source/f'{c}_{suffix}.png',dest/f'{c}_{suffix}.png')
+                linked(source_case/f'{c}_{suffix}.png',dest/f'{c}_{suffix}.png')
     linked(args.parent/'base_cache.pt',args.out/'base_cache.pt')
     assert sha(args.out/'base_cache.pt')==read(args.parent/'diagnostics.json')['base_cache_sha256']
-    spec.update(code=source_hashes(),parent_protocol_sha256=sha(args.parent/'protocol.json'),
-                heldout_used=False,max_attempts=50,checkpoint_steps=[0,10,25,50],
-                updates_per_arm=50,arm_modes={'endpoint':'raw'},labels={'endpoint':'full25 safeguarded AdamW'},
+    spec.update(code=source(),parent_protocol_sha256=sha(args.parent/'protocol.json'),
+                heldout_used=False,max_attempts=max_attempts,checkpoint_steps=list(checkpoint_steps),
+                updates_per_arm=max_attempts,arm_modes={'endpoint':'raw'},labels={'endpoint':'full25 safeguarded AdamW'},
                 training=dict(seed=20261114,optimizer='AdamW',lr=3e-5,weight_decay=.01,gradient_clip=1.,
-                              max_attempts=50,checkpoint_steps=[0,10,25,50],rollout_start=25,rollout_hops=25,
+                              max_attempts=max_attempts,checkpoint_steps=list(checkpoint_steps),rollout_start=25,rollout_hops=25,
                               tasks=list(loss.TASKS),descent_margin=.01,backtracking=[1.,.5,.25,.125,.0625,.03125,.015625]),
                 controls='same oldB400, train4, nine crops, forty conditions and first50 reference pairs; endpoint objectives/update rule change',
                 validation_policy='all11 identities and22 roots reserved; not accessed by this training-side diagnostic/pilot',
                 training_rule='full25 endpoint, independent L amplitude/correlation/light, project actual AdamW displacement; finite-step backtracking',
                 update_gate='each reference x each task nonincreasing within 1e-5+1e-4*abs(loss); no pair averaging for protection',
                 no_expansion=True)
-    spec['schedule']=[dict(r,hops=25,state_index=0,online=True) for r in spec['schedule'][:50]]
+    spec['schedule']=[dict(r,hops=25,state_index=0,online=True) for r in spec['schedule'][:max_attempts]]
+    spec.update(protocol_fields or {})
     write(args.out/'protocol.json',spec)
-    print('ENDPOINT_PREPARED train4 refs9 protected22 max50',flush=True)
+    print('ENDPOINT_PREPARED train4 refs9 protected22 max',max_attempts,flush=True)
 
 
-def protocol(args):
-    spec=read(args.out/'protocol.json');assert spec['code']==source_hashes()
+def protocol(args, source=source_hashes):
+    spec=read(args.out/'protocol.json');assert spec['code']==source()
     assert sha(args.parent/'protocol.json')==spec['parent_protocol_sha256']
     return spec
 
@@ -98,18 +99,30 @@ class Objective(old.Objective):
             epsilon=self.predictor.epsilon(z,self.pipe.scheduler.timesteps[index+1],entry)
 
     def tasks(self,entry,start=0,hops=25):
+        predicted,base=self.rollout(entry,start,hops)
+        return self.score_latents(entry,predicted,base)
+
+    def score_latents(self,entry,predicted,base,residue=None):
         p,c=entry['pair'],entry['condition']
         target,positive,original,values,weight,template=self.records[p['case_id'],c]
-        predicted,base=self.rollout(entry,start,hops)
         rgb=self.rgb(predicted)
         with torch.no_grad():base=self.rgb(base)
-        terms=old_loss.terms(rgb,positive,original,base,weight,template,p['patch_coordinates'])
+        terms=old_loss.terms(rgb,positive,original,base,weight,template if residue is None else None,p['patch_coordinates'])
+        if residue is not None:
+            terms['projection']=residue(rgb)
         terms['latent']=pilot.weighted_mean((predicted-target).square(),values['mask'])
         extra,metrics=loss.luminance(rgb,positive,weight,p['patch_coordinates'])
         return loss.groups(terms,extra),dict(metrics,terms={k:float(v.detach()) for k,v in terms.items()})
 
+    def evaluate(self,entry):
+        return numbers(self.tasks(entry)[0])
 
-def load(args,spec):
+    def gradients_and_values(self,entry,parameters):
+        tasks,_=self.tasks(entry)
+        return loss.task_gradients(tasks,parameters),numbers(tasks)
+
+
+def load(args,spec,objective_type=Objective):
     # 诊断和小试使用相同确定性反传后端，避免action名称改变SDPA/cuDNN配置。
     runtime=copy.copy(args);runtime.action='train'
     core,pipe,net=pilot.load_core(runtime)
@@ -117,7 +130,7 @@ def load(args,spec):
     cache=torch.load(args.out/'base_cache.pt',map_location='cpu',weights_only=False)
     pipe.vae.half()
     predictor=repair.FrozenPredictor(args,core,pipe,net,spec['train'],conditions=spec['conditions'])
-    objective=Objective(args,spec,pipe,predictor,b)
+    objective=objective_type(args,spec,pipe,predictor,b)
     pipe.scheduler.set_timesteps(spec['sampler']['steps'],device=args.device)
     return core,pipe,net,b,cache,objective,initial
 
@@ -277,12 +290,12 @@ def probe(args,spec,core,pipe,net,b,step,baseline=None):
     return report
 
 
-def train(args):
-    spec=protocol(args);diag=read(args.out/'diagnostics.json')
+def train(args, read_protocol=protocol, load_objective=load):
+    spec=read_protocol(args);diag=read(args.out/'diagnostics.json')
     assert diag['passed'] and diag['protocol_sha256']==sha(args.out/'protocol.json')
     folder=args.out/'training';folder.mkdir(exist_ok=True)
-    assert not (folder/'last.pt').exists(),'50步首段只运行一次；禁止自动覆盖或越过止损续跑'
-    core,pipe,net,b,cache,obj,initial=load(args,spec)
+    assert not (folder/'last.pt').exists(),'小试只运行一次；禁止自动覆盖或越过止损续跑'
+    core,pipe,net,b,cache,obj,initial=load_objective(args,spec)
     assert initial==diag['initial_b_hash'] and weights_digest(net)==diag['m0_hash']
     opt=optimizer(b);params=list(b.parameters());weights=torch.tensor(diag['weights'],device=args.device)
     old.atomic_torch(dict(step=0,b=b.state_dict()),folder/'step0.pt')
@@ -294,9 +307,10 @@ def train(args):
         # 第25步之前B未参与，缓存起点独立于B；其后25次调用全部保留梯度。
         gradients=[];prior=[]
         for entry in entries:
-            tasks,_=obj.tasks(entry);prior.append(numbers(tasks));gradients.append(loss.task_gradients(tasks,params))
+            gradient,values=obj.gradients_and_values(entry,params)
+            gradients.append(gradient);prior.append(values)
         gradients=torch.stack(gradients)
-        evaluate=lambda:[numbers(obj.tasks(e)[0]) for e in entries]
+        evaluate=lambda:[obj.evaluate(e) for e in entries]
         report=guarded_step(b,opt,gradients,weights,evaluate,prior)
         record=dict(row,**report,before=prior,seconds=time.monotonic()-start)
         history.append(record)
@@ -316,9 +330,10 @@ def train(args):
                                            reasons=reasons,heldout_used=False));archive(args)
             raise RuntimeError('训练侧止损；禁止继续或使用11身份调参')
     assert weights_digest(net)==diag['m0_hash']
-    write(folder/'complete.json',dict(attempts=50,accepted_updates=sum(r['accepted'] for r in history),
+    attempts=spec['max_attempts']
+    write(folder/'complete.json',dict(attempts=attempts,accepted_updates=sum(r['accepted'] for r in history),
         initial_b_hash=initial,frozen_unchanged=True,heldout_used=False,no_expansion=True,
-        checkpoint_sha256=sha(folder/'step50.pt')))
+        checkpoint_sha256=sha(folder/f'step{attempts}.pt')))
     archive(args);print('ENDPOINT_PILOT_COMPLETE',flush=True)
 
 
