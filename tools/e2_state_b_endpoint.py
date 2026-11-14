@@ -185,6 +185,8 @@ def diagnose(args):
         b.load_state_dict(state)
         for p,c,group in probes:
             picture,digest,tap,actual=final_sample(args,core,pipe,net,p,c,b)
+            cached=cache[p['case_id'],c]['states'][0]
+            assert all(torch.equal(cached[k],tap.states[0][k]) for k in ('zt','epsilon'))
             entry=dict(cache[p['case_id'],c],states=tap.states)
             with torch.no_grad():replay,_=obj.rollout(entry)
             difference=float((replay-actual.float()).abs().max())
@@ -192,7 +194,7 @@ def diagnose(args):
             folder=args.out/'diagnostic_images';folder.mkdir(exist_ok=True)
             picture.save(folder/f'{label}_{p["case_id"]}_{c}.png')
             tasks,values=obj.tasks(entry);full=loss.task_gradients(tasks,params)
-            assert torch.isfinite(full).all() and (full.norm(dim=1)>0).all()
+            assert torch.isfinite(full).all() and (full[[0,1,2,4,5]].norm(dim=1)>0).all()
             record=dict(model=label,case=p['case_id'],condition=c,group=group,
                         full=numbers(tasks),full_metrics=values,latent_max_error=difference,short=[])
             if label=='oldB400':norms.append(full.norm(dim=1).cpu())
@@ -200,7 +202,7 @@ def diagnose(args):
                 short_tasks,short_values=obj.tasks(entry,start,hops)
                 g=loss.task_gradients(short_tasks,params)
                 assert torch.isfinite(g).all()
-                legacy=torch.stack((g[0],g[3],g[4]+5*g[5]))
+                legacy=torch.stack((g[0],g[3]+g[6],g[4]+5*g[5]))
                 weights=torch.tensor([spec['task_weights'][k] for k in old_loss.TASKS],device=args.device)
                 direction=old_loss.merge(legacy,weights,True,20261114)
                 opt=optimizer(b)

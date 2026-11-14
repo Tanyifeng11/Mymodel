@@ -5,7 +5,7 @@ import torch
 from models.e2_lab_anchor import rgb_to_lab
 from tools.e2_b_material_losses import highpass
 
-TASKS = ('pattern', 'amplitude', 'correlation', 'residue', 'color', 'light')
+TASKS = ('pattern', 'amplitude', 'correlation', 'residue', 'color', 'light', 'edge')
 
 
 def luminance(rgb, positive, weight, coords):
@@ -32,8 +32,8 @@ def luminance(rgb, positive, weight, coords):
 def groups(old, extra):
     return dict(pattern=old['latent']+2*old['rgb']+old['frequency']+old['high']+2*old['protection'],
                 amplitude=extra['amplitude'], correlation=extra['correlation'],
-                residue=old['projection']+10*old['edge'],
-                color=old['chroma']+old['mean_ab']+old['palette'], light=old['light'])
+                residue=old['projection'],
+                color=old['chroma']+old['mean_ab']+old['palette'], light=old['light'], edge=10*old['edge'])
 
 
 def task_gradients(values, parameters):
@@ -52,7 +52,7 @@ def project_update(displacement, gradients, tolerance=1e-6):
     length=displacement.norm()
     if not len(rows) or float(length)==0:
         return displacement.clone(),dict(feasible=True,minimum_dot=0.,relative_correction=0.)
-    # 只在CPU解至多12维的问题，避免每次坐标更新触发GPU同步。
+    # 只在CPU解至多14维的问题，避免每次坐标更新触发GPU同步。
     gram=(rows@rows.T).double().cpu().numpy()
     offset=(rows@(displacement/length)).double().cpu().numpy()
     dual=np.zeros(len(rows))
