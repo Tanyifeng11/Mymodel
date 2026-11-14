@@ -103,7 +103,9 @@ class Objective(old.Objective):
 
 
 def load(args,spec):
-    core,pipe,net=pilot.load_core(args)
+    # 诊断和小试使用相同确定性反传后端，避免action名称改变SDPA/cuDNN配置。
+    runtime=copy.copy(args);runtime.action='train'
+    core,pipe,net=pilot.load_core(runtime)
     b=data.initialize(args);initial=weights_digest(b)
     cache=torch.load(args.out/'base_cache.pt',map_location='cpu',weights_only=False)
     pipe.vae.half()
