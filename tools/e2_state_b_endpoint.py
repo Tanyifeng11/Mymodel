@@ -153,13 +153,13 @@ def numbers(tasks):return {k:float(tasks[k].detach()) for k in loss.TASKS}
 def optimizer(b):return torch.optim.AdamW(b.parameters(),lr=3e-5,weight_decay=.01)
 
 
-def guarded_step(b,opt,gradients,weights,evaluate,before_values):
+def guarded_step(b,opt,gradients,weights,evaluate,before_values,check=None,projection_sweeps=512):
     params=list(b.parameters());before=loss.flatten(params);state=copy.deepcopy(opt.state_dict())
     merged=(gradients.mean(0)*weights[:,None]).sum(0)
     old_loss.assign(params,merged);norm=torch.nn.utils.clip_grad_norm_(params,1.)
     assert torch.isfinite(norm)
     opt.step();raw=before-loss.flatten(params)
-    corrected,projection=loss.project_update(raw,gradients.flatten(0,1))
+    corrected,projection=loss.project_update(raw,gradients.flatten(0,1),max_sweeps=projection_sweeps)
     corrected*=min(1.,float(raw.norm()/corrected.norm().clamp_min(1e-18)))
     report=dict(projection=projection,raw_alignment=old_loss.alignment(gradients.flatten(0,1),raw),
                 accepted=False,backtracks=[],gradient_norm=float(norm))
@@ -174,7 +174,11 @@ def guarded_step(b,opt,gradients,weights,evaluate,before_values):
             with torch.no_grad():after_values=evaluate()
             passing=all(after[k]<=prior[k]+1e-5+1e-4*abs(prior[k])
                         for prior,after in zip(before_values,after_values) for k in loss.TASKS)
-            report['backtracks'].append(dict(scale=scale,passing=passing,values=after_values))
+            gate=check(after_values) if check is not None else None
+            passing=passing and (gate is None or gate['passed'])
+            record=dict(scale=scale,passing=passing,values=after_values)
+            if gate is not None:record['joint_gate']=gate
+            report['backtracks'].append(record)
             if passing and float(actual.norm())>0:
                 report.update(accepted=True,scale=scale,actual_alignment=cos,displacement=float(actual.norm()))
                 return report
@@ -183,9 +187,9 @@ def guarded_step(b,opt,gradients,weights,evaluate,before_values):
     return report
 
 
-def archive(args):
+def archive(args,exclude=('base_cache.pt',)):
     files=[p for p in args.out.rglob('*') if p.is_file() and p.suffix in ('.json','.jsonl','.png','.pt')
-           and 'source' not in p.parts and 'cases' not in p.parts and p.name!='base_cache.pt']
+           and 'source' not in p.parts and 'cases' not in p.parts and p.name not in exclude]
     dest=args.out/'endpoint_review.zip'
     with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED) as z:
         for p in files:z.write(p,p.relative_to(args.out))

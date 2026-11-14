@@ -64,6 +64,19 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(all(v<=1e-5 for v in evaluate()[0].values()))
         self.assertGreater(min(report['actual_alignment']),1e-3)
 
+    def test_replay_gate_rejects_update_even_when_task_losses_decrease(self):
+        b=torch.nn.Linear(2,1,bias=False);opt=torch.optim.AdamW(b.parameters(),lr=.01)
+        before=loss.flatten(list(b.parameters()))
+        gradients=torch.ones(16,len(loss.TASKS),2)
+        prior=[dict.fromkeys(loss.TASKS,1.) for _ in range(16)]
+        report=self.function('guarded_step')(b,opt,gradients,torch.ones(len(loss.TASKS)),
+            lambda:[dict.fromkeys(loss.TASKS,.9) for _ in range(16)],prior,
+            check=lambda after:dict(passed=False,reasons=['initial_residue_cap']),projection_sweeps=4096)
+        self.assertFalse(report['accepted'])
+        self.assertTrue(torch.equal(before,loss.flatten(list(b.parameters()))))
+        self.assertEqual(opt.state_dict()['state'],{})
+        self.assertTrue(all(not r['joint_gate']['passed'] for r in report['backtracks']))
+
     def test_amplitude_catches_fading_when_correlation_stays_high(self):
         torch.set_num_threads(2)
         x=torch.arange(128)[None,:].expand(128,-1)

@@ -45,7 +45,7 @@ def task_gradients(values, parameters):
     return torch.stack(rows)
 
 
-def project_update(displacement, gradients, tolerance=1e-6, margin=.01):
+def project_update(displacement, gradients, tolerance=1e-6, margin=.01, max_sweeps=512):
     """每项有下降余量，避免投影在切向边界后被曲率和半精度舍入推向上升。"""
     norms=gradients.norm(dim=1)
     rows=gradients[norms>1e-12]/norms[norms>1e-12,None]
@@ -56,7 +56,7 @@ def project_update(displacement, gradients, tolerance=1e-6, margin=.01):
     gram=(rows@rows.T).double().cpu().numpy()
     offset=(rows@(displacement/length)).double().cpu().numpy()-margin
     dual=np.zeros(len(rows))
-    for _ in range(512):
+    for _ in range(max_sweeps):
         for i in range(len(rows)):
             dual[i]=max(0.,dual[i]-(offset[i]+gram[i]@dual)/max(gram[i,i],1e-12))
         if (offset+gram@dual).min()>=-tolerance/4:break
