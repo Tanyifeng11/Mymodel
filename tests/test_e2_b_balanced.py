@@ -1,8 +1,10 @@
 """昂贵GPU小试前检查预算隔离、梯度冲突处理及可达目标。"""
 import json
+import ast
 from collections import Counter
 from pathlib import Path
 import unittest
+from types import SimpleNamespace
 
 import torch
 
@@ -11,6 +13,30 @@ from tools import e2_b_balanced_losses as losses
 
 
 class BalancedPilotTests(unittest.TestCase):
+    def test_sampling_restores_vae_precision_on_success_and_error(self):
+        # 独立执行真实采样包装器，避免测试依赖GPU模型文件。
+        source=Path(__file__).resolve().parents[1]/'tools/e2_state_b_balanced.py'
+        tree=ast.parse(source.read_text(encoding='utf8'))
+        tree.body=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='sample']
+        class VAE(torch.nn.Conv2d):
+            @property
+            def dtype(self):return self.weight.dtype
+        for dtype in (torch.float16,torch.float32):
+            for fail in (False,True):
+                vae=VAE(1,1,1).to(dtype=dtype);b=torch.nn.Linear(1,1);b.train(False)
+                pipe=SimpleNamespace(vae=vae)
+                def sampling(*args):
+                    self.assertEqual(vae.dtype,torch.float16)
+                    if fail:raise RuntimeError('sampler stopped')
+                    return 7
+                scope={'torch':torch,'joint':SimpleNamespace(sample=sampling)}
+                exec(compile(tree,str(source),'exec'),scope)
+                if fail:
+                    with self.assertRaises(RuntimeError):scope['sample'](None,None,pipe,None,None,None,b)
+                else:self.assertEqual(scope['sample'](None,None,pipe,None,None,None,b),7)
+                self.assertEqual(vae.dtype,dtype)
+                self.assertFalse(b.training)
+
     def test_balanced_budget_and_identity_isolation(self):
         spec=json.loads((Path(__file__).resolve().parents[1]/'configs/e2_b_joint_refs.json').read_text(encoding='utf8'))
         spec['train']=[{'case_id':f'validation_{i}'} for i in (621,1641,870,1526)]

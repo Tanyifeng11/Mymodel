@@ -41,11 +41,11 @@ def atomic_torch(payload,path):
 
 
 def sample(args,core,pipe,net,p,c,b,mode='raw',capture=False,snapshots=False):
-    was_training=b.training;b.eval();pipe.vae.half()
+    was_training=b.training;vae_dtype=pipe.vae.dtype;b.eval();pipe.vae.half()
     try:
         with torch.no_grad():return joint.sample(args,core,pipe,net,p,c,b,mode,capture,snapshots)
     finally:
-        pipe.vae.float();b.train(was_training)
+        pipe.vae.to(dtype=vae_dtype);b.train(was_training)
 
 
 def baseline_cache(args,spec,core,pipe,net,b):
@@ -192,6 +192,7 @@ def diagnose(args):
     core,pipe,net=pilot.load_core(args);frozen=weights_digest(net)
     b=old_data.initialize(args).eval();initial=weights_digest(b)
     cache=baseline_cache(args,spec,core,pipe,net,b)
+    pipe.vae.half()  # FrozenPredictor编码的原草图与冻结M0条件均为half。
     predictor=repair.FrozenPredictor(args,core,pipe,net,spec['train'],conditions=spec['conditions'])
     objective=Objective(args,spec,pipe,predictor,b,save_targets=True)
     pipe.scheduler.set_timesteps(spec['sampler']['steps'],device=args.device)
@@ -273,6 +274,7 @@ def train(args):
     assert frozen==diag['m0_hash']
     b=old_data.initialize(args);initial=weights_digest(b);assert initial==diag['initial_b_hash']
     cache=torch.load(args.out/'base_cache.pt',map_location='cpu',weights_only=False)
+    pipe.vae.half()
     predictor=repair.FrozenPredictor(args,core,pipe,net,spec['train'],conditions=spec['conditions'])
     objective=Objective(args,spec,pipe,predictor,b)
     pipe.scheduler.set_timesteps(spec['sampler']['steps'],device=args.device)
