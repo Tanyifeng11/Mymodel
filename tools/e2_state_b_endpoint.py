@@ -56,9 +56,16 @@ def prepare(args):
     assert sha(args.out/'base_cache.pt')==read(args.parent/'diagnostics.json')['base_cache_sha256']
     spec.update(code=source_hashes(),parent_protocol_sha256=sha(args.parent/'protocol.json'),
                 heldout_used=False,max_attempts=50,checkpoint_steps=[0,10,25,50],
+                updates_per_arm=50,arm_modes={'endpoint':'raw'},labels={'endpoint':'full25 safeguarded AdamW'},
+                training=dict(seed=20261114,optimizer='AdamW',lr=3e-5,weight_decay=.01,gradient_clip=1.,
+                              max_attempts=50,checkpoint_steps=[0,10,25,50],rollout_start=25,rollout_hops=25,
+                              tasks=list(loss.TASKS),descent_margin=.01,backtracking=[1.,.5,.25,.125,.0625,.03125,.015625]),
+                controls='same oldB400, train4, nine crops, forty conditions and first50 reference pairs; endpoint objectives/update rule change',
+                validation_policy='all11 identities and22 roots reserved; not accessed by this training-side diagnostic/pilot',
                 training_rule='full25 endpoint, independent L amplitude/correlation/light, project actual AdamW displacement; finite-step backtracking',
                 update_gate='each reference x each task nonincreasing within 1e-5+1e-4*abs(loss); no pair averaging for protection',
                 no_expansion=True)
+    spec['schedule']=[dict(r,hops=25,state_index=0,online=True) for r in spec['schedule'][:50]]
     write(args.out/'protocol.json',spec)
     print('ENDPOINT_PREPARED train4 refs9 protected22 max50',flush=True)
 
@@ -140,10 +147,11 @@ def guarded_step(b,opt,gradients,weights,evaluate,before_values):
     assert torch.isfinite(norm)
     opt.step();raw=before-loss.flatten(params)
     corrected,projection=loss.project_update(raw,gradients.flatten(0,1))
+    corrected*=min(1.,float(raw.norm()/corrected.norm().clamp_min(1e-18)))
     report=dict(projection=projection,raw_alignment=old_loss.alignment(gradients.flatten(0,1),raw),
                 accepted=False,backtracks=[],gradient_norm=float(norm))
     if projection['feasible']:
-        for scale in (1.,.5,.25,.125):
+        for scale in (1.,.5,.25,.125,.0625,.03125,.015625):
             loss.set_parameters(params,before-scale*corrected)
             # 参数float32舍入后再次检查，不能只检查理想位移。
             actual=before-loss.flatten(params)

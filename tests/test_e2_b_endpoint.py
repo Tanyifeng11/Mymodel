@@ -46,6 +46,24 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(torch.equal(before,loss.flatten(list(b.parameters()))))
         self.assertEqual(opt.state_dict()['state'],{})
 
+    def test_descent_margin_and_backtracking_handle_tangent_curvature(self):
+        b=torch.nn.Linear(2,1,bias=False)
+        with torch.no_grad():b.weight.zero_()
+        opt=torch.optim.AdamW(b.parameters(),lr=.01,weight_decay=0.)
+        b.weight.grad=torch.tensor([[-10.,1.]])
+        opt.step()
+        with torch.no_grad():b.weight.zero_()
+        rows=[[1.,0.],[0.,1.],[1.,0.],[0.,1.],[1.,0.],[0.,1.],[0.,1.]]
+        def evaluate():
+            x,y=b.weight.detach()[0]
+            return [{k:float(x+5*y*y if row[0] else y) for k,row in zip(loss.TASKS,rows)}]
+        prior=evaluate()
+        report=self.function('guarded_step')(b,opt,torch.tensor([rows]),torch.ones(len(loss.TASKS)),evaluate,prior)
+        self.assertTrue(report['accepted'])
+        self.assertLess(report['scale'],1.)
+        self.assertTrue(all(v<=1e-5 for v in evaluate()[0].values()))
+        self.assertGreater(min(report['actual_alignment']),1e-3)
+
     def test_amplitude_catches_fading_when_correlation_stays_high(self):
         torch.set_num_threads(2)
         x=torch.arange(128)[None,:].expand(128,-1)

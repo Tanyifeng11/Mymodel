@@ -45,8 +45,8 @@ def task_gradients(values, parameters):
     return torch.stack(rows)
 
 
-def project_update(displacement, gradients, tolerance=1e-6):
-    """小型对偶坐标下降：min ||u-u_adam||², s.t. 每个参考的每项梯度·u >= 0。"""
+def project_update(displacement, gradients, tolerance=1e-6, margin=.01):
+    """每项有下降余量，避免投影在切向边界后被曲率和半精度舍入推向上升。"""
     norms=gradients.norm(dim=1)
     rows=gradients[norms>1e-12]/norms[norms>1e-12,None]
     length=displacement.norm()
@@ -54,7 +54,7 @@ def project_update(displacement, gradients, tolerance=1e-6):
         return displacement.clone(),dict(feasible=True,minimum_dot=0.,relative_correction=0.)
     # 只在CPU解至多14维的问题，避免每次坐标更新触发GPU同步。
     gram=(rows@rows.T).double().cpu().numpy()
-    offset=(rows@(displacement/length)).double().cpu().numpy()
+    offset=(rows@(displacement/length)).double().cpu().numpy()-margin
     dual=np.zeros(len(rows))
     for _ in range(512):
         for i in range(len(rows)):
@@ -62,10 +62,10 @@ def project_update(displacement, gradients, tolerance=1e-6):
         if (offset+gram@dual).min()>=-tolerance/4:break
     result=displacement+length*(rows.T@torch.as_tensor(dual,device=rows.device,dtype=rows.dtype))
     minimum=float((rows@result).min()/length)
-    feasible=minimum>=-tolerance
+    feasible=minimum>=margin-tolerance
     # 未收敛时拒绝本步，不能将零位移记成成功训练。
     return result if feasible else torch.zeros_like(result),dict(
-        feasible=feasible,minimum_dot=minimum,
+        feasible=feasible,minimum_dot=minimum,descent_margin=margin,
         relative_correction=float((result-displacement).norm()/length))
 
 
