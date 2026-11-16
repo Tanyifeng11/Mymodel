@@ -261,6 +261,8 @@ def summarize(out):
     assert len({r['net_hash'] for model in reports.values() for r in model.values()}) == 1
     for model in MODELS:
         assert reports[model]['replay']['checkpoint_sha256'] == reports[model]['holdout']['checkpoint_sha256']
+        expected = spec['checkpoint_sha256'] if model == 'f68' else proposals['arms'][model]['checkpoint_sha256']
+        assert reports[model]['replay']['checkpoint_sha256'] == expected
     changes = {}
     for candidate, baseline in (('C0', 'f68'), ('C1', 'f68'), ('C1', 'C0')):
         changes[candidate + '_minus_' + baseline] = dict(
