@@ -232,15 +232,18 @@ def propose(args):
         raw=start-legacy_loss.flatten(parameters)
         delta,projection_report=project_displacement(raw,constraints,margins,max_sweeps=cfg['projection_sweeps'])
         # 同一固定规则：不增加投影后的总步长，不通过评测挑选scale。
-        delta=delta*min(1.,float(raw.norm()/delta.norm().clamp_min(1e-18)))
+        norm_scale=min(1.,float(raw.norm()/delta.norm().clamp_min(1e-18)))
+        delta=delta*norm_scale
         delta=delta*cfg['scale']
-        delta=delta*min(1.,cfg['displacement_cap']/float(delta.norm().clamp_min(1e-18)))
+        cap_scale=min(1.,cfg['displacement_cap']/float(delta.norm().clamp_min(1e-18)))
+        delta=delta*cap_scale
         legacy_loss.set_parameters(parameters,start-delta)
         actual=start-legacy_loss.flatten(parameters)
         changed=weights_digest(b)!=shards[0]['b_hash']
         report=dict(arm=arm,optimizer_proposals=1,parameter_updates=int(changed),
             adopted=False,acceptance='pending_complete_evaluation',projection=projection_report,
             raw_norm=float(raw.norm()),actual_norm=float(actual.norm()),
+            norm_scale=norm_scale,fixed_scale=cfg['scale'],cap_scale=cap_scale,
             minimum_cosine=min(balanced_loss.alignment(constraints,actual)) if changed else None,
             checkpoint_start=CHECKPOINT_SHA,initial_b_hash=shards[0]['b_hash'],final_b_hash=weights_digest(b),
             gradient_norm=float(direction.norm()),protocol_sha256=sha(args.out/'protocol.json'))

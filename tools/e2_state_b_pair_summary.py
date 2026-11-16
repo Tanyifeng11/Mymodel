@@ -222,6 +222,8 @@ def comparisons(out, spec, reports):
 def package(out, reports, panels):
     # 显式白名单，避免打包权重、梯度tensor、源码或重复评测素材。
     files = {out / 'protocol.json', out / 'result.json', out / 'training/proposals.json'}
+    files.update(out / name for name in ('run_provenance.json', 'rounded_projection.json')
+                 if (out / name).exists())
     files.update((out / 'gradients').glob('*.json'))
     files.update(out / name for name in panels)
     files.update(p for p in (out / 'cases').rglob('*') if p.is_file() and p.suffix.lower() in ('.png', '.jpg', '.jpeg'))
@@ -282,6 +284,9 @@ def summarize(out):
         frozen_unchanged=True, adopted_checkpoints=[], heldout_used_for_training=False,
         interpretation='固定一次候选更新，不搜索或续训；完整报告失败项；eligible仅为资格，未改模型指针',
         archive='review.zip', manifest='manifest.json')
+    if (out / 'run_provenance.json').exists():
+        result['execution_provenance'] = read(out / 'run_provenance.json')
+        result['rounded_projection'] = read(out / 'rounded_projection.json')
     write(out / 'result.json', result)
     archive = package(out, reports, panels)
     print('PAIR_SUMMARY', json.dumps(dict(eligibility={m: g['eligible'] for m, g in gates.items()},

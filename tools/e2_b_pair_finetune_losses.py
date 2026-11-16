@@ -49,7 +49,7 @@ def pair_terms(outputs, positives, weight):
 
 
 def project_displacement(displacement, gradients, margins, max_sweeps=4096, tolerance=1e-6):
-    """投影实际 AdamW 位移，逐约束margin以原始位移范数归一化。"""
+    """保持原约束定义；双精度求解并验算将返回的原dtype位移。"""
     norms = gradients.norm(dim=1)
     margins = torch.as_tensor(margins, dtype=gradients.dtype, device=gradients.device)
     assert margins.shape == norms.shape
@@ -57,20 +57,43 @@ def project_displacement(displacement, gradients, margins, max_sweeps=4096, tole
     rows = gradients[active] / norms[active, None]
     length = displacement.norm()
     if not len(rows) or float(length) == 0:
-        return displacement.clone(), dict(feasible=True, minimum_dot=0., relative_correction=0.)
+        return displacement.clone(), dict(feasible=True, minimum_dot=0., relative_correction=0.,
+            projected_norm=float(length),
+            iterations=0, maximum_iterations=max_sweeps, internal_break=False, hit_iteration_cap=False,
+            gram_slack_min=None, actual_slack_min=None, gram_violations=0, actual_violations=0,
+            maximum_reconstruction_slack_difference=0., maximum_cast_displacement_difference=0.)
     required = margins[active]
-    gram = (rows @ rows.T).double().cpu().numpy()
-    offset = (rows @ (displacement / length)).double().cpu().numpy() - required.double().cpu().numpy()
+    # 先按原dtype归一化，保留原raw norm/margin；必须在矩阵乘法前转double。
+    rows64, raw64 = rows.double(), displacement.double()
+    length64, required64 = length.double(), required.double()
+    gram = (rows64 @ rows64.T).cpu().numpy()
+    offset = (rows64 @ (raw64 / length64) - required64).cpu().numpy()
     dual = np.zeros(len(rows))
-    for _ in range(max_sweeps):
+    internal_break = False
+    for sweep in range(max_sweeps):
         for i in range(len(rows)):
             dual[i] = max(0., dual[i] - (offset[i] + gram[i] @ dual) / max(gram[i, i], 1e-12))
         if (offset + gram @ dual).min() >= -tolerance / 4:
+            internal_break = True
             break
-    delta = displacement + length * (rows.T @ torch.as_tensor(dual, dtype=rows.dtype, device=rows.device))
-    dots = (rows @ delta) / length
-    feasible = bool(((dots - required) >= -tolerance).all())
+    gram_slack = torch.as_tensor(offset + gram @ dual, dtype=torch.float64, device=rows.device)
+    delta64 = raw64 + length64 * (rows64.T @ torch.as_tensor(dual, dtype=torch.float64, device=rows.device))
+    # caller仍按原float32规则限范数和缩步；不能返回double改变后续参数更新。
+    delta = delta64.to(dtype=displacement.dtype)
+    dots = (rows64 @ delta.double()) / length64
+    actual_slack = dots - required64
+    feasible = bool((actual_slack >= -tolerance).all())
     report = dict(feasible=feasible, minimum_dot=float(dots.min()),
                   descent_margin=float(required.min()), maximum_margin=float(required.max()),
-                  relative_correction=float((delta - displacement).norm() / length))
+                  relative_correction=float((delta - displacement).norm() / length),
+                  iterations=sweep + 1, maximum_iterations=max_sweeps, internal_break=internal_break,
+                  hit_iteration_cap=not internal_break, tolerance=tolerance, internal_tolerance=tolerance / 4,
+                  gram_slack_min=float(gram_slack.min()), actual_slack_min=float(actual_slack.min()),
+                  gram_violations=int((gram_slack < -tolerance).sum()),
+                  actual_violations=int((actual_slack < -tolerance).sum()),
+                  maximum_reconstruction_slack_difference=float((actual_slack - gram_slack).abs().max()),
+                  maximum_cast_displacement_difference=float((delta.double() - delta64).abs().max()),
+                  checked_displacement_dtype=str(delta.dtype), solver_dtype='torch.float64')
+    report['projected_norm'] = float(delta.norm()) if feasible else 0.
+    report['attempted_projected_norm'] = float(delta.norm())
     return delta if feasible else torch.zeros_like(delta), report

@@ -114,3 +114,39 @@ def test_incompatible_positive_margins_reject_nonzero_update():
     delta, report = project_displacement(raw, gradients, torch.tensor([.01, .18]), max_sweeps=32)
     assert not report['feasible']
     assert torch.equal(delta, torch.zeros_like(raw))
+
+
+def test_double_gram_prevents_false_rejection_from_nearly_opposing_constraints():
+    """双精度dual不能修复已经在float32矩阵乘法中丢失的Gram精度。"""
+    torch.set_num_threads(2)
+    generator = torch.Generator().manual_seed(0)
+    first = torch.randn(1001, generator=generator)
+    first = first / first.norm()
+    orthogonal = torch.randn(1001, generator=generator)
+    orthogonal = orthogonal - first * (orthogonal @ first)
+    orthogonal = orthogonal / orthogonal.norm()
+    gradients = torch.stack((first, -first + .1 * orthogonal))
+    rows = gradients / gradients.norm(dim=1)[:, None]
+    raw = -(rows[0] + rows[1])
+    raw = raw / raw.norm()
+    margins = torch.tensor([.18, .18])
+
+    # 两项均活跃，可直接解旧float32 Gram的精确dual，排除迭代不足的解释。
+    old_gram = (rows @ rows.T).double()
+    old_offset = (rows @ (raw / raw.norm())).double() - margins.double()
+    old_dual = torch.linalg.solve(old_gram, -old_offset)
+    assert bool((old_dual > 0).all())
+    assert float((old_offset + old_gram @ old_dual).abs().max()) < 1e-12
+    old_delta64 = raw.double() + raw.norm().double() * (rows.double().T @ old_dual)
+    old_actual_slack = rows.double() @ old_delta64 / raw.norm().double() - margins.double()
+    assert float(old_actual_slack.min()) < -1e-6
+
+    delta, report = project_displacement(raw, gradients, margins)
+    assert report['feasible'] and delta.dtype == raw.dtype
+    actual = rows.double() @ delta.double() / raw.norm().double() - margins.double()
+    assert bool((actual >= -1e-6).all())
+    assert report['actual_slack_min'] == float(actual.min())
+    assert report['projected_norm'] == float(delta.norm())
+    assert report['actual_violations'] == report['gram_violations'] == 0
+    assert report['iterations'] <= 4096 and report['internal_break']
+    assert report['maximum_reconstruction_slack_difference'] < 1e-6
