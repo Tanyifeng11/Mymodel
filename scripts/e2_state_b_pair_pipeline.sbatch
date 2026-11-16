@@ -25,40 +25,28 @@ evaluate() {
     SLURM_CPUS_PER_TASK=1 python -m tools.e2_state_b_pair_evaluation --out "$run" \
         --arm "$1" --split "$2" --device "cuda:$3" > "$run/eval_$1_$2.log" 2> "$run/eval_$1_$2.err"
 }
-# 同一Slurm作业内按可分配GPU运行；单卡回退只改变并行度。
-if [ "${SLURM_GPUS_ON_NODE:-1}" -ge 3 ]; then
-    gradient 0 0 & p0=$!
-    gradient 1 1 & p1=$!
-    gradient 2 2 & p2=$!
-    wait "$p0"
-    gradient 3 0 & p3=$!
-    wait "$p1"
-    wait "$p2"
-    wait "$p3"
-else
-    for shard in 0 1 2 3; do gradient "$shard" 0; done
-fi
+# 同一作业内按实际GPU数分配独立工作；并行度不改变数据和更新预算。
+gpus=${SLURM_GPUS_ON_NODE:-1}
+pids=()
+for ((gpu=0; gpu<gpus; gpu++)); do
+    (for ((shard=gpu; shard<4; shard+=gpus)); do gradient "$shard" "$gpu"; done) &
+    pids+=("$!")
+done
+for pid in "${pids[@]}"; do wait "$pid"; done
 echo PAIR_ALL_GRADIENTS_COMPLETE
 if [ ! -f "$run/training/proposals.json" ]; then
     python -m tools.e2_state_b_pair_finetune propose --out "$run" > "$run/propose.log" 2> "$run/propose.err"
 fi
 evaluate f68 replay 0
-if [ "${SLURM_GPUS_ON_NODE:-1}" -ge 3 ]; then
-    evaluate f68 holdout 0 & e0=$!
-    evaluate C0 replay 1 & e1=$!
-    evaluate C1 replay 2 & e2=$!
-    wait "$e1"
-    evaluate C0 holdout 1 & e3=$!
-    wait "$e2"
-    evaluate C1 holdout 2 & e4=$!
-    wait "$e0"
-    wait "$e3"
-    wait "$e4"
-else
-    evaluate f68 holdout 0
-    for arm in C0 C1; do
-        for split in replay holdout; do evaluate "$arm" "$split" 0; done
-    done
-fi
+models=(f68 C0 C1 C0 C1)
+splits=(holdout replay replay holdout holdout)
+pids=()
+for ((gpu=0; gpu<gpus; gpu++)); do
+    (for ((index=gpu; index<5; index+=gpus)); do
+        evaluate "${models[$index]}" "${splits[$index]}" "$gpu"
+    done) &
+    pids+=("$!")
+done
+for pid in "${pids[@]}"; do wait "$pid"; done
 python -m tools.e2_state_b_pair_summary --out "$run"
 echo PAIR_PIPELINE_COMPLETE
