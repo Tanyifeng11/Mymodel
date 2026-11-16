@@ -1,0 +1,37 @@
+"""一个正式训练作业；依赖成功后才执行生成与统一评测。"""
+import json
+from pathlib import Path
+import subprocess
+
+ROOT = Path('/share/home/u2515283058/Mymodel/output_eval/e1_bfm_joint_20261116')
+ROOT.joinpath('logs').mkdir(parents=True, exist_ok=True)
+path = ROOT / 'submitted_jobs.json'
+jobs = json.loads(path.read_text()) if path.exists() else {}
+
+
+def submit(key, gpu, dependency=None):
+    if key in jobs:
+        return jobs[key]
+    partition = 'gpu' if gpu else 'cpu'
+    # 此账户 normal QoS 最长七天，比 CPU 分区的 31 天上限更短。
+    maximum = '7-00:00:00'
+    args = ['sbatch', '--parsable', '-p', partition, '-J', 'e1jt_' + key, '-N1', '-n1',
+            '-c', '8' if gpu == 2 else '4', '--mem', '128G' if gpu == 2 else '64G',
+            '-t', '0' if maximum == 'UNLIMITED' else maximum,
+            '-o', str(ROOT / 'logs' / (key + '_%j.log'))]
+    if gpu:
+        args += ['--gres=gpu:' + str(gpu)]
+    if dependency:
+        args += ['--dependency=afterok:' + dependency]
+    args += [str(ROOT / 'source/scripts/e1_bfm_joint.sbatch'), key]
+    result = subprocess.check_output(args, text=True).strip()
+    assert result.isdigit(), result
+    jobs[key] = result
+    path.write_text(json.dumps(jobs, indent=2) + '\n')
+    print(key, result, flush=True)
+    return result
+
+
+prepare = submit('prepare', 0)
+train = submit('train', 2, prepare)
+submit('evaluate', 1, train)
