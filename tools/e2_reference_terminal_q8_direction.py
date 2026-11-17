@@ -156,7 +156,9 @@ def run(args):
                     metric = objective.metric(dict(pair=pair, condition=c))
                     point = dict(positive=positive.detach().cpu(), weight=weight.detach().cpu(),
                         residue_coefficients=metric.coefficients.detach().cpu(), residue_offset=metric.offset,
-                        residue_energy=metric.energy, gradients={}, probes={})
+                        residue_energy=metric.energy, zt=record['zt'].cpu(), raw_epsilon=record['raw_epsilon'].cpu(),
+                        alpha=record['alpha'], alpha_prev=float(pipe.scheduler.final_alpha_cumprod),
+                        gradients={}, probes={})
                     tensors['points'][key] = point
                     derivatives = {}
                     for mode in MODES:
@@ -198,7 +200,7 @@ def run(args):
                         with torch.no_grad():
                             vector = zero if factor == 0 else direction*factor
                             set_parameters(parameters, vector.to(args.device))
-                            z, _, _, _ = r16.source.preflight.terminal_replay(head, record, pipe.scheduler, args.device)
+                            z, _, delta, corrected = r16.source.preflight.terminal_replay(head, record, pipe.scheduler, args.device)
                             native = r16.native_rgb_half(pipe.vae, z)
                             image = r16.quantize(native); q8 = torch.from_numpy(image.copy()).permute(2, 0, 1)[None].to(args.device).float()/255
                             values = {}
@@ -211,11 +213,16 @@ def run(args):
                                 assert tensor_sha(z) == old['latent_sha256'] and pixel_sha == old['pixel_array_sha256']
                                 assert tensor_sha(native) == old['native_rgb_half_sha256']
                                 result['historical_pixel_controls'] += 1
+                            if factor == 0:
+                                assert tensor_sha(delta) == tensor_sha(record['base_delta'])
+                                assert tensor_sha(corrected) == historical['corrected_epsilon_sha256']
                             scores = score_pixels(image, png_positive, goal, anchor, mask > 0, pair['patch_coordinates'])
                             probes[factor] = dict(factor=factor, latent_sha256=tensor_sha(z), native_rgb_half_sha256=tensor_sha(native),
+                                delta_B_sha256=tensor_sha(delta), corrected_epsilon_sha256=tensor_sha(corrected),
                                 pixel_array_sha256=pixel_sha, values=values, scores=scores,
                                 actual_parameter_sha256=tensor_sha(flatten(parameters)))
-                            point['probes'][str(factor)] = dict(latent=z.cpu(), native_rgb_half=native.cpu())
+                            point['probes'][str(factor)] = dict(delta_B=delta.cpu(), corrected_epsilon=corrected.cpu(),
+                                latent=z.cpu(), native_rgb_half=native.cpu())
                         result['completed_cached_probe_observations'] += 1
                         result['completed_nonzero_probe_points'] += int(factor != 0)
                     set_parameters(parameters, zero.to(args.device))
