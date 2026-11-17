@@ -141,6 +141,7 @@ def run(args):
                     comparison = evaluation.training_comparison(numbers, original['tasks'])
                     row = dict(case=case, condition=entry['condition'], sample_condition=condition,
                         group=entry['group'], arm=entry['arm'], factor=entry['factor'], model_arm=arm,
+                        seed=entry['pair']['seed'], noise_digest=record['noise_digest'], prefix_metadata_inherited=True,
                         image=target.relative_to(args.out).as_posix(), png_sha256=sha(target),
                         pixel_array_sha256=tensor_sha(torch.from_numpy(image)), rgb_float32_sha256=tensor_sha(rgb),
                         latent_continuous_sha256=tensor_sha(z), training_tasks=numbers,
@@ -165,12 +166,13 @@ def run(args):
             report['pastel_quality_pass'] = {a: sum(r['scores']['l_quality_pass'] for r in candidate if r['group'] == 'pastel' and r['arm'] == a)
                                              for a in ('a075', 'a100', 'a125')}
             result['models'][arm] = report
-        # 这里只计算原创新度；尚无新结构完整S0控制或holdout，不授予采用资格。
-        reports = dict(f68=dict(replay=baseline), **{a: dict(replay=r) for a, r in result['models'].items()})
-        result['innovation'] = summary.innovation(reports, dict(C1=dict(eligible=False)))
         assert weights_digest(net) == hashes['net'] and weights_digest(pipe.vae) == hashes['vae']
         assert all(weights_digest(h.base) == hashes['bases'][a] and tensor_sha(fresh.legacy.flatten(h.increment_parameters())) == hashes['heads'][a]
                    for a, h in heads.items())
+        result['frozen_unchanged'] = True
+        # 先保存独立冻结检查，再计算汇总；避免汇总元数据错误掩盖运行资格。
+        reports = dict(f68=dict(replay=baseline), **{a: dict(replay=r) for a, r in result['models'].items()})
+        result['innovation'] = summary.innovation(reports, dict(C1=dict(eligible=False)))
         result.update(status='complete', passed=True, frozen_unchanged=True,
             meaning_of_passed='execution/zero controls only;inspect original_replay_checks and pastel quality,not adoption')
     except Exception as caught:
