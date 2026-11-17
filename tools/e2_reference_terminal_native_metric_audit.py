@@ -69,7 +69,8 @@ def run(args):
     assert len(points)==16 and overlapping==4
     gradient_rows={}
     inputs=[stages/n for n in ('protocol.json','manifest.json','result.json','diagnostic.pt')]
-    inputs += [folder/n for folder in (replay,r16) for n in ('protocol.json','manifest.json','result.json','diagnostic.pt')]
+    inputs += [replay/n for n in ('protocol.json','manifest.json','result.json','diagnostic.pt')]
+    inputs += [r16/n for n in ('diagnostic_protocol.json','manifest.json','result.json','diagnostic.pt')]
     inputs += [source_run/'protocol.json',source_run/'evaluation/f68/replay/result.json']
     for i in range(4):
         f=args.auto/('reference_terminal_fp32_gradients/gradients/shard%d.json'%i); inputs.append(f)
@@ -136,4 +137,4 @@ def run(args):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--prior',type=Path,required=True)
     args=parser.parse_args();args.auto=args.prior.resolve()/'autonomous_repair_20261116'
-    args.out=args.auto/'reference_terminal_native_metric_audit';run(args)
+    args.out=args.auto/'reference_terminal_native_metric_audit_v2';run(args)
