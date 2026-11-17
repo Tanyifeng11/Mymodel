@@ -7,7 +7,7 @@ from models.e2_reference_terminal_head import ReferenceTerminalHead, reference_s
 from tools.e2_b_endpoint_losses import set_parameters
 from tools.e2_b_material_losses import highpass
 from tools.e2_terminal_head_preflight import fixed_perturbation
-from tools.e2_reference_terminal_preflight import terminal_replay
+from tools.e2_reference_terminal_preflight import terminal_replay, scheduler_configuration
 
 
 class ToyBase(nn.Module):
@@ -96,3 +96,20 @@ def test_cache_adapter_uses_bound_reference_raw_epsilon_and_original_scheduler()
     assert torch.equal(corrected, expected_epsilon)
     assert torch.equal(actual, scheduler.step(expected_epsilon, 1, zt, False)[0])
     assert torch.equal(base, scheduler.step(raw, 1, zt, False)[0].float())
+
+
+def test_scheduler_default_name_order_only_is_ignored_and_raw_difference_kept():
+    actual = dict(clip_sample=False, steps_offset=1, _use_default_values=['beta_end', 'beta_start'])
+    reference = dict(clip_sample=False, steps_offset=1, _use_default_values=['beta_start', 'beta_end'])
+    result = scheduler_configuration(actual, reference)
+    assert result['normalized_equal'] and set(result['raw_diff']) == {'_use_default_values'}
+    assert result['actual'] == actual and result['reference'] == reference
+    assert actual['_use_default_values'] == ['beta_end', 'beta_start']
+
+
+def test_scheduler_math_or_key_changes_are_not_normalized_away():
+    reference = dict(clip_sample=False, steps_offset=1, _use_default_values=['beta_end', 'beta_start'])
+    assert not scheduler_configuration(dict(reference, clip_sample=True), reference)['normalized_equal']
+    assert not scheduler_configuration(dict(reference, steps_offset=0), reference)['normalized_equal']
+    assert not scheduler_configuration(dict(reference, extra=None), reference)['normalized_equal']
+    assert not scheduler_configuration(dict(reference, _use_default_values=['beta_start']), reference)['normalized_equal']

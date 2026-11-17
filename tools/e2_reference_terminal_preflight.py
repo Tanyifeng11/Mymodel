@@ -58,6 +58,22 @@ def reference_audit(reference):
         **{name: float(value) for name, value in statistics.items()})
 
 
+def scheduler_configuration(actual, reference):
+    """只忽略默认参数名称的列表顺序；实际调度配置与键集合保持精确比较。"""
+    actual, reference = dict(actual), dict(reference)
+    differences = {key: dict(actual=actual.get(key), reference=reference.get(key),
+        actual_present=key in actual, reference_present=key in reference)
+        for key in sorted(set(actual) | set(reference))
+        if key not in actual or key not in reference or actual[key] != reference[key]}
+    normalized_actual, normalized_reference = copy.deepcopy(actual), copy.deepcopy(reference)
+    for config in (normalized_actual, normalized_reference):
+        if '_use_default_values' in config and isinstance(config['_use_default_values'], list):
+            config['_use_default_values'] = sorted(config['_use_default_values'])
+    return dict(actual=actual, reference=reference, raw_diff=differences,
+        normalized_equal=normalized_actual == normalized_reference,
+        normalization='only sort the _use_default_values list; all other keys and values exact')
+
+
 def prepare(args):
     previous = old.verify(source_args(args))
     qualification = read(args.preflight/'qualification.json')
@@ -169,7 +185,10 @@ def run_cache(args):
     assert not pipe.scheduler.config.clip_sample and not pipe.scheduler.config.thresholding and not pipe.scheduler.config.set_alpha_to_one
     scheduler_path = Path(inspect.getsourcefile(type(pipe.scheduler))); scheduler_sha = sha(scheduler_path)
     assert scheduler_sha == source_report['scheduler']['source_sha256']
-    assert dict(pipe.scheduler.config) == source_report['scheduler']['config']
+    scheduler_audit = scheduler_configuration(pipe.scheduler.config, source_report['scheduler']['config'])
+    scheduler_audit.update(source_sha256=scheduler_sha, source_reference_sha256=source_report['scheduler']['source_sha256'])
+    write(args.out/('cache/shard%d.scheduler.json' % args.shard), scheduler_audit)
+    assert scheduler_audit['normalized_equal'], '原DDIM配置存在非元数据顺序差异'
 
     def capture(item):
         head.reset_capture(); trace = []
@@ -306,7 +325,8 @@ def run_cache(args):
         diagnostic_parameter_assignments=2*len(nonzero), head_restored_zero=True, frozen_unchanged=True,
         b_hash=initial, net_hash=frozen, vae_hash_fp32=vae_hash, trainable_parameters=PARAMETERS,
         holdout_results_read=0, adopted_checkpoints=[], training_loop_implemented=False,
-        scheduler=dict(class_name=type(pipe.scheduler).__name__, config=dict(pipe.scheduler.config), source_sha256=scheduler_sha),
+        scheduler=dict(class_name=type(pipe.scheduler).__name__, config=dict(pipe.scheduler.config), source_sha256=scheduler_sha,
+            configuration_audit=scheduler_audit),
         environment=environment(), backend_flags=backend_flags(),
         hardware=dict(hostname=socket.gethostname(), gpu=torch.cuda.get_device_name(args.device), job=os.environ.get('SLURM_JOB_ID')),
         seconds=time.monotonic()-started)
@@ -325,6 +345,8 @@ def review(args):
         assert report['source_sha256'] == protocol['source_sha256'] and report['trainable_parameters'] == PARAMETERS
         assert sha(args.out/report['tensor_file']) == report['tensor_sha256']
         assert report['head_restored_zero'] and report['frozen_unchanged']
+        assert report['scheduler']['configuration_audit']['normalized_equal']
+        assert read(args.out/('cache/shard%d.scheduler.json' % i)) == report['scheduler']['configuration_audit']
         assert report['optimizer_updates'] == report['projection_calls'] == report['new_candidates'] == report['holdout_results_read'] == 0
     controls = [r for s in reports for r in s['zero_controls']]
     replicas = [r for s in reports for r in s['replicas']]
@@ -350,6 +372,7 @@ def review(args):
     verify(args); write(args.out/'qualification.json', result)
     files = [args.out/'basis_protocol.json', args.out/'qualification.json', args.out/'probe_delta.pt']
     files += [args.out/('cache/shard%d.%s' % (i, ext)) for i in range(4) for ext in ('json', 'pt')]
+    files += [args.out/('cache/shard%d.scheduler.json' % i) for i in range(4)]
     files += [args.out/r['image'] for r in nonzero]
     write(args.out/'review_manifest.json', {p.relative_to(args.out).as_posix(): sha(p) for p in files})
     with zipfile.ZipFile(args.out/'review.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
