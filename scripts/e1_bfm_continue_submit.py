@@ -1,4 +1,4 @@
-"""逐轮训练、评测串行依赖，始终最多占用双卡。"""
+"""一个双卡作业依次完成五轮训练、保存、评测和汇总。"""
 import json
 from pathlib import Path
 import subprocess
@@ -31,7 +31,4 @@ def submit(key, stage, gpu, dependency=None, epoch=None):
 
 
 dependency = submit('prepare', 'prepare', 0)
-for epoch in range(6, 11):
-    training = submit('train%02d' % epoch, 'train', 2, dependency, epoch)
-    dependency = submit('evaluate%02d' % epoch, 'evaluate', 1, training, epoch)
-submit('report', 'report', 0, dependency)
+submit('pipeline', 'run', 2, dependency)
