@@ -112,7 +112,8 @@ def run(args):
                 assert measured==shards[index]['late']['a100']['features']
                 gradient=fresh.scaled_scalar(fields['orth'],parameters).detach().cpu()
                 gradients.append(gradient);numbers.append(measured);result['new_parameter_VJP']+=1
-            repeated=fresh.replica_report(gradients[1],gradients[0]);assert repeated['passed'] and numbers[0]==numbers[1]
+            # 单条4616维梯度必须整体比较，不能调用按七任务矩阵取行的接口。
+            repeated=branch.delta.post.q8.r16.repeat_report(gradients[1],gradients[0]);assert repeated['passed'] and numbers[0]==numbers[1]
             old_orth=float(projection(saved[key]['outputs']['C1'].to(args.device),positive,positive,weight)['orth'])
             predicted=float(gradients[0].double()@old_vector.double());actual=old_orth-numbers[0]['orth']
             assert np.sign(predicted)==np.sign(actual),'新增正交梯度方向与真实旧C1端点符号不一致'
