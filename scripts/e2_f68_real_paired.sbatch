@@ -12,7 +12,7 @@ action="$2"
 shift 2
 cd "$prior/source"
 export PATH=/share/home/u2515283058/.conda/envs/Mymodel/bin:$PATH
-export PYTHONPATH="$prior/real_paired_B_on_off_20261118/dependencies:$PWD:$PWD/tools:$PWD/utils"
+export PYTHONPATH="$PWD/vendor/pytorch_fid-0.3.0-py3-none-any.whl:$PWD:$PWD/tools:$PWD/utils"
 export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-2}" OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-2}" MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-2}"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled

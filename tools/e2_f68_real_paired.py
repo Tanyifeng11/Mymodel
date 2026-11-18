@@ -28,11 +28,13 @@ SEED = 42
 CHECKPOINT_SHA = 'f68f22a106c3f0a08044c754b44c738ba3d6f67274edf5d281d5b54f39ddcd96'
 B_HASH = '43346a544a1b82de7792e3b9a49c122a061333fd8b31e21f5e1b36ad9c3141f0'
 NET_HASH = 'b846a8c58b4a25a62250e062a4bdf3f1302e19341c3d1903118e6d1c291fa0ca'
+FID_WHEEL = 'vendor/pytorch_fid-0.3.0-py3-none-any.whl'
+FID_WHEEL_SHA = '0e1d4fe66441a8dff2a2aca31394e9389fb197dfeff046f2f971f271d4137767'
 CODE = ('tools/e2_f68_real_paired.py', 'scripts/e2_f68_real_paired.sbatch', 'tools/e2_state_b_pilot.py',
         'tools/e2_state_b_joint.py', 'tools/e2_state_b_joint_data.py', 'tools/e2_state_b_material_data.py',
         'tools/e2_state_b_repair.py', 'tools/e2_texture_bottleneck.py', 'models/e2_state_texture_b.py',
         'pipelines/IMAGGarment_pipeline.py', 'tools/e2_a_evaluation.py', 'eval/eval_utils.py',
-        'eval/metrics.py', 'garment_mask_utils.py', 'tools/e2a_attr_eval.py')
+        'eval/metrics.py', 'garment_mask_utils.py', 'tools/e2a_attr_eval.py', FID_WHEEL)
 
 
 def write(path, value):
@@ -73,6 +75,7 @@ def choose_pairs(test, training):
 
 def metric_assets():
     import lpips
+    assert sha(SOURCE/FID_WHEEL) == FID_WHEEL_SHA
     directory = Path(torch.hub.get_dir()) / 'checkpoints'
     paths = dict(alexnet=directory/'alexnet-owt-4df8aa71.pth',
                  lpips_calibration=Path(lpips.__file__).parent/'weights/v0.1/alex.pth',
@@ -117,7 +120,7 @@ def prepare(args):
                      ssim='RGB, data range255, standard scikit-image defaults', psnr='per-image RGB, data range255',
                      contour_f1='inner edge of estimated generated foreground versus fixed sketch mask, radius3px',
                      iou='estimated generated foreground versus fixed sketch mask', leak='repository leak_colored_frac, sketch mask kernel9, original GT'),
-        metric_assets=assets, packages={n: metadata.version(n) for n in ('torch','torch-fidelity','scikit-image','lpips')},
+        metric_assets=assets, packages={n: metadata.version(n) for n in ('torch','pytorch-fid','scikit-image','lpips')},
         source_sha256={n: sha(SOURCE/n) for n in CODE}, environment=environment())
     write(args.out/'protocol.json', protocol)
     print('F68_REAL_PREPARED', len(pairs), 'valid_masks', sum(p['mask_valid'] for p in pairs), flush=True)
@@ -218,12 +221,11 @@ def fid_from_pool3(a, b):
 
 def metric_models(device, assets):
     import lpips
-    from torch_fidelity.feature_extractor_inceptionv3 import FeatureExtractorInceptionV3
+    from pytorch_fid.inception import InceptionV3
     model = lpips.LPIPS(net='alex', pnet_rand=True, model_path=assets['lpips_calibration']['path'])
     pretrained = torch.load(assets['alexnet']['path'], map_location='cpu', weights_only=False)
     model.net.load_state_dict({k: pretrained['features.'+k.split('.',1)[1]] for k in model.net.state_dict()}, strict=True)
-    inception = FeatureExtractorInceptionV3('inception-v3-compat',['2048'],
-                                           feature_extractor_weights_path=assets['inception']['path'])
+    inception = InceptionV3([InceptionV3.BLOCK_INDEX_BY_DIM[2048]])
     return model.eval().requires_grad_(False).to(device), inception.eval().requires_grad_(False).to(device)
 
 
@@ -297,7 +299,7 @@ def evaluate(args):
             assert len(value) == count and np.isfinite(value).all()
             for row,score in zip(rows[-count:],value):row['scores'][arm]['lpips'] = score
         for key,images in batch.items():
-            feature = inception(tensor(images))[0].cpu().numpy()
+            feature = inception(tensor(images).float()/255)[0].flatten(1).cpu().numpy()
             assert feature.shape == (count,2048) and np.isfinite(feature).all()
             feature_batches[key].append(feature)
         if offset%40==0:print('F68_REAL_METRICS',len(rows),flush=True)
@@ -315,7 +317,7 @@ def evaluate(args):
                              on_less=int((delta<0).sum()), on_greater=int((delta>0).sum()), equal=int((delta==0).sum()))
     write(args.out/'per_image.json', rows)
     write(args.out/'result.json',dict(complete=True,conditions=len(rows),generated_images=2*len(rows),summary=summary,
-        fid=dict(**fid,delta=fid['on']-fid['off'],n=len(rows),backend='torch-fidelity inception-v3-compat pool3 2048 and float64 sample-space SVD'),
+        fid=dict(**fid,delta=fid['on']-fid['off'],n=len(rows),backend='pytorch-fid 0.3.0 Inception pool3 2048 and float64 sample-space SVD'),
         mask_valid=sum(r['mask_valid'] for r in rows), frozen_model_hashes=frozen_hashes[0],
         scheduler_source_sha256=next(iter(scheduler_hashes)), original_ground_truth_used_for_generation=False,
         protocol_sha256=protocol_sha, optimizer_updates=0, environment=environment()))
