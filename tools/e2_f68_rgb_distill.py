@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import os
+import re
 import zipfile
 from pathlib import Path
 
@@ -28,13 +29,28 @@ TEACHER = {'blend': .25}
 TRAIN_PER_CLASS, VAL_PER_CLASS = 32, 8
 N = len(CATEGORIES) * (TRAIN_PER_CLASS + VAL_PER_CLASS)
 EPOCHS, BATCH, LR = 12, 4, .001
+GARMENT_TERMS = {
+    'dress': r'\b(?:dress(?:es)?(?![- ]shirts?)|skirts?)\b',
+    'outwear': r'\b(?:coats?|jackets?|blazers?|trench(?:es)?)\b',
+    'pants': r'\b(?:pants|trousers|jeans|slacks|leggings)\b',
+    'top': r'\b(?:tops?|blouses?|shirts?|t-?shirts?|sweaters?|pullovers?)\b',
+}
+
+
+def caption_category(caption):
+    matches = [category for category, pattern in GARMENT_TERMS.items() if re.search(pattern, caption, re.I)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def choose_pairs(training, frozen_pairs):
     used = {Path(row['gt']).stem for row in frozen_pairs}
     selected = []
-    for category in CATEGORIES:
-        group = [row for row in training if row['sample_id'].split('/')[1] == category]
+    groups = {category: [] for category in CATEGORIES}
+    for row in training:
+        category = caption_category(row['caption'])
+        if category is not None:
+            groups[category].append(row)
+    for category, group in groups.items():
         group.sort(key=lambda row: hashlib.sha256(('f68-rgb-distill-v1:' + row['sample_id']).encode()).hexdigest())
         current = []
         for row in group:
@@ -87,7 +103,9 @@ def prepare(args):
     protocol.update(pairs=pairs, input_manifest_sha256={str(path): sha(path)},
                     baseline_sha256=sha(args.baseline/'protocol.json'), implementation_sha256=sha(Path(__file__)),
                     alpha=.25, radius=8, feather_sigma=2, epochs=EPOCHS, batch=BATCH, lr=LR,
-                    train_per_class=TRAIN_PER_CLASS, val_per_class=VAL_PER_CLASS, seed=SEED)
+                    train_per_class=TRAIN_PER_CLASS, val_per_class=VAL_PER_CLASS, seed=SEED,
+                    category_source='Explicit unambiguous garment terms from official training captions',
+                    category_patterns=GARMENT_TERMS)
     write(args.out/'protocol.json', protocol)
     print('RGB_DISTILL_PREPARED', len(pairs), flush=True)
 
