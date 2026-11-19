@@ -42,7 +42,7 @@ stage() {
     fi
 }
 
-while (( SECONDS < 172800 )); do
+while true; do
     if [[ ! -s "$out/protocol.json" ]]; then
         stage prep protocol.json "${cpu[@]}" --time=00:10:00 "$runner" "$prior" prepare --device cpu
     elif [[ ! -s "$out/qualification.json" ]]; then
@@ -87,6 +87,5 @@ while (( SECONDS < 172800 )); do
             stage score500 eval500/tail6_review.zip "${cpu[@]}" --cpus-per-task=8 --time=00:30:00 "$runner" "$prior" score500 --device cpu
         fi
     fi
-    sleep 12
+    sleep 30
 done
-exit 2
