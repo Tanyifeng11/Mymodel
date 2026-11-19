@@ -76,6 +76,7 @@ def prepare():
         inference=dict(size=[384,512], steps=50, cfg=7., sketch_scale=.6, texture_tokens=False),
         selection='fixed second epoch; validation is monitoring only, no test-set checkpoint selection',
         safety_margins=dict(leak=.002, edge_f1=.01, iou=.005),
+        texture_gate='gray DISTS significantly lower versus parent and control after Holm; gray margin must improve in direction versus both',
         limitations=['single training seed; historical primary test identities previously inspected',
             'primary test retains old captions and inherited CFG mismatch for historical comparability',
             'official validation identities are disjoint from training and primary test, previously used for development',
@@ -511,9 +512,13 @@ def report():
     texture_tests=[r for r in paired if r['metric']=='gray_dists' and r['comparison'] in
         [name('texture',12)+' minus '+other for other in [PARENT_ARM,name('control',12)]]]
     texture_pass=all(r['mean']<0 and r['p_holm']<.05 for r in texture_tests) and len(texture_tests)==2
+    response_tests=[r for r in paired if r['metric']=='gray_margin' and r['comparison'] in
+        [name('texture',12)+' minus '+other for other in [PARENT_ARM,name('control',12)]]]
+    texture_pass=texture_pass and len(response_tests)==2 and all(r['mean']>0 for r in response_tests)
     write(ROOT/'complete.json',dict(complete=True,arms=list(ARMS),epochs_per_arm=2,
         updates_per_arm=UPDATES,total_updates_per_arm=PARENT_UPDATES+UPDATES,parent_sha256=PARENT_SHA,
         primary_final_epoch=12,safety_pass=all(r['passed'] for r in gate),texture_improvement_pass=texture_pass,
+        formal_new_outputs=384,validation_new_outputs=512,validation_baseline_outputs=128,total_new_outputs=1024,
         accepted=all(r['passed'] for r in gate) and texture_pass,
         interpretation='report outcome regardless of success; no automatic promotion or extension'))
     files=[p for p in ROOT.rglob('*') if p.is_file() and 'source' not in p.relative_to(ROOT).parts
