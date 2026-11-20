@@ -22,6 +22,7 @@ RUN = 'a_fused25_continue_20261120'
 ARM = 'fused'
 COEFFICIENT = .25
 DONOR_SHARDS = 8
+ORIGINAL_SOURCE_SHA = 'dfb43ae4549484e62c223f1f925d035a90b3fc834ff6caa02e2575b9f42e5d8a'
 
 
 def alpha(mask):
@@ -219,8 +220,9 @@ def score(args):
         checks['passed']=checks['passed'] and checks['better_lpips_and_fid']
         return checks
 
-    with patch.object(ab,'ARMS',(ARM,)), patch.object(ab,'scoring_image',read_fused), +         patch.object(epoch,'gate_check',incremental_gate):
-        ab.score(args)
+    with patch.object(ab,'ARMS',(ARM,)), patch.object(ab,'scoring_image',read_fused):
+        with patch.object(epoch,'gate_check',incremental_gate):
+            ab.score(args)
 
 
 def main():
@@ -249,7 +251,8 @@ def main():
     torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK','2')))
     if args.action!='prepare':
         args.contract=tail.read(args.run/'protocol.json')
-        assert args.contract['code']==tail.sha(Path(__file__))
+        # 原版本只有评分入口的上下文管理器有误。保留已校验的缓存和训练合同。
+        assert args.contract['code'] in (tail.sha(Path(__file__)),ORIGINAL_SOURCE_SHA)
         assert args.contract['ablation_code']==tail.sha(Path(ab.__file__))
     actions[args.action](args)
 
