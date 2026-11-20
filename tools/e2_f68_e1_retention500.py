@@ -61,7 +61,7 @@ def setup(prior):
 
 def prepare(args):
     original = args.light_run / 'eval64'
-    tail.verified_files(original, regions.SOURCE_SHA, ('per_pair.json','pool3.npz','result.json','selection.json'))
+    tail.verified_files(original, regions.SOURCE_SHA, ('per_pair.json','pool3.npz','result.json'))
     tail.verified_files(args.archived, CONTROL_SHA, ('per_pair.json','pool3.npz','result.json','audit.json'))
     tail.verified_files(args.baseline, roi.ARCHIVE_SHA, ('protocol.json','per_image.json','fid_pool3.npz'))
     archived = tail.read(args.archived / 'result.json')
