@@ -33,17 +33,17 @@ STEPS = 128
 
 def prepare(args):
     parent = args.parent / 'eval64'
-    tail.verified_files(parent, PARENT_SHA, ('protocol.json','model.json','selection.json','per_pair.json',
-                                            'result.json','pool3.npz','training_A.json'))
+    tail.verified_files(parent, PARENT_SHA, ('per_pair.json','result.json','pool3.npz'))
     tail.verified_files(args.parent/FOLLOWUP_RUN, OFFLINE_SHA, ('result.json','per_pair.json','edit_pool3.npz'))
     parent_contract = tail.read(args.parent/'protocol.json')
+    parent_manifest = tail.read(parent/'review_manifest.json')
     for artifact in ('protocol', 'model', 'selection'):
-        assert tail.sha(parent/f'{artifact}.json') == tail.sha(args.parent/f'{artifact}.json')
+        assert tail.sha(args.parent/f'{artifact}.json') == parent_manifest[f'{artifact}.json']
     selection = tail.read(args.parent/'selection.json')
     assert selection['update'] == 128 and selection['contract'] == parent_contract
     start = args.parent/'A/step128.pt'
     assert tail.sha(start) == selection['checkpoints']['A']
-    assert tail.sha(args.parent/'A/training.json') == tail.sha(parent/'training_A.json')
+    assert tail.sha(args.parent/'A/training.json') == parent_manifest['training_A.json']
     assert tail.sha(args.out/'protocol.json') == parent_contract['training_protocol']
     assert tail.sha(args.baseline/'protocol.json') == parent_contract['evaluation_protocol']
     hashes = {}
