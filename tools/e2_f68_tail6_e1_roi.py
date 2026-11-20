@@ -23,16 +23,21 @@ ORIGINAL = ('off', 'A', 'B', 'gate', 'blend', 'on')
 SIDES = ('inside', 'edge', 'background')
 EDITS = ('A_inside_blend', 'A_edge_blend', 'A_background_blend', 'A_inside_edge_blend',
          'A_edge_gate', 'A_edge_blend_r4', 'A_edge_blend_r16', 'B_edge_blend')
+FOLLOWUP_RUN = 'roi_followup_64_20261120'
+FOLLOWUP = ('A_background_off', 'A_background_blend', 'A_background_self_median',
+            'A_bg_inner025', 'A_bg_inner050', 'A_bg_inner075', 'A_bg_pants_inner100',
+            'A_bg_inner_lowL', 'A_bg_inner_lowab', 'A_bg_inner_band')
 
 
 def edge_of(mask):
     return mask & ~binary_erosion(mask, structure=np.ones((3,3)), border_value=0)
 
 
-def contour(picture, mask, partition, target_edge, distance_to_target):
+def contour(picture, mask, partition, target_edge, distance_to_target, predicted=None):
     from eval.eval_utils import estimate_foreground_mask
 
-    predicted = estimate_foreground_mask(Image.fromarray(picture), tail.SIZE)
+    if predicted is None:
+        predicted = estimate_foreground_mask(Image.fromarray(picture), tail.SIZE)
     if predicted is None:
         predicted = np.zeros_like(mask)
     p_edge = edge_of(predicted)
@@ -70,6 +75,69 @@ def swaps(images, mask, partition):
                 A_edge_blend_r4=pixels_mixed(a,blend,roi.gaussian(roi.regions(mask,4)[1].astype('float32'),2)),
                 A_edge_blend_r16=pixels_mixed(a,blend,roi.gaussian(roi.regions(mask,16)[1].astype('float32'),2)),
                 B_edge_blend=pixels_mixed(b,blend,edge))
+
+
+def border_reference(image):
+    x = image.astype('float32')
+    return np.median(np.concatenate((x[0],x[-1],x[:,0],x[:,-1])),axis=0)
+
+
+def foreground_at_reference(image, color):
+    from garment_mask_utils import _binary_close, _filter_components
+
+    x=image.astype('float32')
+    dist=np.linalg.norm(x-color[None,None],axis=2)
+    mask=_binary_close((dist>18.) | (x.mean(axis=2)<235.),5)
+    if mask.any():
+        contours,_=cv2.findContours(mask.astype('uint8')*255,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            largest=max(cv2.contourArea(c) for c in contours)
+            filled=np.zeros_like(mask,dtype='uint8')
+            minimum=max(16.,largest*.02)
+            for c in contours:
+                if cv2.contourArea(c)>=minimum:
+                    cv2.drawContours(filled,[c],-1,255,thickness=-1)
+            mask=filled>127
+    return _filter_components(mask)
+
+
+def followup_swaps(images, partition, category):
+    inside,_,outside=(roi.gaussian(area.astype('float32'),2) for area in partition)
+    a,blend=images['A'],images['blend']
+    bg=pixels_mixed(a,blend,outside)
+    exterior=partition[2]
+    own_color=np.median(a[exterior],axis=0) if exterior.any() else border_reference(a)
+    edited=dict(A_background_off=pixels_mixed(a,images['off'],outside),
+                A_background_blend=bg,
+                A_background_self_median=pixels_mixed(a,own_color,outside))
+    for ratio in (.25,.50,.75):
+        edited[f'A_bg_inner{int(ratio*100):03d}']=pixels_mixed(a,blend,outside+ratio*inside)
+    edited['A_bg_pants_inner100']=pixels_mixed(a,blend,outside+inside) if category=='pants' else bg
+    lab=roi.lab(bg)
+    _,a_low,a_band=appearance_inputs(a)
+    _,b_low,b_band=appearance_inputs(blend)
+    roundtrip=roi.as_rgb(lab).astype('int16')
+    for name,start,stop,shift in (
+        ('lowL',0,1,(b_low-a_low)[...,:1]),
+        ('lowab',1,3,(b_low-a_low)[...,1:]),
+        ('band',0,1,(b_band-a_band)[...,:1]),
+    ):
+        goal=lab.copy()
+        goal[...,start:stop]+=inside[...,None]*shift
+        edited['A_bg_inner_'+name]=roi.apply_lab_edit(bg,roundtrip,goal)
+    return edited
+
+
+def reference_probe(images, mask, partition, edge, dist, saved):
+    before,after=images['A'],images['A_background_blend']
+    a,b=border_reference(before),border_reference(after)
+    def score(x, anchor):
+        pred=foreground_at_reference(x,anchor)
+        return contour(x,mask,partition,edge,dist,predicted=pred)['f1_r3']
+    assert abs(score(before,a)-saved['A']['f1_r3'])<1e-12
+    assert abs(score(after,b)-saved['A_background_blend']['f1_r3'])<1e-12
+    return dict(A_at_after_border=score(before,b), bg_edit_at_A_border=score(after,a),
+                border_rgb_l2=float(np.linalg.norm(a-b)))
 
 
 def source_cases(base, run, data, protocol, saved):
@@ -129,7 +197,7 @@ def run(args):
     base=args.prior/tail.distill.BASE
     run=base/epoch.RUN
     old=run/'eval64'
-    out=run/RUN
+    out=run/(FOLLOWUP_RUN if args.followup else RUN)
     out.mkdir(exist_ok=True)
     if (out/'review.zip').is_file():
         print('E1_ROI_ARCHIVE',tail.sha(out/'review.zip'),flush=True)
@@ -143,8 +211,9 @@ def run(args):
     with np.load(old/'pool3.npz',allow_pickle=False) as f:
         features={k:f[k] for k in (*ORIGINAL,'gt')}
     metric,inception=tail.metric_models('cpu',protocol['metric_assets'])
-    edit_features={key:[] for key in EDITS}
-    variants=(*ORIGINAL,*EDITS)
+    edits=FOLLOWUP if args.followup else EDITS
+    edit_features={key:[] for key in edits}
+    variants=(*ORIGINAL,*edits)
     rows=[]
     with tempfile.TemporaryDirectory(prefix='e1_roi64_',dir=os.environ.get('SLURM_TMPDIR')) as temp:
         scratch=Path(temp)/'edit.png'
@@ -156,7 +225,10 @@ def run(args):
             weights=torch.from_numpy(partition[None].astype('float32'))
             target_edge=edge_of(mask)
             dist=distance_transform_edt(~target_edge)
-            all_images={**images,**swaps(images,mask,partition)}
+            swaps_for_case=(followup_swaps(images,partition,row['category']) if args.followup
+                            else swaps(images,mask,partition))
+            assert tuple(swaps_for_case)==edits
+            all_images={**images,**swaps_for_case}
             scores,region_scores,shape,texture={},{},{},{}
             slices=roi.lpips_features(metric,roi.tensors([gt]))
             gt_color=appearance_inputs(gt)
@@ -167,7 +239,7 @@ def run(args):
                 lpips=sum(layer.mean(dim=(-2,-1)) for layer in layers).numpy()
                 pieces=roi.apportion(layers,weights)
                 assert np.allclose(pieces.sum(axis=1),lpips,atol=1e-6,rtol=0), (case,names)
-                changed=[j for j,n in enumerate(names) if n in EDITS]
+                changed=[j for j,n in enumerate(names) if n in edits]
                 if changed:
                     for j,vec in zip(changed,inception(batch[changed])[0].flatten(1).numpy()):
                         edit_features[names[j]].append(vec)
@@ -199,16 +271,22 @@ def run(args):
             npixels=int(partition[2].sum())
             background={n:dict(changed_pixels=int(np.any(images[n]!=images['off'],axis=2)[partition[2]].sum()),
                                background_pixels=npixels) for n in ORIGINAL}
-            rows.append(dict(index=row['index'],case_id=case,category=row['category'],scores=scores,
-                             regional=region_scores,contour=shape,texture=texture,background=background,core_valid=valid))
+            observation=dict(index=row['index'],case_id=case,category=row['category'],scores=scores,
+                             regional=region_scores,contour=shape,texture=texture,background=background,core_valid=valid)
+            if args.followup:
+                observation['border_reference']=reference_probe(all_images,mask,partition,target_edge,dist,shape)
+            rows.append(observation)
             if len(rows)%8==0:
                 print('E1_ROI_CASES',len(rows),flush=True)
     features.update({name:np.stack(vec) for name,vec in edit_features.items()})
     assert len(rows)==64 and all(f.shape==(64,2048) and np.isfinite(f).all() for f in features.values())
-    result=tail.summarize(rows,features,variants,('off','A','blend'),('A','B',*EDITS))
+    result=tail.summarize(rows,features,variants,('off','A','blend'),('A','B',*edits))
     for name,group in result['groups'].items():
         selected=[r for r in rows if name=='all' or r['category']==name]
         group.update(local_stats(selected))
+        if args.followup:
+            group['border_reference']={k:float(np.mean([row['border_reference'][k] for row in selected]))
+                                       for k in selected[0]['border_reference']}
         for arm in ORIGINAL:
             assert abs(group['arms'][arm]['fid']['fid']-control_result['groups'][name]['arms'][arm]['fid']['fid']) < 1e-8
     result['acceptance']={arm:epoch.gate_check(result,arm) for arm in variants}
@@ -217,7 +295,7 @@ def run(args):
                         contour_radii_px=[1,3,5,8])
     tail.write(out/'result.json',result)
     tail.write(out/'per_pair.json',rows)
-    np.savez_compressed(out/'edit_pool3.npz',**{k:features[k] for k in EDITS})
+    np.savez_compressed(out/'edit_pool3.npz',**{k:features[k] for k in edits})
     files=('result.json','per_pair.json','edit_pool3.npz')
     tail.write(out/'review_manifest.json',{n:tail.sha(out/n) for n in files})
     temporary=out/'review.zip.tmp'
@@ -231,6 +309,7 @@ def run(args):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('prior',type=Path)
+    parser.add_argument('--followup',action='store_true')
     torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK','8')))
     cv2.setNumThreads(1)
     run(parser.parse_args())
