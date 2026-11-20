@@ -21,6 +21,9 @@ SOURCE_SHA = 'f6d00513f127932070d9fca943258078eb28a3247b8d3451ce9289b608cdbe3f'
 RUN = 'fid_regions_64_20261121'
 COHORT = 'tail6_real_ab_e1_epoch10_20261119'
 BASE_ARMS = ('offline25', 'continued_A', 'B')
+REGION_B_SHA = '40cbbe5df7cad9234ab64763acf4bc2020da951a943633dcbf7fea5d8361cac7'
+RETENTION_RUN = 'retention_125_250'
+RETENTION = {'retain_125': .125, 'retain_250': .25}
 
 
 def checked_png(path, digest):
@@ -90,6 +93,67 @@ def edits(images, mask, carrier):
     return images
 
 
+def retention_edits(images, mask, _carrier):
+    before, offline = images['B'], images['offline25']
+    inside = regions(mask)[0]
+    result = {k: fused.pixels_mixed(before, offline, (1-value)*inside)
+              for k, value in RETENTION.items()}
+    for image in result.values():
+        assert np.array_equal(image[inside == 0], before[inside == 0])
+    return result
+
+
+def summarize_retention(source, previous, measured, arrays):
+    controls = {'offline25': 'offline25', 'retain_100': 'B'}
+    regional = {'retain_0': 'swap_1', 'retain_50': 'interior_half'}
+    history = tail.read(source / 'per_pair.json')
+    old_region = tail.read(previous / 'per_pair.json')
+    for name, path, mapping in (('source', source, controls), ('regions', previous, regional)):
+        with np.load(path / 'pool3.npz', allow_pickle=False) as saved:
+            arrays.update({arm: saved[key] for arm, key in mapping.items()})
+            if name == 'source':
+                arrays['gt'] = saved['gt']
+    assert len(measured) == len(history) == len(old_region) == 64
+    for new, a, b in zip(measured, history, old_region):
+        for key in ('index', 'case_id', 'category', 'interior_px'):
+            assert new[key] == a[key] == b[key]
+        for name in ('scores', 'texture'):
+            new[name].update({arm: a[name][key] for arm, key in controls.items()})
+            new[name].update({arm: b[name][key] for arm, key in regional.items()})
+    arms = ('offline25', 'retain_0', *RETENTION, 'retain_50', 'retain_100')
+    assert all(x.shape == (64, 2048) and np.isfinite(x).all() for x in arrays.values())
+    result = tail.summarize(measured, arrays, arms, ('offline25',),
+                            arms[1:], fid_reference='offline25')
+    original = tail.read(source / 'result.json')
+    for label, group in result['groups'].items():
+        valid = [row for row in measured if row['interior_px'] >= 256
+                 and (label == 'all' or row['category'] == label)]
+        group['texture_count'] = len(valid)
+        group['texture'] = {arm: {key: float(np.mean([r['texture'][arm][key] for r in valid]))
+                                  for key in valid[0]['texture'][arm]} for arm in arms}
+    group = result['groups']['all']
+    truth = original['groups']['all']
+    limits = {key: v['threshold'] for key, v in original['acceptance']['B']['seven']['checks'].items()}
+    band_limit = min(truth['texture'][key]['band_mae'] for key in ('off', 'on'))
+    acceptance = {}
+    for arm in arms[1:]:
+        scores = group['arms'][arm]
+        checks = {}
+        for key, limit in limits.items():
+            value = scores[key]['fid' if key == 'fid' else 'mean']
+            checks[key] = bool(value < limit if key == 'fid' else
+                               value <= limit if key in ('lpips', 'leak') else value >= limit)
+        band = group['texture'][arm]['band_mae'] < band_limit
+        delta = {key: scores[key]['vs_offline25'] if key == 'fid' else
+                 scores[key]['mean']-group['arms']['offline25'][key]['mean']
+                 for key in limits}
+        target = delta['lpips'] < 0 and delta['fid'] < 0 and delta['ssim'] >= 0 and delta['contour_f1'] >= 0
+        acceptance[arm] = dict(seven=checks, band=band, delta_vs_offline25=delta,
+                               passed=all(checks.values()) and band and target)
+    result.update(acceptance=acceptance, thresholds=limits, band_threshold=band_limit)
+    return result
+
+
 def pack(out, names):
     manifest = {name: tail.sha(out / name) for name in names}
     tail.write(out / 'review_manifest.json', manifest)
@@ -101,11 +165,15 @@ def pack(out, names):
 
 
 @torch.inference_mode()
-def run(prior, carrier):
+def run(prior, carrier, retention=False):
     base = prior / tail.distill.BASE
     parent = base / COHORT
     source = parent / light.RUN / 'eval64'
     out = parent / light.RUN / RUN / carrier
+    previous = out
+    if retention:
+        out = out.parent / RETENTION_RUN
+        tail.verified_files(previous, REGION_B_SHA, ('per_pair.json', 'pool3.npz', 'audit.json'))
     out.mkdir(exist_ok=True, parents=True)
     args = SimpleNamespace(out=base, data=prior.parents[2] / 'datasets/BF', parent=parent)
     tail.verified_files(source, SOURCE_SHA, ('per_pair.json', 'pool3.npz', 'result.json'))
@@ -117,6 +185,7 @@ def run(prior, carrier):
     feature_chunks, measured = {}, []
     originals = np.load(source / 'pool3.npz', allow_pickle=False)
     records = cases(args, protocol, rows)
+    make_edits = retention_edits if retention else edits
     for start in range(0, len(rows), 4):
         group = [next(records) for _ in range(min(4, len(rows) - start))]
         batch = {}
@@ -131,13 +200,18 @@ def run(prior, carrier):
                     item['deltas'][region_name] = dict(
                         pixels=len(diff), mae=float(np.abs(diff).mean()) if len(diff) else None,
                         changed=float(np.any(diff != 0, axis=1).mean()) if len(diff) else None)
-                for name, img in edits(images, mask, carrier).items():
+                for name, img in make_edits(images, mask, carrier).items():
                     batch.setdefault(name, []).append(img)
                     if name in BASE_ARMS:
                         continue
                     path = Path(temp) / 'current.png'
                     picture = Image.fromarray(img)
-                    picture.save(path)
+                    if retention:
+                        path = out / 'images' / name / (row['case_id'] + '.png')
+                        fused.save_png(path, img)
+                        item.setdefault('pngs', {})[name] = tail.sha(path)
+                    else:
+                        picture.save(path)
                     item['scores'][name] = tail.image_scores(picture, gt, path, target_path, mask)
                     item['texture'][name] = tail.appearance(img, truth_lab, deep)
                 measured.append(item)
@@ -155,12 +229,23 @@ def run(prior, carrier):
                 item['scores'][name]['lpips'] = score
         print('FID_REGION_BATCH', carrier, start+len(group), len(rows), flush=True)
     originals.close()
-    np.savez_compressed(out / 'pool3.npz', **{k:np.concatenate(v) for k,v in feature_chunks.items()})
+    arrays = {k: np.concatenate(v) for k, v in feature_chunks.items()}
+    names = ['pool3.npz', 'per_pair.json', 'audit.json']
+    metadata = {}
+    if retention:
+        result = summarize_retention(source, previous, measured, arrays)
+        tail.write(out / 'result.json', result)
+        names.append('result.json')
+        metadata = dict(new_retention=RETENTION, reused_region_sha256=REGION_B_SHA,
+                        reused_arms=['offline25', 'retain_0', 'retain_50', 'retain_100'],
+                        pixels_outside_feathered_mask_unchanged=True)
+    np.savez_compressed(out / 'pool3.npz', **arrays)
     tail.write(out / 'per_pair.json', measured)
     tail.write(out / 'audit.json', dict(samples=len(rows), carrier=carrier, source_sha256=SOURCE_SHA,
-        code_sha256=tail.sha(Path(__file__)), sigma=2, radius=8, verified_original_features=True,
-        mode='RGB composites and frozen metric forward only', diffusion_rollouts=0, optimizer_updates=0))
-    pack(out, ('pool3.npz', 'per_pair.json', 'audit.json'))
+        code_sha256=tail.sha(Path(__file__)), sigma=2, radius=8, verified_original_features=not retention,
+        mode='RGB composites and frozen metric forward only', diffusion_rollouts=0, optimizer_updates=0,
+        **metadata))
+    pack(out, names)
     print('FID_REGION_DONE', carrier, (out / 'review.zip').stat().st_size, tail.sha(out / 'review.zip'), flush=True)
 
 
@@ -168,10 +253,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('prior', type=Path)
     parser.add_argument('carrier', choices=('B', 'continued_A'))
+    parser.add_argument('--retention', action='store_true')
     args = parser.parse_args()
+    if args.retention and args.carrier != 'B':
+        parser.error('--retention requires carrier B')
     cv2.setNumThreads(1)
     torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK', '8')))
-    run(args.prior, args.carrier)
+    run(args.prior, args.carrier, args.retention)
 
 
 if __name__ == '__main__':
