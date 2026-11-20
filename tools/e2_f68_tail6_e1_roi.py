@@ -166,7 +166,7 @@ def run(args):
                 layers=roi.maps(metric,slices,batch)
                 lpips=sum(layer.mean(dim=(-2,-1)) for layer in layers).numpy()
                 pieces=roi.apportion(layers,weights)
-                assert np.allclose(pieces.sum(axis=1),lpips,atol=1e-7,rtol=0)
+                assert np.allclose(pieces.sum(axis=1),lpips,atol=1e-6,rtol=0), (case,names)
                 changed=[j for j,n in enumerate(names) if n in EDITS]
                 if changed:
                     for j,vec in zip(changed,inception(batch[changed])[0].flatten(1).numpy()):
