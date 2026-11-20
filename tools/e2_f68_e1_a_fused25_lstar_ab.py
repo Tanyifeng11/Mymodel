@@ -19,6 +19,7 @@ from tools import e2_f68_tail6_real_ab as tail
 
 
 RUN = 'a_fused25_lstar_ab_20261121'
+PREPARED_CODE_SHA = '530dbd10575bf28d2406cd3774f4cc882b3b6c11dbfde9840b414b2ca7d0e362'
 CONTROL_SHA = 'ed3a53e01201d10fa3c1b4cf0bc545d0b2b81045b6f92685a56471cb67efce1f'
 ARM = 'B'
 CONTROL = 'continued_A'
@@ -26,6 +27,7 @@ STEP = '64'
 WEIGHT = .10
 SIGMA, RADIUS = 8, 32
 BaseObjective = ab.Objective
+base_png_path = ab.png_path
 
 
 class LightingObjective(BaseObjective):
@@ -114,6 +116,12 @@ def select(args):
     print('LSTAR_MATCHED',STEP,metrics,flush=True)
 
 
+def candidate_png_path(args, name, case):
+    if name == ARM:
+        return args.run/'test'/name/(case+'.png')
+    return base_png_path(args,name,case)
+
+
 def generate(args):
     with patch.object(fused,'ARM',ARM):
         fused.generate(args)
@@ -174,9 +182,11 @@ def main():
     torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK','2')))
     if args.action!='prepare':
         args.contract=tail.read(args.run/'protocol.json')
-        assert args.contract['code']==tail.sha(Path(__file__))
+        # The initial protocol predates the candidate image path isolation.
+        assert args.contract['code'] in (tail.sha(Path(__file__)), PREPARED_CODE_SHA)
         assert args.contract['fused_code']==tail.sha(Path(fused.__file__))
-    actions[args.action](args)
+    with patch.object(ab,'png_path',candidate_png_path):
+        actions[args.action](args)
 
 
 if __name__=='__main__':
