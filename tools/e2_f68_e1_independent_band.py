@@ -31,7 +31,8 @@ GROUPS = {
 def details(pred, target):
     x, y = pred.astype('float64'), target.astype('float64')
     a, b = roi.rms(x), roi.rms(y)
-    mae = float(np.abs(x-y).mean())
+    # 齐对原验收的 float32 绝对误差和均值，再用 float64 分解平方误差。
+    mae = float(np.abs(pred-target).mean())
     cos = float(np.mean(x*y)/(a*b)) if a*b>1e-12 else None
     amplitude = (a-b)**2
     position = 2*a*b*(1-cos) if cos is not None else 0.
@@ -153,7 +154,8 @@ def run(prior):
             band = roi.band(lab[...,0])
             stats = details(band[inner],target)
             for key,metric in (('mae','band_mae'),('pred_rms','band_rms'),('abs_rms_error','band_rms_error')):
-                np.testing.assert_allclose(stats[key],row['texture'][name][metric],atol=2e-7,rtol=1e-7)
+                np.testing.assert_allclose(stats[key],row['texture'][name][metric],atol=2e-7,rtol=1e-7,
+                                           err_msg=f'{case} {name} {metric}')
             record['arms'][name] = stats
             if name=='retain_125' and row['category']!='pants':
                 weight = roi.gaussian(inner.astype('float32'),2)
