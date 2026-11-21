@@ -171,16 +171,23 @@ class SharedNoise:
         return output
 
 
-def generate(args):
+def generate(args, marker_name=None):
     args.action = 'generate500'
     memo = SharedNoise()
+    default = args.run/f'generate500_{args.shard}.json'
+    marker = args.run/marker_name if marker_name is not None else default
+    save = tail.write
+
+    def write(path, value):
+        if path == default:
+            return save(marker,dict(value,reused_unet_forwards=memo.reused))
+        return save(path,value)
+
     with patch.object(ab,'ARMS',('B',)), patch.object(ab,'accepted',return_value=('B',)):
         with patch.object(ab,'png_path',raw_path), patch.object(tail.joint,'sample',memo):
-            ab.generate(args)
-    mark = args.run/f'generate500_{args.shard}.json'
-    result = tail.read(mark)
-    result['reused_unet_forwards'] = memo.reused
-    tail.write(mark,result)
+            with patch.object(tail,'write',write):
+                ab.generate(args)
+    result = tail.read(marker)
     print('RETENTION500_GENERATED',args.shard,len(result['ids']),memo.reused,flush=True)
 
 

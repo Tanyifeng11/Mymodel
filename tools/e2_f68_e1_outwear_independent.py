@@ -1,6 +1,7 @@
 """固定外套衣内规则，在互斥的 BF 测试身份上验证三种输出。"""
 import argparse
 from collections import Counter
+import copy
 import hashlib
 import os
 from pathlib import Path
@@ -182,6 +183,38 @@ def generate(args):
         expand.generate(args)
 
 
+def generation_records(args):
+    records = []
+    covered = set()
+    for shard in range(args.shards):
+        path = args.run/f'generate500_{shard}.json'
+        if path.is_file():
+            record = tail.read(path)
+            assert record['ids']==list(range(shard,500,args.shards))
+            records.append(record)
+            covered.update(record['ids'])
+    remaining = sorted(set(range(500))-covered)
+    consolidated = args.run/'remaining_generation.json'
+    if consolidated.is_file():
+        record = tail.read(consolidated)
+        assert record['ids']==remaining
+        records.append(record)
+        remaining = []
+    assert all(set(record['arms'])==set(expand.RAW) and record['frozen'] for record in records)
+    return records,remaining
+
+
+def complete(args):
+    _,remaining = generation_records(args)
+    print('OUTWEAR_INDEPENDENT_REMAINING',len(remaining),flush=True)
+    if remaining:
+        worker = copy.copy(args)
+        worker.device,worker.shard,worker.shards = 'cuda:0',0,1
+        with patch.object(epoch,'pair_indices',return_value=remaining):
+            expand.generate(worker,marker_name='remaining_generation.json')
+    score(args)
+
+
 def fit_gate(result):
     gate = epoch.gate_check(result,FIXED)
     arms = result['groups']['all']['arms']
@@ -200,9 +233,8 @@ def score(args):
     dest.mkdir(exist_ok=True)
     if (dest/'review.zip').is_file():
         return
-    markers = [tail.read(args.run/f'generate500_{i}.json') for i in range(args.shards)]
-    assert all(m['ids']==list(range(i,500,args.shards)) and set(m['arms'])==set(expand.RAW) and m['frozen']
-               for i,m in enumerate(markers))
+    markers,remaining = generation_records(args)
+    assert not remaining
     lpips,inception = tail.metric_models('cpu',args.protocol['metric_assets'])
     assert tail.metric_assets()==args.protocol['metric_assets']
     features = {name:np.zeros((500,2048),dtype='float32') for name in (*SCORED,'gt')}
@@ -282,7 +314,7 @@ def score(args):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('prior',type=Path)
-    p.add_argument('action',choices=('prepare','generate','score'))
+    p.add_argument('action',choices=('prepare','generate','score','complete'))
     p.add_argument('--shard',type=int,default=0)
     p.add_argument('--shards',type=int,default=24)
     a = p.parse_args()
@@ -299,8 +331,10 @@ def main():
     if a.action=='generate':
         args.device = 'cuda:0'
         generate(args)
-    else:
+    elif a.action=='score':
         score(args)
+    else:
+        complete(args)
 
 
 if __name__=='__main__':
