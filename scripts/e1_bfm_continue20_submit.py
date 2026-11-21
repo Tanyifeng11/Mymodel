@@ -1,4 +1,4 @@
-"""CPU准备后，以一个双卡作业顺序执行预检、十轮训练、评测和汇总。"""
+"""一个双卡作业完成准备、预检、十轮训练和评测，适应提交数量限制。"""
 import json
 from pathlib import Path
 import subprocess
@@ -10,22 +10,18 @@ def main():
     (ROOT/'logs').mkdir(parents=True, exist_ok=True)
     path = ROOT/'submitted_jobs.json'
     jobs = json.loads(path.read_text()) if path.exists() else {}
-    for key,stage,gpus,dependency in [('prepare','prepare',0,None),('pipeline','run',2,'prepare')]:
-        if key in jobs:
-            continue
-        args = ['sbatch','--parsable','-p','gpu' if gpus else 'cpu','-J','e1e20_'+key,
-            '-N1','-n1','-c','8' if gpus else '4','--mem','128G' if gpus else '64G',
-            '-t','7-00:00:00' if gpus else '01:00:00','-o',str(ROOT/'logs'/(key+'_%j.log'))]
-        if gpus:
-            args += ['--gres=gpu:2']
-        if dependency:
-            args += ['--dependency=afterok:'+jobs[dependency]]
-        args += [str(ROOT/'source/scripts/e1_bfm_continue20.sbatch'),stage]
-        job = subprocess.check_output(args,text=True).strip()
-        assert job.isdigit(),job
-        jobs[key] = job
-        path.write_text(json.dumps(jobs,indent=2)+'\n')
-        print(key,job,flush=True)
+    if 'pipeline' in jobs:
+        print('existing pipeline',jobs['pipeline'],flush=True)
+        return
+    args = ['sbatch','--parsable','-p','gpu','-J','e1e20_pipeline',
+        '-N1','-n1','-c','8','--mem','128G','-t','7-00:00:00','--gres=gpu:2',
+        '-o',str(ROOT/'logs/pipeline_%j.log'),
+        str(ROOT/'source/scripts/e1_bfm_continue20.sbatch'),'run']
+    job = subprocess.check_output(args,text=True).strip()
+    assert job.isdigit(),job
+    jobs['pipeline'] = job
+    path.write_text(json.dumps(jobs,indent=2)+'\n')
+    print('pipeline',job,flush=True)
 
 
 if __name__ == '__main__':

@@ -9,6 +9,7 @@ export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 WANDB_MODE=disabled
 if [[ "$1" == run ]]; then
+    python -m tools.e1_bfm_continue20 prepare
     if [[ ! -f "$RUN/audit/preflight_passed.json" ]]; then
         python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 -m tools.e1_bfm_continue20 smoke
     fi
