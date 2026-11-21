@@ -27,7 +27,7 @@ N_PER_CLASS = 125
 FIXED = 'outwear_restore'
 SCORED = (*expand.SCORED, FIXED)
 PREVIOUS_SHA = 'b5e3867e51dcf860cc1c563a2f7a21bce16ed1c28e6f61446cb6caac0fc6c42b'
-IDENTITY = re.compile(r'^(?:(?:dress|outwear|pants|top|bag)_)?(\d{6,})(?:_[\w-]+)?$')
+IDENTITY = re.compile(r'^(?:(?:dress|outwear|pants|top|bag)_)?(\d{5,})(?:[_ -][\w -]+)?$')
 
 
 def product(value):
