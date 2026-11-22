@@ -32,10 +32,10 @@ def factorial(values):
                 outwear_shapley=.5*(outwear-base+both-dress))
 
 
-def fid_intervals(features, labels):
+def fid_intervals(features, labels, arms=ARMS, contrast=factorial):
     # 配对重复抽样中的相同产品用计数权重表示，保持普通 FID 的样本协方差。
     gt = features['gt'].astype('float64')
-    pred = {a:features[a].astype('float64') for a in ARMS}
+    pred = {a:features[a].astype('float64') for a in arms}
     grams = {a:x @ gt.T for a,x in pred.items()}
     norm = {a:np.square(x).sum(axis=1) for a,x in pred.items()}
     gt_norm = np.square(gt).sum(axis=1)
@@ -52,15 +52,35 @@ def fid_intervals(features, labels):
         mu_gt = w @ gt[ids]
         var_gt = gt_norm[ids] @ counts - n*(mu_gt @ mu_gt)
         fids = {}
-        for arm in ARMS:
+        for arm in arms:
             mu = w @ pred[arm][ids]
             var = norm[arm][ids] @ counts - n*(mu @ mu)
             gram = grams[arm][sub]
             center = gram - (gram @ w)[:,None] - (w @ gram)[None,:] + w @ gram @ w
             cross = np.linalg.svd(center*scale[:,None]*scale[None,:],compute_uv=False).sum()
             fids[arm] = np.square(mu-mu_gt).sum() + (var+var_gt-2*cross)/(n-1)
-        effects.append(factorial(fids))
+        effects.append(contrast(fids))
     return {key:np.quantile([x[key] for x in effects],[.025,.975]).tolist() for key in effects[0]}
+
+
+def summarize_texture(result, rows, variants):
+    for name,group in result['groups'].items():
+        good = [r for r in rows if r['interior_px']>=256 and (name=='all' or name==r['category'])]
+        group['texture_count'] = len(good)
+        group['texture'] = {a:{key:float(np.mean([r['texture'][a][key] for r in good]))
+                               for key in good[0]['texture'][a]} for a in variants}
+
+
+def uniform_gate(result, arm):
+    gate = independent.fit_gate(result,arm)
+    texture = result['groups']['all']['texture']
+    delta = gate['delta'][BASE]
+    comparison = dict(fid=delta['fid']<=0,lpips=delta['lpips']<0,ssim=delta['ssim']>=0,
+                      contour_f1=delta['contour_f1']>=0,
+                      texture=texture[arm]['band_mae']<texture[BASE]['band_mae'])
+    gate['vs_uniform'] = comparison
+    gate['passed_with_uniform_target'] = gate['passed_all'] and all(comparison.values())
+    return gate
 
 
 def run(source):
@@ -104,11 +124,7 @@ def run(source):
 
     variants = (*CONTROLS,*ARMS)
     result = tail.summarize(rows,features,variants,(BASE,'offline25'),(DRESS,OUTWEAR,BOTH),fid_reference=BASE)
-    for name,group in result['groups'].items():
-        good = [r for r in rows if r['interior_px']>=256 and (name=='all' or name==r['category'])]
-        group['texture_count'] = len(good)
-        group['texture'] = {a:{key:float(np.mean([r['texture'][a][key] for r in good]))
-                               for key in good[0]['texture'][a]} for a in variants}
+    summarize_texture(result,rows,variants)
     all_group = result['groups']['all']
     arms, texture = all_group['arms'], all_group['texture']
     for a in (BASE,BOTH):
@@ -128,16 +144,7 @@ def run(source):
         str(c):{arm:roi.fid_terms(features[arm][labels==c],features['gt'][labels==c]) for arm in ARMS}
         for c in np.unique(labels)}
     result['changed_pairs'] = changed
-    result['acceptance'] = {}
-    for arm in ARMS:
-        gate = independent.fit_gate(result,arm)
-        delta = gate['delta'][BASE]
-        comparison = dict(fid=delta['fid']<=0,lpips=delta['lpips']<0,ssim=delta['ssim']>=0,
-                          contour_f1=delta['contour_f1']>=0,
-                          texture=texture[arm]['band_mae']<texture[BASE]['band_mae'])
-        gate['vs_uniform'] = comparison
-        gate['passed_with_uniform_target'] = gate['passed_all'] and all(comparison.values())
-        result['acceptance'][arm] = gate
+    result['acceptance'] = {arm:uniform_gate(result,arm) for arm in ARMS}
 
     print('BAND_CLASS_FID', {a:arms[a]['fid']['fid'] for a in ARMS},flush=True)
     result['fid_factorial'] = dict(point=factorial({a:arms[a]['fid']['fid'] for a in ARMS}),

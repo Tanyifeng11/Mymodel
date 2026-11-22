@@ -60,9 +60,15 @@ def attenuate(orig, lab, field, roundtrip, weight, coefficient):
     return result
 
 
-def score_edits(args, rows, choices, prior_features):
+def score_edits(args, rows, choices, prior_features, eligible=None, image_out=None):
     lpips,inception = tail.metric_models('cpu',args.protocol['metric_assets'])
     features = {name:prior_features['retain_125'].copy() for name in choices}
+    if eligible is None:
+        def eligible(row, name):
+            return row['category'] in GROUPS[name] and row['interior_px']>=256
+    if image_out is not None:
+        for name in choices:
+            (image_out/name).mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='band_probe_',dir=os.environ.get('SLURM_TMPDIR')) as scratch:
         png = Path(scratch)/'probe.png'
         for start in range(0,len(rows),4):
@@ -71,17 +77,19 @@ def score_edits(args, rows, choices, prior_features):
             for row in batch:
                 i,case = row['index'],row['case_id']
                 pair = args.protocol['pairs'][i]
-                active = [name for name,p in choices.items()
-                          if row['category'] in GROUPS[name] and row['interior_px']>=256]
+                active = [name for name in choices if eligible(row,name)]
                 row['edited_pixels'] = dict.fromkeys(choices,0)
                 for k in ('scores','texture'):
                     for name in choices:
                         row[k][name] = dict(row[k]['retain_125'])
+                if image_out is not None:
+                    row['pngs'].update(dict.fromkeys(choices,row['pngs']['retain_125']))
                 if not active:
                     continue
                 orig = fid_regions.checked_png(args.run/'images/retain_125'/(case+'.png'),row['pngs']['retain_125'])
                 mask = tail.case_mask(args,pair)
                 core = roi.regions(mask,20)[0]
+                assert int(core.sum())==row['interior_px']
                 weight = roi.gaussian(core.astype('float32'),2)
                 path = args.data/pair['gt']
                 assert tail.sha(path)==pair['input_sha256']['gt']
@@ -98,8 +106,11 @@ def score_edits(args, rows, choices, prior_features):
                     if not row['edited_pixels'][name]:
                         continue
                     picture = Image.fromarray(image)
-                    picture.save(png)
-                    row['scores'][name] = tail.image_scores(picture,gt,png,path,mask)
+                    scored = png if image_out is None else image_out/name/(case+'.png')
+                    picture.save(scored)
+                    if image_out is not None:
+                        row['pngs'][name] = tail.sha(scored)
+                    row['scores'][name] = tail.image_scores(picture,gt,scored,path,mask)
                     row['texture'][name] = tail.appearance(image,gt_lab,core)
                     pict[name].append((i,image,gt_rgb))
             for name, values in pict.items():
