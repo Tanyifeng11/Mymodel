@@ -27,6 +27,11 @@ METRICS = ('lpips','ssim','psnr','contour_f1','iou','leak')
 FIELDS = ('fid','fid_mean','fid_covariance',*METRICS,'band_mae')
 
 
+def average(values):
+    valid = [v for v in values if v is not None]
+    return float(np.mean(valid)) if valid else None
+
+
 def shapley(values, names):
     n = len(names)
     result = {}
@@ -79,6 +84,10 @@ def appearance(image, truth, regions):
     band,gt_band = roi.band(color[...,0]),roi.band(gt[...,0])
     result = {}
     for name,zone in zip(REGIONS,regions):
+        if not zone.any():
+            result[name] = dict.fromkeys(('rgb_mae','l_bias','low_l_mae','low_ab_error','band_mae',
+                                         'band_rms','gt_band_rms','band_rms_error'))
+            continue
         rms = roi.rms(band[zone])
         target = roi.rms(gt_band[zone])
         result[name] = dict(rgb_mae=float(np.abs(image.astype('float32')-truth)[zone].mean()),
@@ -124,16 +133,18 @@ def summarize(rows, features, gt):
         effects = shapley(coalitions,REGIONS)
         info = dict(n=len(picked),arms={str(b):dict(zip(FIELDS,v.tolist())) for b,v in enumerate(coalitions)},
             region_shapley={name:dict(zip(FIELDS,v.tolist())) for name,v in effects.items()})
-        info['pixel_difference'] = {reg:{k:float(np.mean([r['difference'][reg][k] for r in picked]))
+        info['pixel_difference'] = {reg:{k:average([r['difference'][reg][k] for r in picked])
                                         for k in ('rgb_mae','changed_fraction','changed_pixels','pixels')}
                                     for reg in REGIONS}
         info['native_lpips_delta'] = dict(zip(REGIONS,np.mean([
             np.array(r['lpips_region'][NEW])-r['lpips_region'][BASE] for r in picked],axis=0).tolist()))
         info['native_ssim_delta'] = dict(zip(REGIONS,np.mean([
             np.array(r['ssim_region'][NEW])-r['ssim_region'][BASE] for r in picked],axis=0).tolist()))
-        info['appearance'] = {arm:{reg:{k:float(np.mean([r['appearance'][arm][reg][k] for r in picked]))
+        info['appearance'] = {arm:{reg:{k:average([r['appearance'][arm][reg][k] for r in picked])
                                        for k in picked[0]['appearance'][arm][reg]} for reg in REGIONS}
                               for arm in (BASE,NEW)}
+        info['fusion_output_gain'] = {reg:average([r['fusion_output_gain'][reg] for r in picked])
+                                      for reg in REGIONS}
         info['foreground_changed_pixels'] = {reg:{key:float(np.mean([r['foreground'][reg][key] for r in picked]))
                                                    for key in ('raw','final')} for reg in REGIONS}
         groups[category] = info
@@ -217,11 +228,14 @@ def run(prior):
                 item.update(scores={'0':record['scores'][BASE],'7':record['scores'][NEW]},
                             texture={'0':record['texture'][BASE],'7':record['texture'][NEW]},
                             difference={},appearance={},foreground={},lpips_region={},ssim_region={})
+                gain = (1-ft.fused.alpha(mask))*(1-(1-expand.RETENTION)*weights[0])
+                item['fusion_output_gain'] = {name:average(gain[zone].tolist())
+                                               for name,zone in zip(REGIONS,hard)}
                 difference = images[NEW].astype('float32')-images[BASE]
                 for name,zone in zip(REGIONS,hard):
                     change = np.any(difference[zone]!=0,axis=1)
-                    item['difference'][name] = dict(rgb_mae=float(np.abs(difference[zone]).mean()),
-                        changed_fraction=float(change.mean()),changed_pixels=int(change.sum()),pixels=int(zone.sum()))
+                    item['difference'][name] = dict(rgb_mae=average(np.abs(difference[zone]).ravel().tolist()),
+                        changed_fraction=average(change.tolist()),changed_pixels=int(change.sum()),pixels=int(zone.sum()))
                 masks = {a:foreground(img) for a,img in images.items()}
                 for name,zone in zip(REGIONS,hard):
                     item['foreground'][name] = dict(
