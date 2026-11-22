@@ -17,6 +17,7 @@ from tools import e2_f68_e1_retain125_finetune as ft
 RUN = 'retain125_guarded_finetune_20261122'
 ARM = 'retain125_guard'
 SOURCE_SHA = 'ed5b0d1cff1b8cde198732058402db4db0e2f899dd45cffe1f00c4797102b311'
+INITIAL_CODE_SHA = '04b07e53ab213bd5d85f925ad404b79791270033cffe4bf82c3f2327fed0e67b'
 SNAPSHOTS = (8, 16, 32, 64)
 EDGE_WEIGHT = .20
 GUARD_WEIGHT = 1.
@@ -44,7 +45,19 @@ def setup(prior):
         selection='five relative gates, then LPIPS, band MAE, earlier step, fallback zero')
     path = args.run/'protocol.json'
     if path.is_file():
-        assert tail.read(path)==spec
+        previous_spec = tail.read(path)
+        if previous_spec!=spec:
+            # 首次启动仅生成参照缓存，在零惩罚预检退出，允许修复归一化后接着执行。
+            assert previous_spec==dict(spec,code_sha256=INITIAL_CODE_SHA)
+            assert not (args.run/'training.json').exists() and not (args.run/'resume.pt').exists()
+            assert not (args.run/'qualification.json').exists()
+            assert len(tail.read(args.run/'references.json'))==160
+            tail.write(args.run/'initial_protocol.json',previous_spec)
+            tail.write(args.run/'startup_recovery.json',dict(initial_job=126741,optimizer_updates=0,
+                cached_references=160,initial_code_sha256=INITIAL_CODE_SHA,
+                corrected_code_sha256=spec['code_sha256'],
+                correction='reference RGB division by 255 on the same device as final fusion'))
+            tail.write(path,spec)
     else:
         tail.write(path,spec)
     args.spec = spec
@@ -92,6 +105,12 @@ def references(args,models,head,base,pairs,fixed):
     return recorded,images
 
 
+def anchor_tensor(image, like):
+    # 与最终融合在同一设备做 /255，避免 CPU/GPU 的归一化相差一个浮点单位。
+    pixels = torch.from_numpy(np.ascontiguousarray(image.transpose(2,0,1)))[None].to(like)
+    return pixels/255
+
+
 class Objective:
     def __init__(self,base,reference,images):
         self.base,self.reference,self.images = base,reference,images
@@ -101,7 +120,7 @@ class Objective:
         ref = self.reference[pair['case_id']]
         guard = F.relu(terms['lpips']-prediction.new_tensor(ref['lpips']))
         guard = guard+F.relu(terms['inside_lpips']-prediction.new_tensor(ref['inside_lpips']))
-        image = roi.tensors([self.images[pair['case_id']]]).to(prediction)
+        image = anchor_tensor(self.images[pair['case_id']],prediction)
         edge = torch.as_tensor(roi.regions(mask,8)[1],device=prediction.device)
         error = (prediction-image).abs().mean(1)[0]
         edge_loss = ab.weighted_mean(error,edge)
@@ -210,15 +229,22 @@ def train(args,models):
     rgb,target,mask = ft.forward(args,models,head,probe,fixed)
     np.testing.assert_array_equal(ft.rgb8(rgb),images[probe['case_id']])
     loss,terms = criterion(rgb,target,mask,probe)
-    assert float(terms['perceptual_guard'])==0. and float(terms['edge_anchor'])==0.
+    legacy = roi.tensors([images[probe['case_id']]]).to(rgb)
+    edge = torch.as_tensor(roi.regions(mask,8)[1],device=rgb.device)
+    start_check = dict(perceptual_guard=float(terms['perceptual_guard'].detach()),
+                       edge_anchor=float(terms['edge_anchor'].detach()),
+                       legacy_edge_anchor=float(ab.weighted_mean((rgb-legacy).abs().mean(1)[0],edge).detach()),
+                       anchor_max_error=float((rgb-anchor_tensor(images[probe['case_id']],rgb)).abs().max().detach()))
+    print('GUARDED_START_CHECK',start_check,flush=True)
+    assert start_check['perceptual_guard']==0. and start_check['edge_anchor']==0.,start_check
     norm = tail.backward(loss,params)
     assert norm>0
     models[2].adapter.clear()
-    del loss,rgb,target
+    del loss,rgb,target,legacy
     ab.audit_frozen(args,models,head,params)
     tail.write(args.run/'qualification.json',dict(start_sha256=args.heads['B'],reference_pairs=160,
         start_pixels_equal=True,guard_at_start=0.,edge_at_start=0.,gradient_norm=norm,
-        optimizer_updates=0,trainable_parameters=tail.PARAMETERS))
+        optimizer_updates=0,trainable_parameters=tail.PARAMETERS,normalization_check=start_check))
     from pytorch_fid.inception import InceptionV3
     inception = InceptionV3([InceptionV3.BLOCK_INDEX_BY_DIM[2048]]).eval().requires_grad_(False)
     optimizer = torch.optim.AdamW(params.values(),lr=ft.LR)
@@ -332,6 +358,8 @@ def main():
         eval500_passed=tail.read(args.run/'eval500/result.json')['acceptance']['accepted'] if passed else None)
     tail.write(args.run/'completion.json',finish)
     files = ['protocol.json','qualification.json','references.json','training.json','completion.json','eval64/review.zip']
+    if (args.run/'startup_recovery.json').is_file():
+        files.extend(['initial_protocol.json','startup_recovery.json'])
     for step in (0,*SNAPSHOTS):
         files.extend([f'validation/step{step}.json',f'validation/step{step}_pool3.npz'])
     if passed:
