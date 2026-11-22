@@ -59,10 +59,11 @@ def setup(prior):
     args.start = args.light_run/'B/step64.pt'
     assert tail.sha(args.start)==args.heads['B']
     assert tail.sha(args.base_checkpoint)==args.contract['parent_contract']['base_sha256']
-    tail.verified_files(args.light_run/'eval64',fid.SOURCE_SHA,('selection.json','protocol.json','per_pair.json','pool3.npz'))
+    tail.verified_files(args.light_run/'eval64',fid.SOURCE_SHA,('per_pair.json','pool3.npz'))
     tail.verified_files(args.archived,retention.CONTROL_SHA,('per_pair.json','pool3.npz','result.json'))
-    assert tail.sha(args.light_run/'selection.json')==tail.sha(args.light_run/'eval64/selection.json')
-    assert tail.sha(args.light_run/'protocol.json')==tail.sha(args.light_run/'eval64/protocol.json')
+    manifest = tail.read(args.light_run/'eval64/review_manifest.json')
+    assert tail.sha(args.light_run/'selection.json')==manifest['selection.json']
+    assert tail.sha(args.light_run/'protocol.json')==manifest['protocol.json']
     assert tail.metric_assets()==args.protocol['metric_assets']
     spec = dict(start_step=64,start_sha256=args.heads['B'],start_a_sha256=args.heads['A'],
                 base_sha256=args.contract['parent_contract']['base_sha256'],f68_sha256=tail.CHECKPOINT_SHA,
