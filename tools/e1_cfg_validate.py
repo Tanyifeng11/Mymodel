@@ -64,7 +64,9 @@ class BranchAudit:
         if self.current == 'positive':
             self.positive_prediction = predicted.detach()
             if not self.events:
-                event['first_prediction_sha256'] = digest(predicted)
+                # NumPy 不支持 BF16；仅转换审计副本，不改变网络输出或采样精度。
+                event['first_prediction_sha256'] = digest(predicted.detach().float())
+                event['prediction_source_dtype'] = str(predicted.dtype)
         else:
             event['positive_minus_negative_rms'] = float((
                 self.positive_prediction.float()-predicted.float()).square().mean().sqrt())
