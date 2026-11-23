@@ -24,6 +24,10 @@ B64_SHA = '9926326896c15bb2be18f2f6869b564216d21cb383e58b4188668355c9667af9'
 ARMS = ('f68', 'B64')
 STEPS, ACCUMULATE, LR = 128, 2, 1e-5
 SNAPSHOTS = (0, 32, 64, 128)
+INITIAL_CODE = {
+    'tools/e2_b_init_epoch20_ab.py':'31144f636377e142fd93eadd206c32e0facb970db0c9f50947da06935abc3ac2',
+    'scripts/e2_b_init_epoch20_ab.sbatch':'62b7c87fd96fcdbd494bcfcbd2cfae959f2ccc90cf744b178b5fe128bf07f1e5',
+}
 
 
 def identity(pair):
@@ -104,11 +108,29 @@ def setup(prior):
         tolerance=.005,gain_ratio=2.,test_role='reused original64, initialization selection study, not independent confirmation',
         expanded_evaluation=False,code=source_hashes)
     path = args.run/'protocol.json'
+    implementation = args.run/'implementation.json'
     if path.exists():
-        assert tail.read(path)==args.spec
+        initial = tail.read(path)
+        assert dict(initial,code=source_hashes)==args.spec
+        changed = {name for name in source_hashes if initial['code'][name]!=source_hashes[name]}
+        assert changed<=set(INITIAL_CODE)
+        assert all(initial['code'][name]==INITIAL_CODE[name] for name in changed)
+        if changed and not implementation.exists():
+            assert not any((args.run/n).exists() for n in ('resume.pt','training.json','qualification.json','references.json'))
+        # 缓存由首版采样合同标识；这次只修复资格入口和损失参照的归一化。
+        args.spec = initial
     else:
         tail.write(path,args.spec)
     args.spec_sha = tail.sha(path)
+    active = dict(cache_protocol_sha256=args.spec_sha,code=source_hashes,
+        qualification_active_end=tail.LAST,target_normalization='CPU /255 then CUDA, same as raw_forward',
+        recovery_from_job=126953 if args.spec['code']!=source_hashes else None,
+        cache_generation_changed=False,loss_weights_changed=False,thresholds_changed=False)
+    if implementation.exists():
+        assert tail.read(implementation)==active
+    else:
+        tail.write(implementation,active)
+    args.implementation_sha = tail.sha(implementation)
     return args
 
 
@@ -135,6 +157,8 @@ def load(args):
     else:
         tail.write(path,args.original)
         tail.write(args.run/'environment.json',environment())
+    if not (args.run/'execution_environment.json').exists():
+        tail.write(args.run/'execution_environment.json',environment())
     return core,pipe,net,original,frozen
 
 
@@ -288,7 +312,7 @@ def reference_losses(args,models,base,images):
     references = {}
     for pair in args.trainval['pairs']:
         rgb = guard.anchor_tensor(images[pair['case_id']],torch.empty((),device=args.device))
-        gt = guard.anchor_tensor(np.asarray(tail.rgb(args.data/pair['gt']).resize(tail.SIZE,Image.Resampling.BILINEAR)),rgb)
+        gt = roi.tensors([np.asarray(tail.rgb(args.data/pair['gt']).resize(tail.SIZE,Image.Resampling.BILINEAR))]).to(args.device)
         mask = tail.case_mask(args,pair)
         loss,terms = ab.collect(base,rgb,gt,mask,'inside')
         references[pair['case_id']] = dict(loss=float(loss),**terms)
@@ -473,7 +497,8 @@ def train(args,models,anchors,images,metrics):
     for arm in ARMS:
         ab.audit_frozen(args,models,heads[arm],parameters[arm])
     selected,assessments = select(checkpoints)
-    saved = dict(protocol_sha256=args.spec_sha,updates_per_arm=STEPS,trace=trace,selected=selected,
+    saved = dict(protocol_sha256=args.spec_sha,implementation_sha256=args.implementation_sha,
+        updates_per_arm=STEPS,trace=trace,selected=selected,
         selection=assessments,trainable=list(parameters['f68']),parameter_count=tail.PARAMETERS,
         frozen_unchanged=True,checkpoints={a:{str(s):tail.sha(args.run/a/f'step{s}.pt') for s in SNAPSHOTS} for a in ARMS})
     tail.write(args.run/'training.json',saved)
@@ -502,8 +527,9 @@ def qualify(args,models,anchors,images):
         features = tail.joint.projected(net,core.tensor(args.data/pair['sketch']).to(args.device).half(),
             core.tensor(args.out/'cases'/pair['case_id']/'original_ref.png').to(args.device).half())
         module = tail.TailResidual(original,head,tail.latent_gate(mask,args.device))
-        with torch.no_grad(),tail.PrefixTap(pipe,module,values,qualify=True) as tap:
+        with torch.no_grad(),tail.PrefixTap(pipe,module,values,end=tail.LAST,qualify=True) as tap:
             picture,_ = tail.joint.image(args,core,pipe,net,pair,features)
+        assert tap.index==module.index==tail.LAST
         state = prefix(args,models,pair)
         assert all(torch.equal(state[n],tap.start[n]) for n in ('z','epsilon'))
         with torch.no_grad():
@@ -515,17 +541,23 @@ def qualify(args,models,anchors,images):
         expected,_ = final_cached(args,models,head,pair,anchors)
         np.testing.assert_array_equal(ft.rgb8(pred),expected)
         base = ft.light.LightingObjective(args)
-        loss,_ = base(pred,target,mask,'inside')
+        ref = guard.anchor_tensor(images[pair['case_id']],pred)
+        ref_loss,ref_terms = ab.collect(base,ref,target,mask,'inside')
+        references = {pair['case_id']:dict(loss=float(ref_loss),**ref_terms)}
+        criterion = guard.Objective(base,references,images)
+        loss,terms = criterion(pred,target,mask,pair)
         grad = tail.backward(loss,params)
         assert grad>0
         if arm=='B64':
             np.testing.assert_array_equal(ft.rgb8(pred),images[pair['case_id']])
             assert (pred.detach()-guard.anchor_tensor(images[pair['case_id']],pred)).abs().max()==0
+            assert float(terms['perceptual_guard'].detach())==float(terms['edge_anchor'].detach())==0.
         records[arm] = dict(exact_prefix=True,exact_latent=True,exact_raw_pixels=True,
-            exact_fused_pixels=True,gradient_norm=grad,head_sha256=head_hash(head))
+            exact_fused_pixels=True,gradient_norm=grad,head_sha256=head_hash(head),active_end=tail.LAST,
+            guard_at_start=float(terms['perceptual_guard'].detach()),edge_at_start=float(terms['edge_anchor'].detach()))
         models[2].adapter.clear()
         del pred,target,loss,head,base
-    tail.write(path,dict(case=pair['case_id'],arms=records,
+    tail.write(path,dict(case=pair['case_id'],arms=records,implementation_sha256=args.implementation_sha,
         common_reference=True,optimizer_updates=0,trainable_parameters=tail.PARAMETERS,protocol_sha256=args.spec_sha))
     print('INIT20_QUALIFIED',records,flush=True)
 
@@ -587,11 +619,13 @@ def main():
         frozen_unchanged=True,eval500_executed=False,long_training_started=False,
         interpretation='original64 used to choose initialization; independent confirmation still needed'))
     examples(args)
-    names = ['protocol.json','model.json','environment.json','qualification.json','references.json',
+    names = ['protocol.json','implementation.json','model.json','environment.json','execution_environment.json',
+             'qualification.json','references.json',
              'training.json','selection.json','completion.json','examples.png','eval64/result.json',
              'eval64/per_pair.json','eval64/pool3.npz']
     for step in SNAPSHOTS:
         names.extend([f'validation/step{step}/{n}' for n in ('result.json','per_pair.json','pool3.npz')])
+    names.extend(n for n in ('normalization_probe.json','initial-slurm-126953.out') if (args.run/n).exists())
     fid.pack(args.run,names)
     print('INIT20_FINISHED',picked,trained['selected'],tail.sha(args.run/'review.zip'),flush=True)
 

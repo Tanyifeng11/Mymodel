@@ -32,6 +32,7 @@ def main():
                 delta=delta,zero_guard=sum(max(v,0.) for v in delta.values())))
     report = dict(protocol_sha256=args.spec_sha,optimizer_updates=0,rows=rows,
         positive=sum(r['zero_guard']>0 for r in rows),max_zero_guard=max(r['zero_guard'] for r in rows),
+        comparison='first implementation GPU-normalized GT reference versus CPU-normalized training target; corrected main uses CPU for both',
         code_sha256=experiment.tail.sha(Path(__file__)))
     experiment.tail.write(args.run/'normalization_probe.json',report)
     print('INIT20_NORM_PROBE',len(rows),report['positive'],report['max_zero_guard'],flush=True)
