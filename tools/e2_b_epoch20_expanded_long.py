@@ -352,11 +352,10 @@ def qualify(args,models,base,fixed,criterion,rank,world):
     np.testing.assert_array_equal(ft.rgb8(prediction),fixed.image(pair['case_id'],'start'))
     loss,terms = criterion(prediction,target,mask,pair)
     assert float(terms['perceptual_guard'].detach())==float(terms['edge_anchor'].detach())==0.
-    (loss*SCALE).backward()
+    (loss*SCALE/BATCH).backward()
     for parameter in parameters.values():
-        parameter.grad.div_(SCALE)
         dist.all_reduce(parameter.grad)
-        parameter.grad.div_(world)
+        parameter.grad.div_(SCALE)
     averaged = {n:p.grad.detach().cpu().clone() for n,p in parameters.items()}
     norm = float(torch.linalg.vector_norm(torch.cat([g.flatten() for g in averaged.values()])))
     assert np.isfinite(norm) and norm>0
@@ -611,14 +610,14 @@ def train(args,models,base,fixed,criterion,metrics,rank,world):
             prediction,target,mask = init.forward(args,models,head,pair,fixed)
             loss,terms = guard.collect(criterion,prediction,target,mask,pair)
             assert torch.isfinite(loss)
-            (loss*SCALE).backward()
+            # 与原单卡累积2次使用相同的FP16反传缩放64；双卡求和后再除128。
+            (loss*SCALE/BATCH).backward()
             models[2].adapter.clear()
             del loss,prediction,target
             assert all(p.grad is not None for p in params.values())
             for p in params.values():
-                p.grad.div_(SCALE)
                 dist.all_reduce(p.grad)
-                p.grad.div_(world)
+                p.grad.div_(SCALE)
             norm = float(torch.nn.utils.clip_grad_norm_(params.values(),1,error_if_nonfinite=True))
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
