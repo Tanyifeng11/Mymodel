@@ -610,6 +610,7 @@ def train(args,models,base,fixed,criterion,metrics,rank,world):
             prediction,target,mask = init.forward(args,models,head,pair,fixed)
             loss,terms = guard.collect(criterion,prediction,target,mask,pair)
             assert torch.isfinite(loss)
+            total = float(loss.detach())
             # 与原单卡累积2次使用相同的FP16反传缩放64；双卡求和后再除128。
             (loss*SCALE/BATCH).backward()
             models[2].adapter.clear()
@@ -621,7 +622,7 @@ def train(args,models,base,fixed,criterion,metrics,rank,world):
             norm = float(torch.nn.utils.clip_grad_norm_(params.values(),1,error_if_nonfinite=True))
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-            row = dict(case=pair['case_id'],epoch=epoch+1,**terms)
+            row = dict(case=pair['case_id'],epoch=epoch+1,loss=total,**terms)
             gathered = [None]*world
             dist.all_gather_object(gathered,row)
             if rank==0:
