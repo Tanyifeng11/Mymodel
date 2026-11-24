@@ -2,8 +2,6 @@
 import argparse
 from collections import Counter
 import copy
-import datetime
-import os
 from pathlib import Path
 import time
 
@@ -11,7 +9,6 @@ import cv2
 import numpy as np
 from PIL import Image
 import torch
-import torch.distributed as dist
 from torch.nn import functional as F
 
 from models.e2_lab_anchor import rgb_to_lab
@@ -63,7 +60,8 @@ def setup(prior, device):
         source_protocol=spec['source_protocol_sha256'],base_sha256=init.BASE_SHA,f68_sha256=tail.CHECKPOINT_SHA,
         sampler=spec['sampler'],metrics=spec['metric_assets'],four_image_start_sha256=fusion.START_SHA,
         formal_reference=spec['formal_reference'],seed=42,stages=list(PHASES),validation_period=PERIOD,
-        early_validation=list(EARLY),lr=LR,batch=BATCH,parameters=tail.PARAMETERS,
+        early_validation=list(EARLY),lr=LR,batch=BATCH,gpus=1,gradient_accumulation=BATCH,
+        parameters=tail.PARAMETERS,
         initial='f68 features; zero output; no residual before step index 44',
         mask='clip(inward sketch distance / 8, 0, 1), average pool 8, applied once by StateTextureB',
         loss=dict(rgb=1,global_lpips=.05,inside_lpips=.05,low_lab=.10,frame=.20,band_H1=0,band_H2=.10),
@@ -191,12 +189,11 @@ class Objective(ft.light.LightingObjective):
                          frame=terms['frame'],low_lab=low_lab,band=band)
 
 
-def qualification(args,models,objective,rank,world):
-    path = args.run/f'qualification_rank{rank}.json'
+def qualification(args,models,objective,pair,index):
+    path = args.run/f'qualification_probe{index}.json'
     if path.exists():
         assert tail.read(path)['protocol_sha256'] == args.spec_sha
         return
-    pair = args.pairs['qualification'][rank]
     head,params = initialize(models)
     state = prefix(args,models,pair)
     mask = tail.case_mask(args,pair)
@@ -234,10 +231,10 @@ def qualification(args,models,objective,rank,world):
     assert block_norm > 0 and np.isfinite(block_norm)
     ab.audit_frozen(args,models,head,params)
     models[2].adapter.clear()
-    tail.write(path,dict(protocol_sha256=args.spec_sha,case=pair['case_id'],rank=rank,world=world,
+    tail.write(path,dict(protocol_sha256=args.spec_sha,case=pair['case_id'],probe=index,
         zero_equals_b_off=True,zero_and_nonzero_full_equal_replay=True,output_grad_norm=output_norm,
         block_grad_norm_after_temporary_output_perturbation=block_norm,optimizer_updates=0))
-    print('SINGLE_QUALIFIED',rank,pair['case_id'],output_norm,block_norm,flush=True)
+    print('SINGLE_QUALIFIED',index,pair['case_id'],output_norm,block_norm,flush=True)
 
 
 @torch.no_grad()
@@ -260,13 +257,13 @@ def control_context(args):
     return context
 
 
-def test_controls(args,models,pairs,split,rank,world):
+def test_controls(args,models,pairs,split):
     if split == 'test64':
         return
     context = control_context(args)
     a,_ = init.head_for(context,models,'A')
     start,_ = init.head_for(context,models,'f68')
-    for i,pair in enumerate(pairs[rank::world],1):
+    for i,pair in enumerate(pairs,1):
         existing = args.fusion_run/'fixed'/pair['case_id']/'record.json'
         if existing.exists():
             record = tail.read(existing)
@@ -276,7 +273,7 @@ def test_controls(args,models,pairs,split,rank,world):
         else:
             cache_control(context,models,pair,a,start)
         if i%16 == 0:
-            print('SINGLE_CONTROL500',rank,i,len(pairs[rank::world]),flush=True)
+            print('SINGLE_CONTROL500',i,len(pairs),flush=True)
 
 
 @torch.no_grad()
@@ -412,7 +409,26 @@ def score(args,models,pairs,heads,dest,metrics,split):
     return result
 
 
-def train(args,models,objective,metrics,rank,world):
+def update_batch(args,models,objective,head,parameters,optimizer,pairs,band_weight):
+    observations = []
+    for pair in pairs:
+        pred,gt,mask = forward(args,models,head,pair)
+        loss,terms = objective(pred,gt,mask,band_weight)
+        assert torch.isfinite(loss)
+        # 同一组权重累计两对样本的梯度，裁剪并更新一次。
+        (loss*SCALE/BATCH).backward()
+        observations.append(dict(loss=float(loss.detach()),**{k:float(v.detach()) for k,v in terms.items()}))
+        models[2].adapter.clear()
+        del loss,pred,gt,terms
+    for p in parameters.values():
+        p.grad.div_(SCALE)
+    norm = float(torch.nn.utils.clip_grad_norm_(parameters.values(),1,error_if_nonfinite=True))
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    return [dict(row,grad_norm=norm) for row in observations]
+
+
+def train(args,models,objective,metrics):
     training,validation = args.pairs['train'],args.pairs['val']
     heads,params,optimizers = {},{},{}
     for name in ARMS:
@@ -432,32 +448,21 @@ def train(args,models,objective,metrics,rank,world):
         return {name:{k:p.detach().cpu() for k,p in params[name].items()} for name in ARMS}
 
     def save():
-        if rank==0:
-            tail.save_torch(resume,dict(protocol_sha256=args.spec_sha,step=completed,trace=trace,
-                checks=checks,phases=phases,heads=snapshot(),
-                optimizers={n:o.state_dict() for n,o in optimizers.items()}))
+        tail.save_torch(resume,dict(protocol_sha256=args.spec_sha,step=completed,trace=trace,
+            checks=checks,phases=phases,heads=snapshot(),
+            optimizers={n:o.state_dict() for n,o in optimizers.items()}))
 
     def validate(step):
         dest = args.run/'validation'/f'step{step}'
-        for name,head in heads.items():
-            digest = init.head_hash(head)
-            for p in validation[rank::world]:
-                render(args,models,head,p,digest)
-        dist.barrier()
-        values = None
-        if rank==0:
-            for n,weights in snapshot().items():
-                path = dest/(n+'.pt')
-                if not path.exists():
-                    tail.save_torch(path,weights)
-                stored = torch.load(path,map_location='cpu',weights_only=True)
-                assert all(torch.equal(stored[k],v) for k,v in weights.items())
-            result = score(args,models,validation,heads,dest,metrics,'val')['groups']['all']
-            values = {n:init.metrics_from_group(result,n) for n in ARMS}
-            print('SINGLE_VALIDATION',step,values,flush=True)
-        box = [values]
-        dist.broadcast_object_list(box,src=0)
-        checks[str(step)] = box[0]
+        for n,weights in snapshot().items():
+            path = dest/(n+'.pt')
+            if not path.exists():
+                tail.save_torch(path,weights)
+            stored = torch.load(path,map_location='cpu',weights_only=True)
+            assert all(torch.equal(stored[k],v) for k,v in weights.items())
+        result = score(args,models,validation,heads,dest,metrics,'val')['groups']['all']
+        checks[str(step)] = {n:init.metrics_from_group(result,n) for n in ARMS}
+        print('SINGLE_VALIDATION',step,checks[str(step)],flush=True)
         save()
 
     if str(completed) not in checks and (completed%PERIOD==0 or completed in EARLY):
@@ -475,28 +480,16 @@ def train(args,models,objective,metrics,rank,world):
             epoch,position = divmod(step-1,len(training)//BATCH)
             if order is None or position==0:
                 order = np.random.default_rng(42+epoch).permutation(len(training))
-            pair = training[order[position*BATCH+rank]]
-            row = dict(case=pair['case_id'])
+            pairs = [training[j] for j in order[position*BATCH:(position+1)*BATCH]]
+            records = [dict(case=p['case_id']) for p in pairs]
             for n in ARMS:
-                pred,gt,mask = forward(args,models,heads[n],pair)
-                loss,terms = objective(pred,gt,mask,.10 if n=='H2' else 0.)
-                assert torch.isfinite(loss)
-                (loss*SCALE/BATCH).backward()
-                for p in params[n].values():
-                    dist.all_reduce(p.grad)
-                    p.grad.div_(SCALE)
-                norm = float(torch.nn.utils.clip_grad_norm_(params[n].values(),1,error_if_nonfinite=True))
-                optimizers[n].step()
-                optimizers[n].zero_grad(set_to_none=True)
-                row[n] = dict(loss=float(loss.detach()),grad_norm=norm,**{k:float(v.detach()) for k,v in terms.items()})
-                models[2].adapter.clear()
-                del loss,pred,gt,terms
-            records = [None]*world
-            dist.all_gather_object(records,row)
-            if rank==0:
-                trace.append(dict(step=step,rows=records))
-                if step%16==0:
-                    print('SINGLE_TRAIN',step,end,records,flush=True)
+                values = update_batch(args,models,objective,heads[n],params[n],optimizers[n],pairs,
+                                      .10 if n=='H2' else 0.)
+                for row,value in zip(records,values):
+                    row[n] = value
+            trace.append(dict(step=step,rows=records))
+            if step%16==0:
+                print('SINGLE_TRAIN',step,end,records,flush=True)
             completed = step
             save()
             if step%PERIOD==0 or step in EARLY:
@@ -507,8 +500,7 @@ def train(args,models,objective,metrics,rank,world):
         for n in ARMS:
             ab.audit_frozen(args,models,heads[n],params[n])
         save()
-        if rank==0:
-            print('SINGLE_PHASE',phases[-1],flush=True)
+        print('SINGLE_PHASE',phases[-1],flush=True)
         previous = end
         if not continued:
             break
@@ -518,9 +510,8 @@ def train(args,models,objective,metrics,rank,world):
         ab.update_head(heads[n],params[n],args.run/'validation'/f'step{step}'/(n+'.pt'))
         ab.audit_frozen(args,models,heads[n],params[n])
         heads[n].eval().requires_grad_(False)
-    if rank==0:
-        tail.write(args.run/'training.json',dict(updates_per_arm=completed,selected=steps,validation=checks,
-            assessments={n:s[1] for n,s in selections.items()},phases=phases,trace=trace,frozen_unchanged=True))
+    tail.write(args.run/'training.json',dict(updates_per_arm=completed,selected=steps,validation=checks,
+        assessments={n:s[1] for n,s in selections.items()},phases=phases,trace=trace,frozen_unchanged=True))
     return heads,steps,completed
 
 
@@ -604,88 +595,62 @@ def main():
     parser.add_argument('prior',type=Path)
     parser.add_argument('--check',action='store_true')
     options = parser.parse_args()
-    rank = 0
-    if not options.check:
-        rank,world,local = (int(os.environ[k]) for k in ('RANK','WORLD_SIZE','LOCAL_RANK'))
-        assert world == BATCH
-        torch.cuda.set_device(local)
-        dist.init_process_group('nccl',timeout=datetime.timedelta(hours=4))
-    args,contract = setup(options.prior,'cpu' if options.check else f'cuda:{local}')
+    args,contract = setup(options.prior,'cpu' if options.check else 'cuda:0')
     if options.check:
         archived64(args,args.pairs['test64'])
         assert len(args.pairs['qualification']) == BATCH
-        assert dist.is_nccl_available()
         print('SINGLE_CPU_CHECK',contract['pairs'],contract['cohort_sha256'],flush=True)
         return
-    if rank==0:
-        if args.spec.exists():
-            assert tail.read(args.spec) == contract
-        else:
-            tail.write(args.spec,contract)
-    dist.barrier()
-    assert tail.read(args.spec) == contract
+    assert torch.cuda.device_count() == 1
+    if args.spec.exists():
+        assert tail.read(args.spec) == contract
+    else:
+        tail.write(args.spec,contract)
     args.spec_sha = tail.sha(args.spec)
     if (args.run/'completion.json').exists() and (args.run/'review.zip').exists():
-        dist.destroy_process_group()
         return
     cv2.setNumThreads(1)
-    models = init.load(args) if rank==0 else None
-    dist.barrier()
-    if rank!=0:
-        models = init.load(args)
+    models = init.load(args)
     torch.set_num_threads(6)
     objective = Objective(args)
-    qualification(args,models,objective,rank,world)
-    dist.barrier()
+    for index,pair in enumerate(args.pairs['qualification']):
+        qualification(args,models,objective,pair,index)
     pairs = [*args.pairs['train'],*args.pairs['val']]
-    for i,pair in enumerate(pairs[rank::world],1):
+    for i,pair in enumerate(pairs,1):
         prefix(args,models,pair)
         if i%32==0:
-            print('SINGLE_PREFIX',rank,i,len(pairs[rank::world]),flush=True)
-    dist.barrier()
-    metrics = tail.metric_models('cpu',args.protocol['metric_assets']) if rank==0 else None
-    heads,steps,updates = train(args,models,objective,metrics,rank,world)
+            print('SINGLE_PREFIX',i,len(pairs),flush=True)
+    metrics = tail.metric_models('cpu',args.protocol['metric_assets'])
+    heads,steps,updates = train(args,models,objective,metrics)
     active = heads
     evaluation = {}
     for split in ('test64','test500'):
         if not active:
             break
         pairs = args.pairs[split]
-        test_controls(args,models,pairs,split,rank,world)
-        for head in active.values():
-            digest = init.head_hash(head)
-            for pair in pairs[rank::world]:
-                render(args,models,head,pair,digest)
-        dist.barrier()
-        accepted = None
-        if rank==0:
-            dest = args.run/('eval64' if split=='test64' else 'eval500')
-            result = score(args,models,pairs,active,dest,metrics,split)
-            decision = acceptance(args,dest,result,steps,split)
-            tail.write(dest/'acceptance.json',decision)
-            accepted = [n for n,d in decision['decisions'].items() if d['accepted']]
-            evaluation[dest.name] = dict(scored=list(active),accepted=accepted)
-            print('SINGLE_ACCEPTANCE',dest.name,decision,flush=True)
-            if split=='test500':
-                benchmark(args,models,active,pairs)
-        box = [accepted]
-        dist.broadcast_object_list(box,src=0)
-        active = {n:heads[n] for n in box[0]}
+        test_controls(args,models,pairs,split)
+        dest = args.run/('eval64' if split=='test64' else 'eval500')
+        result = score(args,models,pairs,active,dest,metrics,split)
+        decision = acceptance(args,dest,result,steps,split)
+        tail.write(dest/'acceptance.json',decision)
+        accepted = [n for n,d in decision['decisions'].items() if d['accepted']]
+        evaluation[dest.name] = dict(scored=list(active),accepted=accepted)
+        print('SINGLE_ACCEPTANCE',dest.name,decision,flush=True)
+        if split=='test500':
+            benchmark(args,models,active,pairs)
+        active = {n:heads[n] for n in accepted}
     assert tail.tensor_set(models[4]) == args.original['frozen_model_hashes']
-    dist.barrier()
-    if rank==0:
-        tail.write(args.run/'completion.json',dict(updates_per_arm=updates,selected=steps,evaluation=evaluation,
-            trained_heads=2,frozen_unchanged=True,inference_trajectories=1,vae_decodes=1))
-        files = ['protocol.json','model.json','execution_environment.json','qualification_rank0.json',
-                 'qualification_rank1.json','training.json','completion.json']
-        files.extend(str(p.relative_to(args.run)) for p in sorted((args.run/'validation').glob('step*/result.json')))
-        for label in evaluation:
-            files.extend(f'{label}/{n}' for n in ('result.json','per_pair.json','pool3.npz','acceptance.json'))
-        if 'eval500' in evaluation:
-            files.append('latency.json')
-        init.fid.pack(args.run,files)
-        print('SINGLE_FINISHED',tail.sha(args.run/'review.zip'),flush=True)
-    dist.destroy_process_group()
+    tail.write(args.run/'completion.json',dict(updates_per_arm=updates,selected=steps,evaluation=evaluation,
+        trained_heads=2,frozen_unchanged=True,inference_trajectories=1,vae_decodes=1))
+    files = ['protocol.json','model.json','execution_environment.json','qualification_probe0.json',
+             'qualification_probe1.json','training.json','completion.json']
+    files.extend(str(p.relative_to(args.run)) for p in sorted((args.run/'validation').glob('step*/result.json')))
+    for label in evaluation:
+        files.extend(f'{label}/{n}' for n in ('result.json','per_pair.json','pool3.npz','acceptance.json'))
+    if 'eval500' in evaluation:
+        files.append('latency.json')
+    init.fid.pack(args.run,files)
+    print('SINGLE_FINISHED',tail.sha(args.run/'review.zip'),flush=True)
 
 
 if __name__=='__main__':
