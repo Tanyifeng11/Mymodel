@@ -41,6 +41,8 @@ def paths(prior, device='cuda:0'):
     args.parent = args.baseline/'tail6_real_ab_e1_epoch10_20261119'
     args.a_checkpoint = args.parent/'A/step128.pt'
     args.light_run = args.parent/'a_fused25_lstar_ab_20261121'
+    # 共用head_for会先构造全部候选路径；补齐接口字段，不把B64用作本轮起点。
+    args.b64_checkpoint = args.light_run/'B/step64.pt'
     args.start = args.source/'f68/step0.pt'
     args.formal64 = args.light_run/'fid_regions_64_20261121/retention_125_250'
     args.formal500 = args.light_run/'retention_band_rms475_independent_20261121/eval500'
