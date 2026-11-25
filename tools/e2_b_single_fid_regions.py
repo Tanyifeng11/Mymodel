@@ -1,6 +1,7 @@
 """复用已有生成图，拆解类别和区域对整图 FID 的影响。"""
 import argparse
 import math
+import os
 from collections import Counter
 from pathlib import Path
 
@@ -217,7 +218,7 @@ if __name__ == '__main__':
     cli.add_argument('--check',action='store_true')
     opts = cli.parse_args()
     cv2.setNumThreads(1)
-    torch.set_num_threads(4)
+    torch.set_num_threads(int(os.environ.get('SLURM_CPUS_PER_TASK','4')))
     torch.backends.cudnn.allow_tf32 = False
     torch.backends.cuda.matmul.allow_tf32 = False
     if opts.check:
