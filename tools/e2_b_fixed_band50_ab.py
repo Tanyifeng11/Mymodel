@@ -5,11 +5,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
 import torch
 
 from tools import e2_b_single_direct_960 as direct
-from tools.e2_b_single_pants_inception_ab import target_band50
 from tools.e2_b_direct_127720_region_diagnostic import A64_SHA, DIRECT_SHA
 from tools.e2_fft_experiment import SOURCE
 
@@ -57,7 +55,8 @@ def setup(prior, device):
     args.start_digest = result['head_sha256']['direct']
     args.anchor_origin = origin/'renders'/args.start_digest
     args.anchor_spec = manifest['protocol.json']
-    args.run = origin/RUN
+    args.target_run = origin/RUN
+    args.run = args.target_run/'gradient_qualification_retry'
     args.run.mkdir(exist_ok=True,parents=True)
     args.spec = args.run/'protocol.json'
     contract = dict(parent_job=127720, parent_step=960, parent_review_sha256=DIRECT_SHA,
@@ -82,48 +81,43 @@ def setup(prior, device):
 
 
 @torch.no_grad()
-def prepare_targets(args, models, head):
-    dest = args.run/'fixed_train_targets'
-    targets, records = {}, {}
-    counts = Counter()
+def prepare_targets(args, contract):
+    source = args.target_run
+    prior_spec = tail.read(source/'protocol.json')
+    assert {k:v for k,v in prior_spec.items() if k!='code'}=={
+        k:v for k,v in contract.items() if k!='code'
+    }
+    source_sha = tail.sha(source/'protocol.json')
+    manifest = tail.read(source/'target_manifest.json')
+    assert manifest['protocol_sha256']==source_sha
+    assert set(manifest['rows'])=={p['case_id'] for p in args.train_order}
+    targets,counts = {},Counter()
     for pair in args.train_order:
-        case, category = pair['case_id'], pair['category']
-        mask = tail.case_mask(args,pair)
-        core = roi.regions(mask,cov.CORE_RADIUS)[0]
-        pixels = int(core.sum())
-        if pixels<cov.MIN_PIXELS:
-            records[case] = dict(category=category, core_px=pixels, eligible=False)
+        case,category = pair['case_id'],pair['category']
+        row = manifest['rows'][case]
+        core = roi.regions(tail.case_mask(args,pair),cov.CORE_RADIUS)[0]
+        assert (category,int(core.sum()),bool(core.sum()>=cov.MIN_PIXELS))==(
+            row['category'],row['core_px'],row['eligible'])
+        if not row['eligible']:
             continue
-        true_path = args.data/pair['gt']
-        true_sha = tail.sha(true_path)
-        assert true_sha==args.gt_hashes[case]
-        source = args.anchor_origin/(case+'.png')
-        meta = source.with_suffix('.json')
-        expected = dict(protocol_sha256=args.anchor_spec,case=case,head_sha256=args.start_digest)
-        anchor = init.checked_image(source,meta,expected)
-        if anchor is None:
-            source = args.run/'renders'/args.start_digest/(case+'.png')
-            previous.render(args,models,head,pair,args.start_digest)
-            anchor = init.checked_image(source,source.with_suffix('.json'),dict(expected,protocol_sha256=args.spec_sha))
-            counts['training_anchor_cache'] += 1
-        else:
-            counts['training_anchor_archive'] += 1
-        path = dest/(case+'.png')
-        record = dict(eligible=True,protocol_sha256=args.spec_sha,case=case,category=category,core_px=pixels,
-                      anchor_sha256=tail.sha(source),gt_sha256=true_sha,mask_sha256=pair['mask_sha256'])
-        target = init.checked_image(path,path.with_suffix('.json'),record)
-        if target is None:
-            gt = np.asarray(tail.rgb(true_path).resize(tail.SIZE,Image.Resampling.BILINEAR))
-            target,_ = target_band50(anchor,gt,core)
-            init.save_image(path,path.with_suffix('.json'),target,record)
-        np.testing.assert_array_equal(target[~core],anchor[~core])
+        assert row['protocol_sha256']==source_sha and row['mask_sha256']==pair['mask_sha256']
+        assert row['gt_sha256']==args.gt_hashes[case]==tail.sha(args.data/pair['gt'])
+        image = source/'fixed_train_targets'/(case+'.png')
+        assert tail.read(image.with_suffix('.json'))=={k:v for k,v in row.items() if k!='changed_pixels'}
+        assert tail.sha(image)==row['png_sha256']
+        anchor = args.anchor_origin/(case+'.png')
+        if not anchor.is_file():
+            anchor = source/'renders'/args.start_digest/(case+'.png')
+        assert tail.sha(anchor)==row['anchor_sha256']
+        target,reference = np.asarray(tail.rgb(image)),np.asarray(tail.rgb(anchor))
+        np.testing.assert_array_equal(target[~core],reference[~core])
+        assert np.count_nonzero(np.any(target!=reference,axis=2))==row['changed_pixels']
         targets[case] = roi.tensors([target])
-        records[case] = dict(tail.read(path.with_suffix('.json')),
-                             changed_pixels=int(np.count_nonzero(np.any(target!=anchor,axis=2))))
-        counts[f'eligible_{category}'] += 1
-    assert all(counts[f'eligible_{category}']>0 for category in CATEGORIES)
-    tail.write(args.run/'target_manifest.json',dict(protocol_sha256=args.spec_sha, counts=dict(counts),rows=records))
-    print('FIXED50_TARGETS',dict(counts),flush=True)
+        counts[category] += 1
+    assert len(targets)==115 and all(counts[c]==manifest['counts'][f'eligible_{c}'] for c in CATEGORIES)
+    tail.write(args.run/'target_manifest.json',dict(manifest,protocol_sha256=args.spec_sha,
+        reused_from_job=127788,source_manifest_sha256=tail.sha(source/'target_manifest.json')))
+    print('FIXED50_TARGETS_REUSED',len(targets),dict(counts),flush=True)
     return targets
 
 
@@ -170,15 +164,34 @@ def qualify(args,models,head,params,objective,targets):
         for k in terms_a.keys()-{'band'}:
             torch.testing.assert_close(terms_a[k],terms_b[k],atol=0,rtol=0)
         torch.testing.assert_close(b-a,previous.BASE_WEIGHT*(terms_b['band']-terms_a['band']),atol=5e-7,rtol=1e-4)
-        band = scale*previous.BASE_WEIGHT*terms_b['band']
-        rg, hg = torch.autograd.grad(band,(pred,head.output.weight),retain_graph=True)
+        band = previous.BASE_WEIGHT*terms_b['band']
+        weight = head.output.weight
+        rg, old = torch.autograd.grad(scale*band,(pred,weight),retain_graph=True)
+        # 独立小项用更高尺度观测，正式训练仍沿用原尺度和总损失。
+        large = 4096.
+        isolated, = torch.autograd.grad(large*band,weight,retain_graph=True)
+        ga, = torch.autograd.grad(scale*a,weight,retain_graph=True)
+        gb, = torch.autograd.grad(scale*b,weight,retain_graph=True)
+        gb_common, = torch.autograd.grad(scale*(b-band),weight)
         keep = torch.from_numpy(core).to(pred.device)
-        norm = float(torch.linalg.vector_norm(hg.float()/scale))
-        assert torch.count_nonzero(rg[...,~keep])==0
-        assert torch.isfinite(rg).all() and torch.count_nonzero(rg[...,keep])>0 and np.isfinite(norm) and norm>0
+        def gradient_norm(value, divisor):
+            return float(torch.linalg.vector_norm(value.float()/divisor))
+        gradient = dict(
+            rgb=gradient_norm(rg,scale), isolated_scale64=gradient_norm(old,scale),
+            isolated_scale4096=gradient_norm(isolated,large),
+            total_A=gradient_norm(ga,scale),total_B=gradient_norm(gb,scale),
+            band_increment_in_B=gradient_norm(gb.float()-gb_common.float(),scale),
+        )
+        inside = int(torch.count_nonzero(rg[...,keep]))
+        outside = int(torch.count_nonzero(rg[...,~keep]))
+        records[category] = dict(case=case, gradients=gradient,rgb_inside_nonzero=inside,
+            rgb_outside_nonzero=outside, band_A=float(terms_a['band'].detach()),
+            band_B=float(terms_b['band'].detach()), production_scale=scale, isolated_probe_scale=large)
+        tail.write(args.run/'qualification_probe.json',dict(protocol_sha256=args.spec_sha,probes=records))
+        print('FIXED50_PROBE',category,records[category],flush=True)
+        assert outside==0 and inside>0 and all(np.isfinite(v) for v in gradient.values())
+        assert all(v>0 for k,v in gradient.items() if k!='isolated_scale64'), gradient
         models[2].adapter.clear()
-        records[category] = dict(case=case, band_output_grad=norm, rgb_outside_nonzero=0,
-                                 band_A=float(terms_a['band'].detach()),band_B=float(terms_b['band'].detach()))
     ab.audit_frozen(args,models,head,params)
     tail.write(path,dict(protocol_sha256=args.spec_sha,common_terms_equal=True,optimizer_updates=0,probes=records))
     print('FIXED50_QUALIFIED',records,flush=True)
@@ -285,10 +298,7 @@ def main():
     models = init.load(args)
     assert args.original['frozen_model_hashes']==tail.read(args.parent_run/'model.json')['frozen_model_hashes']
     prepared = {k:previous.start_head(args,models) for k in ARMS}
-    anchor,_ = previous.start_head(args,models)
-    anchor.eval().requires_grad_(False)
-    targets = prepare_targets(args,models,anchor)
-    del anchor
+    targets = prepare_targets(args,contract)
     objective = Objective(args)
     qualify(args,models,*prepared['B'],objective,targets)
     metrics = tail.metric_models('cpu',args.protocol['metric_assets'])
@@ -296,7 +306,7 @@ def main():
     selected = {k:STEPS for k in active}
     stages = {}
     files = ['protocol.json','model.json','execution_environment.json','target_manifest.json',
-             'qualification.json','training.json',f'validation/step{STEPS}/result.json',
+             'qualification.json','qualification_probe.json','training.json',f'validation/step{STEPS}/result.json',
              f'validation/step{STEPS}/acceptance.json']
     for split,label in (('test64','eval64'),('test500','eval500')):
         if not active:
