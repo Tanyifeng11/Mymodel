@@ -249,7 +249,7 @@ def run(data):
                                              labels,features['gt']) for name in ARMS[1:]}
     probes = probe_metrics(rows,features,labels,limits)
     result = dict(pairs=len(pairs),groups=groups,regions=stats,attribution=attribution,
-                  texture_delta_960_vs_a64=paired_texture(rows,stats),probes=probes,thresholds=limits,
+                  texture_delta_960_vs_a64=paired_texture(rows),probes=probes,thresholds=limits,
                   counts=dict(counts),new_diffusion_samples=0,optimizer_steps=0)
     cache = dest/'region_pool3.npz'
     np.savez_compressed(cache,**{f'{arm}_{c}_{b}':v for arm,cs in pools.items()
