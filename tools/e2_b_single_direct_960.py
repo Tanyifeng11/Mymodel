@@ -84,7 +84,8 @@ def setup(prior, device):
                   contour_f1=baseline['metrics']['contour_f1'] * (1 - tolerance),
                   band_mae={key: value['band_mae'] for key, value in baseline['texture'].items()})
     args.train_order = order
-    args.run = original_run / RUN
+    original_attempt = original_run / RUN
+    args.run = original_attempt / 'scaled_qualification_retry'
     args.run.mkdir(parents=True, exist_ok=True)
     args.spec = args.run / 'protocol.json'
     contract = dict(
@@ -100,6 +101,10 @@ def setup(prior, device):
             'tools/e2_b_single_direct_960.py', 'scripts/e2_b_single_direct_960.sbatch',
             'tools/e2_b_single_pants_cov_ab.py', 'tools/e2_b_epoch20_single.py')},
     )
+    original_contract = tail.read(original_attempt / 'protocol.json')
+    assert {k: v for k, v in contract.items() if k != 'code'} == {
+        k: v for k, v in original_contract.items() if k != 'code'
+    }
     return args, contract
 
 
@@ -132,16 +137,46 @@ def qualify(args, models, objective):
     full, terms = objective(pred, gt, mask, 'B', pair['category'])
     extra = terms['pants_covariance']
     torch.testing.assert_close(full - common, cov.COV_WEIGHT * extra, atol=5e-7, rtol=1e-4)
-    delta, = torch.autograd.grad(cov.COV_WEIGHT * extra, head.output.weight, retain_graph=True)
-    delta_norm = float(torch.linalg.vector_norm(delta))
-    grad_norm = tail.backward(full, params)
-    assert np.isfinite([grad_norm, delta_norm]).all() and grad_norm > 0 and delta_norm > 0
+    # 独立诊断既复现旧探针，也按训练的单样本放缩尺度检查同一张计算图。
+    weights = tuple(params.values())
+    output_index = tuple(params).index('output.weight')
+    term = cov.COV_WEIGHT * extra
+    rgb_grad, *legacy = torch.autograd.grad(term, (pred, *weights), retain_graph=True)
+    scale = single.SCALE / single.BATCH
+    scaled = torch.autograd.grad(scale * term, weights, retain_graph=True)
+    total = torch.autograd.grad(single.SCALE * full, weights)
+
+    def norm(gradients, divisor=1):
+        norms = [torch.linalg.vector_norm(grad.float() / divisor) for grad in gradients]
+        return float(torch.linalg.vector_norm(torch.stack(norms)))
+
+    gradients = dict(
+        total_all_trainable=norm(total, single.SCALE),
+        total_output_weight=norm((total[output_index],), single.SCALE),
+        covariance_rgb=norm((rgb_grad,)),
+        covariance_legacy_all_trainable=norm(legacy),
+        covariance_legacy_output_weight=norm((legacy[output_index],)),
+        covariance_scaled_all_trainable=norm(scaled, scale),
+        covariance_scaled_output_weight=norm((scaled[output_index],), scale),
+    )
+    record = dict(
+        protocol_sha256=args.spec_sha, case=pair['case_id'], covariance=float(extra.detach()),
+        total_loss=float(full.detach()), h2_loss=float(common.detach()),
+        covariance_weight=cov.COV_WEIGHT, covariance_scale=scale, total_scale=single.SCALE,
+        vae_dtype=str(next(models[1].vae.parameters()).dtype),
+        gradients={key: val if np.isfinite(val) else None for key, val in gradients.items()},
+        optimizer_updates=0,
+    )
+    tail.write(args.run / 'qualification_gradients.json', record)
+    for name, value in gradients.items():
+        print('DIRECT_GRADIENT', name, value, flush=True)
+    required = ('total_all_trainable', 'total_output_weight', 'covariance_rgb',
+                'covariance_scaled_all_trainable', 'covariance_scaled_output_weight')
+    assert all(np.isfinite(gradients[key]) and gradients[key] > 0 for key in required), gradients
     models[2].adapter.clear()
     single.ab.audit_frozen(args, models, head, params)
-    tail.write(path, dict(protocol_sha256=args.spec_sha, case=pair['case_id'],
-                          covariance=float(extra.detach()), covariance_output_gradient=delta_norm,
-                          grad_norm=grad_norm, optimizer_updates=0))
-    print('DIRECT_QUALIFIED', pair['case_id'], grad_norm, delta_norm, flush=True)
+    tail.write(path, record)
+    print('DIRECT_QUALIFIED', pair['case_id'], flush=True)
 
 
 def train(args, models, objective, metric_models, contract):
@@ -200,7 +235,9 @@ def train(args, models, objective, metric_models, contract):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('prior', type=Path)
-    parser.add_argument('--check', action='store_true')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--check', action='store_true')
+    mode.add_argument('--qualify-only', action='store_true')
     options = parser.parse_args()
     cv2.setNumThreads(1)
     torch.set_num_threads(4 if options.check else 6)
@@ -222,11 +259,17 @@ def main():
     models = init.load(args)
     assert args.original['frozen_model_hashes'] == tail.read(args.parent_run / 'model.json')['frozen_model_hashes']
     objective = cov.Objective(args)
-    qualify(args, models, objective)
+    if options.qualify_only:
+        qualify(args, models, objective)
+        return
+    qualification = tail.read(args.run / 'qualification.json')
+    assert qualification['protocol_sha256'] == args.spec_sha
+    assert qualification['optimizer_updates'] == 0
     metric_models = tail.metric_models('cpu', args.protocol['metric_assets'])
     head, selected = train(args, models, objective, metric_models, contract)
     files = ['protocol.json', 'model.json', 'execution_environment.json', 'qualification.json',
-             'qualification_probe0.json', 'qualification_probe1.json', 'training.json']
+             'qualification_probe0.json', 'qualification_probe1.json',
+             'qualification_gradients.json', 'training.json']
     files.extend(f'validation/step{step}/result.json' for step in CHECKPOINTS)
     stages = {}
     if selected is not None:
